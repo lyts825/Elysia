@@ -1,0 +1,39 @@
+{
+  "name": "elysia",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.server.json && vite build --config apps/web/vite.config.ts",
+    "start": "node apps/server/dist/apps/server/src/index.js",
+    "db:migrate": "tsx apps/server/src/maintenance.ts migrate",
+    "backup": "tsx apps/server/src/maintenance.ts backup",
+    "restore": "tsx apps/server/src/maintenance.ts restore",
+    "stop": "tsx apps/server/src/maintenance.ts stop",
+    "verify:local": "node scripts/verify-local.mjs"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.5",
+    "fastify": "5.12.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "prettier": "3.6.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.3"
+  }
+}
