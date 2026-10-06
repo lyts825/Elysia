@@ -1,0 +1,16 @@
+# Dependencies and prescribed build outputs
+node_modules/
+/apps/web/dist/
+/apps/server/dist/
+/packages/*/dist/
+
+# Local validation materials and task scratch space
+/.local-tests/
+/.local-qa/
+/.tmp/
+
+# Local secrets and optional workspace runtime data
+/.env
+/.env.*
+!/.env.example
+/.elysia-runtime/
