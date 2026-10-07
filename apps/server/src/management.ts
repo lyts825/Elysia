@@ -79,7 +79,7 @@ export function registerManagement(
     kernel.action(runId, 'pause');
     // Archival must not replace a pending plan/question with a generic pause: restoring
     // the archive should still show the same decision and allow accepting that plan.
-    if (run.status === 'WAITING' || run.status === 'FAILED')
+    if ((run.status === 'WAITING' && run.reason !== 'rate_limit') || run.status === 'FAILED')
       kernel.updateRun(store.require('runs', runId), { status: run.status, reason: run.reason });
   };
   const halt = (runId: string, remove = false) => {

@@ -870,6 +870,15 @@ export class Kernel {
       }
       for (const a of this.store.all<Attempt>('attempts').filter((a) => a.status === 'ACTIVE'))
         this.store.put('attempts', { ...a, status: 'WAITING', lease: null });
+      // Older archival kept the rate reason after pausing its root task. Restoring
+      // the archive must expose the saved pause instead of implying automatic retry.
+      for (const run of this.store
+        .all<Run>('runs')
+        .filter((r) => r.status === 'WAITING' && r.reason === 'rate_limit')) {
+        const root = this.store.require<Task>('tasks', run.rootTaskId);
+        if (root.status === 'WAITING' && root.waitReason === 'paused')
+          this.updateRun(run, { reason: 'paused' });
+      }
       for (const run of this.store.all<Run>('runs').filter((r) => r.status === 'RUNNING'))
         this.updateRun(run, { status: 'WAITING', reason: 'interrupted' });
     });

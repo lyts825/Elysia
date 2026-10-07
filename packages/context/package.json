@@ -1,6 +1,6 @@
 {
   "name": "@elysia/context",
-  "version": "0.6.5-preview.1",
+  "version": "0.6.6-preview.1",
   "private": true,
   "type": "module"
 }

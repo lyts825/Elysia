@@ -177,6 +177,10 @@ function App() {
     );
     setProjectId((old) => (p.some((item) => item.id === old) ? old : ''));
   }, []);
+  useEffect(() => {
+    const owner = projects.find((item) => item.id === projectId);
+    if (owner && spaces.some((item) => item.id === owner.spaceId)) setSpaceId(owner.spaceId);
+  }, [projects, spaces, projectId]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
@@ -367,11 +371,6 @@ function App() {
         delete next[deleted.id];
         return next;
       });
-    if (projectId && deleted?.kind === 'space') {
-      const currentProjects = await api<Project[]>('/projects');
-      const currentProject = currentProjects.find((item) => item.id === projectId);
-      if (currentProject) setSpaceId(currentProject.spaceId);
-    }
   };
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
