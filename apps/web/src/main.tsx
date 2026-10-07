@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, mutation, initializeSession } from './api';
 import { PreviewPanel } from './PreviewPanel';
@@ -13,6 +13,7 @@ import type {
   Run,
   Task,
   Project,
+  ProjectSpace,
   Agent,
   Message,
   Artifact,
@@ -24,7 +25,9 @@ import type {
 import { Icon } from './Icon';
 import { BrandIcon, EmptyArtwork } from './Brand';
 import { Modal } from './Modal';
-import { HomeWorkspace } from './HomeWorkspace';
+import { WorkspaceHome } from './WorkspaceHome';
+import { WorkspaceManager } from './WorkspaceManager';
+import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
 import './motion.css';
@@ -74,6 +77,8 @@ function App() {
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [projects, setProjects] = useState<Project[]>([]),
+    [spaces, setSpaces] = useState<ProjectSpace[]>([]),
+    [spaceId, setSpaceId] = useState('default'),
     [runs, setRuns] = useState<Run[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
     [projectId, setProjectId] = useState(''),
@@ -93,23 +98,47 @@ function App() {
     [reply, setReply] = useState(''),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const project = projects.find((p) => p.id === projectId);
-  const projectRuns = runs.filter((r) => !projectId || r.projectId === projectId);
+  const projectRuns = runs.filter(
+    (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
+  );
+  const spaceProjects = projects.filter((p) => p.spaceId === spaceId && !p.archived);
+  const isChat = detail?.run.kind === 'chat';
+  const archived = !!detail?.run.archived || !!project?.archived;
+  const [assignments, setAssignments] = useState<Record<string, ModelChoice>>({});
+  const [assignmentReady, setAssignmentReady] = useState<Record<string, boolean>>({});
+  const proposedChoice = (task: Task['spec']): ModelChoice => {
+    const fallback = defaultChoice(providers, task.providerId);
+    return {
+      ...fallback,
+      model: task.model ?? fallback.model,
+      reasoningEffort: task.reasoningEffort ?? fallback.reasoningEffort,
+    };
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mainMotion = usePositionMotion<HTMLElement>();
+  const activeRunId = useRef('');
   const refresh = useCallback(async () => {
-    const [p, r, v] = await Promise.all([
+    const [p, r, v, s] = await Promise.all([
       api<Project[]>('/projects'),
       api<Run[]>('/runs'),
       api<Provider[]>('/providers'),
+      api<ProjectSpace[]>('/spaces'),
     ]);
     setProjects(p);
     setRuns(r);
     setProviders(v);
-    setProjectId((old) => old || p[0]?.id || '');
+    setSpaces(s);
+    setSpaceId((old) =>
+      s.some((item) => item.id === old) ? old : s.find((item) => item.protected)?.id || s[0]?.id || 'default',
+    );
+    setProjectId((old) => (p.some((item) => item.id === old) ? old : ''));
   }, []);
   const refreshDetail = useCallback(async () => {
-    if (runId) setDetail(await api<Detail>('/runs/' + runId));
-  }, [runId]);
+    const wanted = activeRunId.current;
+    if (!wanted) return;
+    const result = await api<Detail>('/runs/' + wanted);
+    if (activeRunId.current === wanted) setDetail(result);
+  }, []);
   useEffect(() => {
     initializeSession()
       .then(() => {
@@ -168,6 +197,10 @@ function App() {
       if (timer) clearTimeout(timer);
     };
   }, [ready, runId, refreshDetail, refresh]);
+  useEffect(() => {
+    setAssignments({});
+    setAssignmentReady({});
+  }, [detail?.run.id, detail?.run.plan?.version]);
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);
     setError('');
@@ -182,13 +215,41 @@ function App() {
     }
   }
   const selectRun = (run: Run) => {
+    activeRunId.current = run.id;
     setPreviewTaskId(run.rootTaskId);
     setRunId(run.id);
-    setProjectId(run.projectId);
+    setProjectId(run.projectId || '');
+    const owner = projects.find((p) => p.id === run.projectId);
+    if (owner) setSpaceId(owner.spaceId);
+    setPreviewOpen(false);
+    setTab(run.kind === 'chat' ? 'agents' : 'tasks');
   };
   const newRun = () => {
+    activeRunId.current = '';
     setRunId('');
     setDetail(null);
+    setPreviewOpen(false);
+  };
+  const selectProject = (id: string) => {
+    setProjectId(id);
+    const owner = projects.find((p) => p.id === id);
+    if (owner) setSpaceId(owner.spaceId);
+    newRun();
+  };
+  const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => {
+    if (
+      (deleted?.kind === 'run' && deleted.id === runId) ||
+      (deleted?.kind === 'project' && deleted.id === projectId)
+    ) {
+      newRun();
+      if (deleted.kind === 'project') setProjectId('');
+    } else if (runId) await refreshDetail();
+    await refresh();
+    if (projectId && deleted?.kind === 'space') {
+      const currentProjects = await api<Project[]>('/projects');
+      const currentProject = currentProjects.find((item) => item.id === projectId);
+      if (currentProject) setSpaceId(currentProject.spaceId);
+    }
   };
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
@@ -231,9 +292,14 @@ function App() {
             Elysia<small>你的本机协作空间</small>
           </span>
         </div>
-        <button className="new-task" onClick={newRun} title="新建任务" aria-label="新建任务">
+        <button
+          className="new-task"
+          onClick={() => selectProject('')}
+          title="新建独立对话"
+          aria-label="新建独立对话"
+        >
           <Icon name="plus" />
-          <span>新建任务</span>
+          <span>新建独立对话</span>
         </button>
         <button
           className={'nav-item ' + (!runId ? 'selected' : '')}
@@ -245,6 +311,34 @@ function App() {
           <Icon name="grid" />
           <span>工作台</span>
         </button>
+        <div className="space-selector">
+          <label htmlFor="sidebar-space">项目空间</label>
+          <div>
+            <select
+              id="sidebar-space"
+              value={spaceId}
+              onChange={(e) => {
+                setSpaceId(e.target.value);
+                setProjectId('');
+                newRun();
+              }}
+            >
+              {spaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="icon-button"
+              title="管理平级项目空间"
+              aria-label="管理平级项目空间"
+              onClick={() => setModal('manage:spaces')}
+            >
+              <Icon name="settings" size={15} />
+            </button>
+          </div>
+        </div>
         <div className="side-heading">
           项目
           <button aria-label="添加项目" onClick={() => setModal('project')}>
@@ -252,15 +346,14 @@ function App() {
           </button>
         </div>
         <nav className="project-list" aria-label="项目">
-          {projects.map((p) => (
+          {spaceProjects.map((p) => (
             <button
               className={'project-item ' + (p.id === projectId ? 'selected' : '')}
               key={p.id}
               title={p.name}
               aria-current={p.id === projectId ? 'true' : undefined}
               onClick={() => {
-                setProjectId(p.id);
-                newRun();
+                selectProject(p.id);
               }}
             >
               <Icon name="folder" size={16} />
@@ -268,37 +361,54 @@ function App() {
               <small>{p.baseline ? 'Git' : '目录'}</small>
             </button>
           ))}
-          {!projects.length && (
+          {!spaceProjects.length && (
             <button className="empty-project" onClick={() => setModal('project')}>
               打开本机文件夹 <Icon name="plus" size={14} />
             </button>
           )}
         </nav>
         <div className="side-heading history-heading">
-          最近任务<span>{projectRuns.length}</span>
+          {projectId ? '项目任务' : '独立对话'}
+          <span>{projectRuns.length}</span>
         </div>
         <div className="history-list">
           {projectRuns.map((r) => (
             <button
               key={r.id}
-              title={r.objective}
+              title={
+                (r.title || r.objective) +
+                ' · ' +
+                (r.kind === 'chat' ? '独立对话' : project?.name || '项目任务')
+              }
               aria-current={r.id === runId ? 'page' : undefined}
               className={'history-item ' + (r.id === runId ? 'selected' : '')}
               onClick={() => selectRun(r)}
             >
               <span className={'status-dot ' + r.status.toLowerCase()} />
-              <span>{r.objective}</span>
+              <span>
+                {r.title || r.objective}
+                <small>{r.kind === 'chat' ? '独立对话' : project?.name}</small>
+              </span>
             </button>
           ))}
           {!projectRuns.length && (
             <p className="sidebar-muted">
-              还没有任务。
+              还没有{projectId ? '项目任务' : '独立对话'}。
               <br />
               从一个目标开始协作。
             </p>
           )}
         </div>
         <div className="sidebar-bottom">
+          <button
+            className="nav-item"
+            onClick={() => setModal('manage:archive')}
+            title="项目、对话与归档"
+            aria-label="项目、对话与归档"
+          >
+            <Icon name="history" />
+            <span>项目、对话与归档</span>
+          </button>
           <button
             className="nav-item"
             onClick={() => setModal('settings')}
@@ -327,9 +437,11 @@ function App() {
               <Icon name="panel" />
             </button>
             <Icon name="folder" size={16} />
-            <span>{project?.name || '个人工作台'}</span>
+            <span>{project?.name || '独立对话'}</span>
             <span className="slash">/</span>
-            <strong title={detail?.run.objective}>{detail ? detail.run.objective : '工作台'}</strong>
+            <strong title={detail?.run.objective}>
+              {detail ? detail.run.title || detail.run.objective : '工作台'}
+            </strong>
           </div>
           <div className="topbar-right">
             <span className="local-chip port-chip" title={location.origin}>
@@ -356,7 +468,7 @@ function App() {
           </div>
         )}
         {!runId ? (
-          <HomeWorkspace
+          <WorkspaceHome
             projects={projects}
             project={project}
             runs={projectRuns}
@@ -365,11 +477,12 @@ function App() {
             setDraft={setDraft}
             busy={busy}
             selectRun={selectRun}
-            selectProject={setProjectId}
+            selectProject={selectProject}
             openProject={() => setModal('project')}
             openFiles={() => setModal('project-files')}
             openSettings={() => setModal('settings')}
-            start={() => setModal(project ? 'run' : 'project')}
+            manage={() => setModal('manage:projects')}
+            start={() => setModal('run')}
           />
         ) : detail ? (
           <>
@@ -377,7 +490,9 @@ function App() {
               <div>
                 <Badge status={detail.run.status} />
                 <span className="run-reason">
-                  {reasons[detail.run.reason || ''] ||
+                  {(isChat && detail.run.reason === 'user'
+                    ? '等待下一条消息'
+                    : reasons[detail.run.reason || '']) ||
                     detail.run.reason ||
                     (detail.run.status === 'DONE'
                       ? '交付已完成，可查看产物与验证记录'
@@ -385,20 +500,32 @@ function App() {
                 </span>
               </div>
               <div className="run-controls">
-                <button
-                  className="quiet-button preview-toggle"
-                  aria-pressed={previewOpen}
-                  onClick={() => setPreviewOpen(!previewOpen)}
-                >
-                  <Icon name="code" size={14} />
-                  {previewOpen ? '收起预览' : '打开预览'}
+                <button className="quiet-button" onClick={() => setModal('manage:runs')}>
+                  <Icon name="history" size={14} />
+                  管理对话
                 </button>
-                <button className="quiet-button" onClick={() => setModal('contract')}>
-                  <Icon name="file" size={14} />
-                  任务约定
-                </button>
+                {!isChat && (
+                  <>
+                    <button
+                      className="quiet-button preview-toggle"
+                      aria-pressed={previewOpen}
+                      onClick={() => setPreviewOpen(!previewOpen)}
+                    >
+                      <Icon name="code" size={14} />
+                      {previewOpen ? '收起预览' : '打开预览'}
+                    </button>
+                    <button className="quiet-button" onClick={() => setModal('contract')}>
+                      <Icon name="file" size={14} />
+                      任务约定
+                    </button>
+                  </>
+                )}
                 {['READY', 'RUNNING'].includes(detail.run.status) ? (
-                  <button className="quiet-button" disabled={busy} onClick={() => void runAction('pause')}>
+                  <button
+                    className="quiet-button"
+                    disabled={busy || archived}
+                    onClick={() => void runAction('pause')}
+                  >
                     <Icon name="pause" size={14} />
                     暂停
                   </button>
@@ -408,6 +535,7 @@ function App() {
                       className="quiet-button"
                       disabled={
                         busy ||
+                        archived ||
                         detail.run.reason === 'plan' ||
                         detail.run.reason === 'verification' ||
                         detail.run.reason === 'user'
@@ -422,7 +550,7 @@ function App() {
                 {!['DONE', 'CANCELLED'].includes(detail.run.status) && (
                   <button
                     className="quiet-button danger"
-                    disabled={busy}
+                    disabled={busy || archived}
                     onClick={() => void runAction('cancel')}
                   >
                     <Icon name="stop" size={14} />
@@ -431,25 +559,47 @@ function App() {
                 )}
               </div>
             </div>
-            <div key={detail.run.id} className={'run-layout' + (previewOpen ? ' preview-open' : '')}>
+            <div
+              key={detail.run.id}
+              className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
+            >
               <section className="conversation">
                 <div className="conversation-scroll">
-                  <div className="user-message">
-                    <div className="message-avatar user">你</div>
-                    <div>
-                      <span className="message-label">任务目标</span>
-                      <p>{detail.run.objective}</p>
+                  {!isChat && (
+                    <div className="user-message">
+                      <div className="message-avatar user">你</div>
+                      <div>
+                        <span className="message-label">
+                          {isChat ? '独立对话 · 你' : `任务目标 · ${project?.name || '项目'}`}
+                        </span>
+                        <p>{detail.run.objective}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="system-note">
-                    <Icon name="lock" size={14} />
-                    <span>
-                      授权：读取{detail.run.contract.permissionProfile.write ? ' · 指定目录写入' : ''}
-                      {detail.run.contract.permissionProfile.exec ? ' · 命令执行' : ''} ·{' '}
-                      {detail.run.contract.permissionProfile.urls.length} 个网页来源。
-                      {!detail.run.acceptedPlanVersion && '计划接受后开始执行。'}
-                    </span>
-                  </div>
+                  )}
+                  {archived && (
+                    <div className="system-note archive-note">
+                      <Icon name="history" size={14} />
+                      <span>
+                        {project?.archived
+                          ? '所属项目已归档，恢复项目后可继续。'
+                          : '对话已归档，恢复后可继续。'}
+                      </span>
+                      <button className="text-button" onClick={() => setModal('manage:archive')}>
+                        查看归档
+                      </button>
+                    </div>
+                  )}
+                  {!isChat && (
+                    <div className="system-note">
+                      <Icon name="lock" size={14} />
+                      <span>
+                        授权：读取{detail.run.contract.permissionProfile.write ? ' · 指定目录写入' : ''}
+                        {detail.run.contract.permissionProfile.exec ? ' · 命令执行' : ''} ·{' '}
+                        {detail.run.contract.permissionProfile.urls.length} 个网页来源。
+                        {!detail.run.acceptedPlanVersion && '计划接受后开始执行。'}
+                      </span>
+                    </div>
+                  )}
                   {detail.messages
                     .filter((m) => m.role !== 'tool')
                     .map((m) => {
@@ -467,9 +617,13 @@ function App() {
                           <div className="message-body">
                             <div className="message-label">
                               {m.role === 'user'
-                                ? '用户 / 交接'
+                                ? isChat
+                                  ? '你'
+                                  : '用户 / 交接'
                                 : task?.spec.role === 'coordinator'
-                                  ? '总代理'
+                                  ? isChat
+                                    ? '助手'
+                                    : '总代理'
                                   : task?.spec.title || 'Agent'}
                               <small>{m.role === 'assistant' ? agent?.providerBinding.model : ''}</small>
                             </div>
@@ -543,8 +697,25 @@ function App() {
                             <strong>{t.title}</strong>
                             <p>{t.objective}</p>
                             <small>
-                              {t.providerId} {t.dependsOn.length ? '· 依赖 ' + t.dependsOn.join(', ') : ''}
+                              {t.providerId}
+                              {t.model ? ' · ' + t.model : ''}
+                              {t.reasoningEffort ? ' · ' + t.reasoningEffort : ''}{' '}
+                              {t.dependsOn.length ? '· 依赖 ' + t.dependsOn.join(', ') : ''}
                             </small>
+                            {detail.run.reason === 'plan' && (
+                              <ModelPicker
+                                providers={providers}
+                                label={`一级子代理 ${i + 1} · ${t.title}`}
+                                value={assignments[t.key] || proposedChoice(t)}
+                                disabled={busy || archived}
+                                change={(choice) => setAssignments((old) => ({ ...old, [t.key]: choice }))}
+                                ready={(valid) =>
+                                  setAssignmentReady((old) =>
+                                    old[t.key] === valid ? old : { ...old, [t.key]: valid },
+                                  )
+                                }
+                              />
+                            )}
                           </div>
                         </div>
                       ))}
@@ -556,12 +727,18 @@ function App() {
                         {detail.run.reason === 'plan' && (
                           <button
                             className="primary"
-                            disabled={busy}
+                            disabled={
+                              busy || archived || detail.run.plan.tasks.some((t) => !assignmentReady[t.key])
+                            }
                             onClick={() =>
                               void act(() =>
                                 mutation('/runs/' + runId + '/plan/accept', {
                                   expectedRevision: detail.run.revision,
                                   version: detail.run.plan!.version,
+                                  assignments: detail.run.plan!.tasks.map((task) => ({
+                                    key: task.key,
+                                    ...(assignments[task.key] || proposedChoice(task)),
+                                  })),
                                 }),
                               )
                             }
@@ -573,7 +750,7 @@ function App() {
                       </div>
                     </div>
                   )}
-                  {detail.run.status === 'DONE' && (
+                  {!isChat && detail.run.status === 'DONE' && (
                     <div className="delivery-card">
                       <Icon name="check" size={24} />
                       <div>
@@ -586,15 +763,25 @@ function App() {
                 {['DONE', 'CANCELLED'].includes(detail.run.status) ? (
                   <div className="conversation-ended">
                     <Icon name={detail.run.status === 'DONE' ? 'check' : 'stop'} size={18} />
-                    <span>{detail.run.status === 'DONE' ? '本次任务已完成' : '本次任务已取消'}</span>
+                    <span>
+                      {isChat
+                        ? '本次对话已结束'
+                        : detail.run.status === 'DONE'
+                          ? '本次任务已完成'
+                          : '本次任务已取消'}
+                    </span>
                     <button
                       className="secondary"
                       onClick={() => {
+                        if (isChat) {
+                          selectProject('');
+                          return;
+                        }
                         setPreviewOpen(false);
                         setTab('artifacts');
                       }}
                     >
-                      查看产物
+                      {isChat ? '新建独立对话' : '查看产物'}
                       <Icon name="arrow" size={14} />
                     </button>
                   </div>
@@ -616,15 +803,28 @@ function App() {
                       aria-label="回复或补充需求"
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
-                      placeholder="回答问题，或补充需求…"
-                      disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
+                      placeholder={
+                        archived ? '恢复归档后可继续对话' : isChat ? '继续对话…' : '回答问题，或补充需求…'
+                      }
+                      disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
                     />
                     <div>
-                      <span>补充需求会在安全边界更新约定与计划</span>
+                      <span>
+                        {archived
+                          ? '已归档，保留全部对话记录'
+                          : isChat
+                            ? '独立会话 · 自动保存在本机'
+                            : '补充需求会在安全边界更新约定与计划'}
+                      </span>
                       <button
                         className="send-button"
                         aria-label="发送补充需求"
-                        disabled={!reply.trim() || busy || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                        disabled={
+                          archived ||
+                          !reply.trim() ||
+                          busy ||
+                          ['DONE', 'CANCELLED'].includes(detail.run.status)
+                        }
                       >
                         <Icon name="send" size={17} />
                       </button>
@@ -651,12 +851,18 @@ function App() {
               {!previewOpen && (
                 <aside className="details-panel">
                   <MotionTabs className="detail-tabs" label="任务详情" value={tab}>
-                    {[
-                      { key: 'tasks', icon: 'grid', title: '任务' },
-                      { key: 'agents', icon: 'tree', title: '代理' },
-                      { key: 'artifacts', icon: 'file', title: '产物' },
-                      { key: 'usage', icon: 'chart', title: '用量' },
-                    ].map((t) => (
+                    {(isChat
+                      ? [
+                          { key: 'agents', icon: 'chat', title: '模型' },
+                          { key: 'usage', icon: 'chart', title: '用量' },
+                        ]
+                      : [
+                          { key: 'tasks', icon: 'grid', title: '任务' },
+                          { key: 'agents', icon: 'tree', title: '代理' },
+                          { key: 'artifacts', icon: 'file', title: '产物' },
+                          { key: 'usage', icon: 'chart', title: '用量' },
+                        ]
+                    ).map((t) => (
                       <button
                         key={t.key}
                         className={tab === t.key ? 'active' : ''}
@@ -721,7 +927,7 @@ function App() {
                     {tab === 'agents' && (
                       <>
                         <div className="panel-heading">
-                          <h3>代理责任树</h3>
+                          <h3>{isChat ? '会话模型' : '代理责任树'}</h3>
                           <span>
                             {detail.agents.length}/{detail.run.limits.maxAgents}
                           </span>
@@ -739,28 +945,37 @@ function App() {
                               </div>
                               <div>
                                 <strong>
-                                  {task?.spec.role === 'coordinator' ? '总代理' : task?.spec.title}
+                                  {task?.spec.role === 'coordinator'
+                                    ? isChat
+                                      ? '助手'
+                                      : '总代理'
+                                    : task?.spec.title}
                                 </strong>
                                 <p>
                                   {a.providerBinding.label} · {a.providerBinding.model}
                                 </p>
                                 <small>独立会话 {a.sessionId.slice(0, 8)}</small>
-                                <button
-                                  className="agent-preview-button"
-                                  onClick={() => {
-                                    setPreviewTaskId(a.taskId);
-                                    setPreviewOpen(true);
-                                  }}
-                                >
-                                  查看工作预览 ↗
-                                </button>
+                                {!isChat && (
+                                  <button
+                                    className="agent-preview-button"
+                                    onClick={() => {
+                                      setPreviewTaskId(a.taskId);
+                                      setPreviewOpen(true);
+                                    }}
+                                  >
+                                    查看工作预览 ↗
+                                  </button>
+                                )}
                               </div>
                               <span className={'status-dot ' + a.status.toLowerCase()} />
                             </div>
                           );
                         })}
                         <div className="info-note">
-                          每个实例独立保存会话、工具操作和工作目录。账号共享并发与速率额度。
+                          {isChat
+                            ? '独立会话不绑定项目；后续回复使用当前会话模型。'
+                            : '每个实例独立保存会话、工具操作和工作目录。'}
+                          账号共享并发与速率额度。
                         </div>
                       </>
                     )}
@@ -827,12 +1042,16 @@ function App() {
           <React.Fragment key={modal}>
             {modal === 'project' && (
               <ProjectModal
+                spaces={spaces}
+                projects={projects}
+                initialSpaceId={spaceId}
                 close={() => setModal('')}
                 busy={busy}
                 submit={(body) =>
                   act(async () => {
                     const p = await mutation<Project>('/projects', body);
-                    setProjectId(p.id);
+                    selectProject(p.id);
+                    setSpaceId(p.spaceId);
                     setModal('');
                   })
                 }
@@ -843,16 +1062,34 @@ function App() {
                 <ProjectFiles projectId={project.id} />
               </Modal>
             )}
-            {modal === 'run' && project && (
+            {modal.startsWith('manage:') && (
+              <WorkspaceManager
+                spaces={spaces}
+                projects={projects}
+                runs={runs}
+                initial={modal.slice(7)}
+                close={() => setModal('')}
+                updated={managed}
+                selectRun={selectRun}
+              />
+            )}
+            {modal === 'run' && (
               <RunModal
                 objective={draft}
+                kind={project ? 'task' : 'chat'}
+                projectName={project?.name}
                 providers={providers}
                 close={() => setModal('')}
                 busy={busy}
                 submit={(body) =>
                   act(async () => {
-                    const run = await mutation<Run>('/runs', { ...body, objective: draft, projectId });
-                    setRunId(run.id);
+                    const run = await mutation<Run>('/runs', {
+                      ...body,
+                      objective: draft,
+                      kind: project ? 'task' : 'chat',
+                      projectId: projectId || null,
+                    });
+                    selectRun(run);
                     setDraft('');
                     setModal('');
                   })
@@ -878,7 +1115,7 @@ function App() {
                 contract={detail.run.contract}
                 close={() => setModal('')}
                 busy={busy}
-                disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
+                disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
                 submit={(contract) =>
                   act(async () => {
                     await mutation('/runs/' + runId + '/messages', {
@@ -1101,20 +1338,31 @@ function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: numb
   );
 }
 function ProjectModal({
+  spaces,
+  projects,
+  initialSpaceId,
   close,
   busy,
   submit,
 }: {
+  spaces: ProjectSpace[];
+  projects: Project[];
+  initialSpaceId: string;
   close: () => void;
   busy: boolean;
   submit: (body: any) => void;
 }) {
   const [name, setName] = useState(''),
     [root, setRoot] = useState(''),
-    [baseline, setBaseline] = useState('HEAD');
+    [baseline, setBaseline] = useState('HEAD'),
+    [spaceId, setSpaceId] = useState(initialSpaceId);
   const [folder, setFolder] = useState<any>(),
     [inspecting, setInspecting] = useState(false),
     [error, setError] = useState('');
+  const existing = projects.find(
+    (item) =>
+      item.spaceId === spaceId && item.workspaceRoot.toLowerCase() === folder?.workspaceRoot?.toLowerCase(),
+  );
   const inspect = async (directory: string) => {
     setInspecting(true);
     setError('');
@@ -1133,18 +1381,28 @@ function ProjectModal({
   };
   return (
     <Modal
-      title="打开本机文件夹"
-      subtitle="将文件夹直接作为项目，自动识别名称与 Git 状态"
+      title="新建项目"
+      subtitle="选择资料目录与所属项目空间，再在项目下新建任务"
       close={close}
       busy={busy || inspecting}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ name, workspaceRoot: root, ...(folder?.gitAvailable ? { baseline } : {}) });
+          submit({ name, workspaceRoot: root, spaceId, ...(folder?.gitAvailable ? { baseline } : {}) });
         }}
       >
         <div className="form-body">
+          <label>
+            所属项目空间
+            <select aria-label="新项目所属空间" value={spaceId} onChange={(e) => setSpaceId(e.target.value)}>
+              {spaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             className="folder-picker"
@@ -1200,8 +1458,10 @@ function ProjectModal({
           {folder && (
             <div className="folder-inspection">
               <strong>
-                {folder.existing
-                  ? '该文件夹已经是项目，点击下方按钮即可打开'
+                {existing
+                  ? existing.archived
+                    ? '该空间中已有归档项目，可打开后恢复'
+                    : '当前空间中已有此项目，点击下方按钮即可打开'
                   : folder.gitAvailable
                     ? '已识别 Git 项目'
                     : '已识别本机文件夹'}
@@ -1245,7 +1505,7 @@ function ProjectModal({
             取消
           </button>
           <button className="primary" disabled={busy || inspecting || !folder || !name.trim()}>
-            {folder?.existing ? '打开已有项目' : '打开文件夹作为项目'}
+            {existing ? '打开已有项目' : '打开文件夹作为项目'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>
@@ -1256,6 +1516,8 @@ function ProjectModal({
 function RunModal({
   providers,
   objective,
+  kind,
+  projectName,
   close,
   busy,
   submit,
@@ -1263,16 +1525,15 @@ function RunModal({
 }: {
   providers: Provider[];
   objective: string;
+  kind: 'task' | 'chat';
+  projectName?: string;
   close: () => void;
   busy: boolean;
   submit: (body: any) => void;
   settings: () => void;
 }) {
-  const [providerId, setProviderId] = useState(
-      providers.find((p) => p.keyConfigured && p.checkedRevision === p.revision)?.id ||
-        providers[0]?.id ||
-        '',
-    ),
+  const [choice, setChoice] = useState<ModelChoice>(() => defaultChoice(providers)),
+    [modelReady, setModelReady] = useState(false),
     [write, setWrite] = useState(true),
     [exec, setExec] = useState(true),
     [urls, setUrls] = useState(''),
@@ -1281,27 +1542,35 @@ function RunModal({
     [maxRequests, setMaxRequests] = useState(80),
     [maxTokens, setMaxTokens] = useState(500000),
     [concurrency, setConcurrency] = useState(4);
-  const selected = providers.find((p) => p.id === providerId);
+  const selected = providers.find((p) => p.id === choice.providerId);
+  const chat = kind === 'chat';
   const lines = (s: string) =>
     s
       .split('\n')
       .map((v) => v.trim())
       .filter(Boolean);
   return (
-    <Modal title="设定本次协作" subtitle={objective.slice(0, 100)} close={close} busy={busy}>
+    <Modal
+      title={chat ? '新建独立对话' : '新建项目任务'}
+      subtitle={(chat ? '归属：独立会话' : `归属：${projectName}`) + ' · ' + objective.slice(0, 80)}
+      close={close}
+      busy={busy}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || !selected?.keyConfigured || selected.checkedRevision !== selected.revision) return;
+          if (busy || !modelReady || !objective.trim()) return;
           submit({
-            providerId,
+            ...choice,
             inputs: lines(inputs),
-            permissionProfile: { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
+            permissionProfile: chat
+              ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
+              : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
             budget: { maxRequests, maxTokens, maxCost: null },
             limits: {
-              maxDepth: 2,
-              maxAgents: 12,
-              concurrency,
+              maxDepth: chat ? 0 : 2,
+              maxAgents: chat ? 1 : 12,
+              concurrency: chat ? 1 : concurrency,
               toolConcurrency: 4,
               maxSteps: 20,
               maxMinutes: 30,
@@ -1310,18 +1579,19 @@ function RunModal({
         }}
       >
         <div className="form-body">
-          <p className="field-help">模型会根据目标自动选择办公技能，处理文档、表格、演示文稿与 PDF。</p>
-          <label>
-            总代理
-            <select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label} · {p.model}{' '}
-                  {!p.keyConfigured ? '（待连接）' : p.checkedRevision !== p.revision ? '（待验证）' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className="field-help">
+            {chat
+              ? '选择会话模型后开始聊天。独立对话可使用技能说明；处理项目文件和生成附件时，在项目下新建任务。'
+              : '模型会根据目标自动选择办公技能。接受计划前可分别分配一级子代理的模型。'}
+          </p>
+          <ModelPicker
+            providers={providers}
+            value={choice}
+            change={setChoice}
+            ready={setModelReady}
+            disabled={busy}
+            label={chat ? '会话模型连接' : '总代理连接'}
+          />
           {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
             <p className="field-help">
               正在使用 ChatGPT 订阅 ·{' '}
@@ -1338,45 +1608,49 @@ function RunModal({
               </button>
             </div>
           )}
-          <label>
-            补充资料路径（可选，每行一项）
-            <textarea
-              value={inputs}
-              onChange={(e) => setInputs(e.target.value)}
-              placeholder="已可读取整个项目目录；可在此指定重点文件"
-              rows={2}
-            />
-          </label>
-          <div className="permission-card">
-            <h4>执行范围</h4>
-            <label className="check-label">
-              <input type="checkbox" checked readOnly />
-              项目内读取
-            </label>
-            <label className="check-label">
-              <input type="checkbox" checked={write} onChange={(e) => setWrite(e.target.checked)} />
-              任务目录写入
-            </label>
-            {write && (
+          {!chat && (
+            <>
               <label>
-                允许写入的相对目录
-                <textarea rows={1} value={writePaths} onChange={(e) => setWritePaths(e.target.value)} />
+                补充资料路径（可选，每行一项）
+                <textarea
+                  value={inputs}
+                  onChange={(e) => setInputs(e.target.value)}
+                  placeholder="已可读取整个项目目录；可在此指定重点文件"
+                  rows={2}
+                />
               </label>
-            )}
-            <label className="check-label">
-              <input type="checkbox" checked={exec} onChange={(e) => setExec(e.target.checked)} />
-              命令执行（当前系统用户权限）
-            </label>
-            <label>
-              授权网页 URL（每行一项）
-              <textarea
-                value={urls}
-                onChange={(e) => setUrls(e.target.value)}
-                rows={2}
-                placeholder="https://…"
-              />
-            </label>
-          </div>
+              <div className="permission-card">
+                <h4>执行范围</h4>
+                <label className="check-label">
+                  <input type="checkbox" checked readOnly />
+                  项目内读取
+                </label>
+                <label className="check-label">
+                  <input type="checkbox" checked={write} onChange={(e) => setWrite(e.target.checked)} />
+                  任务目录写入
+                </label>
+                {write && (
+                  <label>
+                    允许写入的相对目录
+                    <textarea rows={1} value={writePaths} onChange={(e) => setWritePaths(e.target.value)} />
+                  </label>
+                )}
+                <label className="check-label">
+                  <input type="checkbox" checked={exec} onChange={(e) => setExec(e.target.checked)} />
+                  命令执行（当前系统用户权限）
+                </label>
+                <label>
+                  授权网页 URL（每行一项）
+                  <textarea
+                    value={urls}
+                    onChange={(e) => setUrls(e.target.value)}
+                    rows={2}
+                    placeholder="https://…"
+                  />
+                </label>
+              </div>
+            </>
+          )}
           <div className="form-columns">
             <label>
               模型请求上限
@@ -1397,30 +1671,31 @@ function RunModal({
                 onChange={(e) => setMaxTokens(Number(e.target.value))}
               />
             </label>
-            <label>
-              并发实例
-              <input
-                type="number"
-                min={1}
-                max={4}
-                value={concurrency}
-                onChange={(e) => setConcurrency(Number(e.target.value))}
-              />
-            </label>
+            {!chat && (
+              <label>
+                并发实例
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                />
+              </label>
+            )}
           </div>
           <p className="field-help">
-            先生成约定和计划，你接受具体版本后再执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。
+            {chat
+              ? '普通回复后等待你继续。调用与 Token 按会话预算累计。'
+              : '先生成约定和计划，你接受具体版本后再执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。'}
           </p>
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" onClick={close}>
             返回
           </button>
-          <button
-            className="primary"
-            disabled={busy || !selected?.keyConfigured || selected.checkedRevision !== selected.revision}
-          >
-            生成约定与计划
+          <button className="primary" disabled={busy || !modelReady || !objective.trim()}>
+            {chat ? '开始对话' : '生成约定与计划'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>

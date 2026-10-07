@@ -12,6 +12,7 @@ import {
   Budget,
   Permissions,
   ProviderConfig,
+  ModelChoice,
   VERSION,
   invariant,
   type Run,
@@ -34,6 +35,8 @@ import { desktopServices } from './desktop.js';
 import { inspectFolder, projectFiles, sameDirectory } from './projects.js';
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
+import { registerManagement } from './management.js';
+import { resolveModelChoice } from './model-choice.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -261,6 +264,7 @@ export function createServer(
         name: z.string().min(1).max(80),
         workspaceRoot: z.string().min(1),
         baseline: z.string().optional(),
+        spaceId: z.string().default('default'),
       })
       .parse(request.body);
     const folder = await inspectFolder(body.workspaceRoot, executor.gateway.processes);
@@ -280,7 +284,10 @@ export function createServer(
     }
     invariant(!folder.gitAvailable || baseline, 'GIT_BASELINE', 'Git 基线无效，请填写有效 commit 或 ref');
     return command(body, '/projects', () => {
-      const existing = store.all<Project>('projects').find((p) => sameDirectory(p.workspaceRoot, root));
+      store.require('project_spaces', body.spaceId);
+      const existing = store
+        .all<Project>('projects')
+        .find((p) => p.spaceId === body.spaceId && sameDirectory(p.workspaceRoot, root));
       if (existing) return existing;
       return store.put<Project>('projects', {
         id: id(),
@@ -289,6 +296,8 @@ export function createServer(
         workspaceRoot: root,
         baseline,
         configVersion: 1,
+        spaceId: body.spaceId,
+        archived: false,
       });
     });
   });
@@ -514,10 +523,19 @@ export function createServer(
     const body = z
       .object({
         commandId: z.string().uuid(),
-        projectId: z.string(),
+        projectId: z.string().nullable().optional(),
+        kind: z.enum(['task', 'chat']).default('task'),
         objective: z.string().min(1).max(20000),
-        providerId: z.string(),
-        permissionProfile: Permissions,
+        providerId: ModelChoice.shape.providerId,
+        model: ModelChoice.shape.model,
+        reasoningEffort: ModelChoice.shape.reasoningEffort,
+        permissionProfile: Permissions.default({
+          read: true,
+          write: false,
+          exec: false,
+          urls: [],
+          writePaths: ['.'],
+        }),
         budget: Budget.default({ maxRequests: 80, maxTokens: 500000, maxCost: null }),
         limits: Limits.default({
           maxDepth: 2,
@@ -530,22 +548,36 @@ export function createServer(
         inputs: z.array(z.string()).default([]),
       })
       .parse(request.body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, '/runs', () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    const provider = await resolveModelChoice(store, subscription, codex, body);
     return command(body, '/runs', () => {
-      const project = store.require<Project>('projects', body.projectId),
-        provider = store.require<ProviderConfig>('providers', body.providerId);
+      invariant(
+        body.kind === 'chat' ? !body.projectId : !!body.projectId,
+        'RUN_OWNERSHIP',
+        '独立聊天不绑定项目，项目任务必须选择项目',
+      );
+      const project = body.kind === 'chat' ? null : store.require<Project>('projects', body.projectId!);
+      management.assertMutable(null, project?.id);
+      invariant(!project?.archived, 'PROJECT_ARCHIVED', '请先恢复已归档的项目');
       const contract = Contract.parse({
         objective: body.objective,
         scope: [body.objective],
         nonGoals: ['发布、push、修改主目录', '未经授权的访问'],
         inputs: body.inputs,
-        deliverables: ['可检查的文件、差异或报告'],
-        acceptanceCriteria: ['交付产物可读取，并有实际验证证据'],
+        deliverables: body.kind === 'chat' ? ['聊天回复'] : ['可检查的文件、差异或报告'],
+        acceptanceCriteria: body.kind === 'chat' ? ['回答用户消息'] : ['交付产物可读取，并有实际验证证据'],
         constraints: ['遵守用户指定的授权和预算'],
-        permissionProfile: body.permissionProfile,
+        permissionProfile:
+          body.kind === 'chat'
+            ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
+            : body.permissionProfile,
         budget: body.budget,
         assumptions: [],
       });
-      return kernel.createRun(project, body.objective, provider, contract, body.limits);
+      return kernel.createRun(project, body.objective, provider, contract, body.limits, body.kind);
     });
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id', async (request) => {
@@ -586,7 +618,21 @@ export function createServer(
       .parse(request.body);
     const result = command(body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
-      revision(body, run);
+      // Plain messages append to the inbox and cannot overwrite a run; streaming status
+      // revisions may advance while the user is typing. Contract edits remain optimistic.
+      if (body.contract) revision(body, run);
+      else
+        invariant(
+          body.expectedRevision >= 0 && body.expectedRevision <= run.revision,
+          'REVISION_CONFLICT',
+          '消息版本无效，请刷新后重试',
+        );
+      management.assertMutable(run.id, run.projectId);
+      invariant(
+        !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+        'ARCHIVED',
+        '请先恢复归档的对话或项目',
+      );
       invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
       if (body.contract) {
         invariant(
@@ -605,10 +651,43 @@ export function createServer(
   });
   app.post<{ Params: { id: string } }>('/api/runs/:id/plan/accept', async (request) => {
     const body = z
-      .object({ commandId: z.string().uuid(), expectedRevision: z.number().int(), version: z.number().int() })
+      .object({
+        commandId: z.string().uuid(),
+        expectedRevision: z.number().int(),
+        version: z.number().int(),
+        assignments: z
+          .array(ModelChoice.extend({ key: z.string().min(1) }))
+          .max(11)
+          .default([]),
+      })
       .parse(request.body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, request.url, () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    const run = store.require<Run>('runs', request.params.id);
+    management.assertMutable(run.id, run.projectId);
+    revision(body, run);
+    invariant(
+      !run.archived &&
+        !!run.plan &&
+        (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+      'INVALID_STATE',
+      '当前没有可接受的计划，或所属项目已归档',
+    );
+    invariant(
+      new Set(body.assignments.map((a) => a.key)).size === body.assignments.length &&
+        body.assignments.every((a) => run.plan!.tasks.some((t) => t.key === a.key)),
+      'MODEL_ASSIGNMENTS',
+      '模型分配需要唯一的计划一级任务 key',
+    );
+    const bindings = new Map<string, ProviderConfig>();
+    for (const task of run.plan.tasks) {
+      const choice = body.assignments.find((a) => a.key === task.key) ?? task;
+      bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice));
+    }
     const result = command(body, request.url, () =>
-      kernel.accept(request.params.id, body.version, body.expectedRevision),
+      kernel.accept(request.params.id, body.version, body.expectedRevision, body.assignments, bindings),
     );
     executor.resume(request.params.id);
     return result;
@@ -626,6 +705,12 @@ export function createServer(
     const result = command(body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
+      management.assertMutable(run.id, run.projectId);
+      invariant(
+        !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+        'ARCHIVED',
+        '请先恢复归档的对话或项目',
+      );
       if (body.providerId) {
         invariant(
           body.taskId && !executorHasActive(executor, run.id),
@@ -647,6 +732,14 @@ export function createServer(
           .filter((a) => a.taskId === task.id && ['ACTIVE', 'WAITING'].includes(a.status)))
           store.put('attempts', { ...a, status: 'FAILED', lease: null, error: '显式模型切换' });
         store.put('agents', { ...agent, providerId: binding.id, providerBinding: binding, sessionId: id() });
+        kernel.updateTask(task, task.status, {
+          spec: {
+            ...task.spec,
+            providerId: binding.id,
+            model: binding.model,
+            reasoningEffort: binding.reasoningEffort,
+          },
+        });
         kernel.appendMessage(
           task,
           'user',
@@ -681,6 +774,14 @@ export function createServer(
     return command(body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
+      management.assertMutable(run.id, run.projectId);
+      invariant(
+        !run.archived &&
+          !['DONE', 'CANCELLED'].includes(run.status) &&
+          (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+        'INVALID_STATE',
+        '请先恢复归档记录；已结束的对话不能修改核验结果',
+      );
       invariant(body.operationId || body.requestId, 'DECISION_TARGET', '需要具体操作或请求引用');
       if (body.operationId) {
         const op = store.require<Operation>('tool_operations', body.operationId);
@@ -728,6 +829,10 @@ export function createServer(
     });
   });
   const streams = new Map<string, Set<any>>();
+  const management = registerManagement(app, store, kernel, executor, (runId) => {
+    for (const stream of streams.get(runId) ?? []) stream.end();
+    streams.delete(runId);
+  });
   executor.onDelta = (runId, taskId, text) => {
     for (const stream of streams.get(runId) ?? [])
       stream.write('event: message.delta\ndata: ' + JSON.stringify({ runId, taskId, text }) + '\n\n');

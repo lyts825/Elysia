@@ -15,8 +15,10 @@ import {
   type RequestRecord,
   type Usage,
   type Permissions,
+  type ModelChoice,
 } from '../../contracts/src/index.js';
 import { Store, id, now, stable } from '../../storage/src/index.js';
+export type PlanModelAssignment = ModelChoice & { key: string };
 export class Kernel {
   constructor(public store: Store) {}
   event(runId: string, type: string, payload: unknown, taskId?: string, attemptId?: string) {
@@ -39,13 +41,21 @@ export class Kernel {
     });
   }
   createRun(
-    project: Project,
+    project: Project | null,
     objective: string,
     provider: ProviderConfig,
     contract: Contract,
     limits: Run['limits'],
+    kind: Run['kind'] = 'task',
   ) {
     return this.store.tx(() => {
+      invariant(
+        kind === 'chat' ? project === null : !!project,
+        'RUN_OWNERSHIP',
+        '独立聊天不绑定项目，任务必须属于项目',
+      );
+      invariant(!project?.archived, 'PROJECT_ARCHIVED', '项目已归档，请先恢复项目');
+      this.binding(provider.id, provider);
       invariant(
         provider.checkedRevision === provider.revision,
         'PROVIDER_UNCHECKED',
@@ -57,7 +67,10 @@ export class Kernel {
       const run = this.store.put<Run>('runs', {
         id: runId,
         revision: 0,
-        projectId: project.id,
+        projectId: project?.id ?? null,
+        kind,
+        title: objective.slice(0, 60),
+        archived: false,
         objective,
         contract,
         plan: null,
@@ -67,7 +80,7 @@ export class Kernel {
         limits,
         authorized: false,
         acceptedPlanVersion: null,
-        startedAt: null,
+        startedAt: kind === 'chat' ? Date.now() : null,
         createdAt: now(),
       });
       const spec = TaskSpec.parse({
@@ -76,6 +89,8 @@ export class Kernel {
         objective,
         role: 'coordinator',
         providerId: provider.id,
+        model: provider.model,
+        reasoningEffort: provider.reasoningEffort,
         deliverables: contract.deliverables,
         acceptanceCriteria: contract.acceptanceCriteria,
       });
@@ -103,15 +118,32 @@ export class Kernel {
         phase: 'planning',
         depth: 0,
         workspace: null,
-        baseline: project.baseline,
+        baseline: project?.baseline ?? null,
         waitingFor: [],
       });
       this.event(runId, 'run.updated', run);
+      if (kind === 'chat') this.appendMessage(this.store.require('tasks', taskId), 'user', objective);
       return run;
     });
   }
+  private binding(providerId: string, override?: ProviderConfig): ProviderConfig {
+    const saved = this.store.require<ProviderConfig>('providers', providerId);
+    invariant(!saved.archived, 'PROVIDER_ARCHIVED', '模型配置已归档');
+    invariant(saved.checkedRevision === saved.revision, 'PROVIDER_UNCHECKED', '模型尚未验证');
+    const binding = override ?? saved;
+    invariant(
+      binding.id === saved.id &&
+        binding.revision === saved.revision &&
+        binding.checkedRevision === saved.revision,
+      'PROVIDER_CHANGED',
+      '模型连接已更新，请重新选择模型',
+    );
+    return binding;
+  }
   permissions(task: Task): Permissions {
     const run = this.store.require<Run>('runs', task.runId);
+    if (run.kind === 'chat')
+      return { ...run.contract.permissionProfile, read: false, write: false, exec: false };
     if (task.phase === 'planning' || task.spec.role === 'reviewer')
       return { ...run.contract.permissionProfile, write: false, exec: false };
     invariant(
@@ -177,6 +209,7 @@ export class Kernel {
   propose(task: Task, rawContract: unknown, rawPlan: unknown) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
+      invariant(run.kind !== 'chat', 'PLAN_DENIED', '独立聊天不需要任务计划');
       invariant(task.id === run.rootTaskId, 'ROLE_DENIED', '只有总代理可以提出计划');
       invariant(task.phase === 'planning', 'PHASE_DENIED', '计划只能在需求检查点提出');
       const contract = Contract.parse(rawContract),
@@ -247,7 +280,7 @@ export class Kernel {
       '子任务预算不得扩大祖先预算',
     );
   }
-  spawn(parent: Task, raw: unknown) {
+  spawn(parent: Task, raw: unknown, bindingOverride?: ProviderConfig) {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
       const run = this.store.require<Run>('runs', parent.runId);
@@ -269,8 +302,13 @@ export class Kernel {
         'TASK_KEY_EXISTS',
         '任务 key 已存在',
       );
-      const binding = this.store.require<ProviderConfig>('providers', spec.providerId);
-      invariant(binding.checkedRevision === binding.revision, 'PROVIDER_UNCHECKED', '模型尚未验证');
+      const binding = this.binding(spec.providerId, bindingOverride);
+      invariant(!spec.model || spec.model === binding.model, 'MODEL_BINDING', '任务模型与冻结配置不匹配');
+      invariant(
+        spec.reasoningEffort === undefined || spec.reasoningEffort === binding.reasoningEffort,
+        'MODEL_BINDING',
+        '任务思考强度与冻结配置不匹配',
+      );
       if (spec.budget)
         for (const ancestor of this.ancestors(parent))
           this.checkBudgetSubset(spec.budget, ancestor.spec.budget ?? run.contract.budget);
@@ -293,7 +331,7 @@ export class Kernel {
         runId: run.id,
         parentTaskId: parent.id,
         agentId,
-        spec,
+        spec: { ...spec, model: binding.model, reasoningEffort: binding.reasoningEffort },
         depth: parent.depth + 1,
         status: 'READY',
         phase: 'executing',
@@ -319,13 +357,53 @@ export class Kernel {
       return { taskId, agentId, key: spec.key };
     });
   }
-  accept(runId: string, version: number, expectedRevision: number) {
+  accept(
+    runId: string,
+    version: number,
+    expectedRevision: number,
+    assignments: PlanModelAssignment[] = [],
+    bindings: ReadonlyMap<string, ProviderConfig> = new Map(),
+  ) {
     return this.store.tx(() => {
       let run = this.store.require<Run>('runs', runId);
       invariant(run.revision === expectedRevision, 'REVISION_CONFLICT', '记录已更新，请刷新');
       invariant(run.plan?.version === version, 'PLAN_VERSION', '计划版本不匹配');
       invariant(run.status === 'WAITING' && run.reason === 'plan', 'INVALID_STATE', '当前未等待计划接受');
+      invariant(!run.archived && run.kind !== 'chat', 'INVALID_STATE', '当前对话不能接受任务计划');
+      invariant(
+        !run.projectId || !this.store.require<Project>('projects', run.projectId).archived,
+        'PROJECT_ARCHIVED',
+        '请先恢复归档项目再接受计划',
+      );
+      const keys = new Set(run.plan!.tasks.map((task) => task.key));
+      const choices = new Map<string, PlanModelAssignment>();
+      for (const choice of assignments) {
+        invariant(keys.has(choice.key), 'PLAN_MODEL_SCOPE', '模型分配必须对应当前计划的一级子任务');
+        invariant(!choices.has(choice.key), 'PLAN_MODEL_DUPLICATE', '同一子任务不能重复分配模型');
+        choices.set(choice.key, choice);
+      }
+      for (const key of bindings.keys())
+        invariant(keys.has(key), 'PLAN_MODEL_SCOPE', '模型配置不属于当前计划');
+      const tasks = run.plan!.tasks.map((spec) => {
+        const choice = choices.get(spec.key);
+        const providerId = choice?.providerId ?? spec.providerId;
+        const binding = this.binding(providerId, bindings.get(spec.key));
+        const requestedModel = choice ? choice.model : spec.model;
+        const requestedEffort = choice ? choice.reasoningEffort : spec.reasoningEffort;
+        invariant(
+          !requestedModel || binding.model === requestedModel,
+          'MODEL_BINDING',
+          '所选模型尚未校验目录',
+        );
+        invariant(
+          requestedEffort === undefined || requestedEffort === binding.reasoningEffort,
+          'MODEL_BINDING',
+          '所选思考强度尚未校验目录',
+        );
+        return { ...spec, providerId, model: binding.model, reasoningEffort: binding.reasoningEffort };
+      });
       run = this.updateRun(run, {
+        plan: { ...run.plan!, tasks },
         authorized: true,
         acceptedPlanVersion: version,
         status: 'READY',
@@ -349,7 +427,11 @@ export class Kernel {
         const index = pending.findIndex((t) => t.dependsOn.every((key) => created.has(key)));
         invariant(index >= 0, 'CYCLE', '计划依赖成环');
         const spec = pending.splice(index, 1)[0];
-        const child = this.spawn(root, { ...spec, dependsOn: spec.dependsOn.map((key) => created.get(key)) });
+        const child = this.spawn(
+          root,
+          { ...spec, dependsOn: spec.dependsOn.map((key) => created.get(key)) },
+          bindings.get(spec.key),
+        );
         created.set(spec.key, child.taskId);
       }
       this.appendMessage(
@@ -384,6 +466,7 @@ export class Kernel {
     return this.store.tx(() => {
       const task = this.store.require<Task>('tasks', taskId),
         run = this.store.require<Run>('runs', task.runId);
+      invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
       invariant(
         task.status === 'READY' && ['READY', 'RUNNING'].includes(run.status),
         'INVALID_STATE',
@@ -496,6 +579,7 @@ export class Kernel {
   ) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
+      invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
       invariant(['READY', 'RUNNING'].includes(run.status), 'STOPPED', '运行已停止');
       invariant(
         !run.startedAt || Date.now() - run.startedAt < run.limits.maxMinutes * 60000,
@@ -590,6 +674,11 @@ export class Kernel {
   action(runId: string, action: 'start' | 'pause' | 'resume' | 'cancel', taskId?: string) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', runId);
+      invariant(
+        !run.archived || action === 'pause' || action === 'cancel',
+        'RUN_ARCHIVED',
+        '对话已归档，请先恢复',
+      );
       invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
       const root = this.store.require<Task>('tasks', taskId ?? run.rootTaskId);
       invariant(root.runId === runId, 'TASK_SCOPE', '任务不属于此运行');
@@ -618,18 +707,29 @@ export class Kernel {
                 t.waitReason ?? '',
               )),
         )) {
-          if (t.status === 'FAILED') {
+          if (t.status === 'FAILED' && run.kind !== 'chat') {
             const agent = this.store.require<Agent>('agents', t.agentId);
             this.store.put('agents', { ...agent, sessionId: id() });
           }
           this.updateTask(t, 'READY', { waitReason: undefined });
         }
-        this.updateRun(this.store.require('runs', runId), { status: 'READY', reason: undefined });
+        this.updateRun(this.store.require('runs', runId), {
+          status: 'READY',
+          reason: undefined,
+          ...(run.kind === 'chat' ? { startedAt: Date.now() } : {}),
+        });
       }
       return this.store.require<Run>('runs', runId);
     });
   }
   inbox(runId: string, text: string) {
+    const run = this.store.require<Run>('runs', runId);
+    invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
+    invariant(
+      run.status !== 'CANCELLED' && (run.kind === 'chat' || run.status !== 'DONE'),
+      'INVALID_STATE',
+      '运行已结束',
+    );
     return this.store.put('inbox', {
       id: id(),
       revision: 0,
@@ -642,6 +742,7 @@ export class Kernel {
   applyInbox(runId: string) {
     return this.store.tx(() => {
       let run = this.store.require<Run>('runs', runId);
+      if (run.archived) return;
       const incoming = this.store.all<any>('inbox', runId).filter((m) => m.status === 'PENDING');
       if (!incoming.length) return;
       // 收件箱只在工具配对闭合后应用。
@@ -656,7 +757,23 @@ export class Kernel {
         })
       )
         return;
-      invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
+      invariant(
+        run.status !== 'CANCELLED' && (run.kind === 'chat' || run.status !== 'DONE'),
+        'INVALID_STATE',
+        '运行已结束',
+      );
+      if (run.kind === 'chat') {
+        const root = this.store.require<Task>('tasks', run.rootTaskId);
+        // Wait for the current response before applying a new turn to its context.
+        if (root.status === 'RUNNING' || root.status === 'VERIFYING') return;
+        for (const message of incoming) {
+          this.appendMessage(root, 'user', message.text);
+          this.store.put('inbox', { ...message, status: 'APPLIED' });
+        }
+        this.updateTask(root, 'READY', { waitReason: undefined, waitingFor: [] });
+        this.updateRun(run, { status: 'READY', reason: undefined, startedAt: Date.now() });
+        return;
+      }
       for (const m of incoming) {
         for (const t of this.store
           .all<Task>('tasks', runId)

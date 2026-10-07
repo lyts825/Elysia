@@ -7,10 +7,9 @@ import {
   type RequestRecord,
   type ToolCall,
   type Operation,
+  type Project,
 } from '../../contracts/src/index.js';
 import { id, stable } from '../../storage/src/index.js';
-import { appendFileSync, writeFileSync, rmSync } from 'node:fs';
-import path from 'node:path';
 import { Kernel } from '../../kernel/src/index.js';
 import { ToolGateway } from '../../tools/src/index.js';
 import { compileContext, requestDifference } from '../../context/src/index.js';
@@ -79,13 +78,18 @@ export class NativeExecutor implements ExecutorAdapter {
     if (this.ticking || this.stopped) return;
     this.ticking = true;
     try {
-      for (const run of this.kernel.store
+      for (let run of this.kernel.store
         .all<Run>('runs')
-        .filter((r) => !['DONE', 'CANCELLED'].includes(r.status))) {
+        .filter((r) => !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
+        if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
+        if (run.kind === 'chat' && ![...this.active.values()].some((a) => a.runId === run.id)) {
+          this.kernel.applyInbox(run.id);
+          run = this.kernel.store.require<Run>('runs', run.id);
+        }
         if (
           run.startedAt &&
           Date.now() - run.startedAt >= run.limits.maxMinutes * 60000 &&
-          run.status !== 'WAITING'
+          ['READY', 'RUNNING'].includes(run.status)
         ) {
           for (const t of this.kernel.store
             .all<Task>('tasks', run.id)
@@ -94,7 +98,8 @@ export class NativeExecutor implements ExecutorAdapter {
           await this.interrupt(run.id);
           continue;
         }
-        if (![...this.active.values()].some((a) => a.runId === run.id)) this.kernel.applyInbox(run.id);
+        if (run.kind !== 'chat' && ![...this.active.values()].some((a) => a.runId === run.id))
+          this.kernel.applyInbox(run.id);
         this.kernel.wakeChildren(run.id);
         for (const task of this.kernel.store
           .all<Task>('tasks', run.id)
@@ -111,7 +116,8 @@ export class NativeExecutor implements ExecutorAdapter {
         if (this.active.size >= 4) break;
         if (this.active.has(task.id)) continue;
         const run = this.kernel.store.require<Run>('runs', task.runId);
-        if (!['READY', 'RUNNING'].includes(run.status)) continue;
+        if (run.archived || !['READY', 'RUNNING'].includes(run.status)) continue;
+        if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if ([...this.active.values()].filter((a) => a.runId === run.id).length >= run.limits.concurrency)
           continue;
         if (
@@ -224,7 +230,6 @@ export class NativeExecutor implements ExecutorAdapter {
     const logicalId = id();
     let complete: Extract<ProviderEvent, { type: 'completed' }> | null = null;
     let successfulRequestId: string | null = null;
-    let successfulStreamPath: string | null = null;
     for (let retry = 0; retry <= 2; retry++) {
       signal.throwIfAborted();
       const accountRequests = store
@@ -254,22 +259,22 @@ export class NativeExecutor implements ExecutorAdapter {
         context.estimatedTokens,
         logicalId,
       );
-      const streamRef = path.join('logs', record.id + '.stream.jsonl');
-      const streamPath = path.join(store.directory, streamRef);
-      writeFileSync(streamPath, '', { flag: 'wx' });
-      store.put('requests', { ...record, manifest: { ...context.manifest, partialStreamRef: streamRef } });
+      store.put('requests', {
+        ...record,
+        manifest: { ...context.manifest, partialText: '', partialStreamRef: null },
+      });
       let partial = '';
       try {
         for await (const event of adapter.stream(request, signal)) {
           if (event.type === 'delta') {
             partial += event.text;
-            appendFileSync(streamPath, JSON.stringify({ text: event.text, completed: false }) + '\n');
+            const current = store.require<RequestRecord>('requests', record.id);
+            store.put('requests', { ...current, manifest: { ...current.manifest, partialText: partial } });
             this.onDelta(run.id, task.id, event.text);
           } else complete = event;
         }
         if (!complete) throw new ProviderError('STREAM_INTERRUPTED', '模型未产生完成响应', 0);
         successfulRequestId = record.id;
-        successfulStreamPath = streamPath;
         break;
       } catch (error) {
         const rejected =
@@ -283,7 +288,7 @@ export class NativeExecutor implements ExecutorAdapter {
           );
           store.put('requests', {
             ...store.require<RequestRecord>('requests', record.id),
-            manifest: { ...context.manifest, interruptedRef: object.objectRef },
+            manifest: { ...context.manifest, partialText: null, interruptedRef: object.objectRef },
           });
         }
         if (error instanceof ProviderError && error.details) {
@@ -323,12 +328,23 @@ export class NativeExecutor implements ExecutorAdapter {
       });
       this.kernel.checkpoint(attempt.id);
       const record = store.require<RequestRecord>('requests', successfulRequestId!);
-      store.put('requests', { ...record, manifest: { ...record.manifest, partialStreamRef: null } });
+      store.put('requests', {
+        ...record,
+        manifest: { ...record.manifest, partialStreamRef: null, partialText: null },
+      });
     });
-    if (successfulStreamPath) rmSync(successfulStreamPath, { force: true });
     signal.throwIfAborted();
     if (completed.calls.length) await this.executeCalls(task, attempt, completed.calls, signal);
-    else {
+    else if (store.require<Run>('runs', task.runId).kind === 'chat') {
+      store.tx(() => {
+        this.kernel.wait(store.require<Task>('tasks', task.id), 'user');
+        store.put('attempts', {
+          ...store.require<Attempt>('attempts', attempt.id),
+          status: 'DONE',
+          lease: null,
+        });
+      });
+    } else {
       this.kernel.appendMessage(
         task,
         'user',

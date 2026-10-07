@@ -24,13 +24,15 @@ type Connection = {
   plan?: string;
   message?: string;
 };
-type Model = {
+export type CodexModel = {
   id: string;
   name: string;
   description: string;
   efforts: string[];
   defaultEffort: string;
   isDefault: boolean;
+  hidden: boolean;
+  inputModalities: string[];
 };
 type Attempt = {
   id: string;
@@ -179,18 +181,21 @@ export class CodexSubscription {
     );
     return source;
   }
-  private async catalog(rpc: CodexRpc): Promise<Model[]> {
-    const all: Model[] = [];
+  private async catalog(rpc: CodexRpc): Promise<CodexModel[]> {
+    const all: CodexModel[] = [];
     let cursor: string | undefined;
+    let pages = 0;
     const seen = new Set<string>();
     do {
+      invariant(++pages <= 100, 'CODEX_CATALOG', '模型目录分页超过限制，请更新 Codex');
       const result = await rpc.call('model/list', {
         limit: 100,
-        includeHidden: false,
+        includeHidden: true,
         ...(cursor ? { cursor } : {}),
       });
-      for (const m of result.data || [])
-        if (typeof m.model === 'string' && !m.hidden)
+      invariant(Array.isArray(result.data), 'CODEX_CATALOG', 'Codex 未返回模型目录');
+      for (const m of result.data)
+        if (typeof m.model === 'string' && m.model.length && !all.some((item) => item.id === m.model))
           all.push({
             id: m.model,
             name: m.displayName || m.model,
@@ -198,11 +203,14 @@ export class CodexSubscription {
             efforts: (m.supportedReasoningEfforts || []).map((e: any) => e.reasoningEffort),
             defaultEffort: m.defaultReasoningEffort,
             isDefault: !!m.isDefault,
+            hidden: !!m.hidden,
+            inputModalities: Array.isArray(m.inputModalities) ? m.inputModalities : ['text', 'image'],
           });
       cursor = result.nextCursor || undefined;
       invariant(!cursor || !seen.has(cursor), 'CODEX_CATALOG', '模型目录分页异常');
       if (cursor) seen.add(cursor);
-    } while (cursor && all.length < 1000);
+      invariant(!cursor || all.length < 1000, 'CODEX_CATALOG', '模型目录超过分页限制，请更新 Codex');
+    } while (cursor);
     return all;
   }
   async models(id: string) {

@@ -267,6 +267,14 @@ export class ToolGateway {
     }
   }
   definitions(task: Task): ToolDefinition[] {
+    if (this.store.require<Run>('runs', task.runId).kind === 'chat')
+      return [
+        {
+          name: 'load_skill',
+          description: descriptions.load_skill,
+          parameters: z.toJSONSchema(schemas.load_skill, { target: 'draft-7' }) as Record<string, unknown>,
+        },
+      ];
     const permission = this.kernel.permissions(task);
     let names: ToolName[] = ['clarify', 'load_skill'];
     if (task.spec.role === 'coordinator' && task.phase === 'planning') names.push('propose_plan');
@@ -280,7 +288,7 @@ export class ToolGateway {
           names.push('write', 'apply_patch', 'artifact');
           const project = this.store.require<Project>(
             'projects',
-            this.store.require<Run>('runs', task.runId).projectId,
+            this.store.require<Run>('runs', task.runId).projectId!,
           );
           if (task.workspace ? task.baseline : project.baseline) names.push('diff', 'integrate_worktrees');
         }
@@ -297,7 +305,7 @@ export class ToolGateway {
     const permission = this.kernel.permissions(task),
       project = this.store.require<Project>(
         'projects',
-        this.store.require<Run>('runs', task.runId).projectId,
+        this.store.require<Run>('runs', task.runId).projectId!,
       );
     invariant(
       write ? permission.write : permission.read,
@@ -336,6 +344,7 @@ export class ToolGateway {
     return real;
   }
   async prepare(task: Task, signal: AbortSignal) {
+    if (this.store.require<Run>('runs', task.runId).kind === 'chat') return task;
     if (task.workspace) {
       await fs.access(task.workspace);
       return task;
@@ -344,7 +353,7 @@ export class ToolGateway {
     await fs.mkdir(path.dirname(directory), { recursive: true });
     const project = this.store.require<Project>(
       'projects',
-      this.store.require<Run>('runs', task.runId).projectId,
+      this.store.require<Run>('runs', task.runId).projectId!,
     );
     if (project.baseline) {
       try {

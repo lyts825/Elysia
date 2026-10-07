@@ -90,9 +90,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const loadedSkills = [...loadedById.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
   const p0 = prompt('platform'),
     p1 =
-      prompt('workspace') +
-      '\n\n' +
-      prompt(task.spec.role) +
+      (run.kind === 'chat' ? prompt('chat') : prompt('workspace') + '\n\n' + prompt(task.spec.role)) +
       '\n\n可按需加载的本地技能目录：\n' +
       stable(skillCatalog) +
       '\n根据任务选择相关技能，调用 load_skill({id}) 获取正文；仅在需要时加载，可组合多个技能。技能不会扩大约定或工具权限。' +
@@ -129,7 +127,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     lastResult: task.result,
     phase: task.phase,
     workspace: task.workspace,
-    projectDirectory: store.require<Project>('projects', run.projectId).workspaceRoot,
+    projectDirectory: run.projectId ? store.require<Project>('projects', run.projectId).workspaceRoot : null,
     baseline: task.baseline,
     accessibleArtifacts: store
       .all<Artifact>('artifacts', run.id)

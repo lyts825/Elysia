@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.5.1-preview.1';
+export const VERSION = '0.6.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -54,6 +54,11 @@ export const TaskSpec = z.object({
   objective: z.string().min(1),
   role: z.enum(['coordinator', 'worker', 'reviewer']).default('worker'),
   providerId: z.string().min(1),
+  model: z.string().min(1).optional(),
+  reasoningEffort: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+    .nullable()
+    .optional(),
   dependsOn: z.array(z.string()).default([]),
   deliverables: z.array(z.string()).min(1),
   acceptanceCriteria: z.array(z.string()).min(1),
@@ -131,12 +136,30 @@ export interface Entity {
 }
 export interface Project extends Entity {
   name: string;
+  spaceId: string;
+  archived: boolean;
   workspaceRoot: string;
   baseline: string | null;
   configVersion: number;
 }
+export interface ProjectSpace extends Entity {
+  name: string;
+  protected: boolean;
+}
+export const ModelChoice = z.object({
+  providerId: z.string().min(1),
+  model: z.string().min(1).optional(),
+  reasoningEffort: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+    .nullable()
+    .optional(),
+});
+export type ModelChoice = z.infer<typeof ModelChoice>;
 export interface Run extends Entity {
-  projectId: string;
+  projectId: string | null;
+  kind: 'task' | 'chat';
+  title: string;
+  archived: boolean;
   objective: string;
   contract: Contract;
   plan: Plan | null;
