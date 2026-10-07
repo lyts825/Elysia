@@ -2,7 +2,7 @@
   flex: 1;
   overflow: auto;
   min-height: 0;
-  background: radial-gradient(ellipse at 10% 0, #f8deee85, transparent 55%);
+  background: radial-gradient(ellipse at 10% 0, #f2e2e880, transparent 55%);
 }
 .welcome-content {
   width: 100%;
@@ -64,7 +64,7 @@
 .composer:focus-within {
   border-color: var(--accent);
   box-shadow:
-    0 0 0 3px #9e4f7e12,
+    0 0 0 3px #92536f12,
     0 8px 24px #30245208;
 }
 .composer-title {

@@ -31,18 +31,13 @@ app.whenReady().then(async () => {
     const svg = await readFile(path.join(directory, 'app-icon.svg'), 'utf8');
     const emblem = svg.match(/<path id="emblem" d="([^"]+)"/);
     if (!emblem) throw new Error('app-icon.svg must contain the canonical emblem path');
-    const mark = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Elysia · 晶花</title><path fill="#9e4f7e" d="${emblem[1]}"/></svg>\n`;
-    const symbol = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
-    const portrait =
-      'data:image/png;base64,' +
-      (await readFile(path.join(directory, 'portrait-source.png'))).toString('base64');
+    const mark = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Elysia · 日常花结</title><path fill="#92536f" d="${emblem[1]}"/></svg>\n`;
+    const source = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
     await window.loadURL(
       'data:text/html,<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:"><canvas></canvas>',
     );
     const frames = [];
     for (const size of [...sizes, 512]) {
-      // Keep the crystal silhouette clear at toolbar sizes; show the portrait from 48px up.
-      const source = size < 48 ? symbol : portrait;
       const data = await window.webContents.executeJavaScript(`(async () => {
         const image = new Image(); image.src = ${JSON.stringify(source)}; await image.decode();
         const canvas = document.querySelector('canvas'); canvas.width = canvas.height = ${size};
@@ -56,9 +51,7 @@ app.whenReady().then(async () => {
     await writeFile(path.join(directory, 'mark.svg'), mark);
     await writeFile(path.join(directory, 'app-icon.ico'), ico(frames));
     console.log(
-      'Brand assets: crystal mark.svg, portrait app-icon.png (512px), adaptive app-icon.ico (' +
-        sizes.join(', ') +
-        'px).',
+      'Brand assets: ribbon mark.svg, app-icon.png (512px), app-icon.ico (' + sizes.join(', ') + 'px).',
     );
     window.destroy();
     app.quit();
