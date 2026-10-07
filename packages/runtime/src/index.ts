@@ -95,7 +95,7 @@ export class NativeExecutor implements ExecutorAdapter {
           for (const t of this.kernel.store
             .all<Task>('tasks', run.id)
             .filter((t) => ['READY', 'RUNNING'].includes(t.status)))
-            this.kernel.wait(t, 'limit');
+            this.waitAtLimit(t, 'TIME_BUDGET', '运行时间达到上限');
           await this.interrupt(run.id);
           continue;
         }
@@ -215,7 +215,7 @@ export class NativeExecutor implements ExecutorAdapter {
     if (task.status !== 'RUNNING') return;
     const run = store.require<Run>('runs', task.runId);
     if (attempt.steps >= run.limits.maxSteps) {
-      this.kernel.wait(task, 'limit');
+      this.waitAtLimit(task, 'STEP_LIMIT', '运行步骤达到上限');
       return;
     }
     const agent = store.require<Agent>('agents', task.agentId),
@@ -357,6 +357,14 @@ export class NativeExecutor implements ExecutorAdapter {
     if (task.status === 'RUNNING') this.kernel.updateTask(task, 'READY');
     this.kernel.checkpoint(attempt.id);
   }
+  private waitAtLimit(task: Task, code: string, message: string) {
+    this.kernel.store.tx(() => {
+      const current = this.kernel.store.require<Task>('tasks', task.id);
+      if (current.status === 'WAITING' && current.waitReason === 'limit') return;
+      this.kernel.wait(current, 'limit');
+      this.kernel.event(current.runId, 'limit.reached', { taskId: current.id, code, message }, current.id);
+    });
+  }
   fail(task: Task, error: unknown) {
     const store = this.kernel.store;
     const current = store.require<Task>('tasks', task.id);
@@ -366,7 +374,7 @@ export class NativeExecutor implements ExecutorAdapter {
       if (e instanceof AppError && e.code === 'CHATGPT_USAGE_LIMIT')
         this.kernel.wait(current, 'subscription_limit');
       else if (e instanceof AppError && /BUDGET|CONTEXT_LIMIT|TIME_BUDGET/.test(e.code))
-        this.kernel.wait(current, 'limit');
+        this.waitAtLimit(current, e.code, e.message);
       else {
         this.kernel.updateTask(current, 'FAILED', {
           result: { error: e.message, code: e instanceof AppError ? e.code : 'EXECUTOR_ERROR' },

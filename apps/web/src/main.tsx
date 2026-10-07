@@ -31,6 +31,9 @@ import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
+import { TaskGraph } from './TaskGraph';
+import { agentOrder } from './agentOrder';
+import { archiveFeedback, getRunFeedback } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
 import './motion.css';
@@ -107,6 +110,9 @@ function App() {
   const spaceProjects = projects.filter((p) => p.spaceId === spaceId && !p.archived);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
+  const feedback = detail ? getRunFeedback(detail, archived) : undefined;
+  const planRef = useRef<HTMLDivElement>(null);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, ModelChoice>>>({});
   const assignmentKey = detail?.run.plan ? `${detail.run.id}:${detail.run.plan.version}` : '';
   const assignments = assignmentDrafts[assignmentKey] || {};
@@ -287,6 +293,39 @@ function App() {
     setRunId('');
     setDetail(null);
     setPreviewOpen(false);
+  };
+  const startFromRun = () => {
+    if (!detail) return;
+    setDraft(detail.run.objective);
+    setModal('');
+    newRun();
+  };
+  const feedbackAction = () => {
+    switch (feedback?.action) {
+      case 'artifacts':
+        setPreviewOpen(false);
+        setTab('artifacts');
+        break;
+      case 'plan':
+        setPreviewOpen(false);
+        requestAnimationFrame(() => planRef.current?.scrollIntoView({ block: 'start' }));
+        break;
+      case 'reply':
+        replyRef.current?.focus();
+        break;
+      case 'archive':
+        setModal('manage:archive');
+        break;
+      case 'settings':
+        setModal('settings');
+        break;
+      case 'limits':
+        setModal('limits');
+        break;
+      case 'new':
+        startFromRun();
+        break;
+    }
   };
   const selectProject = (id: string) => {
     setProjectId(id);
@@ -557,14 +596,8 @@ function App() {
             <div className="run-toolbar">
               <div>
                 <Badge status={detail.run.status} />
-                <span className="run-reason">
-                  {(isChat && detail.run.reason === 'user'
-                    ? '等待下一条消息'
-                    : reasons[detail.run.reason || '']) ||
-                    detail.run.reason ||
-                    (detail.run.status === 'DONE'
-                      ? '交付已完成，可查看产物与验证记录'
-                      : '进度与结果自动保存')}
+                <span className="run-reason" title={feedback?.text}>
+                  {feedback?.text}
                 </span>
                 {connection !== 'connected' && (
                   <span className="connection-status" role="status">
@@ -593,7 +626,34 @@ function App() {
                     </button>
                   </>
                 )}
-                {['READY', 'RUNNING'].includes(detail.run.status) ? (
+                {feedback?.action && (
+                  <button className="quiet-button run-next-action" disabled={busy} onClick={feedbackAction}>
+                    <Icon
+                      name={
+                        feedback.action === 'limits' ? 'chart' : feedback.action === 'new' ? 'plus' : 'arrow'
+                      }
+                      size={14}
+                    />
+                    {
+                      {
+                        artifacts: detail.run.status === 'DONE' ? '查看产物' : '查看待核验操作',
+                        plan: '查看计划',
+                        reply: '补充回答',
+                        archive: '查看归档',
+                        limits: '查看限制',
+                        settings: '管理模型用量',
+                        new: isChat ? '新建独立对话' : '新建任务',
+                      }[feedback.action]
+                    }
+                  </button>
+                )}
+                {feedback?.limit && feedback.action !== 'limits' && (
+                  <button className="quiet-button" disabled={busy} onClick={() => setModal('limits')}>
+                    <Icon name="chart" size={14} />
+                    查看限制
+                  </button>
+                )}
+                {feedback?.control === 'pause' ? (
                   <button
                     className="quiet-button"
                     disabled={busy || archived}
@@ -603,20 +663,15 @@ function App() {
                     暂停
                   </button>
                 ) : (
-                  !['DONE', 'CANCELLED'].includes(detail.run.status) && (
+                  (feedback?.control === 'resume' || feedback?.control === 'retry') && (
                     <button
                       className="quiet-button"
-                      disabled={
-                        busy ||
-                        archived ||
-                        detail.run.reason === 'plan' ||
-                        detail.run.reason === 'verification' ||
-                        detail.run.reason === 'user'
-                      }
+                      disabled={busy || archived}
+                      title={feedback.control === 'retry' ? '按已有授权重试，累计预算保持' : undefined}
                       onClick={() => void runAction('resume')}
                     >
                       <Icon name="play" size={14} />
-                      恢复
+                      {feedback.control === 'retry' ? '重试' : '恢复'}
                     </button>
                   )
                 )}
@@ -652,11 +707,7 @@ function App() {
                   {archived && (
                     <div className="system-note archive-note">
                       <Icon name="history" size={14} />
-                      <span>
-                        {project?.archived
-                          ? '所属项目已归档，恢复项目后可继续。'
-                          : '对话已归档，恢复后可继续。'}
-                      </span>
+                      <span>{archiveFeedback(detail.run, !!project?.archived)}</span>
                       <button className="text-button" onClick={() => setModal('manage:archive')}>
                         查看归档
                       </button>
@@ -778,7 +829,7 @@ function App() {
                       </div>
                     ))}
                   {detail.run.plan && (
-                    <div className="plan-card">
+                    <div className="plan-card" ref={planRef}>
                       <div className="plan-card-head">
                         <div>
                           <span className="eyebrow">EXECUTION PLAN · V{detail.run.plan.version}</span>
@@ -910,6 +961,7 @@ function App() {
                     }}
                   >
                     <textarea
+                      ref={replyRef}
                       aria-label="回复或补充需求"
                       value={reply}
                       onChange={(e) => setReplies((old) => ({ ...old, [runId]: e.target.value }))}
@@ -1002,7 +1054,7 @@ function App() {
                             完成
                           </span>
                         </div>
-                        <TaskGraph detail={detail} />
+                        <TaskGraph detail={detail} archived={archived} />
                         <div className="panel-heading">
                           <h3>任务列表</h3>
                           <span>按任务查看进度与结果</span>
@@ -1059,7 +1111,7 @@ function App() {
                             {detail.agents.length}/{detail.run.limits.maxAgents}
                           </span>
                         </div>
-                        {detail.agents.map((a) => {
+                        {agentOrder(detail.agents).map((a) => {
                           const task = detail.tasks.find((t) => t.id === a.taskId);
                           return (
                             <div
@@ -1263,6 +1315,80 @@ function App() {
                   }
                 />
               )}
+              {modal === 'limits' && detail && (
+                <Modal
+                  title="运行上限与预算"
+                  subtitle={feedback?.limit?.message || '当前限制状态已更新'}
+                  close={() => setModal('')}
+                  busy={busy}
+                >
+                  <div className="form-body">
+                    <p>{feedback?.limit?.explanation || '请核对当前状态后继续操作。'}</p>
+                    {feedback?.limit && (
+                      <ul className="limit-tasks">
+                        {feedback.limit.tasks.map((task) => (
+                          <li key={task.id}>
+                            <strong>{task.title}</strong>
+                            <span>{task.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <dl className="limits-summary">
+                      <div>
+                        <dt>请求次数预算</dt>
+                        <dd>{detail.run.contract.budget.maxRequests}</dd>
+                      </div>
+                      <div>
+                        <dt>Token 预算</dt>
+                        <dd>{detail.run.contract.budget.maxTokens.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt>费用预算</dt>
+                        <dd>
+                          {detail.run.contract.budget.maxCost === null
+                            ? '未设置金额上限'
+                            : detail.run.contract.budget.maxCost}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>每次尝试最多步骤</dt>
+                        <dd>{detail.run.limits.maxSteps}</dd>
+                      </div>
+                      <div>
+                        <dt>{isChat ? '每轮聊天计时上限' : '累计计时上限'}</dt>
+                        <dd>{detail.run.limits.maxMinutes} 分钟</dd>
+                      </div>
+                    </dl>
+                    <p className="field-help">新任务保留旧记录，并重新确认需求、模型、权限和预算。</p>
+                  </div>
+                  <footer className="modal-footer">
+                    <button className="secondary" disabled={busy} onClick={() => setModal('')}>
+                      返回
+                    </button>
+                    {feedback?.limit?.recheck && !archived && (
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async () => {
+                            await mutation('/runs/' + runId + '/actions', {
+                              action: 'resume',
+                              expectedRevision: detail.run.revision,
+                            });
+                            setModal('');
+                          })
+                        }
+                      >
+                        {isChat && feedback.limit.code === 'TIME_BUDGET' ? '重新计时并恢复' : '检查后恢复'}
+                      </button>
+                    )}
+                    <button className="primary" disabled={busy} onClick={startFromRun}>
+                      {isChat ? '新建独立对话' : '新建任务'}
+                    </button>
+                  </footer>
+                </Modal>
+              )}
               {modal.startsWith('decision:') && detail && decisionOperation && (
                 <DecisionModal
                   operation={decisionOperation}
@@ -1330,49 +1456,6 @@ function Empty({
       <EmptyArtwork kind={kind} />
       <strong>{title}</strong>
       <p>{text}</p>
-    </div>
-  );
-}
-function TaskGraph({ detail }: { detail: Detail }) {
-  const tasks = detail.tasks.filter((t) => t.parentTaskId);
-  const ranks = new Map<string, number>();
-  for (let i = 0; i < tasks.length; i++)
-    for (const t of tasks) {
-      const deps = detail.edges.filter((e) => e.taskId === t.id).map((e) => e.dependencyId);
-      ranks.set(t.id, deps.length ? Math.max(...deps.map((d) => ranks.get(d) || 0)) + 1 : 0);
-    }
-  return (
-    <div className="task-graph">
-      <div className="graph-root">
-        <Icon name="spark" size={15} />
-        总代理 · 集成与验收
-      </div>
-      {!tasks.length ? (
-        <div className="graph-single">单 Agent 执行</div>
-      ) : (
-        [...new Set(ranks.values())]
-          .sort((a, b) => a - b)
-          .map((rank) => (
-            <div className="graph-level" key={rank}>
-              <span className="graph-rank">阶段 {rank + 1}</span>
-              {tasks
-                .filter((t) => ranks.get(t.id) === rank)
-                .map((t) => (
-                  <div className="graph-node" key={t.id}>
-                    <span className={'status-dot ' + t.status.toLowerCase()} />
-                    <span>{t.spec.title}</span>
-                    <small>
-                      {detail.edges
-                        .filter((e) => e.taskId === t.id)
-                        .map((e) => detail.tasks.find((t) => t.id === e.dependencyId)?.spec.key)
-                        .join(' → ')}
-                    </small>
-                  </div>
-                ))}
-            </div>
-          ))
-      )}
-      <small className="graph-caption">任务按依赖顺序推进</small>
     </div>
   );
 }
