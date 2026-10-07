@@ -259,15 +259,15 @@ export function createServer(
       .object({
         commandId: z.string().uuid(),
         name: z.string().min(1).max(80),
-        mode: z.enum(['code', 'work']),
         workspaceRoot: z.string().min(1),
         baseline: z.string().optional(),
       })
       .parse(request.body);
     const folder = await inspectFolder(body.workspaceRoot, executor.gateway.processes);
     const root = folder.workspaceRoot;
-    let baseline: string | null = folder.codeAvailable ? folder.baseline : null;
-    if (body.mode === 'code' && body.baseline && body.baseline !== 'HEAD') {
+    let baseline: string | null = folder.gitAvailable ? folder.baseline : null;
+    if (body.baseline && body.baseline !== 'HEAD') {
+      invariant(folder.gitAvailable, 'GIT_REQUIRED', '当前目录没有可用的 Git 基线');
       const probe = await executor.gateway.processes.run(
         'registration',
         'git',
@@ -278,11 +278,7 @@ export function createServer(
       );
       baseline = probe.exitCode === 0 ? probe.stdout.trim() : null;
     }
-    invariant(
-      body.mode !== 'code' || (baseline && folder.codeAvailable),
-      'GIT_REQUIRED',
-      'Code 模式需要选择有提交的 Git 根目录；普通文件夹可使用 Work 模式',
-    );
+    invariant(!folder.gitAvailable || baseline, 'GIT_BASELINE', 'Git 基线无效，请填写有效 commit 或 ref');
     return command(body, '/projects', () => {
       const existing = store.all<Project>('projects').find((p) => sameDirectory(p.workspaceRoot, root));
       if (existing) return existing;
@@ -290,7 +286,6 @@ export function createServer(
         id: id(),
         revision: 0,
         name: body.name,
-        mode: body.mode,
         workspaceRoot: root,
         baseline,
         configVersion: 1,
@@ -546,7 +541,6 @@ export function createServer(
         deliverables: ['可检查的文件、差异或报告'],
         acceptanceCriteria: ['交付产物可读取，并有实际验证证据'],
         constraints: ['遵守用户指定的授权和预算'],
-        mode: project.mode,
         permissionProfile: body.permissionProfile,
         budget: body.budget,
         assumptions: [],

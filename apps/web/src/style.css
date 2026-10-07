@@ -267,6 +267,8 @@ a {
 }
 .project-item small {
   margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
   text-transform: uppercase;
   color: #bbcbbd;
   font-size: 10px;
@@ -1364,40 +1366,6 @@ a {
   width: auto;
   margin: 0;
   accent-color: var(--accent);
-}
-.mode-picker {
-  display: flex;
-  gap: 11px;
-  margin-bottom: 19px;
-}
-.mode-picker button {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: white;
-  color: var(--muted);
-  padding: 14px;
-  text-align: left;
-}
-.mode-picker button.active {
-  background: var(--accent-pale);
-  border-color: #cba6ad;
-  color: var(--accent);
-}
-.mode-picker strong {
-  font-size: 13px;
-  font-weight: 550;
-}
-.mode-picker span {
-  display: block;
-  width: 100%;
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 4px;
 }
 .field-help {
   display: block;

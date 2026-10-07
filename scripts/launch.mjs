@@ -48,7 +48,8 @@ try {
       else fingerprint.update(child).update(readFileSync(child));
     }
   }
-  for (const directory of ['apps/server/src', 'apps/web', 'packages', 'assets/brand']) add(directory);
+  for (const directory of ['apps/server/src', 'apps/web', 'packages', 'prompts', 'skills', 'assets/brand'])
+    add(directory);
   for (const name of ['package.json', 'pnpm-lock.yaml', 'tsconfig.server.json'])
     fingerprint.update(readFileSync(name));
   const digest = fingerprint.digest('hex'),

@@ -74,7 +74,6 @@ export class Kernel {
         key: 'root',
         title: objective.slice(0, 60),
         objective,
-        mode: contract.mode,
         role: 'coordinator',
         providerId: provider.id,
         deliverables: contract.deliverables,
@@ -191,10 +190,9 @@ export class Kernel {
       );
       invariant(
         stable(contract.permissionProfile) === stable(run.contract.permissionProfile) &&
-          stable(contract.budget) === stable(run.contract.budget) &&
-          contract.mode === run.contract.mode,
+          stable(contract.budget) === stable(run.contract.budget),
         'PLAN_ESCALATION',
-        '计划不能改变用户授权、预算和根模式',
+        '计划不能改变用户授权和预算',
       );
       invariant(
         plan.tasks.length + this.store.all<Agent>('agents', run.id).length <= run.limits.maxAgents,

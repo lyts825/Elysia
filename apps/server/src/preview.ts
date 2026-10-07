@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import type { PreviewEntry, PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview.js';
+import { fileMediaType, isBinaryFile } from '../../../packages/contracts/src/files.js';
 import { Store, hash } from '../../../packages/storage/src/index.js';
 import { ToolGateway } from '../../../packages/tools/src/index.js';
 
@@ -14,26 +15,6 @@ const sensitive = (segment: string) =>
   excluded.has(segment.toLowerCase()) ||
   /^\.env(?:\.|$)/i.test(segment) ||
   /\.(?:pem|key|p12|pfx)$/i.test(segment);
-const media: Record<string, string> = {
-  '.html': 'text/html',
-  '.htm': 'text/html',
-  '.css': 'text/css',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.json': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.mp4': 'video/mp4',
-  '.mp3': 'audio/mpeg',
-  '.pdf': 'application/pdf',
-};
 function normalized(input: string) {
   invariant(
     typeof input === 'string' && input.length > 0 && input.length <= 1000,
@@ -138,7 +119,7 @@ export class PreviewService {
     const changes = new Map<string, PreviewEntry['change']>();
     let names: string[] = [],
       truncated = false;
-    if (task.spec.mode === 'code' && task.baseline) {
+    if (task.baseline) {
       const [listing, changed] = await Promise.all([
         this.git(task, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']),
         this.git(task, [
@@ -245,7 +226,7 @@ export class PreviewService {
     const task = this.task(runId, taskId),
       name = normalized(input);
     const ext = path.extname(name).toLowerCase(),
-      mediaType = media[ext] || 'text/plain';
+      mediaType = fileMediaType(name);
     const maxSize = mediaType.startsWith('image/') ? assetLimit : textLimit;
     let bytes: Buffer | null = null,
       deleted = false;
@@ -267,7 +248,7 @@ export class PreviewService {
     }
     const kind: PreviewFile['kind'] = mediaType.startsWith('image/')
       ? 'image'
-      : bytes?.includes(0)
+      : bytes && isBinaryFile(name, bytes)
         ? 'binary'
         : ['.html', '.htm'].includes(ext)
           ? 'html'
@@ -277,7 +258,7 @@ export class PreviewService {
     const text = bytes && !['image', 'binary'].includes(kind) ? bytes.toString('utf8') : null;
     let diff = '',
       diffTruncated = false;
-    if (task.spec.mode === 'code' && task.baseline) {
+    if (task.baseline) {
       const result = await this.git(
         task,
         ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--unified=3', task.baseline, '--', name],
@@ -339,7 +320,7 @@ export class PreviewService {
     invariant(stat.isFile() && stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
     let bytes = await fs.readFile(filename);
     invariant(bytes.length <= assetLimit, 'PREVIEW_SIZE', '预览资源超过大小上限');
-    const mediaType = media[path.extname(filename).toLowerCase()] || 'text/plain';
+    const mediaType = fileMediaType(filename);
     const prefix = `/preview/${token}/`;
     // Preserve the file on disk; scope root-relative static asset URLs to this page root.
     if (mediaType === 'text/html')

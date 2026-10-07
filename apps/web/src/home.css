@@ -358,7 +358,7 @@
   display: block;
   margin-top: 6px;
 }
-.mode-label {
+.directory-label {
   background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 5px;

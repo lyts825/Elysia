@@ -77,7 +77,7 @@ export function HomeWorkspace({
               <Icon name="spark" size={15} /> ELYSIA WORKSPACE
             </span>
             <h1>今天，想完成什么？</h1>
-            <p className="welcome-subtitle">描述目标，与代理一起推进。过程可追踪，成果可预览。</p>
+            <p className="welcome-subtitle">描述目标，模型会按需调用办公技能。过程可追踪，成果可预览。</p>
           </div>
           <button className="secondary" onClick={openProject}>
             <Icon name="folder" size={16} /> 打开文件夹
@@ -94,7 +94,7 @@ export function HomeWorkspace({
               <textarea
                 ref={input}
                 aria-label="任务目标"
-                placeholder="例如：为这个项目添加一个清晰易用的设置页面…"
+                placeholder="例如：整理这些资料，生成一份报告和汇总表格…"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -114,7 +114,7 @@ export function HomeWorkspace({
                 <div className="composer-context">
                   {projects.length ? (
                     <label className="project-select">
-                      <Icon name={project?.mode === 'code' ? 'code' : 'folder'} size={15} />
+                      <Icon name="folder" size={15} />
                       <select
                         aria-label="当前项目"
                         value={project?.id || ''}
@@ -212,8 +212,8 @@ export function HomeWorkspace({
             <section className="context-card project-context">
               <div className="home-section-heading">
                 <h2>当前项目</h2>
-                <span className="mode-label">
-                  {project?.mode === 'code' ? 'CODE' : project ? 'WORK' : '未选择'}
+                <span className="directory-label">
+                  {project?.baseline ? 'Git' : project ? '目录' : '未选择'}
                 </span>
               </div>
               <span className="context-project-icon">

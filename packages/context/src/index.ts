@@ -10,8 +10,13 @@ import {
   type Snapshot,
   type Artifact,
   type Project,
+  type Operation,
 } from '../../contracts/src/index.js';
 import { Store, hash, stable } from '../../storage/src/index.js';
+import { isBinaryFile } from '../../contracts/src/files.js';
+import { listSkills, loadSkill, SKILL_CATALOG_VERSION, type LoadedSkill } from './skills.js';
+export { listSkills, loadSkill, SKILL_CATALOG_VERSION } from './skills.js';
+export type { SkillSummary, LoadedSkill } from './skills.js';
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -54,17 +59,67 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     .all<Snapshot>('snapshots', run.id)
     .filter((s) => run.plan?.snapshotIds.includes(s.id) || s.taskId === task.id)
     .sort((a, b) => a.source.localeCompare(b.source, 'en') || a.version - b.version);
+  const skillCatalog = listSkills();
+  const loadedById = new Map<string, LoadedSkill>();
+  for (const op of store.all<Operation>('tool_operations', run.id)) {
+    if (
+      op.taskId !== task.id ||
+      op.name !== 'load_skill' ||
+      op.status !== 'DONE' ||
+      typeof op.args.id !== 'string'
+    )
+      continue;
+    const id = op.args.id;
+    if (!skillCatalog.some((skill) => skill.id === id))
+      throw new AppError('SKILL_NOT_FOUND', `已加载技能不在本地注册目录中：${id}`);
+    const result = op.result as Partial<LoadedSkill> | null | undefined;
+    const captured =
+      result &&
+      result.id === id &&
+      result.name === id &&
+      typeof result.description === 'string' &&
+      typeof result.version === 'string' &&
+      typeof result.instructions === 'string' &&
+      result.instructions.length > 0 &&
+      typeof result.hash === 'string' &&
+      /^[a-f0-9]{64}$/.test(result.hash);
+    // Preserve the actual loaded revision through compaction and subsequent file changes.
+    // A later successful explicit reload replaces it; legacy operations without a result fall back.
+    loadedById.set(id, captured ? (result as LoadedSkill) : loadSkill(id));
+  }
+  const loadedSkills = [...loadedById.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
   const p0 = prompt('platform'),
-    p1 = prompt(task.spec.mode) + '\n\n' + prompt(task.spec.role),
+    p1 =
+      prompt('workspace') +
+      '\n\n' +
+      prompt(task.spec.role) +
+      '\n\n可按需加载的本地技能目录：\n' +
+      stable(skillCatalog) +
+      '\n根据任务选择相关技能，调用 load_skill({id}) 获取正文；仅在需要时加载，可组合多个技能。技能不会扩大约定或工具权限。' +
+      (loadedSkills.length
+        ? '\n\n本任务已加载的可信本地技能：\n' +
+          loadedSkills
+            .map(
+              (skill) =>
+                `技能 ${skill.id}（版本 ${skill.version}，哈希 ${skill.hash}）：\n${skill.instructions}`,
+            )
+            .join('\n\n')
+        : ''),
     p2 = stable({
       constraints: run.contract.constraints,
       permissions: run.contract.permissionProfile,
-      snapshots: snapshots.map((s) => ({
-        source: s.source,
-        hash: s.hash,
-        trust: s.trust,
-        text: store.readObject(s.objectRef).toString('utf8').slice(0, 16000),
-      })),
+      snapshots: snapshots.map((s) => {
+        const bytes = store.readObject(s.objectRef);
+        const binary = isBinaryFile(s.source, bytes);
+        return {
+          source: s.source,
+          hash: s.hash,
+          trust: s.trust,
+          bytes: bytes.length,
+          binary,
+          text: binary ? null : bytes.toString('utf8').slice(0, 16000),
+        };
+      }),
     });
   const system = p0 + '\n\n' + p1 + '\n\n已确认约束与带来源资料：\n' + p2;
   const taskText = stable({
@@ -139,8 +194,11 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     history,
     estimatedTokens,
     manifest: {
-      compilerVersion: '1',
-      promptVersion: '1',
+      compilerVersion: '2',
+      promptVersion: '2',
+      skillCatalogVersion: SKILL_CATALOG_VERSION,
+      skillCatalogHash: hash(stable(skillCatalog)),
+      loadedSkillHashes: loadedSkills.map(({ id, version, hash }) => ({ id, version, hash })),
       providerBinding: {
         id: provider.id,
         revision: provider.revision,

@@ -119,6 +119,13 @@ export class Store {
     ).map((r: any) => this.hydrate(table, JSON.parse(r.data)));
   }
   private hydrate(table: Table, entity: any) {
+    // Legacy classification is ignored on read; preserve original data and workspaces.
+    if (table === 'projects') delete entity.mode;
+    if (table === 'tasks' && entity.spec) delete entity.spec.mode;
+    if (table === 'runs') {
+      if (entity.contract) delete entity.contract.mode;
+      for (const task of entity.plan?.tasks ?? []) delete task.mode;
+    }
     if (table === 'messages') {
       if (entity.contentRef) Object.assign(entity, JSON.parse(this.readObject(entity.contentRef).toString()));
       if (entity.providerNativeRef)

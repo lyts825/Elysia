@@ -186,9 +186,7 @@ export function PreviewPanel({
       </div>
       <div className="preview-agent-info">
         <span>{agent?.providerBinding.model || task?.spec.providerId}</span>
-        <span>
-          {task?.spec.mode.toUpperCase()} · 深度 {task?.depth ?? 0}
-        </span>
+        <span>深度 {task?.depth ?? 0}</span>
         <strong>{labels[task?.status || '']}</strong>
       </div>
       <MotionTabs className="preview-tabs" label="预览视图" value={view}>
@@ -447,7 +445,7 @@ export function PreviewPanel({
         <span title={current?.workspace || ''}>
           {current?.workspace ? '⌑ ' + current.workspace : '独立工作区'}
         </span>
-        <small>{current?.baseline ? '基线 ' + current.baseline.slice(0, 8) : 'Work 文件'}</small>
+        <small>{current?.baseline ? '基线 ' + current.baseline.slice(0, 8) : '任务文件'}</small>
       </footer>
     </aside>
   );

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { invariant, type Project } from '../../../packages/contracts/src/index.js';
+import { isBinaryFile } from '../../../packages/contracts/src/files.js';
 import type { Store } from '../../../packages/storage/src/index.js';
 import type { Processes } from '../../../packages/tools/src/index.js';
 
@@ -29,7 +30,7 @@ export async function inspectFolder(input: string, processes: Processes) {
     workspaceRoot: root,
     baseline,
     gitRoot: repoRoot,
-    codeAvailable: !!baseline && !!repoRoot && sameDirectory(root, repoRoot),
+    gitAvailable: !!baseline && !!repoRoot && sameDirectory(root, repoRoot),
     entries: (await fs.readdir(root, { withFileTypes: true }))
       .filter((e) => !excluded(e.name) && !e.isSymbolicLink())
       .slice(0, 24)
@@ -75,7 +76,7 @@ export async function projectFiles(store: Store, id: string, input = '.') {
     const buffer = Buffer.alloc(1024 * 1024 + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     invariant(
-      bytesRead <= 1024 * 1024 && !buffer.subarray(0, bytesRead).includes(0),
+      bytesRead <= 1024 * 1024 && !isBinaryFile(target, buffer.subarray(0, bytesRead)),
       'PROJECT_FILE_TYPE',
       '此文件不是可预览的文本文件',
     );

@@ -25,8 +25,11 @@ import {
 import { Store, id, hash, stable, now } from '../../storage/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';
+import { loadSkill } from '../../context/src/skills.js';
+import { fileMediaType, isBinaryFile } from '../../contracts/src/files.js';
 const text = z.string().max(2 * 1024 * 1024);
 const schemas = {
+  load_skill: z.object({ id: z.string().min(1).max(64) }),
   list: z.object({ path: z.string().default('.') }),
   read: z.object({ path: z.string() }),
   read_artifact: z.object({ artifactId: z.string() }),
@@ -61,6 +64,7 @@ const schemas = {
 };
 type ToolName = keyof typeof schemas;
 const descriptions: Record<ToolName, string> = {
+  load_skill: '按目录中的 id 加载本地技能指令，由模型根据任务选择；不会扩大工具权限。',
   list: '浏览授权目录，返回来源。',
   read: '读取文件并记录不可变来源快照和哈希。',
   read_artifact: '读取本任务或已验收的同 run 产物，取得不可变内容与来源。',
@@ -264,7 +268,7 @@ export class ToolGateway {
   }
   definitions(task: Task): ToolDefinition[] {
     const permission = this.kernel.permissions(task);
-    let names: ToolName[] = ['clarify'];
+    let names: ToolName[] = ['clarify', 'load_skill'];
     if (task.spec.role === 'coordinator' && task.phase === 'planning') names.push('propose_plan');
     if (permission.read) names.push('list', 'read', 'read_artifact', 'search');
     if (permission.urls.length) names.push('fetch_url');
@@ -274,7 +278,11 @@ export class ToolGateway {
         names.push('spawn_task');
         if (permission.write) {
           names.push('write', 'apply_patch', 'artifact');
-          if (task.spec.mode === 'code') names.push('diff', 'integrate_worktrees');
+          const project = this.store.require<Project>(
+            'projects',
+            this.store.require<Run>('runs', task.runId).projectId,
+          );
+          if (task.workspace ? task.baseline : project.baseline) names.push('diff', 'integrate_worktrees');
         }
         if (permission.exec) names.push('exec');
       }
@@ -338,8 +346,7 @@ export class ToolGateway {
       'projects',
       this.store.require<Run>('runs', task.runId).projectId,
     );
-    if (task.spec.mode === 'code') {
-      invariant(project.baseline, 'GIT_BASELINE_MISSING', '混合 Code 任务需要注册 Git 项目和基线');
+    if (project.baseline) {
       try {
         await fs.access(path.join(directory, '.git'));
       } catch {
@@ -360,7 +367,7 @@ export class ToolGateway {
       const next = this.store.put('tasks', {
         ...current,
         workspace: directory,
-        baseline: task.spec.mode === 'code' ? project.baseline : null,
+        baseline: project.baseline,
       });
       this.kernel.event(task.runId, 'task.updated', next, task.id);
       return next;
@@ -422,7 +429,16 @@ export class ToolGateway {
     };
     // 内核动作与操作结果在同一事务中落盘，避免重复委派或接受。
     if (
-      !['list', 'read', 'read_artifact', 'search', 'fetch_url', 'submit_result', ...mutating].includes(name)
+      ![
+        'load_skill',
+        'list',
+        'read',
+        'read_artifact',
+        'search',
+        'fetch_url',
+        'submit_result',
+        ...mutating,
+      ].includes(name)
     )
       return this.store.tx(() => {
         begin();
@@ -455,7 +471,8 @@ export class ToolGateway {
     try {
       signal.throwIfAborted();
       let result: unknown;
-      if (name === 'list') {
+      if (name === 'load_skill') result = loadSkill(args.id);
+      else if (name === 'list') {
         const p = await this.path(task, args.path);
         const entries = await fs.readdir(p, { withFileTypes: true });
         result = {
@@ -472,35 +489,38 @@ export class ToolGateway {
           'ARTIFACT_SCOPE',
           '产物越界或尚未通过验收',
         );
-        const content = this.store.readObject(artifact.objectRef).toString('utf8');
+        const bytes = this.store.readObject(artifact.objectRef);
+        const binary = isBinaryFile(artifact.name, bytes);
+        const content = binary ? null : bytes.toString('utf8');
         result = {
           artifactId: artifact.id,
           hash: artifact.hash,
           source: artifact.source,
-          content: content.slice(0, 30000),
-          truncated: content.length > 30000,
+          binary,
+          mediaType: artifact.mediaType,
+          content: content?.slice(0, 30000) ?? null,
+          bytes: bytes.length,
+          truncated: content !== null && content.length > 30000,
           trust: 'untrusted',
         };
       } else if (name === 'read') {
         const p = await this.path(task, args.path);
-        if (task.spec.mode === 'work')
-          invariant(
-            /\.(txt|md|markdown|json|csv)$/i.test(p),
-            'FILE_FORMAT',
-            'Work 首版只支持 TXT、Markdown、JSON、CSV',
-          );
         const stat = await fs.stat(p);
         invariant(stat.size <= 2 * 1024 * 1024, 'FILE_TOO_LARGE', '资料超过 2 MiB');
         const content = await fs.readFile(p);
         const snapshot = this.snapshot(task, p, content);
+        const binary = isBinaryFile(p, content);
+        const decoded = binary ? null : content.toString('utf8');
         result = {
           source: p,
           hash: snapshot.hash,
           snapshotId: snapshot.id,
           objectRef: snapshot.objectRef,
           trust: 'untrusted',
-          content: content.toString('utf8').slice(0, 30000),
-          truncated: content.length > 30000,
+          binary,
+          content: decoded?.slice(0, 30000) ?? null,
+          bytes: content.length,
+          truncated: decoded !== null && decoded.length > 30000,
         };
       } else if (name === 'search') {
         const root = await this.path(task, args.path);
@@ -596,20 +616,20 @@ export class ToolGateway {
       } else if (name === 'diff') result = await this.diff(task, signal);
       else if (name === 'integrate_worktrees') {
         invariant(
-          task.spec.mode === 'code' && this.kernel.permissions(task).write,
+          task.baseline && this.kernel.permissions(task).write,
           'INTEGRATE_DENIED',
-          'Code 写入未授权',
+          'Git 工作区写入未授权',
         );
         for (const key of args.taskIds) {
           const child = this.store.require<Task>('tasks', key);
           invariant(
             child.runId === task.runId &&
               child.status === 'DONE' &&
-              child.spec.mode === 'code' &&
+              child.baseline === task.baseline &&
               child.workspace &&
               this.kernel.ancestors(child).some((a) => a.id === task.id),
             'INTEGRATE_SCOPE',
-            '只能集成已完成的 Code 后代',
+            '只能集成已完成且基线相同的 Git 后代工作区',
           );
           const run = async (args: string[], cwd: string) =>
             this.processes.run(task.id, 'git', args, cwd, 60000, 200000, signal);
@@ -698,14 +718,14 @@ export class ToolGateway {
             .all<Artifact>('artifacts', task.runId)
             .filter((a) => a.taskId === task.id && a.name === name).length + 1,
         verified: false,
-        mediaType: /\.json$/i.test(name) ? 'application/json' : 'text/plain; charset=utf-8',
+        mediaType: fileMediaType(name, Buffer.from(content)),
       });
       this.kernel.event(task.runId, 'artifact.created', artifact, task.id);
       return artifact;
     });
   }
   async diff(task: Task, signal: AbortSignal) {
-    invariant(task.spec.mode === 'code', 'MODE_DENIED', '只有 Code 任务可生成 diff');
+    invariant(task.baseline, 'GIT_REQUIRED', '当前任务没有 Git 基线，无法生成差异');
     const added = await this.processes.run(
       task.id,
       'git',

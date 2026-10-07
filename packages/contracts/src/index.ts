@@ -1,6 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.4.6-preview.1';
-export const Mode = z.enum(['code', 'work']);
+export const VERSION = '0.5.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -44,7 +43,6 @@ export const Contract = z.object({
   deliverables: z.array(z.string()).min(1),
   acceptanceCriteria: z.array(z.string()).min(1),
   constraints: z.array(z.string()),
-  mode: Mode,
   permissionProfile: Permissions,
   budget: Budget,
   assumptions: z.array(z.string()),
@@ -54,7 +52,6 @@ export const TaskSpec = z.object({
   key: z.string().min(1),
   title: z.string().min(1),
   objective: z.string().min(1),
-  mode: Mode,
   role: z.enum(['coordinator', 'worker', 'reviewer']).default('worker'),
   providerId: z.string().min(1),
   dependsOn: z.array(z.string()).default([]),
@@ -134,7 +131,6 @@ export interface Entity {
 }
 export interface Project extends Entity {
   name: string;
-  mode: 'code' | 'work';
   workspaceRoot: string;
   baseline: string | null;
   configVersion: number;

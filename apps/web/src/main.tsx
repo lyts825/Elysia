@@ -5,6 +5,7 @@ import { PreviewPanel } from './PreviewPanel';
 import { ProjectFiles } from './ProjectFiles';
 import { manageUsage } from './desktop';
 import { VERSION } from '../../../packages/contracts/src/index';
+import { isBinaryFile } from '../../../packages/contracts/src/files';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -82,7 +83,12 @@ function App() {
     [previewOpen, setPreviewOpen] = useState(false),
     [previewTaskId, setPreviewTaskId] = useState(''),
     [modal, setModal] = useState(''),
-    [artifactView, setArtifactView] = useState<{ name: string; text: string; id: string } | null>(null),
+    [artifactView, setArtifactView] = useState<{
+      name: string;
+      text: string | null;
+      bytes: number;
+      id: string;
+    } | null>(null),
     [draft, setDraft] = useState(''),
     [reply, setReply] = useState(''),
     [streaming, setStreaming] = useState<Record<string, string>>({});
@@ -192,7 +198,13 @@ function App() {
     await act(async () => {
       const response = await fetch('/api/artifacts/' + a.id);
       if (!response.ok) throw new Error('无法读取产物');
-      setArtifactView({ name: a.name, text: await response.text(), id: a.id });
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      setArtifactView({
+        name: a.name,
+        text: isBinaryFile(a.name, bytes) ? null : new TextDecoder().decode(bytes),
+        bytes: bytes.length,
+        id: a.id,
+      });
     });
   }
   if (!ready)
@@ -251,9 +263,9 @@ function App() {
                 newRun();
               }}
             >
-              <Icon name={p.mode === 'code' ? 'code' : 'work'} size={16} />
+              <Icon name="folder" size={16} />
               <span>{p.name}</span>
-              <small>{p.mode}</small>
+              <small>{p.baseline ? 'Git' : '目录'}</small>
             </button>
           ))}
           {!projects.length && (
@@ -531,8 +543,7 @@ function App() {
                             <strong>{t.title}</strong>
                             <p>{t.objective}</p>
                             <small>
-                              {t.providerId} · {t.mode.toUpperCase()}{' '}
-                              {t.dependsOn.length ? '· 依赖 ' + t.dependsOn.join(', ') : ''}
+                              {t.providerId} {t.dependsOn.length ? '· 依赖 ' + t.dependsOn.join(', ') : ''}
                             </small>
                           </div>
                         </div>
@@ -680,7 +691,7 @@ function App() {
                             </div>
                             <p>{t.waitReason ? reasons[t.waitReason] || t.waitReason : t.spec.objective}</p>
                             <small>
-                              {t.spec.mode.toUpperCase()} · {t.spec.providerId} · 深度 {t.depth}
+                              {t.spec.providerId} · 深度 {t.depth}
                             </small>
                             {t.baseline && <code title={t.baseline}>基线 {t.baseline.slice(0, 10)}</code>}
                             <button
@@ -834,7 +845,6 @@ function App() {
             )}
             {modal === 'run' && project && (
               <RunModal
-                project={project}
                 objective={draft}
                 providers={providers}
                 close={() => setModal('')}
@@ -909,7 +919,14 @@ function App() {
             wide
           >
             <div className="artifact-preview">
-              <pre>{artifactView.text}</pre>
+              {artifactView.text === null ? (
+                <p>
+                  已登记附件（{Math.max(1, Math.ceil(artifactView.bytes / 1024))}{' '}
+                  KiB），下载后使用对应应用打开。
+                </p>
+              ) : (
+                <pre>{artifactView.text}</pre>
+              )}
             </div>
             <footer className="modal-footer">
               <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
@@ -1094,7 +1111,6 @@ function ProjectModal({
 }) {
   const [name, setName] = useState(''),
     [root, setRoot] = useState(''),
-    [mode, setMode] = useState('work'),
     [baseline, setBaseline] = useState('HEAD');
   const [folder, setFolder] = useState<any>(),
     [inspecting, setInspecting] = useState(false),
@@ -1107,7 +1123,7 @@ function ProjectModal({
       const info = await mutation('/projects/inspect', { workspaceRoot: directory });
       setRoot(info.workspaceRoot);
       setName(info.name.slice(0, 80));
-      setMode(info.codeAvailable ? 'code' : 'work');
+      setBaseline('HEAD');
       setFolder(info);
     } catch (e) {
       setError((e as Error).message);
@@ -1125,7 +1141,7 @@ function ProjectModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ name, workspaceRoot: root, mode, baseline });
+          submit({ name, workspaceRoot: root, ...(folder?.gitAvailable ? { baseline } : {}) });
         }}
       >
         <div className="form-body">
@@ -1145,7 +1161,7 @@ function ProjectModal({
               }
             }}
           >
-            <Icon name="file" size={25} />
+            <Icon name="folder" size={25} />
             <strong>选择本机文件夹</strong>
             <span>代码仓库、文档或资料目录</span>
           </button>
@@ -1186,15 +1202,15 @@ function ProjectModal({
               <strong>
                 {folder.existing
                   ? '该文件夹已经是项目，点击下方按钮即可打开'
-                  : folder.codeAvailable
+                  : folder.gitAvailable
                     ? '已识别 Git 项目'
-                    : '本机文件夹 · Work 项目'}
+                    : '已识别本机文件夹'}
               </strong>
               <p className="field-help">
-                {folder.codeAvailable
-                  ? 'Code 使用独立工作区；Work 可直接读取本机文件及未提交内容。'
+                {folder.gitAvailable
+                  ? '根据 Git 基线创建任务目录，保留主目录中的未提交改动。'
                   : folder.gitRoot
-                    ? '当前目录是仓库子目录或还没有提交。可直接使用 Work；Code 需选择有提交的仓库根目录。'
+                    ? '当前目录是仓库子目录或还没有提交；代理可读取资料，并在独立任务目录生成结果。'
                     : '代理可读取此目录中的资料，并在独立任务目录生成结果。'}
               </p>
               <div className="folder-entries">
@@ -1216,24 +1232,9 @@ function ProjectModal({
               placeholder="例如：我的研究项目"
             />
           </label>
-          <div className="mode-picker">
-            {['work', 'code'].map((m) => (
-              <button
-                type="button"
-                disabled={m === 'code' && !folder?.codeAvailable}
-                className={mode === m ? 'active' : ''}
-                onClick={() => setMode(m)}
-                key={m}
-              >
-                <Icon name={m} size={20} />
-                <strong>{m === 'code' ? 'Code' : 'Work'}</strong>
-                <span>{m === 'code' ? 'Git 项目与独立 worktree' : '资料分析、报告与附件'}</span>
-              </button>
-            ))}
-          </div>
-          {mode === 'code' && (
+          {folder?.gitAvailable && (
             <label>
-              工作区基线
+              Git 基线
               <input required value={baseline} onChange={(e) => setBaseline(e.target.value)} />
               <span className="field-help">解析并保存具体 commit，不复制主目录的未提交改动。</span>
             </label>
@@ -1253,7 +1254,6 @@ function ProjectModal({
   );
 }
 function RunModal({
-  project,
   providers,
   objective,
   close,
@@ -1261,7 +1261,6 @@ function RunModal({
   submit,
   settings,
 }: {
-  project: Project;
   providers: Provider[];
   objective: string;
   close: () => void;
@@ -1275,7 +1274,7 @@ function RunModal({
         '',
     ),
     [write, setWrite] = useState(true),
-    [exec, setExec] = useState(project.mode === 'code'),
+    [exec, setExec] = useState(true),
     [urls, setUrls] = useState(''),
     [inputs, setInputs] = useState(''),
     [writePaths, setWritePaths] = useState('.'),
@@ -1311,6 +1310,7 @@ function RunModal({
         }}
       >
         <div className="form-body">
+          <p className="field-help">模型会根据目标自动选择办公技能，处理文档、表格、演示文稿与 PDF。</p>
           <label>
             总代理
             <select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
@@ -1483,8 +1483,7 @@ function ContractModal({
             </label>
           ))}
           <p className="field-help">
-            请求上限 {contract.budget.maxRequests} · Token 上限 {contract.budget.maxTokens} · 模式{' '}
-            {contract.mode.toUpperCase()}
+            请求上限 {contract.budget.maxRequests} · Token 上限 {contract.budget.maxTokens}
           </p>
         </div>
         <footer className="modal-footer">

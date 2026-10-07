@@ -32,12 +32,6 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
         <path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16" />
       </>
     ),
-    work: (
-      <>
-        <rect x="4" y="5" width="16" height="15" rx="2" />
-        <path d="M9 5V3h6v2M4 10h16m-9 0v3h2v-3" />
-      </>
-    ),
     arrow: (
       <>
         <path d="M5 12h14m-5-5 5 5-5 5" />
