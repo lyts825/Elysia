@@ -34,7 +34,7 @@ import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
 import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
-import { archiveFeedback, getRunFeedback, rateWaitText } from './RunFeedback';
+import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
 import './motion.css';
@@ -127,7 +127,11 @@ function App() {
   const feedback = detail
     ? getRunFeedback(detail, archived, hasRateWait ? feedbackTime : Date.now())
     : undefined;
+  const questions = detail ? currentQuestions(detail) : [];
+  const resumeTask = detail?.tasks.find((task) => task.id === feedback?.resumeTaskId);
+  const resumeTaskReason = detail && resumeTask ? modelSwitchReason(detail, archived, resumeTask.id) : '';
   const planRef = useRef<HTMLDivElement>(null);
+  const questionRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, ModelChoice>>>({});
   const assignmentKey = detail?.run.plan ? `${detail.run.id}:${detail.run.plan.version}` : '';
@@ -336,6 +340,15 @@ function App() {
         break;
       case 'reply':
         replyRef.current?.focus();
+        break;
+      case 'questions':
+        setPreviewOpen(false);
+        requestAnimationFrame(() => {
+          if (questionRef.current) {
+            questionRef.current.scrollIntoView({ block: 'start' });
+            questionRef.current.focus({ preventScroll: true });
+          } else replyRef.current?.focus();
+        });
         break;
       case 'archive':
         setModal('manage:archive');
@@ -616,7 +629,7 @@ function App() {
           <>
             <div className="run-toolbar">
               <div>
-                <Badge status={detail.run.status} />
+                <Badge status={feedback?.displayStatus || detail.run.status} />
                 <span className="run-reason" title={feedback?.text}>
                   {feedback?.text}
                 </span>
@@ -660,6 +673,7 @@ function App() {
                         artifacts: detail.run.status === 'DONE' ? '查看产物' : '查看待核验操作',
                         plan: '查看计划',
                         reply: '补充回答',
+                        questions: '查看问题',
                         archive: '查看归档',
                         limits: '查看限制',
                         settings: '管理模型用量',
@@ -672,6 +686,21 @@ function App() {
                   <button className="quiet-button" disabled={busy} onClick={() => setModal('limits')}>
                     <Icon name="chart" size={14} />
                     查看限制
+                  </button>
+                )}
+                {resumeTask && modelTaskCanContinue(resumeTask) && (
+                  <button
+                    className="quiet-button"
+                    disabled={
+                      busy ||
+                      !!resumeTaskReason ||
+                      (!detail.run.authorized && resumeTask.phase !== 'planning')
+                    }
+                    title={resumeTaskReason || '按已有授权继续总代理，累计预算保持'}
+                    onClick={() => void runAction('resume_task', resumeTask.id)}
+                  >
+                    <Icon name="play" size={14} />
+                    继续总代理
                   </button>
                 )}
                 {feedback?.control === 'pause' ? (
@@ -847,27 +876,22 @@ function App() {
                         </div>
                       </div>
                     ))}
-                  {detail.events
-                    .filter(
-                      (e) =>
-                        e.type === 'decision.required' &&
-                        e.payload.questions &&
-                        detail.tasks.some(
-                          (t) =>
-                            t.id === e.payload.taskId && t.status === 'WAITING' && t.waitReason === 'user',
-                        ),
-                    )
-                    .slice(-1)
-                    .map((e) => (
-                      <div className="question-card" key={e.eventId}>
-                        <span className="eyebrow">需要你的输入</span>
-                        {e.payload.questions.map((q: string, i: number) => (
-                          <p key={i}>
-                            {i + 1}. {q}
-                          </p>
-                        ))}
-                      </div>
-                    ))}
+                  {questions.map((question, index) => (
+                    <div
+                      className="question-card"
+                      key={question.eventId}
+                      id={`question-${question.taskId}`}
+                      ref={index === 0 ? questionRef : undefined}
+                      tabIndex={-1}
+                    >
+                      <span className="eyebrow">需要你的输入 · {question.title}</span>
+                      {question.questions.map((q, i) => (
+                        <p key={i}>
+                          {i + 1}. {q}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
                   {detail.run.plan && (
                     <div className="plan-card" ref={planRef}>
                       <div className="plan-card-head">
@@ -1039,6 +1063,14 @@ function App() {
                       }
                       disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
                     />
+                    {!isChat &&
+                      !archived &&
+                      !['DONE', 'CANCELLED'].includes(detail.run.status) &&
+                      (detail.run.authorized || detail.run.plan) && (
+                        <p className="field-help" style={{ padding: '0 16px 10px' }}>
+                          发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。
+                        </p>
+                      )}
                     <div>
                       <span>
                         {busy

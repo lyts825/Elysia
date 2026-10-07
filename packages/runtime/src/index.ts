@@ -83,7 +83,23 @@ export class NativeExecutor implements ExecutorAdapter {
         .all<Run>('runs')
         .filter((r) => !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
-        if (run.kind === 'chat' && ![...this.active.values()].some((a) => a.runId === run.id)) {
+        if (
+          ![...this.active.values()].some((a) => a.runId === run.id) &&
+          (run.kind === 'chat' ||
+            (!this.kernel.store
+              .all<Task>('tasks', run.id)
+              .some(
+                (t) =>
+                  t.status === 'VERIFYING' || (t.status === 'WAITING' && t.waitReason === 'verification'),
+              ) &&
+              !this.kernel.store
+                .all<RequestRecord>('requests', run.id)
+                .some((r) => ['RESERVED', 'UNKNOWN'].includes(r.status)) &&
+              !this.kernel.store
+                .all<Operation>('tool_operations', run.id)
+                .some((o) => ['INTENT', 'UNCERTAIN'].includes(o.status))))
+        ) {
+          // Apply safe project feedback before checking its unchanged cumulative time budget.
           this.kernel.applyInbox(run.id);
           run = this.kernel.store.require<Run>('runs', run.id);
         }
@@ -101,8 +117,6 @@ export class NativeExecutor implements ExecutorAdapter {
           await this.interrupt(run.id);
           continue;
         }
-        if (run.kind !== 'chat' && ![...this.active.values()].some((a) => a.runId === run.id))
-          this.kernel.applyInbox(run.id);
         this.kernel.wakeChildren(run.id);
       }
       const tasks = this.kernel.store.all<Task>('tasks').filter((t) => t.status === 'READY');

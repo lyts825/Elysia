@@ -1,16 +1,19 @@
-import type { Event, Operation, Run, Task } from '../../../packages/contracts/src/index';
+import type { Event, Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 
 type FeedbackDetail = {
   run: Run;
   tasks: Task[];
   operations: Operation[];
+  requests?: RequestRecord[];
   events: Event[];
   edges?: { taskId: string; dependencyId: string }[];
 };
 export type RunFeedback = {
   text: string;
-  action?: 'artifacts' | 'plan' | 'reply' | 'archive' | 'limits' | 'settings' | 'new';
+  displayStatus?: 'WAITING';
+  action?: 'artifacts' | 'plan' | 'reply' | 'questions' | 'archive' | 'limits' | 'settings' | 'new';
   control?: 'pause' | 'resume' | 'retry';
+  resumeTaskId?: string;
   limit?: {
     code: string;
     message: string;
@@ -21,6 +24,42 @@ export type RunFeedback = {
 };
 const limitCodes =
   /^(?:TIME_BUDGET|STEP_LIMIT|REQUEST_BUDGET|TOKEN_BUDGET|COST_BUDGET|CONTEXT_LIMIT|ACCOUNT_TOKEN_LIMIT)$/;
+
+export function currentQuestions(detail: Pick<FeedbackDetail, 'tasks' | 'events'>) {
+  const questions: { eventId: string; taskId: string; title: string; questions: string[]; seq: number }[] =
+    [];
+  for (const task of detail.tasks.filter((item) => item.status === 'WAITING' && item.waitReason === 'user')) {
+    for (let index = detail.events.length - 1; index >= 0; index--) {
+      const event = detail.events[index];
+      const payload = event.payload as {
+        status?: string;
+        waitReason?: string;
+        taskId?: string;
+        questions?: unknown;
+      } | null;
+      if (
+        event.type === 'task.updated' &&
+        event.taskId === task.id &&
+        (payload?.status !== 'WAITING' || payload.waitReason !== 'user')
+      )
+        break;
+      if (event.type !== 'decision.required' || (event.taskId || payload?.taskId) !== task.id) continue;
+      const values = Array.isArray(payload?.questions)
+        ? payload.questions.filter((value): value is string => typeof value === 'string' && !!value.trim())
+        : [];
+      if (!values.length) continue;
+      questions.push({
+        eventId: event.eventId,
+        taskId: task.id,
+        title: task.spec.role === 'coordinator' ? '总代理' : task.spec.title,
+        questions: values,
+        seq: event.seq,
+      });
+      break;
+    }
+  }
+  return questions.sort((a, b) => a.seq - b.seq);
+}
 
 export function rateResumeAt(task: Task): number | null {
   const value =
@@ -185,6 +224,28 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     };
   if (run.status === 'FAILED')
     return { text: run.reason ? `执行失败：${run.reason}` : '执行失败，可按已有授权重试', control };
+  const root = tasks.find((task) => task.id === run.rootTaskId);
+  const userTasks = tasks.filter((task) => task.status === 'WAITING' && task.waitReason === 'user');
+  const priorityWait =
+    rateTasks.length ||
+    tasks.some((task) => task.status === 'WAITING' && task.waitReason === 'verification') ||
+    detail.requests?.some((request) => request.status === 'UNKNOWN') ||
+    (run.status === 'WAITING' &&
+      ['plan', 'verification', 'rate_limit', 'subscription_limit'].includes(run.reason || ''));
+  if (run.kind === 'task' && userTasks.length && !priorityWait) {
+    const active =
+      tasks.some((task) => ['READY', 'RUNNING', 'VERIFYING'].includes(task.status)) ||
+      detail.requests?.some((request) => request.status === 'RESERVED') ||
+      operations.some((operation) => operation.status === 'INTENT');
+    const rootPaused = root?.status === 'WAITING' && root.waitReason === 'paused';
+    return {
+      text: `${active ? '部分代理等待回答' : '等待你的回答'}${rootPaused ? '；总代理已暂停' : ''}`,
+      displayStatus: active ? undefined : 'WAITING',
+      action: currentQuestions(detail).length ? 'questions' : 'reply',
+      control: active ? control : undefined,
+      resumeTaskId: rootPaused ? root.id : undefined,
+    };
+  }
   if (run.status === 'WAITING') {
     switch (run.reason) {
       case 'plan':
@@ -208,7 +269,6 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
         return { text: '等待子任务交付，随后集成与验收' };
     }
   }
-  const root = tasks.find((task) => task.id === run.rootTaskId);
   return {
     text:
       rateTasks.length && ['READY', 'RUNNING'].includes(run.status)
