@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, mutation, initializeSession } from './api';
+import { PreviewPanel } from './PreviewPanel';
+import { VERSION } from '../../../packages/contracts/src/index';
 import type {
   Run,
   Task,
@@ -208,6 +210,8 @@ function App() {
     [runId, setRunId] = useState(''),
     [detail, setDetail] = useState<Detail | null>(null),
     [tab, setTab] = useState('tasks'),
+    [previewOpen, setPreviewOpen] = useState(false),
+    [previewTaskId, setPreviewTaskId] = useState(''),
     [modal, setModal] = useState(''),
     [artifactView, setArtifactView] = useState<{ name: string; text: string; id: string } | null>(null),
     [draft, setDraft] = useState(''),
@@ -300,6 +304,7 @@ function App() {
     }
   }
   const selectRun = (run: Run) => {
+    setPreviewTaskId(run.rootTaskId);
     setRunId(run.id);
     setProjectId(run.projectId);
   };
@@ -328,7 +333,7 @@ function App() {
         <p>{error || '正在连接本机工作台…'}</p>
         {error && (
           <div className="auth-help">
-            请执行 <code>pnpm start</code>，使用终端打印的一次性引导链接打开。
+            请双击 <code>Start-Elysia.vbs</code> 重新打开独立工作台。
             <br />
             重新启动服务可获取新的链接。
           </div>
@@ -348,7 +353,7 @@ function App() {
         </div>
         <button className="new-task" onClick={newRun}>
           <Icon name="plus" />
-          新建任务<span>⌘ N</span>
+          新建任务
         </button>
         <button className={'nav-item ' + (!runId ? 'selected' : '')} onClick={newRun}>
           <Icon name="grid" />
@@ -406,7 +411,7 @@ function App() {
           </button>
           <div className="local-indicator">
             <i />
-            本机连接<span>v0.1.0 · 待验收</span>
+            本机连接<span>v{VERSION}</span>
           </div>
         </div>
       </aside>
@@ -419,9 +424,9 @@ function App() {
             <strong>{detail ? detail.run.objective.slice(0, 28) : '新任务'}</strong>
           </div>
           <div className="topbar-right">
-            <span className="local-chip">
+            <span className="local-chip port-chip" title={location.origin}>
               <Icon name="lock" size={12} />
-              本机运行
+              本机 · {location.port}
             </span>
             <button className="icon-button" onClick={() => void act(refresh)} title="刷新">
               <Icon name="refresh" size={16} />
@@ -522,6 +527,10 @@ function App() {
                 </span>
               </div>
               <div className="run-controls">
+                <button className="quiet-button preview-toggle" onClick={() => setPreviewOpen(!previewOpen)}>
+                  <Icon name="code" size={14} />
+                  {previewOpen ? '收起预览' : '打开预览'}
+                </button>
                 <button className="quiet-button" onClick={() => setModal('contract')}>
                   <Icon name="file" size={14} />
                   任务约定
@@ -560,7 +569,7 @@ function App() {
                 )}
               </div>
             </div>
-            <div className="run-layout">
+            <div className={'run-layout' + (previewOpen ? ' preview-open' : '')}>
               <section className="conversation">
                 <div className="conversation-scroll">
                   <div className="user-message">
@@ -744,156 +753,190 @@ function App() {
                   </div>
                 </form>
               </section>
-              <aside className="details-panel">
-                <div className="detail-tabs">
-                  {[
-                    { key: 'tasks', icon: 'grid', title: '任务' },
-                    { key: 'agents', icon: 'tree', title: '代理' },
-                    { key: 'artifacts', icon: 'file', title: '产物' },
-                    { key: 'usage', icon: 'chart', title: '用量' },
-                  ].map((t) => (
-                    <button
-                      key={t.key}
-                      className={tab === t.key ? 'active' : ''}
-                      onClick={() => setTab(t.key)}
-                    >
-                      <Icon name={t.icon} size={15} />
-                      {t.title}
-                    </button>
-                  ))}
-                </div>
-                <div className="detail-content">
-                  {tab === 'tasks' && (
-                    <>
-                      <div className="panel-heading">
-                        <h3>执行拓扑</h3>
-                        <span>
-                          {detail.tasks.filter((t) => t.status === 'DONE').length}/{detail.tasks.length} 完成
-                        </span>
-                      </div>
-                      <TaskGraph detail={detail} />
-                      <div className="panel-heading">
-                        <h3>任务列表</h3>
-                        <span>依赖与责任分开记录</span>
-                      </div>
-                      {detail.tasks.map((t) => (
-                        <div className="task-detail" key={t.id}>
-                          <div>
-                            <strong>{t.spec.title}</strong>
-                            <Badge status={t.status} />
-                          </div>
-                          <p>{t.waitReason ? reasons[t.waitReason] || t.waitReason : t.spec.objective}</p>
-                          <small>
-                            {t.spec.mode.toUpperCase()} · {t.spec.providerId} · 深度 {t.depth}
-                          </small>
-                          {t.baseline && <code title={t.baseline}>基线 {t.baseline.slice(0, 10)}</code>}
-                          {t.workspace && (
-                            <p className="path-text" title={t.workspace}>
-                              {t.workspace}
-                            </p>
-                          )}
-                          {Boolean(t.result) && (
-                            <details>
-                              <summary>查看结果</summary>
-                              <pre>{JSON.stringify(t.result, null, 2)}</pre>
-                            </details>
-                          )}
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {tab === 'agents' && (
-                    <>
-                      <div className="panel-heading">
-                        <h3>代理责任树</h3>
-                        <span>
-                          {detail.agents.length}/{detail.run.limits.maxAgents}
-                        </span>
-                      </div>
-                      {detail.agents.map((a) => {
-                        const task = detail.tasks.find((t) => t.id === a.taskId);
-                        return (
-                          <div
-                            className="agent-card"
-                            key={a.id}
-                            style={{ marginLeft: (task?.depth || 0) * 14 }}
-                          >
-                            <div className="agent-avatar">
-                              <Icon name={task?.spec.role === 'coordinator' ? 'spark' : 'tree'} size={18} />
-                            </div>
-                            <div>
-                              <strong>
-                                {task?.spec.role === 'coordinator' ? '总代理' : task?.spec.title}
-                              </strong>
-                              <p>
-                                {a.providerBinding.label} · {a.providerBinding.model}
-                              </p>
-                              <small>独立会话 {a.sessionId.slice(0, 8)}</small>
-                            </div>
-                            <span className={'status-dot ' + a.status.toLowerCase()} />
-                          </div>
-                        );
-                      })}
-                      <div className="info-note">
-                        每个实例独立保存会话、工具操作和工作目录。账号共享并发与速率额度。
-                      </div>
-                    </>
-                  )}
-                  {tab === 'artifacts' && (
-                    <>
-                      <div className="panel-heading">
-                        <h3>版本化产物</h3>
-                        <span>{detail.artifacts.length} 个</span>
-                      </div>
-                      {detail.artifacts.map((a) => (
-                        <button className="artifact-card" key={a.id} onClick={() => void openArtifact(a)}>
-                          <span className="artifact-icon">
-                            <Icon name={a.name.endsWith('.diff') ? 'code' : 'file'} size={21} />
+              {previewOpen ? (
+                <PreviewPanel
+                  runId={runId}
+                  tasks={detail.tasks}
+                  agents={detail.agents}
+                  messages={detail.messages}
+                  operations={detail.operations}
+                  artifacts={detail.artifacts}
+                  streaming={streaming}
+                  selectedTaskId={previewTaskId}
+                  selectTask={setPreviewTaskId}
+                  close={() => setPreviewOpen(false)}
+                />
+              ) : (
+                <aside className="details-panel">
+                  <div className="detail-tabs">
+                    {[
+                      { key: 'tasks', icon: 'grid', title: '任务' },
+                      { key: 'agents', icon: 'tree', title: '代理' },
+                      { key: 'artifacts', icon: 'file', title: '产物' },
+                      { key: 'usage', icon: 'chart', title: '用量' },
+                    ].map((t) => (
+                      <button
+                        key={t.key}
+                        className={tab === t.key ? 'active' : ''}
+                        onClick={() => setTab(t.key)}
+                      >
+                        <Icon name={t.icon} size={15} />
+                        {t.title}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="detail-content">
+                    {tab === 'tasks' && (
+                      <>
+                        <div className="panel-heading">
+                          <h3>执行拓扑</h3>
+                          <span>
+                            {detail.tasks.filter((t) => t.status === 'DONE').length}/{detail.tasks.length}{' '}
+                            完成
                           </span>
-                          <div>
-                            <strong>{a.name}</strong>
-                            <p>
-                              v{a.version} · {a.verified ? '证据已核验' : '待验收'}
-                            </p>
-                            <small>SHA256 {a.hash.slice(0, 12)}</small>
-                          </div>
-                          <Icon name="arrow" size={14} />
-                        </button>
-                      ))}
-                      {!detail.artifacts.length && (
-                        <Empty
-                          icon="file"
-                          title="产物将在这里交付"
-                          text="报告、附件和 Git diff 会保留版本与来源。"
-                        />
-                      )}
-                      <div className="panel-heading">
-                        <h3>待核验操作</h3>
-                      </div>
-                      {detail.operations
-                        .filter((o) => o.status === 'UNCERTAIN')
-                        .map((o) => (
-                          <div className="decision-card" key={o.id}>
-                            <strong>{o.name}</strong>
-                            <p>{o.error || '操作 intent 已记录，结果未确定。请核验本机证据。'}</p>
-                            <pre>{JSON.stringify(o.evidence || o.args, null, 2)}</pre>
-                            <button className="secondary" onClick={() => setModal('decision:' + o.id)}>
-                              提交核验决定
+                        </div>
+                        <TaskGraph detail={detail} />
+                        <div className="panel-heading">
+                          <h3>任务列表</h3>
+                          <span>依赖与责任分开记录</span>
+                        </div>
+                        {detail.tasks.map((t) => (
+                          <div className="task-detail" key={t.id}>
+                            <div>
+                              <strong>{t.spec.title}</strong>
+                              <Badge status={t.status} />
+                            </div>
+                            <p>{t.waitReason ? reasons[t.waitReason] || t.waitReason : t.spec.objective}</p>
+                            <small>
+                              {t.spec.mode.toUpperCase()} · {t.spec.providerId} · 深度 {t.depth}
+                            </small>
+                            {t.baseline && <code title={t.baseline}>基线 {t.baseline.slice(0, 10)}</code>}
+                            <button
+                              className="agent-preview-button"
+                              onClick={() => {
+                                setPreviewTaskId(t.id);
+                                setPreviewOpen(true);
+                              }}
+                            >
+                              预览此代理的工作 ↗
                             </button>
+                            {t.workspace && (
+                              <p className="path-text" title={t.workspace}>
+                                {t.workspace}
+                              </p>
+                            )}
+                            {Boolean(t.result) && (
+                              <details>
+                                <summary>查看结果</summary>
+                                <pre>{JSON.stringify(t.result, null, 2)}</pre>
+                              </details>
+                            )}
                           </div>
                         ))}
-                      {!detail.operations.some((o) => o.status === 'UNCERTAIN') && (
-                        <p className="muted small">当前没有待核验副作用</p>
-                      )}
-                    </>
-                  )}
-                  {tab === 'usage' && <UsagePanel detail={detail} totalTokens={totalTokens} />}
-                </div>
-                <div className="panel-bottom">
-                  <Icon name="history" size={13} />
-                  状态与事件保存在本机 SQLite
-                </div>
-              </aside>
+                      </>
+                    )}
+                    {tab === 'agents' && (
+                      <>
+                        <div className="panel-heading">
+                          <h3>代理责任树</h3>
+                          <span>
+                            {detail.agents.length}/{detail.run.limits.maxAgents}
+                          </span>
+                        </div>
+                        {detail.agents.map((a) => {
+                          const task = detail.tasks.find((t) => t.id === a.taskId);
+                          return (
+                            <div
+                              className="agent-card"
+                              key={a.id}
+                              style={{ marginLeft: (task?.depth || 0) * 14 }}
+                            >
+                              <div className="agent-avatar">
+                                <Icon name={task?.spec.role === 'coordinator' ? 'spark' : 'tree'} size={18} />
+                              </div>
+                              <div>
+                                <strong>
+                                  {task?.spec.role === 'coordinator' ? '总代理' : task?.spec.title}
+                                </strong>
+                                <p>
+                                  {a.providerBinding.label} · {a.providerBinding.model}
+                                </p>
+                                <small>独立会话 {a.sessionId.slice(0, 8)}</small>
+                                <button
+                                  className="agent-preview-button"
+                                  onClick={() => {
+                                    setPreviewTaskId(a.taskId);
+                                    setPreviewOpen(true);
+                                  }}
+                                >
+                                  查看工作预览 ↗
+                                </button>
+                              </div>
+                              <span className={'status-dot ' + a.status.toLowerCase()} />
+                            </div>
+                          );
+                        })}
+                        <div className="info-note">
+                          每个实例独立保存会话、工具操作和工作目录。账号共享并发与速率额度。
+                        </div>
+                      </>
+                    )}
+                    {tab === 'artifacts' && (
+                      <>
+                        <div className="panel-heading">
+                          <h3>版本化产物</h3>
+                          <span>{detail.artifacts.length} 个</span>
+                        </div>
+                        {detail.artifacts.map((a) => (
+                          <button className="artifact-card" key={a.id} onClick={() => void openArtifact(a)}>
+                            <span className="artifact-icon">
+                              <Icon name={a.name.endsWith('.diff') ? 'code' : 'file'} size={21} />
+                            </span>
+                            <div>
+                              <strong>{a.name}</strong>
+                              <p>
+                                v{a.version} · {a.verified ? '证据已核验' : '待验收'}
+                              </p>
+                              <small>SHA256 {a.hash.slice(0, 12)}</small>
+                            </div>
+                            <Icon name="arrow" size={14} />
+                          </button>
+                        ))}
+                        {!detail.artifacts.length && (
+                          <Empty
+                            icon="file"
+                            title="产物将在这里交付"
+                            text="报告、附件和 Git diff 会保留版本与来源。"
+                          />
+                        )}
+                        <div className="panel-heading">
+                          <h3>待核验操作</h3>
+                        </div>
+                        {detail.operations
+                          .filter((o) => o.status === 'UNCERTAIN')
+                          .map((o) => (
+                            <div className="decision-card" key={o.id}>
+                              <strong>{o.name}</strong>
+                              <p>{o.error || '操作 intent 已记录，结果未确定。请核验本机证据。'}</p>
+                              <pre>{JSON.stringify(o.evidence || o.args, null, 2)}</pre>
+                              <button className="secondary" onClick={() => setModal('decision:' + o.id)}>
+                                提交核验决定
+                              </button>
+                            </div>
+                          ))}
+                        {!detail.operations.some((o) => o.status === 'UNCERTAIN') && (
+                          <p className="muted small">当前没有待核验副作用</p>
+                        )}
+                      </>
+                    )}
+                    {tab === 'usage' && <UsagePanel detail={detail} totalTokens={totalTokens} />}
+                  </div>
+                  <div className="panel-bottom">
+                    <Icon name="history" size={13} />
+                    状态与事件保存在本机 SQLite
+                  </div>
+                </aside>
+              )}
             </div>
           </>
         ) : (

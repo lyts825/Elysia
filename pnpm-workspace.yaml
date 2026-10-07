@@ -3,5 +3,7 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+  electron: true
 minimumReleaseAgeExclude:
   - vite@8.3.3
+  - electron@44.6.0

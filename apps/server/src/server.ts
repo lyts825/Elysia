@@ -28,6 +28,7 @@ import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { NativeProvider } from '../../../packages/providers/src/index.js';
+import { PreviewService } from './preview.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -83,6 +84,7 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     ...(options.dev ? ['http://127.0.0.1:5173'] : []),
   ]);
   const hosts = new Set([`127.0.0.1:${options.port}`, ...(options.dev ? ['127.0.0.1:5173'] : [])]);
+  const previews = new PreviewService(store, executor.gateway);
   const cookieSession = (header?: string) =>
     header
       ?.split(';')
@@ -90,7 +92,16 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
       .find((v) => v.startsWith('elysia_session='))
       ?.slice(15);
   app.addHook('onRequest', async (request, reply) => {
+    const address = app.server.address();
+    if (address && typeof address !== 'string') {
+      hosts.delete(`127.0.0.1:${options.port}`);
+      origins.delete(`http://127.0.0.1:${options.port}`);
+      hosts.add(`127.0.0.1:${address.port}`);
+      origins.add(`http://127.0.0.1:${address.port}`);
+    }
     invariant(hosts.has(request.headers.host ?? ''), 'HOST_DENIED', 'Host 不允许');
+    // Capability-scoped sandbox frames have opaque origins and no app session.
+    if (request.url.startsWith('/preview/')) return;
     const origin = request.headers.origin;
     if (origin) invariant(origins.has(origin), 'ORIGIN_DENIED', 'Origin 不允许');
     const pathname = request.url.split('?')[0];
@@ -115,7 +126,8 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
       .header('Referrer-Policy', 'no-referrer')
       .header(
         'Content-Security-Policy',
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'",
+        requestPreviewPolicy(_request.url, reply.getHeader('Content-Security-Policy')) ??
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'none'; base-uri 'self'",
       );
     return payload;
   });
@@ -151,6 +163,32 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
       );
   };
   app.get('/api/health', async () => ({ version: VERSION, status: 'ok' }));
+  app.get<{ Params: { runId: string; taskId: string } }>(
+    '/api/runs/:runId/tasks/:taskId/preview',
+    async (request) => previews.snapshot(request.params.runId, request.params.taskId),
+  );
+  app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
+    '/api/runs/:runId/tasks/:taskId/preview/file',
+    async (request) =>
+      previews.file(
+        request.params.runId,
+        request.params.taskId,
+        z.string().min(1).max(1000).parse(request.query.path),
+      ),
+  );
+  app.get<{ Params: { token: string; '*': string } }>('/preview/:token/*', async (request, reply) => {
+    const result = await previews.resource(request.params.token, request.params['*']);
+    const base = `http://${request.headers.host}/preview/${request.params.token}/`;
+    reply
+      .header('Cache-Control', 'no-store')
+      .header('Access-Control-Allow-Origin', '*')
+      .header(
+        'Content-Security-Policy',
+        `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' ${base}; style-src 'unsafe-inline' ${base}; img-src data: ${base}; font-src ${base}; media-src ${base}; connect-src ${base}; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri ${base}; frame-ancestors 'self'`,
+      )
+      .type(result.mediaType);
+    return result.bytes;
+  });
   app.post('/api/session', async (request, reply) => {
     const body = z.object({ token: z.string() }).parse(request.body);
     const a = Buffer.from(body.token),
@@ -559,8 +597,10 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     });
   } else
     app.get('/', async () => ({ message: '前端未构建，执行 pnpm build 或使用 pnpm dev', version: VERSION }));
-  app.addHook('onClose', async () => {
+  app.addHook('preClose', async () => {
     for (const set of streams.values()) for (const stream of set) stream.end();
+  });
+  app.addHook('onClose', async () => {
     await executor.dispose();
   });
   return {
@@ -569,10 +609,21 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     executor,
     bootstrapToken,
     origins,
+    allowFrontendOrigin: (origin: string) => {
+      origins.add(origin);
+      hosts.add(new URL(origin).host);
+    },
     refreshBootstrapExpiry: () => {
       bootstrapExpires = Date.now() + 15 * 60000;
     },
   };
+}
+function requestPreviewPolicy(url: string, policy: unknown) {
+  return url.startsWith('/preview/')
+    ? typeof policy === 'string'
+      ? policy
+      : "default-src 'none'; sandbox; frame-ancestors 'self'"
+    : undefined;
 }
 function executorHasActive(executor: NativeExecutor, runId: string) {
   return (
