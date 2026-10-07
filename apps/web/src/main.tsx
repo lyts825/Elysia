@@ -33,7 +33,7 @@ import { RunStream } from './RunStream';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
-import { archiveFeedback, getRunFeedback } from './RunFeedback';
+import { archiveFeedback, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
 import './motion.css';
@@ -110,7 +110,22 @@ function App() {
   const spaceProjects = projects.filter((p) => p.spaceId === spaceId && !p.archived);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
-  const feedback = detail ? getRunFeedback(detail, archived) : undefined;
+  const [feedbackTime, setFeedbackTime] = useState(Date.now);
+  const hasRateWait =
+    !!detail &&
+    !archived &&
+    (['READY', 'RUNNING'].includes(detail.run.status) || detail.run.reason === 'rate_limit') &&
+    (detail.run.reason === 'rate_limit' ||
+      detail.tasks.some((task) => task.status === 'WAITING' && task.waitReason === 'rate_limit'));
+  useEffect(() => {
+    if (!hasRateWait || archived) return;
+    setFeedbackTime(Date.now());
+    const timer = window.setInterval(() => setFeedbackTime(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [runId, hasRateWait, archived]);
+  const feedback = detail
+    ? getRunFeedback(detail, archived, hasRateWait ? feedbackTime : Date.now())
+    : undefined;
   const planRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, ModelChoice>>>({});
@@ -660,7 +675,9 @@ function App() {
                     onClick={() => void runAction('pause')}
                   >
                     <Icon name="pause" size={14} />
-                    暂停
+                    {detail.run.status === 'WAITING' && detail.run.reason === 'rate_limit'
+                      ? '暂停自动重试'
+                      : '暂停'}
                   </button>
                 ) : (
                   (feedback?.control === 'resume' || feedback?.control === 'retry') && (
@@ -1065,7 +1082,28 @@ function App() {
                               <strong>{t.spec.title}</strong>
                               <Badge status={t.status} />
                             </div>
-                            <p>{t.waitReason ? reasons[t.waitReason] || t.waitReason : t.spec.objective}</p>
+                            <p>
+                              {t.waitReason === 'rate_limit'
+                                ? rateWaitText(
+                                    t,
+                                    !archived &&
+                                      (['READY', 'RUNNING'].includes(detail.run.status) ||
+                                        detail.run.reason === 'rate_limit'),
+                                    feedbackTime,
+                                    detail.edges
+                                      .filter((edge) => edge.taskId === t.id)
+                                      .every((edge) =>
+                                        detail.tasks.some(
+                                          (dependency) =>
+                                            dependency.id === edge.dependencyId &&
+                                            dependency.status === 'DONE',
+                                        ),
+                                      ),
+                                  )
+                                : t.waitReason
+                                  ? reasons[t.waitReason] || t.waitReason
+                                  : t.spec.objective}
+                            </p>
                             {t.status === 'FAILED' &&
                               typeof t.result === 'object' &&
                               t.result !== null &&

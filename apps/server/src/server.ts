@@ -733,6 +733,7 @@ export function createServer(
           store.put('attempts', { ...a, status: 'FAILED', lease: null, error: '显式模型切换' });
         store.put('agents', { ...agent, providerId: binding.id, providerBinding: binding, sessionId: id() });
         kernel.updateTask(task, task.status, {
+          rateLimit: undefined,
           spec: {
             ...task.spec,
             providerId: binding.id,

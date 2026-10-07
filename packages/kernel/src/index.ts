@@ -26,7 +26,23 @@ export class Kernel {
   }
   updateTask(task: Task, status: Task['status'], extra: Partial<Task> = {}) {
     return this.store.tx(() => {
-      const next = this.store.put('tasks', { ...task, ...extra, status }, task.revision);
+      const bindingChanged =
+        extra.spec &&
+        (extra.spec.providerId !== task.spec.providerId ||
+          extra.spec.model !== task.spec.model ||
+          extra.spec.reasoningEffort !== task.spec.reasoningEffort);
+      const next = this.store.put(
+        'tasks',
+        {
+          ...task,
+          ...extra,
+          status,
+          ...(['DONE', 'CANCELLED', 'FAILED'].includes(status) || bindingChanged
+            ? { rateLimit: undefined }
+            : {}),
+        },
+        task.revision,
+      );
       this.event(task.runId, 'task.updated', next, task.id);
       const agent = this.store.require<Agent>('agents', task.agentId);
       this.store.put('agents', { ...agent, status });
@@ -694,7 +710,12 @@ export class Kernel {
         if (!taskId || taskId === run.rootTaskId)
           this.updateRun(run, { status: 'CANCELLED', reason: 'user' });
       } else if (action === 'pause') {
-        for (const t of tasks.filter((t) => ['READY', 'RUNNING'].includes(t.status))) this.wait(t, 'paused');
+        for (const t of tasks.filter(
+          (t) =>
+            ['READY', 'RUNNING'].includes(t.status) ||
+            (t.status === 'WAITING' && t.waitReason === 'rate_limit'),
+        ))
+          this.wait(t, 'paused');
         if (!taskId || taskId === run.rootTaskId)
           this.updateRun(this.store.require('runs', runId), { status: 'WAITING', reason: 'paused' });
       } else {
@@ -770,7 +791,7 @@ export class Kernel {
           this.appendMessage(root, 'user', message.text);
           this.store.put('inbox', { ...message, status: 'APPLIED' });
         }
-        this.updateTask(root, 'READY', { waitReason: undefined, waitingFor: [] });
+        this.updateTask(root, 'READY', { waitReason: undefined, waitingFor: [], rateLimit: undefined });
         this.updateRun(run, { status: 'READY', reason: undefined, startedAt: Date.now() });
         return;
       }
@@ -801,9 +822,10 @@ export class Kernel {
           contractVersion: run.contract.version,
           waitReason: undefined,
           waitingFor: [],
+          rateLimit: undefined,
         });
-      } else if (root.status === 'WAITING' && ['user', 'plan'].includes(root.waitReason ?? ''))
-        this.updateTask(root, 'READY', { waitReason: undefined });
+      } else if (root.status === 'WAITING' && ['user', 'plan', 'rate_limit'].includes(root.waitReason ?? ''))
+        this.updateTask(root, 'READY', { waitReason: undefined, rateLimit: undefined });
       this.updateRun(this.store.require('runs', runId), { status: 'READY', reason: undefined });
     });
   }

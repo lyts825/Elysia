@@ -87,6 +87,8 @@ export class NativeExecutor implements ExecutorAdapter {
           this.kernel.applyInbox(run.id);
           run = this.kernel.store.require<Run>('runs', run.id);
         }
+        this.resumeRateLimited(run.id);
+        run = this.kernel.store.require<Run>('runs', run.id);
         if (
           run.startedAt &&
           Date.now() - run.startedAt >= run.limits.maxMinutes * 60000 &&
@@ -102,15 +104,6 @@ export class NativeExecutor implements ExecutorAdapter {
         if (run.kind !== 'chat' && ![...this.active.values()].some((a) => a.runId === run.id))
           this.kernel.applyInbox(run.id);
         this.kernel.wakeChildren(run.id);
-        for (const task of this.kernel.store
-          .all<Task>('tasks', run.id)
-          .filter(
-            (t) =>
-              t.status === 'WAITING' &&
-              t.waitReason === 'rate_limit' &&
-              Number((t.result as any)?.resumeAt) <= Date.now(),
-          ))
-          this.kernel.updateTask(task, 'READY', { waitReason: undefined });
       }
       const tasks = this.kernel.store.all<Task>('tasks').filter((t) => t.status === 'READY');
       for (const task of tasks) {
@@ -207,8 +200,23 @@ export class NativeExecutor implements ExecutorAdapter {
     if (calls.length) await this.executeCalls(task, attempt, calls, signal);
   }
   async step(task: Task, signal: AbortSignal) {
-    let attempt = this.kernel.claim(task.id);
+    const cooldown = task.rateLimit;
     const store = this.kernel.store;
+    const resumeAt = this.rateLimitResumeAt(task);
+    const pendingRun = store.require<Run>('runs', task.runId);
+    if (
+      cooldown &&
+      resumeAt !== undefined &&
+      resumeAt > Date.now() &&
+      task.status === 'READY' &&
+      !pendingRun.archived &&
+      ['READY', 'RUNNING'].includes(pendingRun.status) &&
+      (!pendingRun.projectId || !store.require<Project>('projects', pendingRun.projectId).archived)
+    ) {
+      this.kernel.wait(task, 'rate_limit');
+      return;
+    }
+    let attempt = this.kernel.claim(task.id);
     task = await this.gateway.prepare(store.require('tasks', task.id), signal);
     await this.replayPending(task, attempt, signal);
     task = store.require('tasks', task.id);
@@ -228,28 +236,64 @@ export class NativeExecutor implements ExecutorAdapter {
       .filter((r) => r.taskId === task.id)
       .at(-1);
     context.manifest.difference = requestDifference(previous?.manifest, context.manifest);
-    const logicalId = id();
+    const continuation =
+      cooldown?.logicalId &&
+      Number.isInteger(cooldown.retry) &&
+      cooldown.retry! >= 0 &&
+      cooldown.retry! <= 2 &&
+      (cooldown.retry === 0 ||
+        store
+          .all<RequestRecord>('requests', run.id)
+          .some((r) => r.logicalId === cooldown.logicalId && r.attemptId === attempt.id));
+    const logicalId = continuation ? cooldown!.logicalId! : id();
+    const firstRetry = continuation
+      ? Math.max(
+          cooldown!.retry!,
+          store
+            .all<RequestRecord>('requests', run.id)
+            .filter((record) => record.logicalId === logicalId && record.attemptId === attempt.id).length,
+        )
+      : 0;
+    if (firstRetry >= 3)
+      throw new ProviderError(
+        'REQUEST_RETRY_LIMIT',
+        '该次模型请求已达到 3 次尝试上限，请检查用量和已有响应后再重试。',
+        400,
+      );
     let complete: Extract<ProviderEvent, { type: 'completed' }> | null = null;
     let successfulRequestId: string | null = null;
-    for (let retry = 0; retry <= 2; retry++) {
+    for (let retry = firstRetry; retry <= 2; retry++) {
       signal.throwIfAborted();
       const accountRequests = store
         .all<RequestRecord>('requests')
         .filter((r) => r.providerBinding.account === config.account && r.startedAt > Date.now() - 60000);
-      if (
-        accountRequests.length >= config.rpm ||
-        accountRequests.reduce(
-          (sum, r) => sum + (r.usage?.inputTotal ?? r.reservedTokens) + (r.usage?.outputTotal ?? 0),
-          0,
-        ) +
-          context.estimatedTokens +
-          config.outputLimit >
-          config.tpm
-      ) {
-        this.kernel.updateTask(store.require('tasks', task.id), 'RUNNING', {
-          result: { resumeAt: Date.now() + 60000 },
-        });
-        this.kernel.wait(store.require('tasks', task.id), 'rate_limit');
+      const requestTokens = context.estimatedTokens + config.outputLimit;
+      if (requestTokens > config.tpm) {
+        this.waitAtLimit(
+          task,
+          'ACCOUNT_TOKEN_LIMIT',
+          '单次请求所需 Token 超过账号每分钟上限，请减少资料，或在模型设置中调整额度后新建任务。',
+        );
+        return;
+      }
+      const usedTokens = accountRequests.reduce(
+        (sum, r) => sum + (r.usage?.inputTotal ?? r.reservedTokens) + (r.usage?.outputTotal ?? 0),
+        0,
+      );
+      if (accountRequests.length >= config.rpm || usedTokens + requestTokens > config.tpm) {
+        let remainingRequests = accountRequests.length;
+        let remainingTokens = usedTokens;
+        let resumeAt = Date.now() + 60000;
+        for (const record of [...accountRequests].sort((a, b) => a.startedAt - b.startedAt)) {
+          remainingRequests--;
+          remainingTokens -=
+            (record.usage?.inputTotal ?? record.reservedTokens) + (record.usage?.outputTotal ?? 0);
+          if (remainingRequests < config.rpm && remainingTokens + requestTokens <= config.tpm) {
+            resumeAt = Math.max(Date.now() + 1, record.startedAt + 60000);
+            break;
+          }
+        }
+        this.waitAtRateLimit(task, { resumeAt, source: 'account', logicalId, retry });
         return;
       }
       const record = this.kernel.reserve(
@@ -304,10 +348,12 @@ export class NativeExecutor implements ExecutorAdapter {
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
         const wait = Math.max(error.retryAfterMs, 1000 * 2 ** retry);
         if (wait > 60000) {
-          this.kernel.updateTask(store.require('tasks', task.id), 'RUNNING', {
-            result: { resumeAt: Date.now() + wait },
+          this.waitAtRateLimit(task, {
+            resumeAt: Date.now() + wait,
+            source: 'provider',
+            logicalId,
+            retry: retry + 1,
           });
-          this.kernel.wait(store.require('tasks', task.id), 'rate_limit');
           return;
         }
         await delay(wait, signal);
@@ -324,6 +370,8 @@ export class NativeExecutor implements ExecutorAdapter {
         reasoningContent: completed.reasoningContent,
         providerKind: config.kind,
       });
+      const current = store.require<Task>('tasks', task.id);
+      if (current.rateLimit) store.put('tasks', { ...current, rateLimit: undefined });
       attempt = store.put('attempts', {
         ...store.require<Attempt>('attempts', attempt.id),
         steps: attempt.steps + 1,
@@ -357,6 +405,56 @@ export class NativeExecutor implements ExecutorAdapter {
     if (task.status === 'RUNNING') this.kernel.updateTask(task, 'READY');
     this.kernel.checkpoint(attempt.id);
   }
+  private rateLimitResumeAt(task: Task) {
+    const legacy =
+      task.result && typeof task.result === 'object'
+        ? (task.result as { resumeAt?: unknown }).resumeAt
+        : undefined;
+    const value = task.rateLimit === undefined ? legacy : task.rateLimit?.resumeAt;
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+  private resumeRateLimited(runId: string) {
+    this.kernel.store.tx(() => {
+      const store = this.kernel.store;
+      const run = store.require<Run>('runs', runId);
+      if (
+        run.archived ||
+        (!['READY', 'RUNNING'].includes(run.status) &&
+          !(run.status === 'WAITING' && run.reason === 'rate_limit')) ||
+        (run.projectId && store.require<Project>('projects', run.projectId).archived)
+      )
+        return;
+      for (const task of store.all<Task>('tasks', run.id)) {
+        const resumeAt = this.rateLimitResumeAt(task);
+        if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
+        if (task.status === 'WAITING' && task.waitReason === 'rate_limit')
+          this.kernel.updateTask(task, 'READY', { waitReason: undefined });
+      }
+      if (
+        run.status === 'WAITING' &&
+        run.reason === 'rate_limit' &&
+        store.all<Task>('tasks', run.id).some((task) => {
+          const resumeAt = this.rateLimitResumeAt(task);
+          return (
+            task.status === 'READY' &&
+            resumeAt !== undefined &&
+            resumeAt <= Date.now() &&
+            !this.active.has(task.id) &&
+            this.kernel.dependencies(task).every((key) => store.require<Task>('tasks', key).status === 'DONE')
+          );
+        })
+      )
+        this.kernel.updateRun(run, { status: 'READY', reason: undefined });
+    });
+  }
+  private waitAtRateLimit(task: Task, rateLimit: NonNullable<Task['rateLimit']>) {
+    this.kernel.store.tx(() => {
+      const current = this.kernel.store.require<Task>('tasks', task.id);
+      if (current.status !== 'RUNNING') return;
+      const updated = this.kernel.updateTask(current, 'RUNNING', { rateLimit });
+      this.kernel.wait(updated, 'rate_limit');
+    });
+  }
   private waitAtLimit(task: Task, code: string, message: string) {
     this.kernel.store.tx(() => {
       const current = this.kernel.store.require<Task>('tasks', task.id);
@@ -373,7 +471,10 @@ export class NativeExecutor implements ExecutorAdapter {
     store.tx(() => {
       if (e instanceof AppError && e.code === 'CHATGPT_USAGE_LIMIT')
         this.kernel.wait(current, 'subscription_limit');
-      else if (e instanceof AppError && /BUDGET|CONTEXT_LIMIT|TIME_BUDGET/.test(e.code))
+      else if (
+        e instanceof AppError &&
+        (/BUDGET|CONTEXT_LIMIT|TIME_BUDGET/.test(e.code) || e.code === 'ACCOUNT_TOKEN_LIMIT')
+      )
         this.waitAtLimit(current, e.code, e.message);
       else {
         this.kernel.updateTask(current, 'FAILED', {

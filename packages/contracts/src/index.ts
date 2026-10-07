@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.6.4-preview.1';
+export const VERSION = '0.6.5-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -186,6 +186,12 @@ export interface Task extends Entity {
   baseline: string | null;
   waitReason?: string;
   waitingFor: string[];
+  rateLimit?: {
+    resumeAt: number;
+    source?: 'account' | 'provider';
+    logicalId?: string;
+    retry?: number;
+  };
   result?: unknown;
 }
 export interface Agent extends Entity {
