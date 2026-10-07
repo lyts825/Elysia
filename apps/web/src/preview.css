@@ -390,6 +390,35 @@
   color: inherit;
   text-decoration: underline;
 }
+.preview-error > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.preview-error small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+}
+.preview-error button {
+  flex: none;
+  align-self: flex-start;
+}
+.preview-task-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dfbcc0;
+  border-radius: 7px;
+  color: var(--danger);
+  background: #fff1f1;
+  font-size: 12px;
+}
+.preview-task-error p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
 .preview-loading {
   padding: 30px;
   color: var(--muted);

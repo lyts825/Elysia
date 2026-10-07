@@ -894,23 +894,13 @@ a {
   flex: none;
   margin-top: 2px;
 }
-.tool-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 5px 6px 0 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-family: Consolas, monospace;
+.connection-status {
   font-size: 11px;
-  color: var(--muted);
-  background: var(--surface-soft);
+  color: #78592d;
 }
-.tool-chip span {
-  font-family: inherit;
+.message-body .pending-response,
+.pending-response .message-body p {
   color: var(--muted);
-  font-size: 11px;
 }
 .plan-card {
   border: 1px solid var(--border);
@@ -2049,4 +2039,8 @@ a {
 }
 .conversation-ended .secondary {
   font-size: 12px;
+}
+.task-detail .task-failure {
+  color: var(--danger);
+  overflow-wrap: anywhere;
 }

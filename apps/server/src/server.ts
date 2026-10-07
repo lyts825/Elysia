@@ -833,9 +833,11 @@ export function createServer(
     for (const stream of streams.get(runId) ?? []) stream.end();
     streams.delete(runId);
   });
-  executor.onDelta = (runId, taskId, text) => {
+  executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
-      stream.write('event: message.delta\ndata: ' + JSON.stringify({ runId, taskId, text }) + '\n\n');
+      stream.write(
+        'event: message.delta\ndata: ' + JSON.stringify({ runId, taskId, text, requestId, offset }) + '\n\n',
+      );
   };
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/api/runs/:id/events',

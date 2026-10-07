@@ -28,6 +28,8 @@ import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceManager } from './WorkspaceManager';
 import { ConversationScroll } from './ConversationScroll';
+import { ToolActivity } from './ToolActivity';
+import { RunStream } from './RunStream';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
@@ -119,6 +121,8 @@ function App() {
   const mainMotion = usePositionMotion<HTMLElement>();
   const activeRunId = useRef('');
   const detailRequest = useRef(0);
+  const runStream = useRef(new RunStream());
+  const [connection, setConnection] = useState('connecting');
   const actionPending = useRef(false);
   const reply = replies[runId] || '';
   const refresh = useCallback(async () => {
@@ -142,8 +146,11 @@ function App() {
     if (!wanted) return;
     const request = ++detailRequest.current;
     const result = await api<Detail>('/runs/' + wanted);
-    if (activeRunId.current === wanted && detailRequest.current === request)
+    if (activeRunId.current === wanted && detailRequest.current === request) {
+      runStream.current.sync(result.requests);
+      setStreaming(runStream.current.texts());
       setDetail((old) => (old?.run.id === wanted && old.run.revision > result.run.revision ? old : result));
+    }
   }, []);
   useEffect(() => {
     initializeSession()
@@ -160,19 +167,30 @@ function App() {
   }, [ready, refresh]);
   useEffect(() => {
     setDetail(null);
+    runStream.current.clear();
     setStreaming({});
+    setConnection('connecting');
     if (!ready || !runId) return;
     void refreshDetail().catch((e) => setError(e.message));
     const source = new EventSource('/api/runs/' + runId + '/events');
+    let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const reload = () => {
-      if (!timer)
+      if (!disposed && !timer)
         timer = setTimeout(() => {
           timer = null;
           void refreshDetail().catch(() => {});
           void refresh().catch(() => {});
         }, 120);
     };
+    source.addEventListener('open', () => {
+      if (disposed) return;
+      setConnection('connected');
+      reload();
+    });
+    source.addEventListener('error', (event) => {
+      if (!disposed && !(event instanceof MessageEvent)) setConnection('reconnecting');
+    });
     const events = [
       'run.updated',
       'plan.proposed',
@@ -188,17 +206,22 @@ function App() {
     ];
     for (const event of events)
       source.addEventListener(event, (e) => {
+        if (disposed) return;
         if (event === 'message.completed') {
           const data = JSON.parse((e as MessageEvent).data);
-          setStreaming((old) => ({ ...old, [data.taskId]: '' }));
+          runStream.current.complete(data.taskId, data.payload);
+          setStreaming(runStream.current.texts());
         }
         reload();
       });
     source.addEventListener('message.delta', (e) => {
+      if (disposed) return;
       const data = JSON.parse((e as MessageEvent).data);
-      setStreaming((old) => ({ ...old, [data.taskId]: (old[data.taskId] || '') + data.text }));
+      if (!runStream.current.delta(data)) reload();
+      setStreaming(runStream.current.texts());
     });
     return () => {
+      disposed = true;
       source.close();
       if (timer) clearTimeout(timer);
     };
@@ -525,6 +548,11 @@ function App() {
                       ? '交付已完成，可查看产物与验证记录'
                       : '进度与结果自动保存')}
                 </span>
+                {connection !== 'connected' && (
+                  <span className="connection-status" role="status">
+                    {connection === 'reconnecting' ? '实时连接中断，正在重连…' : '正在连接实时更新…'}
+                  </span>
+                )}
               </div>
               <div className="run-controls">
                 <button className="quiet-button" onClick={() => setModal('manage:runs')}>
@@ -656,15 +684,15 @@ function App() {
                             </div>
                             {m.text && <p>{m.text}</p>}
                             {m.calls?.map((c) => (
-                              <div className="tool-chip" key={c.id}>
-                                <Icon name="code" size={12} />
-                                {c.name}
-                                <span>
-                                  {detail.operations.find((o) => o.toolCallId === c.id)?.status === 'DONE'
-                                    ? '已记录'
-                                    : '处理中'}
-                                </span>
-                              </div>
+                              <ToolActivity
+                                key={c.id}
+                                call={c}
+                                operation={detail.operations.find((o) => o.toolCallId === c.id)}
+                                toolResponse={detail.messages.find(
+                                  (r) => r.role === 'tool' && r.callId === c.id,
+                                )}
+                                taskStatus={task?.status}
+                              />
                             ))}
                           </div>
                         </div>
@@ -683,6 +711,30 @@ function App() {
                             <span className="typing-dot" />
                           </div>
                           <p>{value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  {detail.tasks
+                    .filter((t) => t.status === 'RUNNING' && !streaming[t.id])
+                    .map((t) => (
+                      <div
+                        className="message assistant pending-response"
+                        key={'pending:' + t.id}
+                        role="status"
+                      >
+                        <div className="message-avatar assistant">
+                          <Icon name="spark" size={17} />
+                        </div>
+                        <div className="message-body">
+                          <div className="message-label">
+                            {isChat ? '助手' : t.spec.title}
+                            <span className="typing-dot" />
+                          </div>
+                          <p>
+                            {detail.operations.some((o) => o.taskId === t.id && o.status === 'INTENT')
+                              ? '正在执行工具，结果会自动更新…'
+                              : '正在等待模型响应…'}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -925,6 +977,15 @@ function App() {
                               <Badge status={t.status} />
                             </div>
                             <p>{t.waitReason ? reasons[t.waitReason] || t.waitReason : t.spec.objective}</p>
+                            {t.status === 'FAILED' &&
+                              typeof t.result === 'object' &&
+                              t.result !== null &&
+                              'error' in t.result &&
+                              typeof t.result.error === 'string' && (
+                                <p className="task-failure" role="alert">
+                                  {t.result.error}
+                                </p>
+                              )}
                             <small>
                               {t.spec.providerId} · 深度 {t.depth}
                             </small>

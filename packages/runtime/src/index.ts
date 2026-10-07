@@ -37,7 +37,8 @@ export class NativeExecutor implements ExecutorAdapter {
   private stopped = false;
   private ticking = false;
   private toolActive = 0;
-  onDelta: (runId: string, taskId: string, text: string) => void = () => {};
+  onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
+    () => {};
   adapterFactory: (agent: Agent) => ProviderAdapter = (agent) => new NativeProvider(agent.providerBinding);
   constructor(public kernel: Kernel) {
     this.gateway = new ToolGateway(kernel);
@@ -270,7 +271,7 @@ export class NativeExecutor implements ExecutorAdapter {
             partial += event.text;
             const current = store.require<RequestRecord>('requests', record.id);
             store.put('requests', { ...current, manifest: { ...current.manifest, partialText: partial } });
-            this.onDelta(run.id, task.id, event.text);
+            this.onDelta(run.id, task.id, event.text, record.id, partial.length - event.text.length);
           } else complete = event;
         }
         if (!complete) throw new ProviderError('STREAM_INTERRUPTED', '模型未产生完成响应', 0);
@@ -317,6 +318,7 @@ export class NativeExecutor implements ExecutorAdapter {
     store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
       this.kernel.appendMessage(task, 'assistant', completed.text, {
+        requestId: successfulRequestId!,
         calls: completed.calls,
         native: completed.native,
         reasoningContent: completed.reasoningContent,

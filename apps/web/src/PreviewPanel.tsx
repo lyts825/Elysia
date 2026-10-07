@@ -54,16 +54,23 @@ export function PreviewPanel({
     [auto, setAuto] = useState(true),
     [refresh, setRefresh] = useState(0);
   const [filter, setFilter] = useState(''),
-    [error, setError] = useState(''),
+    [snapshotError, setSnapshotError] = useState(''),
+    [fileError, setFileError] = useState(''),
     [updated, setUpdated] = useState('');
   const [viewport, setViewport] = useState('desktop'),
     [wide, setWide] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fileRetryCount, setFileRetryCount] = useState(0),
+    [fileRetryPending, setFileRetryPending] = useState(false);
+  const autoRef = useRef(auto);
+  autoRef.current = auto;
+  const fileRetries = useRef<{ cancel: () => void; resume: () => void } | null>(null);
   const selected = filesByTask[taskId] || '';
   useEffect(() => {
     setSnapshot(null);
     setContent(null);
-    setError('');
+    setSnapshotError('');
+    setFileError('');
     setUpdated('');
   }, [taskId]);
   useEffect(() => {
@@ -89,9 +96,9 @@ export function PreviewPanel({
           return { ...old, [taskId]: first?.path || '' };
         });
         setUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
-        setError('');
+        setSnapshotError('');
       } catch (e) {
-        if (!disposed) setError((e as Error).message);
+        if (!disposed) setSnapshotError((e as Error).message);
       } finally {
         if (!disposed && auto) timer = setTimeout(poll, 1500);
       }
@@ -104,26 +111,72 @@ export function PreviewPanel({
   }, [runId, taskId, auto, refresh]);
   useEffect(() => {
     setContent(null);
+    setFileError('');
+    setFileRetryCount(0);
+    setFileRetryPending(false);
+    setLoading(false);
     if (!selected) return;
-    let disposed = false;
-    setLoading(true);
-    api<PreviewFile>(`/runs/${runId}/tasks/${taskId}/preview/file?path=${encodeURIComponent(selected)}`)
-      .then((result) => {
+    let disposed = false,
+      attempts = 0,
+      inFlight = false,
+      failed = false,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (!disposed) setFileRetryPending(false);
+    };
+    const resume = () => {
+      if (disposed || !autoRef.current || timer || inFlight || !failed || attempts >= 3) return;
+      setFileRetryPending(true);
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (disposed || !autoRef.current) return;
+        setFileRetryPending(false);
+        void read();
+      }, 1000);
+    };
+    const read = async () => {
+      if (disposed || inFlight) return;
+      inFlight = true;
+      failed = false;
+      attempts++;
+      setFileRetryCount(attempts - 1);
+      setLoading(true);
+      try {
+        const result = await api<PreviewFile>(
+          `/runs/${runId}/tasks/${taskId}/preview/file?path=${encodeURIComponent(selected)}`,
+        );
         if (!disposed) {
           setContent(result);
-          setError('');
+          setFileError('');
         }
-      })
-      .catch((e) => {
-        if (!disposed) setError(e.message);
-      })
-      .finally(() => {
-        if (!disposed) setLoading(false);
-      });
+      } catch (e) {
+        if (!disposed) {
+          failed = true;
+          setFileError((e as Error).message);
+        }
+      } finally {
+        inFlight = false;
+        if (!disposed) {
+          setLoading(false);
+          resume();
+        }
+      }
+    };
+    const controls = { cancel, resume };
+    fileRetries.current = controls;
+    void read();
     return () => {
       disposed = true;
+      cancel();
+      if (fileRetries.current === controls) fileRetries.current = null;
     };
   }, [runId, taskId, selected, snapshot?.revision, refresh]);
+  useEffect(() => {
+    if (auto) fileRetries.current?.resume();
+    else fileRetries.current?.cancel();
+  }, [auto]);
   const current = snapshot?.taskId === taskId ? snapshot : null;
   const visible = current?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) || [];
   const selectedFile = content?.path === selected ? content : null;
@@ -136,6 +189,12 @@ export function PreviewPanel({
     .filter((o) => o.taskId === taskId)
     .slice(-30)
     .reverse();
+  const taskError =
+    task?.status === 'FAILED' && task.result && typeof task.result === 'object' && 'error' in task.result
+      ? typeof task.result.error === 'string'
+        ? task.result.error
+        : ''
+      : '';
   return (
     <aside
       ref={panel}
@@ -221,10 +280,29 @@ export function PreviewPanel({
           <Icon name="refresh" size={16} />
         </button>
       </div>
-      {error && (
+      {snapshotError && (
         <div role="alert" className="preview-error">
-          {error}
+          <span>工作区同步失败：{snapshotError}</span>
           <button onClick={() => setRefresh((n) => n + 1)}>重试</button>
+        </div>
+      )}
+      {fileError && (
+        <div role="alert" className="preview-error">
+          <span>
+            文件读取失败：{fileError}
+            <small>
+              {fileRetryPending && auto
+                ? `将自动重试（${fileRetryCount + 1}/2）…`
+                : loading
+                  ? `正在重试（${fileRetryCount}/2）…`
+                  : fileRetryCount >= 2
+                    ? '自动重试 2 次仍未成功，请手动重试。'
+                    : '自动更新已关闭，请手动重试。'}
+            </small>
+          </span>
+          <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
+            重试
+          </button>
         </div>
       )}
       {view === 'activity' ? (
@@ -232,6 +310,12 @@ export function PreviewPanel({
           <h3>{task?.spec.title}</h3>
           <p className="preview-objective">{task?.spec.objective}</p>
           {task?.waitReason && <div className="preview-wait">等待原因：{task.waitReason}</div>}
+          {taskError && (
+            <div className="preview-task-error" role="alert">
+              <strong>执行失败</strong>
+              <p>{taskError}</p>
+            </div>
+          )}
           {streaming[taskId] && (
             <article className="preview-stream">
               <small>
@@ -435,7 +519,11 @@ export function PreviewPanel({
             ) : (
               <PreviewEmpty
                 title="无法读取当前文件"
-                text="文件可能正在被写入；稍后自动重试或选择其他文件。"
+                text={
+                  loading || fileRetryPending
+                    ? '文件可能正在被写入，正在尝试重新读取。'
+                    : '请点击上方“重试”或选择其他文件。'
+                }
               />
             )}
           </MotionContent>
