@@ -31,6 +31,7 @@ import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
+import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
 import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, getRunFeedback, rateWaitText } from './RunFeedback';
@@ -135,6 +136,10 @@ function App() {
   const decisionOperation = modal.startsWith('decision:')
     ? detail?.operations.find((operation) => operation.id === modal.slice(9))
     : undefined;
+  const switchAgent = modal.startsWith('model:')
+    ? detail?.agents.find((agent) => agent.id === modal.slice(6))
+    : undefined;
+  const switchTask = detail?.tasks.find((task) => task.id === switchAgent?.taskId);
   const decisionDisabledReason = (operation: Operation) => {
     if (archived) return '请先恢复归档记录，再提交核验决定。';
     if (
@@ -374,8 +379,10 @@ function App() {
   };
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
-  const runAction = (action: string) =>
-    act(() => mutation('/runs/' + runId + '/actions', { action, expectedRevision: detail!.run.revision }));
+  const runAction = (action: string, taskId?: string) =>
+    act(() =>
+      mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
+    );
   async function openArtifact(a: Artifact) {
     await act(async () => {
       const response = await fetch('/api/artifacts/' + a.id);
@@ -743,7 +750,20 @@ function App() {
                   {detail.messages
                     .filter((m) => m.role !== 'tool')
                     .map((m) => {
-                      const agent = detail.agents.find((a) => a.sessionId === m.sessionId);
+                      if (m.purpose === 'model_handoff')
+                        return (
+                          <div className="system-note model-handoff" key={m.id}>
+                            <Icon name="history" size={14} />
+                            <details>
+                              <summary>模型已切换，已保留对话交接</summary>
+                              <pre>{m.text}</pre>
+                            </details>
+                          </div>
+                        );
+                      const request = detail.requests.find((item) => item.id === m.requestId);
+                      const agent = detail.agents.find(
+                        (a) => a.sessionId === m.sessionId || a.taskId === request?.taskId,
+                      );
                       const task = detail.tasks.find((t) => t.id === agent?.taskId);
                       return (
                         <div className={'message ' + m.role} key={m.id}>
@@ -765,7 +785,11 @@ function App() {
                                     ? '助手'
                                     : '总代理'
                                   : task?.spec.title || 'Agent'}
-                              <small>{m.role === 'assistant' ? agent?.providerBinding.model : ''}</small>
+                              <small>
+                                {m.role === 'assistant'
+                                  ? request?.providerBinding.model || agent?.providerBinding.model
+                                  : ''}
+                              </small>
                             </div>
                             {m.text && <p>{m.text}</p>}
                             {m.calls?.map((c) => (
@@ -855,8 +879,29 @@ function App() {
                       </div>
                       <p>{detail.run.plan.summary}</p>
                       {detail.run.plan.tasks.map((t, i) => {
+                        const currentTask =
+                          detail.run.acceptedPlanVersion === detail.run.plan!.version
+                            ? detail.tasks.find(
+                                (task) =>
+                                  task.parentTaskId === detail.run.rootTaskId &&
+                                  task.contractVersion === detail.run.plan!.contractVersion &&
+                                  task.spec.key === t.key &&
+                                  task.status !== 'CANCELLED',
+                              )
+                            : undefined;
+                        const binding = detail.agents.find(
+                          (agent) => agent.id === currentTask?.agentId,
+                        )?.providerBinding;
                         const choice =
-                          detail.run.reason === 'plan' ? assignments[t.key] || proposedChoice(t) : t;
+                          detail.run.reason === 'plan'
+                            ? assignments[t.key] || proposedChoice(t)
+                            : binding
+                              ? {
+                                  providerId: binding.id,
+                                  model: binding.model,
+                                  reasoningEffort: binding.reasoningEffort,
+                                }
+                              : t;
                         const provider = providers.find((p) => p.id === choice.providerId);
                         return (
                           <div className="plan-row" key={t.key}>
@@ -865,7 +910,9 @@ function App() {
                               <strong>{t.title}</strong>
                               <p>{t.objective}</p>
                               <small>
-                                {provider?.label || choice.providerId}
+                                {binding
+                                  ? '当前模型：' + binding.label
+                                  : provider?.label || choice.providerId}
                                 {choice.model ? ' · ' + choice.model : ''}
                                 {choice.reasoningEffort ? ' · ' + choice.reasoningEffort : ''}{' '}
                                 {t.dependsOn.length
@@ -1150,6 +1197,7 @@ function App() {
                         </div>
                         {agentOrder(detail.agents).map((a) => {
                           const task = detail.tasks.find((t) => t.id === a.taskId);
+                          const switchReason = modelSwitchReason(detail, archived, a.taskId);
                           return (
                             <div
                               className="agent-card"
@@ -1169,8 +1217,33 @@ function App() {
                                 </strong>
                                 <p>
                                   {a.providerBinding.label} · {a.providerBinding.model}
+                                  {a.providerBinding.reasoningEffort
+                                    ? ` · ${a.providerBinding.reasoningEffort}`
+                                    : ''}
                                 </p>
                                 <small>独立会话 {a.sessionId.slice(0, 8)}</small>
+                                <button
+                                  className="agent-preview-button"
+                                  disabled={busy || !!switchReason}
+                                  title={switchReason || '为此代理选择模型'}
+                                  onClick={() => setModal('model:' + a.id)}
+                                >
+                                  切换模型
+                                </button>
+                                {task && modelTaskCanContinue(task) && (
+                                  <button
+                                    className="agent-preview-button"
+                                    disabled={
+                                      busy ||
+                                      !!switchReason ||
+                                      (!detail.run.authorized && task.phase !== 'planning')
+                                    }
+                                    onClick={() => void runAction('resume_task', task.id)}
+                                  >
+                                    继续此代理
+                                  </button>
+                                )}
+                                {switchReason && <small className="model-switch-help">{switchReason}</small>}
                                 {!isChat && (
                                   <button
                                     className="agent-preview-button"
@@ -1333,6 +1406,30 @@ function App() {
                 >
                   <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
                 </React.Suspense>
+              )}
+              {modal.startsWith('model:') && detail && switchAgent && switchTask && (
+                <ModelSwitchModal
+                  key={detail.run.id + ':' + switchAgent.id}
+                  providers={providers}
+                  agent={switchAgent}
+                  task={switchTask}
+                  chat={isChat}
+                  busy={busy}
+                  disabledReason={modelSwitchReason(detail, archived, switchTask.id)}
+                  close={() => setModal('')}
+                  submit={(choice, switchMode) =>
+                    act(async () => {
+                      await mutation('/runs/' + detail.run.id + '/actions', {
+                        ...choice,
+                        action: 'switch_model',
+                        switchMode,
+                        taskId: switchTask.id,
+                        expectedRevision: detail.run.revision,
+                      });
+                      setModal('');
+                    })
+                  }
+                />
               )}
               {modal === 'contract' && detail && (
                 <ContractModal

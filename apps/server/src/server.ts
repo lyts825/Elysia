@@ -697,11 +697,43 @@ export function createServer(
       .object({
         commandId: z.string().uuid(),
         expectedRevision: z.number().int(),
-        action: z.enum(['start', 'pause', 'resume', 'cancel']),
+        action: z.enum(['start', 'pause', 'resume', 'cancel', 'switch_model', 'resume_task']),
         taskId: z.string().optional(),
-        providerId: z.string().optional(),
+        providerId: ModelChoice.shape.providerId.optional(),
+        model: ModelChoice.shape.model,
+        reasoningEffort: ModelChoice.shape.reasoningEffort,
+        switchMode: z.enum(['apply', 'resume']).optional(),
       })
       .parse(request.body);
+    const switching = body.action === 'switch_model' || body.providerId !== undefined;
+    invariant(
+      body.action !== 'switch_model' || (body.taskId && body.providerId && body.switchMode),
+      'MODEL_SWITCH_CHOICE',
+      '切换模型需要指定代理、模型配置以及仅应用或继续执行',
+    );
+    invariant(
+      switching
+        ? ['switch_model', 'pause', 'resume'].includes(body.action)
+        : body.model === undefined && body.reasoningEffort === undefined && body.switchMode === undefined,
+      'MODEL_SWITCH_CHOICE',
+      '模型选择仅用于显式模型切换',
+    );
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, request.url, () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    let binding: ProviderConfig | undefined;
+    if (switching) {
+      const run = store.require<Run>('runs', request.params.id);
+      revision(body, run);
+      management.assertMutable(run.id, run.projectId);
+      invariant(body.taskId && body.providerId, 'MODEL_SWITCH_CHOICE', '切换模型需要指定代理和模型配置');
+      binding = await resolveModelChoice(store, subscription, codex, {
+        providerId: body.providerId,
+        model: body.model,
+        reasoningEffort: body.reasoningEffort,
+      });
+    }
     const result = command(body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
@@ -711,52 +743,41 @@ export function createServer(
         'ARCHIVED',
         '请先恢复归档的对话或项目',
       );
-      if (body.providerId) {
+      if (body.action === 'resume_task') {
         invariant(
-          body.taskId && !executorHasActive(executor, run.id),
-          'MODEL_SWITCH_BOUNDARY',
-          '切换模型需要先暂停运行，并指定任务',
+          body.taskId && !executorHasActive(executor, run.id, body.taskId),
+          'TASK_RESUME_BOUNDARY',
+          '请选择已暂停或失败的代理，并等待当前操作结束',
         );
-        const task = store.require<Task>('tasks', body.taskId),
-          binding = store.require<ProviderConfig>('providers', body.providerId);
-        invariant(
-          task.runId === run.id &&
-            binding.checkedRevision === binding.revision &&
-            ['WAITING', 'FAILED'].includes(task.status),
-          'MODEL_SWITCH_DENIED',
-          '模型未验证或任务未在安全边界',
-        );
-        const agent = store.require<Agent>('agents', task.agentId);
-        for (const a of store
-          .all<Attempt>('attempts', run.id)
-          .filter((a) => a.taskId === task.id && ['ACTIVE', 'WAITING'].includes(a.status)))
-          store.put('attempts', { ...a, status: 'FAILED', lease: null, error: '显式模型切换' });
-        store.put('agents', { ...agent, providerId: binding.id, providerBinding: binding, sessionId: id() });
-        kernel.updateTask(task, task.status, {
-          rateLimit: undefined,
-          spec: {
-            ...task.spec,
-            providerId: binding.id,
-            model: binding.model,
-            reasoningEffort: binding.reasoningEffort,
-          },
-        });
-        kernel.appendMessage(
-          task,
-          'user',
-          '模型切换交接包：' +
-            stable({
-              task: task.spec,
-              result: task.result,
-              artifactIds: store.all<Artifact>('artifacts', run.id).map((a) => a.id),
-              constraints: run.contract.constraints,
-            }),
-        );
+        return kernel.resumeTask(run.id, body.taskId);
       }
+      if (binding) {
+        invariant(
+          body.taskId && !executorHasActive(executor, run.id, body.taskId),
+          'MODEL_SWITCH_BOUNDARY',
+          '该代理仍在执行，请先暂停并等待当前操作结束',
+        );
+        const switched = kernel.switchModel(
+          run.id,
+          body.taskId,
+          binding,
+          body.action === 'switch_model' ? body.switchMode! : body.action === 'resume' ? 'resume' : 'apply',
+        );
+        // Legacy providerId + pause still means a saved pause, without pausing descendants.
+        if (body.action === 'pause') {
+          const task = store.require<Task>('tasks', body.taskId);
+          if (task.waitReason === 'user' && run.kind === 'chat') kernel.wait(task, 'paused');
+          return store.require<Run>('runs', run.id);
+        }
+        return switched;
+      }
+      invariant(body.action !== 'switch_model', 'MODEL_SWITCH_CHOICE', '模型选择未完成');
       return kernel.action(run.id, body.action, body.taskId);
     });
-    if (['pause', 'cancel'].includes(body.action)) await executor.interrupt(request.params.id, body.taskId);
-    executor.resume(request.params.id);
+    if (!switching && ['pause', 'cancel'].includes(body.action))
+      await executor.interrupt(request.params.id, body.taskId);
+    if (!switching || body.action === 'resume' || body.switchMode === 'resume')
+      executor.resume(request.params.id);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/runs/:id/decisions', async (request) => {
@@ -936,8 +957,11 @@ function requestPreviewPolicy(url: string, policy: unknown) {
       : "default-src 'none'; sandbox; frame-ancestors 'self'"
     : undefined;
 }
-function executorHasActive(executor: NativeExecutor, runId: string) {
+function executorHasActive(executor: NativeExecutor, runId: string, taskId?: string) {
   return (
-    (executor as any).active && [...(executor as any).active.values()].some((a: any) => a.runId === runId)
+    (executor as any).active &&
+    [...(executor as any).active.entries()].some(
+      ([key, a]: [string, any]) => a.runId === runId && (!taskId || key === taskId),
+    )
   );
 }

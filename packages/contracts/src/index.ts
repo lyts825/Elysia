@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.6.6-preview.1';
+export const VERSION = '0.6.7-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -221,6 +221,8 @@ export interface ToolCall {
   arguments: string;
 }
 export interface Message extends Entity {
+  purpose?: 'model_handoff';
+  handoffHistoryRef?: string;
   requestId?: string;
   contentRef?: string;
   providerNativeRef?: string;

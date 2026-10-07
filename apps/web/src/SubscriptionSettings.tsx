@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, mutation } from './api';
 import { manageUsage } from './desktop';
+import { catalogIssue, initialTextModel, supportsText, type CatalogModel } from './ModelCatalog';
 
 type Account = {
   id: string;
@@ -20,24 +21,28 @@ export function SubscriptionSettings({
   accountId,
   model,
   change,
+  ready,
 }: {
   accountId?: string | null;
   model: string;
   change: (values: { subscriptionAccountId?: string; model?: string }) => void;
+  ready?: (valid: boolean) => void;
 }) {
   const [status, setStatus] = useState<State>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false),
-    [models, setModels] = useState<{ id: string; name: string }[]>([]);
+    [models, setModels] = useState<CatalogModel[]>([]);
   const [loading, setLoading] = useState(false),
-    [reload, setReload] = useState(0);
+    [reload, setReload] = useState(0),
+    [loadedCatalog, setLoadedCatalog] = useState('');
   const pending = useRef(''),
     changeRef = useRef(change),
     modelRef = useRef(model);
   changeRef.current = change;
   modelRef.current = model;
   const selected = status?.accounts.find((a) => a.id === accountId);
+  const catalogKey = `${accountId}:${!!selected?.connected}:${!!selected?.planEnabled}:${!!selected?.usageBlocked}:${reload}`;
   const refresh = async () => {
     const value = await api<State>('/subscription');
     setStatus(value);
@@ -69,15 +74,20 @@ export function SubscriptionSettings({
   useEffect(() => {
     let alive = true;
     setModels([]);
+    setLoadedCatalog('');
     setLoading(false);
     if (!accountId || !selected?.connected || !selected.planEnabled || selected.usageBlocked) return;
     setLoading(true);
     setError('');
-    api<{ id: string; name: string }[]>('/subscription/' + accountId + '/models')
+    api<CatalogModel[]>('/subscription/' + accountId + '/models')
       .then((values) => {
         if (!alive) return;
         setModels(values);
-        if (!values.some((m) => m.id === modelRef.current)) changeRef.current({ model: values[0]?.id || '' });
+        setLoadedCatalog(catalogKey);
+        if (!modelRef.current) {
+          const initial = initialTextModel(values);
+          if (initial) changeRef.current({ model: initial.id });
+        }
       })
       .catch((e) => {
         if (alive) setError(e.message);
@@ -89,6 +99,20 @@ export function SubscriptionSettings({
       alive = false;
     };
   }, [accountId, selected?.connected, selected?.planEnabled, selected?.usageBlocked, reload]);
+  const chosenModel = models.find((item) => item.id === model);
+  const valid =
+    !!selected?.connected &&
+    selected.planEnabled &&
+    !selected.usageBlocked &&
+    loadedCatalog === catalogKey &&
+    !loading &&
+    !busy &&
+    !error &&
+    !!chosenModel &&
+    supportsText(chosenModel);
+  useEffect(() => {
+    ready?.(valid);
+  }, [valid, ready]);
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError('');
@@ -183,17 +207,31 @@ export function SubscriptionSettings({
             账号可用模型
             <select
               value={model}
-              disabled={loading || !models.length}
-              onChange={(e) => change({ model: e.target.value })}
+              disabled={loading || !models.some(supportsText)}
+              onChange={(e) => {
+                const next = models.find((item) => item.id === e.target.value);
+                if (next && supportsText(next)) change({ model: next.id });
+              }}
             >
               {!models.length && <option value="">{loading ? '正在读取…' : '暂无可用模型'}</option>}
+              {!!models.length && !chosenModel && (
+                <option value={model} disabled>
+                  {model ? `${model}（已不可用，请重新选择）` : '请选择文字型号'}
+                </option>
+              )}
               {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} · {m.id}
+                <option key={m.id} value={m.id} disabled={!supportsText(m)}>
+                  {m.name || m.id} · {m.id}
+                  {!supportsText(m) ? '（不支持文字对话）' : ''}
                 </option>
               ))}
             </select>
           </label>
+          {!loading && !error && catalogIssue(models, model) && (
+            <p className="inline-warning" role="alert">
+              {catalogIssue(models, model)}
+            </p>
+          )}
           <div className="subscription-actions">
             <button className="secondary" disabled={loading} onClick={() => setReload((v) => v + 1)}>
               刷新模型

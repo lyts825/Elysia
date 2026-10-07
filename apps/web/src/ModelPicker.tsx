@@ -1,6 +1,13 @@
 import { useEffect, useId, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { api } from './api';
+import {
+  catalogIssue,
+  initialEffort,
+  initialTextModel,
+  supportsText,
+  type CatalogModel,
+} from './ModelCatalog';
 
 export type ModelChoice = {
   providerId: string;
@@ -8,7 +15,6 @@ export type ModelChoice = {
   reasoningEffort?: ProviderConfig['reasoningEffort'];
 };
 export type SelectableProvider = ProviderConfig & { keyConfigured: boolean };
-type CatalogModel = { id: string; name?: string; efforts?: string[]; defaultEffort?: string };
 const catalogs = new Map<string, { time: number; promise: Promise<CatalogModel[]> }>();
 function catalog(provider: SelectableProvider, fresh = false) {
   const key = `${provider.id}:${provider.revision}`;
@@ -53,11 +59,15 @@ export function ModelPicker({
   const [models, setModels] = useState<CatalogModel[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
-    [refresh, setRefresh] = useState(0);
+    [refresh, setRefresh] = useState(0),
+    [loadedCatalog, setLoadedCatalog] = useState('');
+  const catalogKey = `${selected?.id}:${selected?.revision}:${refresh}`;
+  const catalogReady = loadedCatalog === catalogKey && !loading && !error;
   const verified = !!selected?.keyConfigured && selected.checkedRevision === selected.revision;
   useEffect(() => {
     let active = true;
     setModels([]);
+    setLoadedCatalog('');
     setError('');
     if (!selected || !subscription || !verified) {
       setLoading(false);
@@ -66,7 +76,10 @@ export function ModelPicker({
     setLoading(true);
     catalog(selected, refresh > 0)
       .then((rows) => {
-        if (active) setModels(rows);
+        if (active) {
+          setModels(rows);
+          setLoadedCatalog(catalogKey);
+        }
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -83,8 +96,8 @@ export function ModelPicker({
     !!selected && value.model === selected.model && value.reasoningEffort === selected.reasoningEffort;
   const valid =
     verified &&
-    (subscription ? !loading && !error && !!model : apiBindingMatches) &&
-    (!model?.efforts?.length || model.efforts.includes(value.reasoningEffort || model.defaultEffort || ''));
+    (subscription ? catalogReady && !!model && supportsText(model) : apiBindingMatches) &&
+    (!subscription || !model?.efforts?.length || model.efforts.includes(value.reasoningEffort || ''));
   useEffect(() => {
     ready?.(valid);
   }, [valid, ready]);
@@ -104,22 +117,28 @@ export function ModelPicker({
     change,
   ]);
   useEffect(() => {
-    if (disabled || !subscription || !models.length) return;
+    if (disabled || !subscription || !catalogReady) return;
     const current = models.find((m) => m.id === value.model);
-    if (!current) {
-      const next = models.find((m) => m.id === selected?.model) || models[0];
+    if (!value.model) {
+      const next = initialTextModel(models, selected?.model);
+      if (!next) return;
       change({
         ...value,
         model: next.id,
-        reasoningEffort: next.defaultEffort as ModelChoice['reasoningEffort'],
+        reasoningEffort: initialEffort(next),
       });
-    } else if (current.efforts?.length && !current.efforts.includes(value.reasoningEffort || '')) {
+    } else if (
+      current &&
+      supportsText(current) &&
+      current.efforts?.length &&
+      value.reasoningEffort === undefined
+    ) {
       change({
         ...value,
-        reasoningEffort: (current.defaultEffort || current.efforts[0]) as ModelChoice['reasoningEffort'],
+        reasoningEffort: initialEffort(current),
       });
     }
-  }, [models, subscription, value.providerId, value.model, value.reasoningEffort, disabled]);
+  }, [models, subscription, catalogReady, value.providerId, value.model, value.reasoningEffort, disabled]);
   return (
     <div className="model-picker">
       <label htmlFor={id + '-provider'}>{label}</label>
@@ -142,7 +161,9 @@ export function ModelPicker({
         <>
           <div className="model-catalog-heading">
             <span>
-              {loading ? '正在读取当前账号模型目录…' : `当前账号模型目录 · ${models.length} 个型号`}
+              {loading
+                ? '正在读取当前账号模型目录…'
+                : `当前账号模型目录 · ${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`}
             </span>
             <button
               type="button"
@@ -157,37 +178,51 @@ export function ModelPicker({
           <select
             id={id + '-model'}
             value={value.model || ''}
-            disabled={disabled || loading || !models.length}
+            disabled={disabled || !catalogReady || !models.some(supportsText)}
             onChange={(e) => {
-              const next = models.find((m) => m.id === e.target.value)!;
+              const next = models.find((m) => m.id === e.target.value);
+              if (!next || !supportsText(next)) return;
               change({
                 ...value,
                 model: next.id,
-                reasoningEffort: next.defaultEffort as ModelChoice['reasoningEffort'],
+                reasoningEffort: initialEffort(next),
               });
             }}
           >
             {!models.length && (
               <option value={value.model || ''}>{loading ? '读取中…' : '模型目录暂不可用'}</option>
             )}
+            {!!models.length && !model && (
+              <option value={value.model || ''} disabled>
+                {value.model ? `${value.model}（已不可用，请重新选择）` : '请选择文字型号'}
+              </option>
+            )}
             {models.map((m) => (
-              <option key={m.id} value={m.id}>
+              <option key={m.id} value={m.id} disabled={!supportsText(m)}>
                 {m.name || m.id}
                 {m.name && m.name !== m.id ? ` · ${m.id}` : ''}
+                {!supportsText(m) ? '（不支持文字对话）' : ''}
               </option>
             ))}
           </select>
-          {!!model?.efforts?.length && (
+          {model && supportsText(model) && !!model.efforts?.length && (
             <>
               <label htmlFor={id + '-effort'}>推理强度</label>
               <select
                 id={id + '-effort'}
-                value={value.reasoningEffort || model.defaultEffort || ''}
+                value={value.reasoningEffort || ''}
                 disabled={disabled}
                 onChange={(e) =>
                   change({ ...value, reasoningEffort: e.target.value as ModelChoice['reasoningEffort'] })
                 }
               >
+                {!model.efforts.includes(value.reasoningEffort || '') && (
+                  <option value={value.reasoningEffort || ''} disabled>
+                    {value.reasoningEffort
+                      ? `${value.reasoningEffort}（已不可用，请重新选择）`
+                      : '请选择推理强度'}
+                  </option>
+                )}
                 {model.efforts.map((effort) => (
                   <option key={effort} value={effort}>
                     {effort}
@@ -198,6 +233,22 @@ export function ModelPicker({
           )}
         </>
       )}
+      {subscription && verified && catalogReady && catalogIssue(models, value.model) && (
+        <p className="inline-warning" role="alert">
+          {catalogIssue(models, value.model)}
+        </p>
+      )}
+      {subscription &&
+        catalogReady &&
+        model &&
+        supportsText(model) &&
+        !!model.efforts?.length &&
+        value.reasoningEffort !== undefined &&
+        !model.efforts.includes(value.reasoningEffort || '') && (
+          <p className="inline-warning" role="alert">
+            所选推理强度不在当前目录中，请重新选择。
+          </p>
+        )}
       {error && (
         <p className="inline-warning" role="alert">
           {error}

@@ -7,6 +7,7 @@ import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { MotionContent } from './Motion';
 import './providers.css';
+import { supportsText, type CatalogModel } from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
 const presets = [
@@ -68,7 +69,8 @@ export function ProviderSettings({
     [notice, setNotice] = useState('');
   const [apiKey, setApiKey] = useState(''),
     [keyMode, setKeyMode] = useState(config?.credentialId ? 'stored' : 'env');
-  const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([]),
+  const [catalog, setCatalog] = useState<CatalogModel[]>([]),
+    [subscriptionReady, setSubscriptionReady] = useState(false),
     [deleting, setDeleting] = useState(false),
     [advanced, setAdvanced] = useState('');
   const [pendingChoice, setPendingChoice] = useState<Provider>();
@@ -86,6 +88,8 @@ export function ProviderSettings({
     if (!dirty) setConfirmClose(false);
   }, [dirty]);
   const subscription = !!config && ['codex', 'chatgpt'].includes(config.authMode || '');
+  const unsupportedApiModel =
+    !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
   const change = (patch: Partial<ProviderConfig>) => setConfig((p) => p && { ...p, ...patch });
   const choose = (next: Provider, force = false) => {
     if (dirty && !force) {
@@ -96,6 +100,7 @@ export function ProviderSettings({
     setKeyMode(next.credentialId ? 'stored' : 'env');
     setApiKey('');
     setCatalog([]);
+    setSubscriptionReady(false);
     setError('');
     setNotice('');
     setAdding(false);
@@ -118,6 +123,8 @@ export function ProviderSettings({
   const save = () =>
     perform(async () => {
       if (!config) return;
+      if (unsupportedApiModel) throw new Error('所选型号不支持文字对话，请选择文字型号后再保存。');
+      if (subscription && !subscriptionReady) throw new Error('请选择当前目录中支持文字对话的型号后再保存。');
       if (!subscription && keyMode === 'stored' && !config.credentialId && !apiKey.trim())
         throw new Error('请输入 API Key，或改用环境变量');
       const value = await mutation<Provider>(
@@ -136,6 +143,8 @@ export function ProviderSettings({
   const verify = () =>
     perform(async () => {
       if (!config) return;
+      if (unsupportedApiModel) throw new Error('所选型号不支持文字对话，请选择文字型号后再验证。');
+      if (subscription && !subscriptionReady) throw new Error('请选择当前目录中支持文字对话的型号后再验证。');
       const result = await mutation('/providers/' + config.id + '/check', {
         expectedRevision: config.revision,
       });
@@ -328,6 +337,7 @@ export function ProviderSettings({
                     onChange={(e) => {
                       const mode = e.target.value as ProviderConfig['authMode'];
                       setCatalog([]);
+                      setSubscriptionReady(false);
                       setApiKey('');
                       change({
                         authMode: mode,
@@ -354,7 +364,12 @@ export function ProviderSettings({
                 </label>
               </div>
               {config.authMode === 'codex' && (
-                <CodexSettings key={config.id + '-codex'} config={config} change={change} />
+                <CodexSettings
+                  key={config.id + '-codex'}
+                  config={config}
+                  change={change}
+                  ready={setSubscriptionReady}
+                />
               )}
               {config.authMode === 'chatgpt' && (
                 <>
@@ -366,6 +381,7 @@ export function ProviderSettings({
                     accountId={config.subscriptionAccountId}
                     model={config.model}
                     change={change}
+                    ready={setSubscriptionReady}
                   />
                 </>
               )}
@@ -441,8 +457,9 @@ export function ProviderSettings({
                       />
                       <datalist id={'models-' + config.id}>
                         {catalog.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
+                          <option key={m.id} value={m.id} disabled={!supportsText(m)}>
+                            {m.name || m.id}
+                            {!supportsText(m) ? '（不支持文字对话）' : ''}
                           </option>
                         ))}
                       </datalist>
@@ -452,11 +469,11 @@ export function ProviderSettings({
                       disabled={busy || !saved || dirty}
                       onClick={() =>
                         void perform(async () => {
-                          const values = await api<{ id: string; name: string }[]>(
-                            '/providers/' + config.id + '/models',
-                          );
+                          const values = await api<CatalogModel[]>('/providers/' + config.id + '/models');
                           setCatalog(values);
-                          setNotice(`已读取 ${values.length} 个模型，可在模型输入框中选择。`);
+                          setNotice(
+                            `已读取 ${values.length} 个模型，其中 ${values.filter(supportsText).length} 个支持文字对话，可在模型输入框中选择。`,
+                          );
                         })
                       }
                     >
@@ -466,6 +483,11 @@ export function ProviderSettings({
                   <p className="field-help">
                     先填写模型 ID 并保存连接，再读取服务商目录。目录接口不可用时可继续手动填写。
                   </p>
+                  {unsupportedApiModel && (
+                    <p className="inline-warning" role="alert">
+                      所选型号不支持文字对话，请选择文字型号。
+                    </p>
+                  )}
                 </section>
               )}
               <details className="provider-advanced">
@@ -586,7 +608,9 @@ export function ProviderSettings({
                     busy ||
                     !config.label.trim() ||
                     !config.model.trim() ||
-                    (subscription && !config.subscriptionAccountId)
+                    (subscription && !config.subscriptionAccountId) ||
+                    (subscription && !subscriptionReady) ||
+                    unsupportedApiModel
                   }
                   onClick={() => void save()}
                 >
@@ -594,7 +618,14 @@ export function ProviderSettings({
                 </button>
                 <button
                   className="primary"
-                  disabled={busy || dirty || !saved || !saved.keyConfigured}
+                  disabled={
+                    busy ||
+                    dirty ||
+                    !saved ||
+                    !saved.keyConfigured ||
+                    (subscription && !subscriptionReady) ||
+                    unsupportedApiModel
+                  }
                   onClick={() => void verify()}
                 >
                   验证实际调用

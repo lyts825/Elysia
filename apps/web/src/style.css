@@ -930,6 +930,18 @@ a {
   flex: none;
   margin-top: 2px;
 }
+.model-handoff details {
+  min-width: 0;
+}
+.model-handoff summary {
+  cursor: pointer;
+}
+.model-handoff pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
 .connection-status {
   font-size: 11px;
   color: #78592d;
@@ -1312,6 +1324,11 @@ a {
 .agent-card small {
   font-size: 11px;
   color: var(--muted);
+}
+.agent-card .model-switch-help {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.6;
 }
 .info-note {
   border: 1px solid var(--border);

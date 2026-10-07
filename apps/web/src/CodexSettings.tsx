@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { api, mutation } from './api';
 import { manageUsage } from './desktop';
+import {
+  catalogIssue,
+  initialEffort,
+  initialTextModel,
+  supportsText,
+  type CatalogModel,
+} from './ModelCatalog';
 
 type State = {
   available: boolean;
@@ -13,28 +20,23 @@ type State = {
   message?: string;
   attempt?: { status: string; userCode?: string; message?: string };
 };
-type Model = {
-  id: string;
-  name: string;
-  description: string;
-  efforts: string[];
-  defaultEffort: string;
-  isDefault: boolean;
-};
 export function CodexSettings({
   config,
   change,
+  ready,
 }: {
   config: ProviderConfig;
   change: (patch: Partial<ProviderConfig>) => void;
+  ready?: (valid: boolean) => void;
 }) {
   const [source, setSource] = useState(
     config.subscriptionAccountId?.startsWith('codex-elysia-') ? 'elysia' : 'local',
   );
   const [status, setStatus] = useState<State>();
-  const [models, setModels] = useState<Model[]>([]),
+  const [models, setModels] = useState<CatalogModel[]>([]),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
+    [catalogLoaded, setCatalogLoaded] = useState(false),
     [usage, setUsage] = useState<any>();
   const generation = useRef(0),
     current = useRef({ config, change });
@@ -42,6 +44,7 @@ export function CodexSettings({
   const refresh = async (reconnect = false) => {
     const seq = ++generation.current;
     setBusy(true);
+    setCatalogLoaded(false);
     setError('');
     setUsage(undefined);
     try {
@@ -50,19 +53,23 @@ export function CodexSettings({
       setStatus(state);
       setModels([]);
       if (state.connected && state.accountId) {
-        const list = await api<Model[]>('/codex/' + state.accountId + '/models');
+        const list = await api<CatalogModel[]>('/codex/' + state.accountId + '/models');
         if (generation.current !== seq) return;
         setModels(list);
-        const selected =
-          list.find((m) => m.id === current.current.config.model) || list.find((m) => m.isDefault) || list[0];
-        if (selected)
-          current.current.change({
-            subscriptionAccountId: state.accountId,
-            model: selected.id,
-            reasoningEffort: selected.efforts.includes(current.current.config.reasoningEffort || '')
-              ? current.current.config.reasoningEffort
-              : (selected.defaultEffort as ProviderConfig['reasoningEffort']),
-          });
+        setCatalogLoaded(true);
+        const config = current.current.config;
+        const selected = list.find((m) => m.id === config.model);
+        const initial = !config.model ? initialTextModel(list) : undefined;
+        current.current.change({
+          subscriptionAccountId: state.accountId,
+          ...(initial ? { model: initial.id, reasoningEffort: initialEffort(initial) } : {}),
+          ...(selected &&
+          supportsText(selected) &&
+          selected.efforts?.length &&
+          config.reasoningEffort === undefined
+            ? { reasoningEffort: initialEffort(selected) }
+            : {}),
+        });
       }
     } catch (e) {
       if (generation.current === seq) setError((e as Error).message);
@@ -105,6 +112,18 @@ export function CodexSettings({
   };
   const selected = models.find((m) => m.id === config.model);
   const pending = status?.attempt?.status === 'pending';
+  const valid =
+    !!status?.connected &&
+    status.accountId === config.subscriptionAccountId &&
+    catalogLoaded &&
+    !busy &&
+    !pending &&
+    !!selected &&
+    supportsText(selected) &&
+    (!selected.efforts?.length || selected.efforts.includes(config.reasoningEffort || ''));
+  useEffect(() => {
+    ready?.(valid);
+  }, [valid, ready]);
   const buckets = usage?.rateLimitsByLimitId
     ? Object.values(usage.rateLimitsByLimitId)
     : usage?.rateLimits
@@ -142,8 +161,11 @@ export function CodexSettings({
         <span className={status?.connected ? 'passed' : ''}>
           2 · {status?.connected ? `${status.plan || 'ChatGPT'} 已登录` : '连接账号'}
         </span>
-        <span className={models.length ? 'passed' : ''}>
-          3 · {models.length ? `${models.length} 个可选模型` : '读取模型'}
+        <span className={models.some(supportsText) ? 'passed' : ''}>
+          3 ·{' '}
+          {models.length
+            ? `${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`
+            : '读取模型'}
         </span>
       </div>
       {status?.label && <p className="account-label">{status.label}</p>}
@@ -209,30 +231,45 @@ export function CodexSettings({
         <label>
           可用模型
           <select
-            disabled={busy || !models.length}
+            disabled={busy || !models.some(supportsText)}
             value={config.model}
             onChange={(e) => {
-              const m = models.find((m) => m.id === e.target.value)!;
-              change({ model: m.id, reasoningEffort: m.defaultEffort as ProviderConfig['reasoningEffort'] });
+              const m = models.find((m) => m.id === e.target.value);
+              if (!m || !supportsText(m)) return;
+              change({ model: m.id, reasoningEffort: initialEffort(m) });
             }}
           >
             {!models.length && <option value={config.model}>{config.model || '连接账号后选择'}</option>}
+            {!!models.length && !selected && (
+              <option value={config.model} disabled>
+                {config.model ? `${config.model}（已不可用，请重新选择）` : '请选择文字型号'}
+              </option>
+            )}
             {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} · {m.id}
+              <option key={m.id} value={m.id} disabled={!supportsText(m)}>
+                {m.name || m.id} · {m.id}
+                {!supportsText(m) ? '（不支持文字对话）' : ''}
               </option>
             ))}
           </select>
         </label>
-        {selected && (
+        {selected && supportsText(selected) && !!selected.efforts?.length && (
           <label>
             思考强度
             <select
-              value={config.reasoningEffort || selected.defaultEffort}
+              value={config.reasoningEffort || ''}
+              disabled={busy}
               onChange={(e) =>
                 change({ reasoningEffort: e.target.value as ProviderConfig['reasoningEffort'] })
               }
             >
+              {!selected.efforts.includes(config.reasoningEffort || '') && (
+                <option value={config.reasoningEffort || ''} disabled>
+                  {config.reasoningEffort
+                    ? `${config.reasoningEffort}（已不可用，请重新选择）`
+                    : '请选择思考强度'}
+                </option>
+              )}
               {selected.efforts.map((e) => (
                 <option key={e} value={e}>
                   {{
@@ -251,6 +288,22 @@ export function CodexSettings({
           </label>
         )}
       </div>
+      {status?.connected && !busy && !error && catalogIssue(models, config.model) && (
+        <p className="inline-warning" role="alert">
+          {catalogIssue(models, config.model)}
+        </p>
+      )}
+      {catalogLoaded &&
+        !busy &&
+        selected &&
+        supportsText(selected) &&
+        !!selected.efforts?.length &&
+        config.reasoningEffort !== undefined &&
+        !selected.efforts.includes(config.reasoningEffort || '') && (
+          <p className="inline-warning" role="alert">
+            所选思考强度不在当前目录中，请重新选择。
+          </p>
+        )}
       {selected && <p className="field-help">{selected.description}</p>}
       <div className="subscription-actions">
         <button

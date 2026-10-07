@@ -13,6 +13,8 @@ import {
   type Project,
   type Message,
   type RequestRecord,
+  type Operation,
+  type Artifact,
   type Usage,
   type Permissions,
   type ModelChoice,
@@ -685,6 +687,198 @@ export class Kernel {
       });
       this.event(r.runId, 'usage.updated', next, r.taskId, r.attemptId);
       return next;
+    });
+  }
+  private taskControlBoundary(runId: string, taskId: string) {
+    const run = this.store.require<Run>('runs', runId),
+      task = this.store.require<Task>('tasks', taskId);
+    invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
+    invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
+    invariant(
+      task.runId === run.id && ['WAITING', 'FAILED'].includes(task.status),
+      'MODEL_SWITCH_DENIED',
+      '请选择处于等待或失败状态的代理',
+    );
+    const requests = this.store.all<RequestRecord>('requests', run.id).filter((r) => r.taskId === task.id),
+      operations = this.store.all<Operation>('tool_operations', run.id).filter((o) => o.taskId === task.id);
+    invariant(
+      !requests.some((r) => r.status === 'RESERVED') && !operations.some((o) => o.status === 'INTENT'),
+      'MODEL_SWITCH_BOUNDARY',
+      '该代理仍在执行，请先暂停并等待当前操作结束',
+    );
+    invariant(
+      !requests.some((r) => r.status === 'UNKNOWN') && !operations.some((o) => o.status === 'UNCERTAIN'),
+      'MODEL_SWITCH_VERIFICATION',
+      '请先核验该代理的请求用量或操作结果，再切换模型',
+    );
+    const history = this.history(task),
+      resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
+    invariant(
+      !history.some((m) => m.calls?.some((c) => !resolved.has(c.id))),
+      'MODEL_SWITCH_PAIR',
+      '该代理的工具结果尚未完整返回，请先完成或核验当前操作',
+    );
+    const restartable =
+      task.status === 'FAILED' ||
+      ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit'].includes(task.waitReason ?? '');
+    return { run, task, history, restartable };
+  }
+  resumeTask(runId: string, taskId: string) {
+    return this.store.tx(() => {
+      const { run, task, restartable } = this.taskControlBoundary(runId, taskId);
+      invariant(restartable, 'TASK_RESUME_DECISION', '请先处理当前计划、问题、子任务或核验');
+      invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
+      this.updateTask(task, 'READY', { waitReason: undefined, waitingFor: [] });
+      return this.updateRun(run, {
+        status: run.status === 'RUNNING' ? 'RUNNING' : 'READY',
+        reason: undefined,
+        ...(run.kind === 'chat' ? { startedAt: Date.now() } : {}),
+      });
+    });
+  }
+  switchModel(runId: string, taskId: string, provider: ProviderConfig, mode: 'apply' | 'resume') {
+    return this.store.tx(() => {
+      const { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
+      invariant(
+        mode === 'apply' || restartable,
+        'MODEL_SWITCH_DECISION',
+        '请先处理当前计划、问题、子任务或核验；可仅应用模型选择',
+      );
+      if (mode === 'resume')
+        invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
+      const binding = this.binding(provider.id, provider),
+        agent = this.store.require<Agent>('agents', task.agentId);
+      for (const attempt of this.store
+        .all<Attempt>('attempts', run.id)
+        .filter((a) => a.taskId === task.id && ['ACTIVE', 'WAITING'].includes(a.status)))
+        this.store.put('attempts', { ...attempt, status: 'FAILED', lease: null, error: '显式模型切换' });
+      this.store.put('agents', {
+        ...agent,
+        providerId: binding.id,
+        providerBinding: binding,
+        sessionId: id(),
+      });
+      const waitReason = run.kind === 'chat' && task.waitReason !== 'paused' ? 'user' : 'paused';
+      const next = this.updateTask(
+        task,
+        mode === 'resume' ? 'READY' : restartable ? 'WAITING' : task.status,
+        {
+          rateLimit: undefined,
+          spec: {
+            ...task.spec,
+            providerId: binding.id,
+            model: binding.model,
+            reasoningEffort: binding.reasoningEffort,
+          },
+          ...(restartable ? { waitReason: mode === 'resume' ? undefined : waitReason, waitingFor: [] } : {}),
+        },
+      );
+      type PublicMessage = {
+        role: Message['role'];
+        text: string;
+        toolCalls?: { name: string; arguments: string }[];
+      };
+      const publicHistory: PublicMessage[] = [];
+      for (const message of history) {
+        if (message.purpose === 'model_handoff') {
+          try {
+            const inherited = message.handoffHistoryRef
+              ? JSON.parse(this.store.readObject(message.handoffHistoryRef).toString('utf8'))
+              : JSON.parse(message.text.slice(message.text.indexOf('{'))).history;
+            if (Array.isArray(inherited)) {
+              for (const entry of inherited) {
+                if (
+                  !entry ||
+                  !['user', 'assistant', 'tool'].includes(entry.role) ||
+                  typeof entry.text !== 'string'
+                )
+                  continue;
+                publicHistory.push({
+                  role: entry.role,
+                  text: entry.text,
+                  ...(Array.isArray(entry.toolCalls)
+                    ? {
+                        toolCalls: entry.toolCalls
+                          .filter(
+                            (c: any) => c && typeof c.name === 'string' && typeof c.arguments === 'string',
+                          )
+                          .map((c: any) => ({ name: c.name, arguments: c.arguments })),
+                      }
+                    : {}),
+                });
+              }
+              continue;
+            }
+          } catch {
+            // Older or damaged handoffs remain readable as public text.
+          }
+        }
+        publicHistory.push({
+          role: message.role,
+          text: message.text,
+          ...(message.calls?.length
+            ? { toolCalls: message.calls.map((c) => ({ name: c.name, arguments: c.arguments })) }
+            : {}),
+        });
+      }
+      const handoffHistoryRef = this.store.object(stable(publicHistory)).objectRef;
+      const historyBudget = Math.max(
+        1024,
+        Math.min(
+          24000,
+          Math.floor(
+            (binding.contextLimit - binding.outputLimit - 2048 - (binding.authMode === 'codex' ? 16384 : 0)) /
+              (binding.authMode === 'codex' ? 8 : 4),
+          ),
+        ),
+      );
+      const shorten = (m: PublicMessage): PublicMessage => ({
+        role: m.role,
+        text: m.text.slice(0, 900),
+        ...(m.toolCalls?.length
+          ? { toolCalls: m.toolCalls.map((c) => ({ name: c.name, arguments: c.arguments.slice(0, 900) })) }
+          : {}),
+      });
+      let visibleHistory = publicHistory.map((m, i) => (i < publicHistory.length - 8 ? shorten(m) : m));
+      const historyBytes = () => Buffer.byteLength(stable(visibleHistory), 'utf8');
+      while (historyBytes() > historyBudget && visibleHistory.length > 8) visibleHistory.shift();
+      if (historyBytes() > historyBudget) visibleHistory = visibleHistory.map(shorten);
+      while (historyBytes() > historyBudget && visibleHistory.length > 1) visibleHistory.shift();
+      while (historyBytes() > historyBudget && visibleHistory.length) {
+        visibleHistory = visibleHistory.map((m) => ({
+          role: m.role,
+          text: m.text.slice(0, Math.floor(m.text.length / 2)),
+        }));
+      }
+      // Only public messages cross sessions; provider replay data and reasoning signatures stay in the old session.
+      this.appendMessage(
+        next,
+        'user',
+        '模型切换交接包（既有对话与结果，非新的用户请求）：' +
+          stable({
+            task: next.spec,
+            result: task.result,
+            history: visibleHistory,
+            historyAbbreviated: stable(visibleHistory) !== stable(publicHistory),
+            originalHistoryRef: handoffHistoryRef,
+            artifactIds: this.store
+              .all<Artifact>('artifacts', run.id)
+              .filter((a) => a.taskId === task.id)
+              .map((a) => a.id),
+            constraints: run.contract.constraints,
+          }),
+        { purpose: 'model_handoff', handoffHistoryRef },
+      );
+      if (mode === 'resume')
+        this.updateRun(run, {
+          status: run.status === 'RUNNING' ? 'RUNNING' : 'READY',
+          reason: undefined,
+          ...(run.kind === 'chat' ? { startedAt: Date.now() } : {}),
+        });
+      else if (task.id === run.rootTaskId && restartable)
+        this.updateRun(run, { status: 'WAITING', reason: waitReason });
+      else this.updateRun(run, {});
+      return this.store.require<Run>('runs', runId);
     });
   }
   action(runId: string, action: 'start' | 'pause' | 'resume' | 'cancel', taskId?: string) {
