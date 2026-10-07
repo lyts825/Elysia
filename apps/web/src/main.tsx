@@ -20,6 +20,9 @@ import type {
   Contract,
   ProviderConfig,
 } from '../../../packages/contracts/src/index';
+import { Icon } from './Icon';
+import { Modal } from './Modal';
+import { HomeWorkspace } from './HomeWorkspace';
 import './style.css';
 type Detail = {
   run: Run;
@@ -54,155 +57,12 @@ const reasons: Record<string, string> = {
   limit: '达到运行上限',
   rate_limit: '等待账号额度',
 };
-function Icon({ name, size = 18 }: { name: string; size?: number }) {
-  const paths: Record<string, React.ReactNode> = {
-    plus: <path d="M12 5v14M5 12h14" />,
-    grid: (
-      <>
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
-      </>
-    ),
-    settings: (
-      <>
-        <path d="m9 3-1 3-3 1v4l-2 1 2 1v4l3 1 1 3h6l1-3 3-1v-4l2-1-2-1V7l-3-1-1-3Z" />
-        <circle cx="12" cy="12" r="3" />
-      </>
-    ),
-    code: (
-      <>
-        <path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16" />
-      </>
-    ),
-    work: (
-      <>
-        <rect x="4" y="5" width="16" height="15" rx="2" />
-        <path d="M9 5V3h6v2M4 10h16m-9 0v3h2v-3" />
-      </>
-    ),
-    arrow: (
-      <>
-        <path d="M5 12h14m-5-5 5 5-5 5" />
-      </>
-    ),
-    send: (
-      <>
-        <path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9" />
-      </>
-    ),
-    check: <path d="m5 12 4 4 10-10" />,
-    close: <path d="m6 6 12 12M6 18 18 6" />,
-    pause: <path d="M8 5v14M16 5v14" />,
-    play: <path d="m7 4 13 8-13 8Z" />,
-    stop: <rect x="5" y="5" width="14" height="14" rx="2" />,
-    file: (
-      <>
-        <path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8M8 16h6" />
-      </>
-    ),
-    tree: (
-      <>
-        <rect x="9" y="2" width="6" height="5" rx="1" />
-        <rect x="2" y="17" width="6" height="5" rx="1" />
-        <rect x="16" y="17" width="6" height="5" rx="1" />
-        <path d="M12 7v5M5 17v-5h14v5" />
-      </>
-    ),
-    chart: (
-      <>
-        <path d="M4 3v18h17M8 16v-5m5 5V6m5 10v-8" />
-      </>
-    ),
-    chat: <path d="M21 11a8 8 0 0 1-8 8H7l-5 3 1-6a8 8 0 0 1-1-5 9 9 0 0 1 19 0Z" />,
-    lock: (
-      <>
-        <rect x="5" y="10" width="14" height="11" rx="2" />
-        <path d="M8 10V6a4 4 0 0 1 8 0v4" />
-      </>
-    ),
-    spark: (
-      <>
-        <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" />
-      </>
-    ),
-    history: (
-      <>
-        <path d="M3 4v5h5M3 9a9 9 0 1 1 1 9m8-12v6l4 2" />
-      </>
-    ),
-    folder: <path d="M3 6h7l2 3h9v11H3Z" />,
-    refresh: (
-      <>
-        <path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5" />
-      </>
-    ),
-    globe: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <ellipse cx="12" cy="12" rx="4" ry="9" />
-        <path d="M3 12h18" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name] || paths.file}
-    </svg>
-  );
-}
 function Badge({ status }: { status: string }) {
   return (
     <span className={'badge ' + status.toLowerCase()}>
       <i />
       {statuses[status] || status}
     </span>
-  );
-}
-function Modal({
-  title,
-  subtitle,
-  close,
-  children,
-  wide = false,
-}: {
-  title: string;
-  subtitle?: string;
-  close: () => void;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div
-      className="overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
-      <section className={'modal ' + (wide ? 'wide' : '')} role="dialog" aria-modal="true" aria-label={title}>
-        <header>
-          <div>
-            <h2>{title}</h2>
-            {subtitle && <p>{subtitle}</p>}
-          </div>
-          <button className="icon-button" onClick={close} aria-label="关闭">
-            <Icon name="close" />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
   );
 }
 function App() {
@@ -224,6 +84,8 @@ function App() {
     [reply, setReply] = useState(''),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const project = projects.find((p) => p.id === projectId);
+  const projectRuns = runs.filter((r) => !projectId || r.projectId === projectId);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const refresh = useCallback(async () => {
     const [p, r, v] = await Promise.all([
       api<Project[]>('/projects'),
@@ -347,23 +209,29 @@ function App() {
       </div>
     );
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
             <Icon name="spark" size={22} />
           </span>
           <span>
-            Elysia<small>PERSONAL AGENT WORKSPACE</small>
+            Elysia<small>你的本机协作空间</small>
           </span>
         </div>
-        <button className="new-task" onClick={newRun}>
+        <button className="new-task" onClick={newRun} title="新建任务" aria-label="新建任务">
           <Icon name="plus" />
-          新建任务
+          <span>新建任务</span>
         </button>
-        <button className={'nav-item ' + (!runId ? 'selected' : '')} onClick={newRun}>
+        <button
+          className={'nav-item ' + (!runId ? 'selected' : '')}
+          onClick={newRun}
+          aria-current={!runId ? 'page' : undefined}
+          aria-label="工作台"
+          title="工作台"
+        >
           <Icon name="grid" />
-          工作台
+          <span>工作台</span>
         </button>
         <div className="side-heading">
           项目
@@ -371,11 +239,13 @@ function App() {
             <Icon name="plus" size={15} />
           </button>
         </div>
-        <div className="project-list">
+        <nav className="project-list" aria-label="项目">
           {projects.map((p) => (
             <button
               className={'project-item ' + (p.id === projectId ? 'selected' : '')}
               key={p.id}
+              title={p.name}
+              aria-current={p.id === projectId ? 'true' : undefined}
               onClick={() => {
                 setProjectId(p.id);
                 newRun();
@@ -391,29 +261,40 @@ function App() {
               打开本机文件夹 <Icon name="plus" size={14} />
             </button>
           )}
-        </div>
+        </nav>
         <div className="side-heading history-heading">
-          最近任务<span>{runs.length}</span>
+          最近任务<span>{projectRuns.length}</span>
         </div>
         <div className="history-list">
-          {runs
-            .filter((r) => !projectId || r.projectId === projectId)
-            .map((r) => (
-              <button
-                key={r.id}
-                className={'history-item ' + (r.id === runId ? 'selected' : '')}
-                onClick={() => selectRun(r)}
-              >
-                <span className={'status-dot ' + r.status.toLowerCase()} />
-                <span>{r.objective}</span>
-              </button>
-            ))}
-          {!runs.length && <p className="sidebar-muted">任务与交付记录会保存在本机</p>}
+          {projectRuns.map((r) => (
+            <button
+              key={r.id}
+              title={r.objective}
+              aria-current={r.id === runId ? 'page' : undefined}
+              className={'history-item ' + (r.id === runId ? 'selected' : '')}
+              onClick={() => selectRun(r)}
+            >
+              <span className={'status-dot ' + r.status.toLowerCase()} />
+              <span>{r.objective}</span>
+            </button>
+          ))}
+          {!projectRuns.length && (
+            <p className="sidebar-muted">
+              还没有任务。
+              <br />
+              从一个目标开始协作。
+            </p>
+          )}
         </div>
         <div className="sidebar-bottom">
-          <button className="nav-item" onClick={() => setModal('settings')}>
+          <button
+            className="nav-item"
+            onClick={() => setModal('settings')}
+            aria-label="模型与设置"
+            title="模型与设置"
+          >
             <Icon name="settings" />
-            模型与设置
+            <span>模型与设置</span>
           </button>
           <div className="local-indicator">
             <i />
@@ -424,17 +305,32 @@ function App() {
       <main className="main">
         <header className="topbar">
           <div className="breadcrumb">
+            <button
+              className="icon-button sidebar-toggle"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+              aria-expanded={!sidebarCollapsed}
+              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+            >
+              <Icon name="panel" />
+            </button>
             <Icon name="folder" size={16} />
             <span>{project?.name || '个人工作台'}</span>
             <span className="slash">/</span>
-            <strong>{detail ? detail.run.objective.slice(0, 28) : '新任务'}</strong>
+            <strong title={detail?.run.objective}>{detail ? detail.run.objective : '工作台'}</strong>
           </div>
           <div className="topbar-right">
             <span className="local-chip port-chip" title={location.origin}>
               <Icon name="lock" size={12} />
               本机 · {location.port}
             </span>
-            <button className="icon-button" onClick={() => void act(refresh)} title="刷新">
+            <button
+              className="icon-button"
+              onClick={() => void act(refresh)}
+              title="刷新"
+              aria-label="刷新工作台"
+              disabled={busy}
+            >
               <Icon name="refresh" size={16} />
             </button>
           </div>
@@ -448,97 +344,40 @@ function App() {
           </div>
         )}
         {!runId ? (
-          <div className="welcome">
-            <div className="welcome-content">
-              <span className="eyebrow">
-                <i />
-                ONE GOAL. A WHOLE TEAM.
-              </span>
-              <h1>把目标，交给团队。</h1>
-              <p className="welcome-subtitle">从一个想法到可检查的交付。让不同模型在你的本机协作。</p>
-              <div className="composer">
-                <textarea
-                  aria-label="任务目标"
-                  placeholder="描述你想完成的事情…"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-                <div className="composer-bottom">
-                  <div className="composer-hint">
-                    <Icon name={project?.mode === 'code' ? 'code' : 'work'} size={15} />
-                    {project
-                      ? `${project.mode === 'code' ? 'Code' : 'Work'} · ${project.name}`
-                      : '先选择一个本机项目'}
-                  </div>
-                  <button
-                    className="primary"
-                    disabled={!draft.trim() || busy}
-                    onClick={() => setModal(project ? 'run' : 'project')}
-                  >
-                    开始协作
-                    <Icon name="arrow" size={16} />
-                  </button>
-                </div>
-              </div>
-              {project && (
-                <button className="project-folder-link" onClick={() => setModal('project-files')}>
-                  <Icon name="file" size={15} /> {project.workspaceRoot} <span>浏览文件</span>
-                </button>
-              )}
-              <div className="suggestions">
-                {[
-                  {
-                    icon: 'code',
-                    title: '实现一个功能',
-                    text: '检查项目约定，拆解实现计划，修改代码并提供验证和差异。',
-                  },
-                  {
-                    icon: 'file',
-                    title: '整理资料报告',
-                    text: '阅读我指定的资料，整理一份有来源、可核对的 Markdown 报告。',
-                  },
-                  {
-                    icon: 'tree',
-                    title: '让团队分工',
-                    text: '围绕我的目标制定有依赖和验收项的计划，分派任务并集成交付。',
-                  },
-                ].map((s) => (
-                  <button key={s.title} onClick={() => setDraft(s.text)}>
-                    <Icon name={s.icon} size={20} />
-                    <strong>{s.title}</strong>
-                    <span>{s.text}</span>
-                    <Icon name="arrow" size={14} />
-                  </button>
-                ))}
-              </div>
-              <div className="workspace-summary">
-                <span>
-                  <Icon name="globe" size={15} />
-                  {providers.filter((p) => p.checkedRevision === p.revision).length} 个可用模型
-                </span>
-                <span>
-                  <Icon name="tree" size={15} />
-                  有界递归协作
-                </span>
-                <span>
-                  <Icon name="lock" size={15} />
-                  你决定执行范围
-                </span>
-              </div>
-            </div>
-            <footer>目标 → 约定 → 计划 → 执行 → 验证 → 交付</footer>
-          </div>
+          <HomeWorkspace
+            projects={projects}
+            project={project}
+            runs={projectRuns}
+            providers={providers}
+            draft={draft}
+            setDraft={setDraft}
+            busy={busy}
+            selectRun={selectRun}
+            selectProject={setProjectId}
+            openProject={() => setModal('project')}
+            openFiles={() => setModal('project-files')}
+            openSettings={() => setModal('settings')}
+            start={() => setModal(project ? 'run' : 'project')}
+          />
         ) : detail ? (
           <>
             <div className="run-toolbar">
               <div>
                 <Badge status={detail.run.status} />
                 <span className="run-reason">
-                  {reasons[detail.run.reason || ''] || detail.run.reason || '任务状态与事件已持久保存'}
+                  {reasons[detail.run.reason || ''] ||
+                    detail.run.reason ||
+                    (detail.run.status === 'DONE'
+                      ? '交付已完成，可查看产物与验证记录'
+                      : '进度与结果自动保存')}
                 </span>
               </div>
               <div className="run-controls">
-                <button className="quiet-button preview-toggle" onClick={() => setPreviewOpen(!previewOpen)}>
+                <button
+                  className="quiet-button preview-toggle"
+                  aria-pressed={previewOpen}
+                  onClick={() => setPreviewOpen(!previewOpen)}
+                >
                   <Icon name="code" size={14} />
                   {previewOpen ? '收起预览' : '打开预览'}
                 </button>
@@ -595,7 +434,8 @@ function App() {
                     <span>
                       授权：读取{detail.run.contract.permissionProfile.write ? ' · 指定目录写入' : ''}
                       {detail.run.contract.permissionProfile.exec ? ' · 命令执行' : ''} ·{' '}
-                      {detail.run.contract.permissionProfile.urls.length} 个网页来源。计划接受后开始执行。
+                      {detail.run.contract.permissionProfile.urls.length} 个网页来源。
+                      {!detail.run.acceptedPlanVersion && '计划接受后开始执行。'}
                     </span>
                   </div>
                   {detail.messages
@@ -732,37 +572,54 @@ function App() {
                     </div>
                   )}
                 </div>
-                <form
-                  className="reply-box"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void act(async () => {
-                      await mutation('/runs/' + runId + '/messages', {
-                        expectedRevision: detail.run.revision,
-                        text: reply,
-                      });
-                      setReply('');
-                    });
-                  }}
-                >
-                  <textarea
-                    aria-label="回复或补充需求"
-                    value={reply}
-                    onChange={(e) => setReply(e.target.value)}
-                    placeholder="回答问题，或补充需求…"
-                    disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
-                  />
-                  <div>
-                    <span>补充需求会在安全边界更新约定与计划</span>
+                {['DONE', 'CANCELLED'].includes(detail.run.status) ? (
+                  <div className="conversation-ended">
+                    <Icon name={detail.run.status === 'DONE' ? 'check' : 'stop'} size={18} />
+                    <span>{detail.run.status === 'DONE' ? '本次任务已完成' : '本次任务已取消'}</span>
                     <button
-                      className="send-button"
-                      aria-label="发送补充需求"
-                      disabled={!reply.trim() || busy || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                      className="secondary"
+                      onClick={() => {
+                        setPreviewOpen(false);
+                        setTab('artifacts');
+                      }}
                     >
-                      <Icon name="send" size={17} />
+                      查看产物
+                      <Icon name="arrow" size={14} />
                     </button>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    className="reply-box"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void act(async () => {
+                        await mutation('/runs/' + runId + '/messages', {
+                          expectedRevision: detail.run.revision,
+                          text: reply,
+                        });
+                        setReply('');
+                      });
+                    }}
+                  >
+                    <textarea
+                      aria-label="回复或补充需求"
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      placeholder="回答问题，或补充需求…"
+                      disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
+                    />
+                    <div>
+                      <span>补充需求会在安全边界更新约定与计划</span>
+                      <button
+                        className="send-button"
+                        aria-label="发送补充需求"
+                        disabled={!reply.trim() || busy || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                      >
+                        <Icon name="send" size={17} />
+                      </button>
+                    </div>
+                  </form>
+                )}
               </section>
               {previewOpen ? (
                 <PreviewPanel
@@ -779,7 +636,7 @@ function App() {
                 />
               ) : (
                 <aside className="details-panel">
-                  <div className="detail-tabs">
+                  <nav className="detail-tabs" aria-label="任务详情">
                     {[
                       { key: 'tasks', icon: 'grid', title: '任务' },
                       { key: 'agents', icon: 'tree', title: '代理' },
@@ -789,13 +646,14 @@ function App() {
                       <button
                         key={t.key}
                         className={tab === t.key ? 'active' : ''}
+                        aria-pressed={tab === t.key}
                         onClick={() => setTab(t.key)}
                       >
                         <Icon name={t.icon} size={15} />
                         {t.title}
                       </button>
                     ))}
-                  </div>
+                  </nav>
                   <div className="detail-content">
                     {tab === 'tasks' && (
                       <>
@@ -809,7 +667,7 @@ function App() {
                         <TaskGraph detail={detail} />
                         <div className="panel-heading">
                           <h3>任务列表</h3>
-                          <span>依赖与责任分开记录</span>
+                          <span>按任务查看进度与结果</span>
                         </div>
                         {detail.tasks.map((t) => (
                           <div className="task-detail" key={t.id}>
@@ -944,7 +802,7 @@ function App() {
                   </div>
                   <div className="panel-bottom">
                     <Icon name="history" size={13} />
-                    状态与事件保存在本机 SQLite
+                    任务记录自动保存在本机
                   </div>
                 </aside>
               )}
@@ -1108,7 +966,7 @@ function TaskGraph({ detail }: { detail: Detail }) {
             </div>
           ))
       )}
-      <small className="graph-caption">阶段间箭头由任务依赖计算</small>
+      <small className="graph-caption">任务按依赖顺序推进</small>
     </div>
   );
 }
@@ -1244,7 +1102,12 @@ function ProjectModal({
     }
   };
   return (
-    <Modal title="打开本机文件夹" subtitle="将文件夹直接作为项目，自动识别名称与 Git 状态" close={close}>
+    <Modal
+      title="打开本机文件夹"
+      subtitle="将文件夹直接作为项目，自动识别名称与 Git 状态"
+      close={close}
+      busy={busy || inspecting}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1393,7 +1256,9 @@ function RunModal({
   settings: () => void;
 }) {
   const [providerId, setProviderId] = useState(
-      providers.find((p) => p.checkedRevision === p.revision)?.id || providers[0]?.id || '',
+      providers.find((p) => p.keyConfigured && p.checkedRevision === p.revision)?.id ||
+        providers[0]?.id ||
+        '',
     ),
     [write, setWrite] = useState(true),
     [exec, setExec] = useState(project.mode === 'code'),
@@ -1410,10 +1275,11 @@ function RunModal({
       .map((v) => v.trim())
       .filter(Boolean);
   return (
-    <Modal title="设定本次协作" subtitle={objective.slice(0, 100)} close={close}>
+    <Modal title="设定本次协作" subtitle={objective.slice(0, 100)} close={close} busy={busy}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (busy || !selected?.keyConfigured || selected.checkedRevision !== selected.revision) return;
           submit({
             providerId,
             inputs: lines(inputs),
@@ -1436,7 +1302,8 @@ function RunModal({
             <select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.label} · {p.model} {p.checkedRevision !== p.revision ? '（待验证）' : ''}
+                  {p.label} · {p.model}{' '}
+                  {!p.keyConfigured ? '（待连接）' : p.checkedRevision !== p.revision ? '（待验证）' : ''}
                 </option>
               ))}
             </select>
@@ -1449,9 +1316,9 @@ function RunModal({
               </button>
             </p>
           )}
-          {selected?.checkedRevision !== selected?.revision && (
+          {(!selected?.keyConfigured || selected.checkedRevision !== selected.revision) && (
             <div className="inline-warning">
-              模型尚未完成连通性验证。
+              请先连接并验证一个可用模型。
               <button type="button" onClick={settings}>
                 前往模型设置
               </button>
@@ -1535,7 +1402,10 @@ function RunModal({
           <button type="button" className="secondary" onClick={close}>
             返回
           </button>
-          <button className="primary" disabled={busy || selected?.checkedRevision !== selected?.revision}>
+          <button
+            className="primary"
+            disabled={busy || !selected?.keyConfigured || selected.checkedRevision !== selected.revision}
+          >
             生成约定与计划
             <Icon name="arrow" size={15} />
           </button>
@@ -1571,6 +1441,7 @@ function ContractModal({
     <Modal
       title={'任务约定 · v' + contract.version}
       subtitle="修改后在安全边界重新生成计划，原授权与预算继续生效"
+      busy={busy}
       close={close}
     >
       <form
@@ -1630,7 +1501,7 @@ function DecisionModal({
     [result, setResult] = useState('{}'),
     [parseError, setParseError] = useState('');
   return (
-    <Modal title="核验副作用结果" subtitle="请先检查本机文件或进程证据，再提交决定" close={close}>
+    <Modal title="核验副作用结果" subtitle="请先检查本机文件或进程证据，再提交决定" close={close} busy={busy}>
       <form
         onSubmit={(e) => {
           e.preventDefault();

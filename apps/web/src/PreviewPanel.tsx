@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import { api } from './api';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type { PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview';
+import { Icon } from './Icon';
 import './preview.css';
 
 const labels: Record<string, string> = {
@@ -135,9 +136,11 @@ export function PreviewPanel({
     <aside className={'preview-panel' + (wide ? ' preview-expanded' : '')} aria-label="代理工作预览">
       <header className="preview-heading">
         <div>
-          <span className="preview-glyph">▧</span>
+          <span className="preview-glyph">
+            <Icon name="panel" size={19} />
+          </span>
           <strong>工作预览</strong>
-          <span className="preview-label">LIVE WORKSPACE</span>
+          <span className="preview-label">{tasks.length} 个代理</span>
         </div>
         <div>
           <button
@@ -145,10 +148,10 @@ export function PreviewPanel({
             onClick={() => setWide(!wide)}
             aria-label={wide ? '收起预览' : '展开预览'}
           >
-            {wide ? '↙' : '↗'}
+            <Icon name={wide ? 'collapse' : 'expand'} size={17} />
           </button>
           <button className="icon-button" onClick={close} aria-label="关闭预览">
-            ×
+            <Icon name="close" size={18} />
           </button>
         </div>
       </header>
@@ -178,7 +181,16 @@ export function PreviewPanel({
           ['source', '源文件'],
           ['activity', '代理动态'],
         ].map(([key, label]) => (
-          <button key={key} onClick={() => setView(key)} className={view === key ? 'active' : ''}>
+          <button
+            key={key}
+            onClick={() => setView(key)}
+            aria-pressed={view === key}
+            className={view === key ? 'active' : ''}
+          >
+            <Icon
+              name={{ page: 'panel', diff: 'code', source: 'file', activity: 'tree' }[key] || 'file'}
+              size={14}
+            />
             {label}
             {key === 'diff' && <small>{current?.files.filter((f) => f.change).length || 0}</small>}
           </button>
@@ -191,7 +203,7 @@ export function PreviewPanel({
         </label>
         <span className="preview-timestamp">{updated ? `${updated} 已同步` : '正在连接…'}</span>
         <button onClick={() => setRefresh((n) => n + 1)} aria-label="刷新预览">
-          ↻
+          <Icon name="refresh" size={16} />
         </button>
       </div>
       {error && (
@@ -246,7 +258,9 @@ export function PreviewPanel({
             .filter((a) => a.taskId === taskId)
             .map((a) => (
               <div className="preview-artifact" key={a.id}>
-                <span>▤ {a.name}</span>
+                <span>
+                  <Icon name="file" size={15} /> {a.name}
+                </span>
                 <small>
                   v{a.version} · {a.verified ? '已核验' : '待核验'}
                 </small>
@@ -355,12 +369,14 @@ export function PreviewPanel({
                     <div>
                       <button
                         className={viewport === 'desktop' ? 'active' : ''}
+                        aria-pressed={viewport === 'desktop'}
                         onClick={() => setViewport('desktop')}
                       >
                         桌面
                       </button>
                       <button
                         className={viewport === 'mobile' ? 'active' : ''}
+                        aria-pressed={viewport === 'mobile'}
                         onClick={() => setViewport('mobile')}
                       >
                         手机
@@ -422,7 +438,9 @@ export function PreviewPanel({
 function PreviewEmpty({ title, text }: { title: string; text: string }) {
   return (
     <div className="preview-empty">
-      <span>▧</span>
+      <span>
+        <Icon name="panel" size={32} />
+      </span>
       <h3>{title}</h3>
       <p>{text}</p>
     </div>

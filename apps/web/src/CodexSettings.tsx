@@ -205,27 +205,26 @@ export function CodexSettings({
         </p>
       )}
       {status?.attempt?.message && <p className="field-help">{status.attempt.message}</p>}
-      <label>
-        可用模型
-        <select
-          disabled={busy || !models.length}
-          value={config.model}
-          onChange={(e) => {
-            const m = models.find((m) => m.id === e.target.value)!;
-            change({ model: m.id, reasoningEffort: m.defaultEffort as ProviderConfig['reasoningEffort'] });
-          }}
-        >
-          {!models.length && <option value={config.model}>{config.model || '连接账号后选择'}</option>}
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name} · {m.id}
-            </option>
-          ))}
-        </select>
-      </label>
-      {selected && (
-        <>
-          <p className="field-help">{selected.description}</p>
+      <div className="form-columns connection-models">
+        <label>
+          可用模型
+          <select
+            disabled={busy || !models.length}
+            value={config.model}
+            onChange={(e) => {
+              const m = models.find((m) => m.id === e.target.value)!;
+              change({ model: m.id, reasoningEffort: m.defaultEffort as ProviderConfig['reasoningEffort'] });
+            }}
+          >
+            {!models.length && <option value={config.model}>{config.model || '连接账号后选择'}</option>}
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} · {m.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selected && (
           <label>
             思考强度
             <select
@@ -235,12 +234,24 @@ export function CodexSettings({
               }
             >
               {selected.efforts.map((e) => (
-                <option key={e}>{e}</option>
+                <option key={e} value={e}>
+                  {{
+                    none: '无',
+                    minimal: '最少',
+                    low: '低',
+                    medium: '中',
+                    high: '高',
+                    xhigh: '更高',
+                    max: '最高',
+                    ultra: '极高',
+                  }[e] || e}
+                </option>
               ))}
             </select>
           </label>
-        </>
-      )}
+        )}
+      </div>
+      {selected && <p className="field-help">{selected.description}</p>}
       <div className="subscription-actions">
         <button
           className="secondary"

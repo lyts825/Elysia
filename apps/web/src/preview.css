@@ -2,7 +2,7 @@
   position: relative;
 }
 .preview-open .conversation {
-  max-width: 42%;
+  max-width: 40%;
   min-width: 280px;
 }
 .preview-panel {
@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
-  background: #fafbfd;
+  background: var(--surface-soft);
   overflow: hidden;
 }
 .preview-panel.preview-expanded {
@@ -23,12 +23,12 @@
   min-width: 0;
 }
 .preview-heading {
-  height: 54px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 18px;
   background: #fff;
   border-bottom: 1px solid var(--border);
 }
@@ -40,17 +40,18 @@
 .preview-glyph {
   font-size: 23px;
   color: var(--accent);
+  display: inline-flex;
 }
 .preview-label {
-  font-size: 9px;
-  letter-spacing: 1.3px;
-  color: #a5a3b4;
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--muted);
 }
 .preview-agent-picker {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 15px 18px 7px;
+  padding: 16px 18px 8px;
 }
 .preview-agent-picker label {
   white-space: nowrap;
@@ -66,10 +67,11 @@
 .preview-agent-info {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 18px 13px 78px;
-  font-size: 10px;
-  color: #9592a7;
+  gap: 6px 12px;
+  padding: 0 18px 14px 80px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-wrap: wrap;
 }
 .preview-agent-info strong {
   font-weight: 500;
@@ -78,38 +80,46 @@
 }
 .preview-tabs {
   display: flex;
-  padding: 0 15px;
+  padding: 5px 10px;
   border-bottom: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface-soft);
+  gap: 4px;
 }
 .preview-tabs button {
-  border: 0;
+  border: 1px solid transparent;
   border-bottom: 2px solid transparent;
   background: none;
   flex: 1;
-  padding: 12px 4px;
+  padding: 9px 4px;
   font-size: 12px;
-  color: #92909f;
+  color: var(--secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 7px;
 }
 .preview-tabs button.active {
   color: var(--accent);
-  border-color: var(--accent);
+  border-color: var(--border);
   font-weight: 600;
+  background: #fff;
+  box-shadow: 0 1px 3px #2b1c4807;
 }
 .preview-tabs small {
   border-radius: 5px;
   background: #f0eef6;
-  margin-left: 5px;
+  margin-left: 0;
   padding: 1px 5px;
-  font-size: 10px;
+  font-size: 11px;
 }
 .preview-tools {
   display: flex;
   gap: 12px;
   align-items: center;
   padding: 10px 18px;
-  font-size: 10px;
-  color: #9693a4;
+  font-size: 11px;
+  color: var(--muted);
 }
 .preview-tools label {
   display: flex;
@@ -126,8 +136,13 @@
   border: 0;
   background: transparent;
   font-size: 20px;
-  color: #85799f;
+  color: var(--accent);
   line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
 }
 .preview-timestamp {
   margin-left: auto;
@@ -154,23 +169,24 @@
   min-height: 0;
   margin: 0 15px 12px;
   border: 1px solid #e5e4ec;
-  border-radius: 9px;
+  border-radius: 10px;
   overflow: auto;
   background: #fff;
   position: relative;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 2px 8px #2b1c4805;
 }
 .preview-empty {
   margin: auto;
   padding: 35px 25px;
   text-align: center;
   max-width: 440px;
-  color: #9994a8;
+  color: var(--muted);
 }
 .preview-empty > span {
   font-size: 37px;
-  color: #c9c1dd;
+  color: var(--muted);
 }
 .preview-empty h3 {
   font-size: 14px;
@@ -198,8 +214,8 @@
   padding: 8px 12px;
   background: #fff;
   border-bottom: 1px solid var(--border);
-  font-size: 10px;
-  color: #a29bae;
+  font-size: 12px;
+  color: var(--muted);
   flex-shrink: 0;
 }
 .preview-address > span {
@@ -213,10 +229,10 @@
 .preview-address button {
   border: 0;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
   padding: 4px 7px;
   white-space: nowrap;
-  color: #9a96a5;
+  color: var(--muted);
   border-radius: 4px;
 }
 .preview-address button.active {
@@ -270,7 +286,7 @@
 .preview-markdown blockquote {
   border-left: 3px solid #bdb0dd;
   padding-left: 15px;
-  color: #92869c;
+  color: var(--muted);
 }
 .preview-link {
   color: #7c65a6;
@@ -279,7 +295,7 @@
 .preview-source {
   margin: 0;
   padding: 18px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   white-space: pre;
   overflow: auto;
@@ -296,7 +312,7 @@
   overflow: auto;
   padding: 12px 0;
   min-width: 100%;
-  font-size: 11px;
+  font-size: 12px;
 }
 .preview-diff pre > div {
   padding: 0 16px;
@@ -332,7 +348,7 @@
 .preview-limit {
   padding: 10px 15px;
   font-size: 11px;
-  color: #9d8a61;
+  color: var(--muted);
   background: #faf7ee;
   margin: 0;
 }
@@ -356,12 +372,12 @@
 }
 .preview-loading {
   padding: 30px;
-  color: #aaa3b8;
+  color: var(--muted);
   font-size: 12px;
 }
 .preview-footer {
-  font-size: 9px;
-  color: #a7a1b4;
+  font-size: 11px;
+  color: var(--muted);
   display: flex;
   gap: 10px;
   padding: 0 18px 12px;
@@ -374,7 +390,7 @@
 }
 .preview-footer small {
   white-space: nowrap;
-  font-size: 9px;
+  font-size: 12px;
 }
 .preview-activity {
   overflow: auto;
@@ -388,7 +404,7 @@
 .preview-objective,
 .preview-muted {
   font-size: 12px;
-  color: #9991a5;
+  color: var(--muted);
 }
 .preview-activity h4 {
   font-size: 12px;
@@ -396,8 +412,8 @@
   margin: 26px 0 10px;
 }
 .preview-activity h4 span {
-  font-size: 10px;
-  color: #afa7b9;
+  font-size: 12px;
+  color: var(--muted);
   margin-left: 7px;
 }
 .preview-activity article {
@@ -408,8 +424,8 @@
   margin: 8px 0;
 }
 .preview-activity article small {
-  font-size: 10px;
-  color: #aaa0ba;
+  font-size: 12px;
+  color: var(--muted);
 }
 .preview-activity article p {
   font-size: 12px;
@@ -431,17 +447,17 @@
   cursor: pointer;
 }
 .preview-activity details pre {
-  font-size: 10px;
+  font-size: 12px;
   max-height: 300px;
   overflow: auto;
 }
 .op-status {
   float: right;
-  font-size: 9px;
-  color: #aca4b6;
+  font-size: 12px;
+  color: var(--muted);
 }
 .op-status.done {
-  color: #67a085;
+  color: var(--muted);
 }
 .preview-artifact {
   display: flex;
@@ -450,10 +466,11 @@
   font-size: 11px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
+  gap: 10px;
 }
 .preview-artifact small {
-  color: #aea7b7;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .preview-wait {
   font-size: 11px;
@@ -476,9 +493,9 @@
 .agent-preview-button {
   border: 0;
   background: var(--accent-pale);
-  border-radius: 5px;
-  padding: 4px 8px;
-  font-size: 10px;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
   color: var(--accent);
   margin-top: 8px;
 }
@@ -491,7 +508,7 @@
   border-radius: 6px;
 }
 .local-indicator span {
-  font-size: 9px !important;
+  font-size: 10px !important;
 }
 .local-chip.port-chip {
   max-width: 180px;
@@ -511,4 +528,17 @@
   .preview-label {
     display: none;
   }
+}
+
+.preview-artifact > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.preview-agent-picker .status-dot {
+  width: 7px;
+  height: 7px;
+}
+.preview-tools button:hover {
+  background: var(--accent-pale);
 }
