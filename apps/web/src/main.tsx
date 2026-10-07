@@ -107,8 +107,23 @@ function App() {
   const spaceProjects = projects.filter((p) => p.spaceId === spaceId && !p.archived);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
-  const [assignments, setAssignments] = useState<Record<string, ModelChoice>>({});
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, ModelChoice>>>({});
+  const assignmentKey = detail?.run.plan ? `${detail.run.id}:${detail.run.plan.version}` : '';
+  const assignments = assignmentDrafts[assignmentKey] || {};
   const [assignmentReady, setAssignmentReady] = useState<Record<string, boolean>>({});
+  const decisionOperation = modal.startsWith('decision:')
+    ? detail?.operations.find((operation) => operation.id === modal.slice(9))
+    : undefined;
+  const decisionDisabledReason = (operation: Operation) => {
+    if (archived) return '请先恢复归档记录，再提交核验决定。';
+    if (
+      ['DONE', 'CANCELLED'].includes(detail?.run.status || '') ||
+      ['DONE', 'CANCELLED'].includes(detail?.tasks.find((task) => task.id === operation.taskId)?.status || '')
+    )
+      return '任务已结束，核验记录仅供查看。';
+    if (operation.status !== 'UNCERTAIN') return '该操作已完成核验，无需重复提交。';
+    return '';
+  };
   const proposedChoice = (task: Task['spec']): ModelChoice => {
     const fallback = defaultChoice(providers, task.providerId);
     return {
@@ -227,9 +242,8 @@ function App() {
     };
   }, [ready, runId, refreshDetail, refresh]);
   useEffect(() => {
-    setAssignments({});
     setAssignmentReady({});
-  }, [detail?.run.id, detail?.run.plan?.version]);
+  }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
   async function act(fn: () => Promise<unknown>) {
     if (actionPending.current) return;
@@ -289,6 +303,10 @@ function App() {
       if (deleted.kind === 'project') setProjectId('');
     } else if (runId) await refreshDetail();
     await refresh();
+    if (deleted?.kind === 'run')
+      setAssignmentDrafts((old) =>
+        Object.fromEntries(Object.entries(old).filter(([key]) => !key.startsWith(deleted.id + ':'))),
+      );
     if (deleted?.kind === 'run')
       setReplies((old) => {
         const next = { ...old };
@@ -769,35 +787,54 @@ function App() {
                         <span className="plan-count">{detail.run.plan.tasks.length} 个子任务</span>
                       </div>
                       <p>{detail.run.plan.summary}</p>
-                      {detail.run.plan.tasks.map((t, i) => (
-                        <div className="plan-row" key={t.key}>
-                          <span className="step-number">{String(i + 1).padStart(2, '0')}</span>
-                          <div>
-                            <strong>{t.title}</strong>
-                            <p>{t.objective}</p>
-                            <small>
-                              {t.providerId}
-                              {t.model ? ' · ' + t.model : ''}
-                              {t.reasoningEffort ? ' · ' + t.reasoningEffort : ''}{' '}
-                              {t.dependsOn.length ? '· 依赖 ' + t.dependsOn.join(', ') : ''}
-                            </small>
-                            {detail.run.reason === 'plan' && (
-                              <ModelPicker
-                                providers={providers}
-                                label={`一级子代理 ${i + 1} · ${t.title}`}
-                                value={assignments[t.key] || proposedChoice(t)}
-                                disabled={busy || archived}
-                                change={(choice) => setAssignments((old) => ({ ...old, [t.key]: choice }))}
-                                ready={(valid) =>
-                                  setAssignmentReady((old) =>
-                                    old[t.key] === valid ? old : { ...old, [t.key]: valid },
-                                  )
-                                }
-                              />
-                            )}
+                      {detail.run.plan.tasks.map((t, i) => {
+                        const choice =
+                          detail.run.reason === 'plan' ? assignments[t.key] || proposedChoice(t) : t;
+                        const provider = providers.find((p) => p.id === choice.providerId);
+                        return (
+                          <div className="plan-row" key={t.key}>
+                            <span className="step-number">{String(i + 1).padStart(2, '0')}</span>
+                            <div>
+                              <strong>{t.title}</strong>
+                              <p>{t.objective}</p>
+                              <small>
+                                {provider?.label || choice.providerId}
+                                {choice.model ? ' · ' + choice.model : ''}
+                                {choice.reasoningEffort ? ' · ' + choice.reasoningEffort : ''}{' '}
+                                {t.dependsOn.length
+                                  ? '· 依赖 ' +
+                                    t.dependsOn
+                                      .map(
+                                        (key) =>
+                                          detail.run.plan!.tasks.find((task) => task.key === key)?.title ||
+                                          key,
+                                      )
+                                      .join('、')
+                                  : ''}
+                              </small>
+                              {detail.run.reason === 'plan' && (
+                                <ModelPicker
+                                  providers={providers}
+                                  label={`一级子代理 ${i + 1} · ${t.title}`}
+                                  value={assignments[t.key] || proposedChoice(t)}
+                                  disabled={busy || archived}
+                                  change={(choice) =>
+                                    setAssignmentDrafts((old) => ({
+                                      ...old,
+                                      [assignmentKey]: { ...old[assignmentKey], [t.key]: choice },
+                                    }))
+                                  }
+                                  ready={(valid) =>
+                                    setAssignmentReady((old) =>
+                                      old[t.key] === valid ? old : { ...old, [t.key]: valid },
+                                    )
+                                  }
+                                />
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       <div className="plan-footer">
                         <span>
                           <Icon name="lock" size={13} />
@@ -1103,7 +1140,14 @@ function App() {
                               <strong>{o.name}</strong>
                               <p>{o.error || '操作 intent 已记录，结果未确定。请核验本机证据。'}</p>
                               <pre>{JSON.stringify(o.evidence || o.args, null, 2)}</pre>
-                              <button className="secondary" onClick={() => setModal('decision:' + o.id)}>
+                              {decisionDisabledReason(o) && (
+                                <p className="field-help">{decisionDisabledReason(o)}</p>
+                              )}
+                              <button
+                                className="secondary"
+                                disabled={busy || !!decisionDisabledReason(o)}
+                                onClick={() => setModal('decision:' + o.id)}
+                              >
                                 提交核验决定
                               </button>
                             </div>
@@ -1219,11 +1263,12 @@ function App() {
                   }
                 />
               )}
-              {modal.startsWith('decision:') && detail && (
+              {modal.startsWith('decision:') && detail && decisionOperation && (
                 <DecisionModal
-                  operation={detail.operations.find((o) => o.id === modal.slice(9))!}
+                  operation={decisionOperation}
                   close={() => setModal('')}
                   busy={busy}
+                  disabledReason={decisionDisabledReason(decisionOperation)}
                   submit={(body) =>
                     act(async () => {
                       await mutation('/runs/' + runId + '/decisions', {
@@ -1870,23 +1915,26 @@ function DecisionModal({
   close,
   submit,
   busy,
+  disabledReason,
 }: {
   operation: Operation;
   close: () => void;
   submit: (body: any) => void;
   busy: boolean;
+  disabledReason: string;
 }) {
   const [outcome, setOutcome] = useState('confirmed'),
     [note, setNote] = useState(''),
-    [result, setResult] = useState('{}'),
+    [result, setResult] = useState(''),
     [parseError, setParseError] = useState('');
   return (
     <Modal title="核验副作用结果" subtitle="请先检查本机文件或进程证据，再提交决定" close={close} busy={busy}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (busy || disabledReason) return;
           try {
-            const parsed = JSON.parse(result);
+            const parsed = result.trim() ? JSON.parse(result) : undefined;
             setParseError('');
             submit({ operationId: operation.id, outcome, note, result: parsed });
           } catch {
@@ -1895,21 +1943,41 @@ function DecisionModal({
         }}
       >
         <div className="form-body">
+          {disabledReason && (
+            <p role="status" className="field-help">
+              {disabledReason}
+            </p>
+          )}
           <pre>{JSON.stringify(operation.evidence || operation.args, null, 2)}</pre>
           <label>
             核验结论
-            <select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+            <select
+              disabled={busy || !!disabledReason}
+              value={outcome}
+              onChange={(e) => setOutcome(e.target.value)}
+            >
               <option value="confirmed">确认已应用</option>
               <option value="not_applied">确认未应用 / 失败</option>
             </select>
           </label>
           <label>
             证据说明
-            <textarea required value={note} onChange={(e) => setNote(e.target.value)} />
+            <textarea
+              required
+              disabled={busy || !!disabledReason}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
           </label>
           <label>
-            经核验的工具结果 JSON
-            <textarea className="code-input" value={result} onChange={(e) => setResult(e.target.value)} />
+            工具结果 JSON（可选）
+            <textarea
+              disabled={busy || !!disabledReason}
+              className="code-input"
+              placeholder="留空时使用证据说明作为核验结果"
+              value={result}
+              onChange={(e) => setResult(e.target.value)}
+            />
           </label>
           {parseError && <p role="alert">{parseError}</p>}
         </div>
@@ -1917,7 +1985,7 @@ function DecisionModal({
           <button type="button" className="secondary" disabled={busy} onClick={close}>
             返回
           </button>
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || !!disabledReason}>
             提交决定
           </button>
         </footer>

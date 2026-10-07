@@ -785,18 +785,26 @@ export function createServer(
       invariant(body.operationId || body.requestId, 'DECISION_TARGET', '需要具体操作或请求引用');
       if (body.operationId) {
         const op = store.require<Operation>('tool_operations', body.operationId);
+        const task = store.require<Task>('tasks', op.taskId);
         invariant(
           op.runId === run.id && op.status === 'UNCERTAIN',
           'DECISION_SCOPE',
           '操作不属于当前待核验集合',
         );
+        invariant(
+          !['DONE', 'CANCELLED'].includes(task.status),
+          'INVALID_STATE',
+          '已结束的任务不能修改核验结果',
+        );
         const updated = store.put('tool_operations', {
           ...op,
           status: body.outcome === 'confirmed' ? 'DONE' : 'FAILED',
           result: body.result ?? { note: body.note, userVerified: true },
+          error: body.outcome === 'confirmed' ? undefined : body.note,
         });
-        const task = store.require<Task>('tasks', op.taskId);
         if (
+          task.status === 'WAITING' &&
+          task.waitReason === 'verification' &&
           !store
             .all<Operation>('tool_operations', run.id)
             .some((o) => o.taskId === task.id && o.status === 'UNCERTAIN')
@@ -824,7 +832,10 @@ export function createServer(
         source: 'user',
         createdAt: now(),
       });
-      kernel.updateRun(store.require('runs', run.id), { status: 'READY', reason: undefined });
+      const current = store.require<Run>('runs', run.id);
+      const root = store.require<Task>('tasks', run.rootTaskId);
+      if (current.status === 'WAITING' && current.reason === 'verification' && root.status === 'READY')
+        kernel.updateRun(current, { status: 'READY', reason: undefined });
       return decision;
     });
   });

@@ -79,15 +79,32 @@ export function ModelPicker({
     };
   }, [selected?.id, selected?.revision, subscription, verified, refresh]);
   const model = models.find((m) => m.id === value.model);
+  const apiBindingMatches =
+    !!selected && value.model === selected.model && value.reasoningEffort === selected.reasoningEffort;
   const valid =
     verified &&
-    (!subscription || (!loading && !error && !!model)) &&
+    (subscription ? !loading && !error && !!model : apiBindingMatches) &&
     (!model?.efforts?.length || model.efforts.includes(value.reasoningEffort || model.defaultEffort || ''));
   useEffect(() => {
     ready?.(valid);
   }, [valid, ready]);
   useEffect(() => {
-    if (!subscription || !models.length) return;
+    if (disabled || subscription || !selected || apiBindingMatches) return;
+    change({ ...value, model: selected.model, reasoningEffort: selected.reasoningEffort });
+  }, [
+    disabled,
+    subscription,
+    selected?.id,
+    selected?.model,
+    selected?.reasoningEffort,
+    value.providerId,
+    value.model,
+    value.reasoningEffort,
+    apiBindingMatches,
+    change,
+  ]);
+  useEffect(() => {
+    if (disabled || !subscription || !models.length) return;
     const current = models.find((m) => m.id === value.model);
     if (!current) {
       const next = models.find((m) => m.id === selected?.model) || models[0];
@@ -102,7 +119,7 @@ export function ModelPicker({
         reasoningEffort: (current.defaultEffort || current.efforts[0]) as ModelChoice['reasoningEffort'],
       });
     }
-  }, [models, subscription, value.providerId, value.model, value.reasoningEffort]);
+  }, [models, subscription, value.providerId, value.model, value.reasoningEffort, disabled]);
   return (
     <div className="model-picker">
       <label htmlFor={id + '-provider'}>{label}</label>
