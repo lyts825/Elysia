@@ -1,0 +1,153 @@
+:root {
+  --motion-press: 90ms;
+  --motion-fast: 140ms;
+  --motion-enter: 240ms;
+  --motion-exit: 160ms;
+  --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+button {
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-fast) var(--ease-enter);
+}
+:is(.primary, .secondary, .new-task, .icon-button, .send-button):active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: var(--motion-press);
+}
+.suggestions button {
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    transform var(--motion-enter) var(--ease-enter);
+}
+@media (hover: hover) {
+  .suggestions button:hover {
+    transform: translateY(-2px);
+  }
+  .context-link:hover svg,
+  .recent-row:hover > svg {
+    transform: translateX(3px);
+  }
+}
+.suggestions button:active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+.context-link svg,
+.recent-row > svg {
+  transition: transform var(--motion-enter) var(--ease-enter);
+}
+.home-heading,
+.composer,
+.suggestions,
+.recent-section,
+.home-context,
+.run-toolbar {
+  animation: surface-arrive var(--motion-enter) var(--ease-enter) both;
+}
+.suggestions,
+.home-context {
+  animation-delay: 35ms;
+}
+.recent-section {
+  animation-delay: 65ms;
+}
+.empty-art {
+  animation: artwork-arrive 320ms var(--ease-enter) both;
+}
+.error-banner,
+.dialog-notice,
+.connection-notice {
+  animation: surface-arrive var(--motion-exit) var(--ease-enter) both;
+}
+.app-shell {
+  background: linear-gradient(165deg, #3b3641, #2e2e39 60%);
+}
+.main {
+  position: relative;
+  box-shadow: 240px 0 0 #f7f7fa;
+}
+.sidebar {
+  overflow: hidden;
+}
+.app-shell:not(.sidebar-collapsed) .sidebar :is(.brand > span, .project-list, .history-list) {
+  animation: surface-arrive var(--motion-enter) var(--ease-enter) both;
+}
+.overlay[data-leaving],
+.preview-panel[data-leaving] {
+  pointer-events: none;
+}
+.motion-tabs {
+  position: relative;
+  isolation: isolate;
+}
+.motion-tabs .tab-indicator {
+  position: absolute;
+  pointer-events: none;
+  visibility: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 1px 3px #2b1c4807;
+  transform-origin: left center;
+  z-index: -1;
+}
+.motion-tabs button.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.typing-dot,
+.preview-stream i {
+  animation: working-pulse 1600ms ease-in-out infinite;
+}
+.budget-bar i {
+  width: 100%;
+  transform-origin: left center;
+  transition: transform var(--motion-enter) var(--ease-enter);
+}
+@keyframes surface-arrive {
+  from {
+    opacity: 0.65;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes artwork-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes working-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  button:active:not(:disabled),
+  .suggestions button:hover,
+  .context-link:hover svg,
+  .recent-row:hover > svg {
+    transform: none !important;
+  }
+}

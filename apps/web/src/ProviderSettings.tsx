@@ -5,6 +5,7 @@ import { CodexSettings } from './CodexSettings';
 import { SubscriptionSettings } from './SubscriptionSettings';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
+import { MotionContent } from './Motion';
 import './providers.css';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
@@ -223,7 +224,7 @@ export function ProviderSettings({
             </div>
           )}
         </nav>
-        <div className="provider-editor">
+        <MotionContent className="provider-editor" motionKey={adding ? 'presets' : config?.id || 'empty'}>
           {pendingChoice && (
             <div className="draft-prompt">
               <p>当前配置有未保存的更改。</p>
@@ -601,7 +602,7 @@ export function ProviderSettings({
               </footer>
             </>
           )}
-        </div>
+        </MotionContent>
       </div>
     </Modal>
   );

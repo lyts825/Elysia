@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { api } from './api';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type { PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview';
 import { Icon } from './Icon';
 import { EmptyArtwork } from './Brand';
+import { MotionContent, MotionTabs, usePresenceMotion } from './Motion';
 import './preview.css';
 
 const labels: Record<string, string> = {
@@ -41,6 +42,8 @@ export function PreviewPanel({
   selectTask,
   close,
 }: Props) {
+  const panel = useRef<HTMLElement>(null);
+  const present = usePresenceMotion(panel, 'panel');
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
   const taskId = task?.id || '',
     agent = agents.find((a) => a.taskId === taskId);
@@ -134,7 +137,13 @@ export function PreviewPanel({
     .slice(-30)
     .reverse();
   return (
-    <aside className={'preview-panel' + (wide ? ' preview-expanded' : '')} aria-label="代理工作预览">
+    <aside
+      ref={panel}
+      className={'preview-panel' + (wide ? ' preview-expanded' : '')}
+      aria-label="代理工作预览"
+      data-leaving={!present || undefined}
+      inert={!present}
+    >
       <header className="preview-heading">
         <div>
           <span className="preview-glyph">
@@ -151,7 +160,14 @@ export function PreviewPanel({
           >
             <Icon name={wide ? 'collapse' : 'expand'} size={17} />
           </button>
-          <button className="icon-button" onClick={close} aria-label="关闭预览">
+          <button
+            className="icon-button"
+            onClick={() => {
+              document.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
+              close();
+            }}
+            aria-label="关闭预览"
+          >
             <Icon name="close" size={18} />
           </button>
         </div>
@@ -175,7 +191,7 @@ export function PreviewPanel({
         </span>
         <strong>{labels[task?.status || '']}</strong>
       </div>
-      <nav className="preview-tabs" aria-label="预览视图">
+      <MotionTabs className="preview-tabs" label="预览视图" value={view}>
         {[
           ['page', '页面'],
           ['diff', '更改'],
@@ -196,7 +212,7 @@ export function PreviewPanel({
             {key === 'diff' && <small>{current?.files.filter((f) => f.change).length || 0}</small>}
           </button>
         ))}
-      </nav>
+      </MotionTabs>
       <div className="preview-tools">
         <label>
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
@@ -214,7 +230,7 @@ export function PreviewPanel({
         </div>
       )}
       {view === 'activity' ? (
-        <div className="preview-activity">
+        <MotionContent className="preview-activity" motionKey={`${taskId}:activity:${wide}`}>
           <h3>{task?.spec.title}</h3>
           <p className="preview-objective">{task?.spec.objective}</p>
           {task?.waitReason && <div className="preview-wait">等待原因：{task.waitReason}</div>}
@@ -267,7 +283,7 @@ export function PreviewPanel({
                 </small>
               </div>
             ))}
-        </div>
+        </MotionContent>
       ) : (
         <>
           <div className="preview-file-bar">
@@ -296,7 +312,7 @@ export function PreviewPanel({
           {current?.truncated && (
             <p className="preview-limit">文件列表最多展示 1,500 项；部分目录或文件不可读取。</p>
           )}
-          <div className="preview-canvas">
+          <MotionContent className="preview-canvas" motionKey={`${taskId}:${view}:${wide}`}>
             {!current?.workspace ? (
               <PreviewEmpty
                 title="代理工作区尚未就绪"
@@ -424,7 +440,7 @@ export function PreviewPanel({
                 text="文件可能正在被写入；稍后自动重试或选择其他文件。"
               />
             )}
-          </div>
+          </MotionContent>
         </>
       )}
       <footer className="preview-footer">

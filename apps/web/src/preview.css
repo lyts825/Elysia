@@ -1,4 +1,4 @@
-.run-layout.preview-open {
+.run-layout {
   position: relative;
 }
 .preview-open .conversation {
@@ -21,6 +21,12 @@
   width: 100%;
   z-index: 4;
   min-width: 0;
+}
+.preview-panel[data-leaving] {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 4;
 }
 .preview-heading {
   height: 56px;

@@ -24,7 +24,9 @@ import { Icon } from './Icon';
 import { BrandIcon, EmptyArtwork } from './Brand';
 import { Modal } from './Modal';
 import { HomeWorkspace } from './HomeWorkspace';
+import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
+import './motion.css';
 type Detail = {
   run: Run;
   tasks: Task[];
@@ -87,6 +89,7 @@ function App() {
   const project = projects.find((p) => p.id === projectId);
   const projectRuns = runs.filter((r) => !projectId || r.projectId === projectId);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const mainMotion = usePositionMotion<HTMLElement>();
   const refresh = useCallback(async () => {
     const [p, r, v] = await Promise.all([
       api<Project[]>('/projects'),
@@ -299,12 +302,12 @@ function App() {
           </div>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" ref={mainMotion.ref}>
         <header className="topbar">
           <div className="breadcrumb">
             <button
               className="icon-button sidebar-toggle"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              onClick={() => mainMotion.change(() => setSidebarCollapsed((collapsed) => !collapsed))}
               aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={!sidebarCollapsed}
               title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
@@ -416,7 +419,7 @@ function App() {
                 )}
               </div>
             </div>
-            <div className={'run-layout' + (previewOpen ? ' preview-open' : '')}>
+            <div key={detail.run.id} className={'run-layout' + (previewOpen ? ' preview-open' : '')}>
               <section className="conversation">
                 <div className="conversation-scroll">
                   <div className="user-message">
@@ -618,22 +621,25 @@ function App() {
                   </form>
                 )}
               </section>
-              {previewOpen ? (
-                <PreviewPanel
-                  runId={runId}
-                  tasks={detail.tasks}
-                  agents={detail.agents}
-                  messages={detail.messages}
-                  operations={detail.operations}
-                  artifacts={detail.artifacts}
-                  streaming={streaming}
-                  selectedTaskId={previewTaskId}
-                  selectTask={setPreviewTaskId}
-                  close={() => setPreviewOpen(false)}
-                />
-              ) : (
+              <Presence>
+                {previewOpen && (
+                  <PreviewPanel
+                    runId={runId}
+                    tasks={detail.tasks}
+                    agents={detail.agents}
+                    messages={detail.messages}
+                    operations={detail.operations}
+                    artifacts={detail.artifacts}
+                    streaming={streaming}
+                    selectedTaskId={previewTaskId}
+                    selectTask={setPreviewTaskId}
+                    close={() => setPreviewOpen(false)}
+                  />
+                )}
+              </Presence>
+              {!previewOpen && (
                 <aside className="details-panel">
-                  <nav className="detail-tabs" aria-label="任务详情">
+                  <MotionTabs className="detail-tabs" label="任务详情" value={tab}>
                     {[
                       { key: 'tasks', icon: 'grid', title: '任务' },
                       { key: 'agents', icon: 'tree', title: '代理' },
@@ -650,8 +656,8 @@ function App() {
                         {t.title}
                       </button>
                     ))}
-                  </nav>
-                  <div className="detail-content">
+                  </MotionTabs>
+                  <MotionContent className="detail-content" motionKey={tab}>
                     {tab === 'tasks' && (
                       <>
                         <div className="panel-heading">
@@ -792,7 +798,7 @@ function App() {
                       </>
                     )}
                     {tab === 'usage' && <UsagePanel detail={detail} totalTokens={totalTokens} />}
-                  </div>
+                  </MotionContent>
                   <div className="panel-bottom">
                     <Icon name="history" size={13} />
                     任务记录自动保存在本机
@@ -805,109 +811,117 @@ function App() {
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      {modal === 'project' && (
-        <ProjectModal
-          close={() => setModal('')}
-          busy={busy}
-          submit={(body) =>
-            act(async () => {
-              const p = await mutation<Project>('/projects', body);
-              setProjectId(p.id);
-              setModal('');
-            })
-          }
-        />
-      )}
-      {modal === 'project-files' && project && (
-        <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
-          <ProjectFiles projectId={project.id} />
-        </Modal>
-      )}
-      {modal === 'run' && project && (
-        <RunModal
-          project={project}
-          objective={draft}
-          providers={providers}
-          close={() => setModal('')}
-          busy={busy}
-          submit={(body) =>
-            act(async () => {
-              const run = await mutation<Run>('/runs', { ...body, objective: draft, projectId });
-              setRunId(run.id);
-              setDraft('');
-              setModal('');
-            })
-          }
-          settings={() => setModal('settings')}
-        />
-      )}
-      {modal === 'settings' && (
-        <React.Suspense
-          fallback={
-            <div className="overlay">
-              <section className="modal">
-                <header>正在加载模型设置…</header>
-              </section>
+      <Presence>
+        {modal ? (
+          <React.Fragment key={modal}>
+            {modal === 'project' && (
+              <ProjectModal
+                close={() => setModal('')}
+                busy={busy}
+                submit={(body) =>
+                  act(async () => {
+                    const p = await mutation<Project>('/projects', body);
+                    setProjectId(p.id);
+                    setModal('');
+                  })
+                }
+              />
+            )}
+            {modal === 'project-files' && project && (
+              <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
+                <ProjectFiles projectId={project.id} />
+              </Modal>
+            )}
+            {modal === 'run' && project && (
+              <RunModal
+                project={project}
+                objective={draft}
+                providers={providers}
+                close={() => setModal('')}
+                busy={busy}
+                submit={(body) =>
+                  act(async () => {
+                    const run = await mutation<Run>('/runs', { ...body, objective: draft, projectId });
+                    setRunId(run.id);
+                    setDraft('');
+                    setModal('');
+                  })
+                }
+                settings={() => setModal('settings')}
+              />
+            )}
+            {modal === 'settings' && (
+              <React.Suspense
+                fallback={
+                  <Modal title="模型与连接" close={() => setModal('')}>
+                    <div className="form-body" role="status">
+                      正在加载模型设置…
+                    </div>
+                  </Modal>
+                }
+              >
+                <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
+              </React.Suspense>
+            )}
+            {modal === 'contract' && detail && (
+              <ContractModal
+                contract={detail.run.contract}
+                close={() => setModal('')}
+                busy={busy}
+                disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
+                submit={(contract) =>
+                  act(async () => {
+                    await mutation('/runs/' + runId + '/messages', {
+                      expectedRevision: detail.run.revision,
+                      contract,
+                      text: '我已修改任务约定，请根据约定重新提出计划。',
+                    });
+                    setModal('');
+                  })
+                }
+              />
+            )}
+            {modal.startsWith('decision:') && detail && (
+              <DecisionModal
+                operation={detail.operations.find((o) => o.id === modal.slice(9))!}
+                close={() => setModal('')}
+                busy={busy}
+                submit={(body) =>
+                  act(async () => {
+                    await mutation('/runs/' + runId + '/decisions', {
+                      ...body,
+                      expectedRevision: detail.run.revision,
+                    });
+                    setModal('');
+                  })
+                }
+              />
+            )}
+          </React.Fragment>
+        ) : null}
+      </Presence>
+      <Presence>
+        {artifactView && (
+          <Modal
+            title={artifactView.name}
+            subtitle="已登记产物 · 内容哈希由服务端核对"
+            close={() => setArtifactView(null)}
+            wide
+          >
+            <div className="artifact-preview">
+              <pre>{artifactView.text}</pre>
             </div>
-          }
-        >
-          <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
-        </React.Suspense>
-      )}
-      {modal === 'contract' && detail && (
-        <ContractModal
-          contract={detail.run.contract}
-          close={() => setModal('')}
-          busy={busy}
-          disabled={['DONE', 'CANCELLED'].includes(detail.run.status)}
-          submit={(contract) =>
-            act(async () => {
-              await mutation('/runs/' + runId + '/messages', {
-                expectedRevision: detail.run.revision,
-                contract,
-                text: '我已修改任务约定，请根据约定重新提出计划。',
-              });
-              setModal('');
-            })
-          }
-        />
-      )}
-      {modal.startsWith('decision:') && detail && (
-        <DecisionModal
-          operation={detail.operations.find((o) => o.id === modal.slice(9))!}
-          close={() => setModal('')}
-          busy={busy}
-          submit={(body) =>
-            act(async () => {
-              await mutation('/runs/' + runId + '/decisions', {
-                ...body,
-                expectedRevision: detail.run.revision,
-              });
-              setModal('');
-            })
-          }
-        />
-      )}
-      {artifactView && (
-        <Modal
-          title={artifactView.name}
-          subtitle="已登记产物 · 内容哈希由服务端核对"
-          close={() => setArtifactView(null)}
-          wide
-        >
-          <div className="artifact-preview">
-            <pre>{artifactView.text}</pre>
-          </div>
-          <footer className="modal-footer">
-            <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
-              下载产物
-            </a>
-            <button className="primary" onClick={() => setArtifactView(null)}>
-              完成
-            </button>
-          </footer>
-        </Modal>
-      )}
+            <footer className="modal-footer">
+              <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
+                下载产物
+              </a>
+              <button className="primary" onClick={() => setArtifactView(null)}>
+                完成
+              </button>
+            </footer>
+          </Modal>
+        )}
+      </Presence>
     </div>
   );
 }
@@ -1006,8 +1020,7 @@ function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: numb
       <div className="budget-bar">
         <i
           style={{
-            width:
-              Math.min(100, (detail.requests.length / detail.run.contract.budget.maxRequests) * 100) + '%',
+            transform: `scaleX(${Math.min(1, detail.requests.length / detail.run.contract.budget.maxRequests)})`,
           }}
         />
       </div>

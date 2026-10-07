@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
+import { usePresenceMotion } from './Motion';
 
 export function Modal({
   title,
@@ -19,13 +20,17 @@ export function Modal({
   busy?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const overlay = useRef<HTMLDivElement>(null);
+  const present = usePresenceMotion(ref, 'dialog');
+  usePresenceMotion(overlay, 'scrim');
   const closeRef = useRef(close);
   const busyRef = useRef(busy);
   const titleId = useId();
   const descriptionId = useId();
   closeRef.current = close;
   busyRef.current = busy;
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!present) return;
     const previous = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     const shell = document.querySelector<HTMLElement>('.main');
@@ -71,12 +76,15 @@ export function Modal({
       targets.forEach((node, i) => {
         node.inert = inert[i];
       });
-      if (previous?.isConnected) previous.focus();
+      if (previous?.isConnected && !previous.closest('[inert]')) previous.focus({ preventScroll: true });
     };
-  }, []);
+  }, [present]);
   return (
     <div
+      ref={overlay}
       className="overlay"
+      data-leaving={!present || undefined}
+      inert={!present}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) close();
       }}
@@ -84,8 +92,8 @@ export function Modal({
       <section
         ref={ref}
         className={`modal ${wide ? 'wide' : ''} ${className}`}
-        role="dialog"
-        aria-modal="true"
+        role={present ? 'dialog' : undefined}
+        aria-modal={present ? 'true' : undefined}
         aria-labelledby={titleId}
         aria-describedby={subtitle ? descriptionId : undefined}
         tabIndex={-1}
