@@ -1,6 +1,8 @@
-import { useLayoutEffect, useId, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
+
+export const ModalErrorContext = createContext('');
 
 export function Modal({
   title,
@@ -27,6 +29,7 @@ export function Modal({
   const busyRef = useRef(busy);
   const titleId = useId();
   const descriptionId = useId();
+  const error = useContext(ModalErrorContext);
   closeRef.current = close;
   busyRef.current = busy;
   useLayoutEffect(() => {
@@ -113,6 +116,11 @@ export function Modal({
             <Icon name="close" />
           </button>
         </header>
+        {error && (
+          <div className="modal-operation-error" role="alert">
+            {error}
+          </div>
+        )}
         {children}
       </section>
     </div>

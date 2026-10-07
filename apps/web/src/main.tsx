@@ -24,9 +24,10 @@ import type {
 } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
 import { BrandIcon, EmptyArtwork } from './Brand';
-import { Modal } from './Modal';
+import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceManager } from './WorkspaceManager';
+import { ConversationScroll } from './ConversationScroll';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import './style.css';
@@ -95,7 +96,7 @@ function App() {
       id: string;
     } | null>(null),
     [draft, setDraft] = useState(''),
-    [reply, setReply] = useState(''),
+    [replies, setReplies] = useState<Record<string, string>>({}),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const project = projects.find((p) => p.id === projectId);
   const projectRuns = runs.filter(
@@ -117,6 +118,9 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mainMotion = usePositionMotion<HTMLElement>();
   const activeRunId = useRef('');
+  const detailRequest = useRef(0);
+  const actionPending = useRef(false);
+  const reply = replies[runId] || '';
   const refresh = useCallback(async () => {
     const [p, r, v, s] = await Promise.all([
       api<Project[]>('/projects'),
@@ -136,8 +140,10 @@ function App() {
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
+    const request = ++detailRequest.current;
     const result = await api<Detail>('/runs/' + wanted);
-    if (activeRunId.current === wanted) setDetail(result);
+    if (activeRunId.current === wanted && detailRequest.current === request)
+      setDetail((old) => (old?.run.id === wanted && old.run.revision > result.run.revision ? old : result));
   }, []);
   useEffect(() => {
     initializeSession()
@@ -201,7 +207,10 @@ function App() {
     setAssignments({});
     setAssignmentReady({});
   }, [detail?.run.id, detail?.run.plan?.version]);
+  useEffect(() => setError(''), [modal]);
   async function act(fn: () => Promise<unknown>) {
+    if (actionPending.current) return;
+    actionPending.current = true;
     setBusy(true);
     setError('');
     try {
@@ -211,9 +220,21 @@ function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   }
+  const sendReply = () => {
+    if (!detail || busy || archived || !reply.trim() || ['DONE', 'CANCELLED'].includes(detail.run.status))
+      return;
+    const target = runId;
+    const text = reply;
+    const revision = detail.run.revision;
+    void act(async () => {
+      await mutation('/runs/' + target + '/messages', { expectedRevision: revision, text });
+      setReplies((old) => (old[target] === text ? { ...old, [target]: '' } : old));
+    });
+  };
   const selectRun = (run: Run) => {
     activeRunId.current = run.id;
     setPreviewTaskId(run.rootTaskId);
@@ -245,6 +266,12 @@ function App() {
       if (deleted.kind === 'project') setProjectId('');
     } else if (runId) await refreshDetail();
     await refresh();
+    if (deleted?.kind === 'run')
+      setReplies((old) => {
+        const next = { ...old };
+        delete next[deleted.id];
+        return next;
+      });
     if (projectId && deleted?.kind === 'space') {
       const currentProjects = await api<Project[]>('/projects');
       const currentProject = currentProjects.find((item) => item.id === projectId);
@@ -564,7 +591,7 @@ function App() {
               className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
             >
               <section className="conversation">
-                <div className="conversation-scroll">
+                <ConversationScroll>
                   {!isChat && (
                     <div className="user-message">
                       <div className="message-avatar user">你</div>
@@ -759,7 +786,7 @@ function App() {
                       </div>
                     </div>
                   )}
-                </div>
+                </ConversationScroll>
                 {['DONE', 'CANCELLED'].includes(detail.run.status) ? (
                   <div className="conversation-ended">
                     <Icon name={detail.run.status === 'DONE' ? 'check' : 'stop'} size={18} />
@@ -790,19 +817,19 @@ function App() {
                     className="reply-box"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void act(async () => {
-                        await mutation('/runs/' + runId + '/messages', {
-                          expectedRevision: detail.run.revision,
-                          text: reply,
-                        });
-                        setReply('');
-                      });
+                      sendReply();
                     }}
                   >
                     <textarea
                       aria-label="回复或补充需求"
                       value={reply}
-                      onChange={(e) => setReply(e.target.value)}
+                      onChange={(e) => setReplies((old) => ({ ...old, [runId]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          sendReply();
+                        }
+                      }}
                       placeholder={
                         archived ? '恢复归档后可继续对话' : isChat ? '继续对话…' : '回答问题，或补充需求…'
                       }
@@ -810,11 +837,13 @@ function App() {
                     />
                     <div>
                       <span>
-                        {archived
-                          ? '已归档，保留全部对话记录'
-                          : isChat
-                            ? '独立会话 · 自动保存在本机'
-                            : '补充需求会在安全边界更新约定与计划'}
+                        {busy
+                          ? '正在提交…'
+                          : archived
+                            ? '已归档，保留全部对话记录'
+                            : isChat
+                              ? 'Ctrl + Enter 发送 · 独立会话自动保存'
+                              : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
                       </span>
                       <button
                         className="send-button"
@@ -1037,116 +1066,118 @@ function App() {
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      <Presence>
-        {modal ? (
-          <React.Fragment key={modal}>
-            {modal === 'project' && (
-              <ProjectModal
-                spaces={spaces}
-                projects={projects}
-                initialSpaceId={spaceId}
-                close={() => setModal('')}
-                busy={busy}
-                submit={(body) =>
-                  act(async () => {
-                    const p = await mutation<Project>('/projects', body);
-                    selectProject(p.id);
-                    setSpaceId(p.spaceId);
-                    setModal('');
-                  })
-                }
-              />
-            )}
-            {modal === 'project-files' && project && (
-              <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
-                <ProjectFiles projectId={project.id} />
-              </Modal>
-            )}
-            {modal.startsWith('manage:') && (
-              <WorkspaceManager
-                spaces={spaces}
-                projects={projects}
-                runs={runs}
-                initial={modal.slice(7)}
-                close={() => setModal('')}
-                updated={managed}
-                selectRun={selectRun}
-              />
-            )}
-            {modal === 'run' && (
-              <RunModal
-                objective={draft}
-                kind={project ? 'task' : 'chat'}
-                projectName={project?.name}
-                providers={providers}
-                close={() => setModal('')}
-                busy={busy}
-                submit={(body) =>
-                  act(async () => {
-                    const run = await mutation<Run>('/runs', {
-                      ...body,
-                      objective: draft,
-                      kind: project ? 'task' : 'chat',
-                      projectId: projectId || null,
-                    });
-                    selectRun(run);
-                    setDraft('');
-                    setModal('');
-                  })
-                }
-                settings={() => setModal('settings')}
-              />
-            )}
-            {modal === 'settings' && (
-              <React.Suspense
-                fallback={
-                  <Modal title="模型与连接" close={() => setModal('')}>
-                    <div className="form-body" role="status">
-                      正在加载模型设置…
-                    </div>
-                  </Modal>
-                }
-              >
-                <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
-              </React.Suspense>
-            )}
-            {modal === 'contract' && detail && (
-              <ContractModal
-                contract={detail.run.contract}
-                close={() => setModal('')}
-                busy={busy}
-                disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
-                submit={(contract) =>
-                  act(async () => {
-                    await mutation('/runs/' + runId + '/messages', {
-                      expectedRevision: detail.run.revision,
-                      contract,
-                      text: '我已修改任务约定，请根据约定重新提出计划。',
-                    });
-                    setModal('');
-                  })
-                }
-              />
-            )}
-            {modal.startsWith('decision:') && detail && (
-              <DecisionModal
-                operation={detail.operations.find((o) => o.id === modal.slice(9))!}
-                close={() => setModal('')}
-                busy={busy}
-                submit={(body) =>
-                  act(async () => {
-                    await mutation('/runs/' + runId + '/decisions', {
-                      ...body,
-                      expectedRevision: detail.run.revision,
-                    });
-                    setModal('');
-                  })
-                }
-              />
-            )}
-          </React.Fragment>
-        ) : null}
-      </Presence>
+      <ModalErrorContext.Provider value={error}>
+        <Presence>
+          {modal ? (
+            <React.Fragment key={modal}>
+              {modal === 'project' && (
+                <ProjectModal
+                  spaces={spaces}
+                  projects={projects}
+                  initialSpaceId={spaceId}
+                  close={() => setModal('')}
+                  busy={busy}
+                  submit={(body) =>
+                    act(async () => {
+                      const p = await mutation<Project>('/projects', body);
+                      selectProject(p.id);
+                      setSpaceId(p.spaceId);
+                      setModal('');
+                    })
+                  }
+                />
+              )}
+              {modal === 'project-files' && project && (
+                <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
+                  <ProjectFiles projectId={project.id} />
+                </Modal>
+              )}
+              {modal.startsWith('manage:') && (
+                <WorkspaceManager
+                  spaces={spaces}
+                  projects={projects}
+                  runs={runs}
+                  initial={modal.slice(7)}
+                  close={() => setModal('')}
+                  updated={managed}
+                  selectRun={selectRun}
+                />
+              )}
+              {modal === 'run' && (
+                <RunModal
+                  objective={draft}
+                  kind={project ? 'task' : 'chat'}
+                  projectName={project?.name}
+                  providers={providers}
+                  close={() => setModal('')}
+                  busy={busy}
+                  submit={(body) =>
+                    act(async () => {
+                      const run = await mutation<Run>('/runs', {
+                        ...body,
+                        objective: draft,
+                        kind: project ? 'task' : 'chat',
+                        projectId: projectId || null,
+                      });
+                      selectRun(run);
+                      setDraft('');
+                      setModal('');
+                    })
+                  }
+                  settings={() => setModal('settings')}
+                />
+              )}
+              {modal === 'settings' && (
+                <React.Suspense
+                  fallback={
+                    <Modal title="模型与连接" close={() => setModal('')}>
+                      <div className="form-body" role="status">
+                        正在加载模型设置…
+                      </div>
+                    </Modal>
+                  }
+                >
+                  <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
+                </React.Suspense>
+              )}
+              {modal === 'contract' && detail && (
+                <ContractModal
+                  contract={detail.run.contract}
+                  close={() => setModal('')}
+                  busy={busy}
+                  disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                  submit={(contract) =>
+                    act(async () => {
+                      await mutation('/runs/' + runId + '/messages', {
+                        expectedRevision: detail.run.revision,
+                        contract,
+                        text: '我已修改任务约定，请根据约定重新提出计划。',
+                      });
+                      setModal('');
+                    })
+                  }
+                />
+              )}
+              {modal.startsWith('decision:') && detail && (
+                <DecisionModal
+                  operation={detail.operations.find((o) => o.id === modal.slice(9))!}
+                  close={() => setModal('')}
+                  busy={busy}
+                  submit={(body) =>
+                    act(async () => {
+                      await mutation('/runs/' + runId + '/decisions', {
+                        ...body,
+                        expectedRevision: detail.run.revision,
+                      });
+                      setModal('');
+                    })
+                  }
+                />
+              )}
+            </React.Fragment>
+          ) : null}
+        </Presence>
+      </ModalErrorContext.Provider>
       <Presence>
         {artifactView && (
           <Modal
@@ -1501,7 +1532,7 @@ function ProjectModal({
           )}
         </div>
         <footer className="modal-footer">
-          <button type="button" className="secondary" onClick={close}>
+          <button type="button" className="secondary" disabled={busy || inspecting} onClick={close}>
             取消
           </button>
           <button className="primary" disabled={busy || inspecting || !folder || !name.trim()}>
@@ -1691,7 +1722,7 @@ function RunModal({
           </p>
         </div>
         <footer className="modal-footer">
-          <button type="button" className="secondary" onClick={close}>
+          <button type="button" className="secondary" disabled={busy} onClick={close}>
             返回
           </button>
           <button className="primary" disabled={busy || !modelReady || !objective.trim()}>
@@ -1762,7 +1793,7 @@ function ContractModal({
           </p>
         </div>
         <footer className="modal-footer">
-          <button type="button" className="secondary" onClick={close}>
+          <button type="button" className="secondary" disabled={busy} onClick={close}>
             关闭
           </button>
           <button className="primary" disabled={busy || disabled}>
@@ -1822,7 +1853,7 @@ function DecisionModal({
           {parseError && <p role="alert">{parseError}</p>}
         </div>
         <footer className="modal-footer">
-          <button type="button" className="secondary" onClick={close}>
+          <button type="button" className="secondary" disabled={busy} onClick={close}>
             返回
           </button>
           <button className="primary" disabled={busy}>
