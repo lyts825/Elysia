@@ -91,7 +91,9 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const originalHash = hash(stable(history));
   let summaryRef: string | null = null;
   const estimate = (items: Message[]) =>
-    Buffer.byteLength(system + taskText + stable(tools) + stable(items), 'utf8'); // 保守上界：UTF-8 字节数，避免低估中文与原生内容。
+    (provider.authMode === 'codex' ? 16384 : 0) +
+    Buffer.byteLength(system + taskText + stable(tools) + stable(items), 'utf8') *
+      (provider.authMode === 'codex' ? 2 : 1); // Codex 包含运行时指令与 JSON 转义，使用保守额外预留。
   const effective = provider.contextLimit - provider.outputLimit - 2048;
   if (estimate(history) > effective * 0.75 && history.length > 8) {
     let cut = history.length - 8;

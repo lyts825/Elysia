@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.3.0-preview.1';
+export const VERSION = '0.4.0-preview.1';
 export const Mode = z.enum(['code', 'work']);
 export const Status = z.enum([
   'DRAFT',
@@ -76,7 +76,13 @@ export const ProviderConfig = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
     kind: z.enum(['openai', 'deepseek']),
-    authMode: z.enum(['apiKey', 'chatgpt']).optional(),
+    authMode: z.enum(['apiKey', 'chatgpt', 'codex']).optional(),
+    credentialId: z.string().uuid().nullable().optional(),
+    reasoningEffort: z
+      .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+      .nullable()
+      .optional(),
+    archived: z.boolean().optional(),
     subscriptionAccountId: z.string().min(1).nullable().optional(),
     label: z.string().min(1),
     model: z.string().min(1),
@@ -109,7 +115,7 @@ export const ProviderConfig = z
   .refine((p) => p.outputLimit < p.contextLimit, '输出上限必须小于上下文上限')
   .refine(
     (p) =>
-      p.authMode !== 'chatgpt' ||
+      !['chatgpt', 'codex'].includes(p.authMode || '') ||
       (p.kind === 'openai' &&
         p.baseUrl === 'https://api.openai.com/v1' &&
         !!p.subscriptionAccountId &&

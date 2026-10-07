@@ -68,8 +68,14 @@ export class Store {
   }
   migrate() {
     const version = Number((this.db.prepare('PRAGMA user_version').get() as any).user_version);
-    if (version > 1) throw new AppError('SCHEMA_TOO_NEW', '数据库版本比应用新，请恢复相容备份');
-    if (version === 1) return;
+    if (version > 2) throw new AppError('SCHEMA_TOO_NEW', '数据库版本比应用新，请恢复相容备份');
+    if (version === 2) return;
+    // v2 introduces Codex and encrypted credential references. Older binaries must refuse
+    // this data instead of interpreting an unknown authentication mode as an API-key request.
+    if (version === 1) {
+      this.tx(() => this.db.exec('PRAGMA user_version=2;'));
+      return;
+    }
     this.tx(() => {
       for (const table of tables)
         this.db.exec(
@@ -78,6 +84,7 @@ export class Store {
       this.db.exec(
         `CREATE TABLE events(run_id TEXT NOT NULL REFERENCES runs(id), seq INTEGER NOT NULL, event_id TEXT UNIQUE NOT NULL, type TEXT NOT NULL, task_id TEXT, attempt_id TEXT, payload TEXT NOT NULL, occurred_at TEXT NOT NULL, PRIMARY KEY(run_id, seq)); CREATE TABLE task_edges(task_id TEXT NOT NULL REFERENCES tasks(id), dependency_id TEXT NOT NULL REFERENCES tasks(id), PRIMARY KEY(task_id, dependency_id)); CREATE TABLE commands(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL); CREATE UNIQUE INDEX attempt_active ON attempts(json_extract(data,'$.taskId')) WHERE json_extract(data,'$.status') IN ('ACTIVE','WAITING'); CREATE UNIQUE INDEX message_order ON messages(json_extract(data,'$.sessionId'),json_extract(data,'$.ordinal')); PRAGMA user_version=1;`,
       );
+      this.db.exec('PRAGMA user_version=2;');
     });
   }
   tx<T>(fn: () => T): T {

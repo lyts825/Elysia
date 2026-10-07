@@ -1,10 +1,10 @@
 # Elysia 首版执行文档
 
-文档版本：0.3.0　日期：2026-10-07　当前构建：v0.3.0-preview.1　稳定版目标：v0.3.0
+文档版本：0.4.0　日期：2026-10-07　当前构建：v0.4.0-preview.1　稳定版目标：v0.4.0
 
-本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览，以及 v0.3.0-preview.1 文件夹建项和 ChatGPT 订阅接入代码。真实模型接入和缓存验收尚未通过，稳定版未发布。建设一个供个人在本机使用的多 Agent 工作台：用户指定总代理，接入不同厂商的模型，同一模型可创建多个实例，子代理可继续委派。Code 与 Work 共用任务、上下文、权限和预算内核。
+本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项，以及 v0.4.0-preview.1 的官方 Codex 订阅连接和提供商配置中心。本机 ChatGPT 订阅及单代理 Work 产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。建设一个供个人在本机使用的多 Agent 工作台：用户指定总代理，接入不同厂商的模型，同一模型可创建多个实例，子代理可继续委派。Code 与 Work 共用任务、上下文、权限和预算内核。
 
-本轮版本变化为“v0.2.0-preview.1 → v0.3.0-preview.1”；文档 0.2.0 → 0.3.0。按用户新增要求支持直接选择本机文件夹作为项目，并增加 OpenAI 官方 ChatGPT 订阅授权与调用路径。文件夹和订阅协议的本地验收独立完成；真实账号授权受当前网络 HTTP 403 阻塞，预览标签不替代稳定版发布门槛。本文是施工与验收的单一依据。
+本轮版本变化为“v0.3.0-preview.1 → v0.4.0-preview.1”；文档 0.3.0 → 0.4.0。按用户要求修复订阅接入，参考 CC Switch 和 qqheling/codexplusplus（Windows）重构提供商配置。官方运行时复用已登录账号并启用系统代理，解决此前发现接口阻断与独立通道连接超时；旧 SIWC 路径保留兼容。本文是施工与验收的单一依据。
 
 ## 一 首版范围
 
@@ -20,8 +20,9 @@
 | 本机界面 | 项目与设置、对话与计划、任务图与代理树、产物与差异、用量与缓存 |
 | 桌面预览迭代 | Electron 独立窗口、一键入口、可变端口及占用回退；按代理查看页面、文件更改、源码和动态 |
 | 本机项目与订阅迭代 | 系统文件夹选择、名称/Git 检测、路径去重、文本浏览；OpenAI API Key / ChatGPT 订阅选择、加密账号凭据、模型目录、流式调用 |
+| 订阅与配置重构 | Codex 官方订阅、登录来源、设备码、系统代理、模型/思考强度/额度；提供商预设、新增/编辑/复制/删除、API Key 加密引用与实际调用验证 |
 
-后续版本再接 Codex App Server、Claude Agent SDK、DSH SDK，以及本地推理服务、MCP、办公文档渲染、浏览器操作和自动搜索。首版保留执行器接口，交付原生执行器；云端、多用户、插件市场、语义答案缓存和自动缓存保温不纳入首版。
+Codex App Server 在本轮仅作为官方认证及单步模型连接接入，工具仍由 Elysia 执行。后续版本再接完整外部执行器、Claude Agent SDK、DSH SDK，以及本地推理服务、MCP、办公文档渲染、浏览器操作和自动搜索。云端、多用户、插件市场、语义答案缓存和自动缓存保温不纳入首版。
 
 有界递归和基础恢复提前纳入首版，以覆盖最初需求。复杂恢复、自动模型路由与缓存调度优化后置。首版支持项目内混合 Code 和 Work 子任务，根任务的模式只决定默认能力包。
 
@@ -71,7 +72,7 @@ flowchart TB
 
 桌面采用锁定版本 Electron 44.6.0；主进程以系统 Node.js 24 启动后端，避免 SQLite 与 Electron ABI 耦合。Markdown 使用 react-markdown 10.1.0，禁用原始 HTML。桌面依赖、校验和与锁文件一起核对。
 
-订阅身份验证采用 jose 6.2.12 和 OpenAI OIDC/JWKS。动态注册使用 `dynamic_agent_client`，交换及续期使用授权后颁发的客户端 ID；每台主机保存稳定 host ID。账号以客户端 ID 与已验证 subject 分开保存，不以 email 合并。
+默认订阅通过 Codex CLI 0.160.0 或更新版本的 App Server 接入，认证与刷新交给官方运行时，不读取 auth.json 或改写用户 config.toml。旧 SIWC 身份验证保留 jose 6.2.12 和 OpenAI OIDC/JWKS；动态注册、稳定 host ID、客户端与 subject 隔离规则不变。
 
 原生模型适配器分别处理两家的请求和流式协议；可复用官方 SDK。Pi 的模型库可以在以后替换适配器内部实现，业务代码只依赖平台接口。
 
@@ -92,7 +93,7 @@ docs/EXECUTION.md        施工规格、进度与验收结论
 .local-qa/               测试结果与截图，忽略跟踪
 ```
 
-Windows 的运行数据默认放在 `%LOCALAPPDATA%/Elysia/`，可用 `ELYSIA_DATA_DIR` 修改，目录内分为 `state.db`、`objects/`、`workspaces/`、`logs/`。Code worktree 和 Work 产物保留至用户明确清理。API Key 从服务端环境变量读取，数据库只存环境变量名称；密钥、运行数据、测试材料和构建产物不进入 Git。
+Windows 的运行数据默认放在 `%LOCALAPPDATA%/Elysia/`，可用 `ELYSIA_DATA_DIR` 修改，目录内分为 `state.db`、`objects/`、`workspaces/`、`logs/`、`credentials/` 和可选的 `codex-home/`。Code worktree 和 Work 产物保留至用户明确清理。API Key 从环境变量或系统加密文件读取，数据库只存名称或不可变凭据引用；密钥、运行数据、测试材料和构建产物不进入 Git。schema v2 无损接受 v1 数据，旧二进制拒绝读取 v2，防止未知认证方式被旧逻辑误当成 API Key。
 
 ## 四 需求流程与数据模型
 
@@ -236,7 +237,11 @@ Code 从明确选定的 commit 创建 worktree，界面展示基线；不自动�
 
 桌面 preload 仅向可信主框架开放选择文件夹及打开官方用量页；IPC 校验发送方、主框架和当前工作台 origin。预览子框架没有该接口。OAuth 回调单独监听 `127.0.0.1` 的空闲端口，校验一次性 state、PKCE、nonce、签名、issuer、audience 与有效期；返回账号不匹配时保留原凭据。授权 URL 不传给渲染器。凭据经 safeStorage 加密后原子写入 `credentials/chatgpt.bin`，不进入数据库、上下文、模型工具环境或日志。
 
-订阅通过 `https://api.openai.com/v1/responses` 流式调用，`store:false`，本机工具使用 namespace。模型列表来自所选账号的 `/v1/models`，只展示可见模型。已有任务固定账号绑定；同一会话续期串行，刷新令牌及身份一起更换。退出先中止该账号调用并尝试撤销刷新会话；远端失败时仍清除本机凭据并提示。额度错误暂停后续请求，人工检查额度后恢复；不自动切换计费方式。
+默认 Codex 订阅从 account/read、model/list、account/rateLimits/read 获取连接信息，每次创建 ephemeral thread，environments 为空、sandbox 为 readOnly。进程级配置禁用 MCP、插件、命令、浏览器、多代理及 hooks，不覆盖全局配置；原生请求默认拒绝。模型以结构化 JSON 返回一次文本和工具意图，Elysia 验证工具名称/参数后交回现有执行器。各代理独立上下文，所有实际文件、命令、验收与预算仍通过原内核。文本在步骤完成后显示，不声称支持原生推理重放；上下文为 Codex 开销额外保守预留。
+
+本机复用与 Elysia 独立登录分开管理。每次请求先核对登录邮箱的指纹与配置来源；邮箱变化时拒绝调用，同邮箱切换工作区无法由当前官方账号协议自动辨别，需重新验证。相同邮箱的两种登录来源共享 Elysia 额度分组。独立登录支持网页登录/设备码、取消与退出，在途进程随取消或退出清理；复用模式不提供退出本机 Codex 的操作。凭据由官方运行时管理，Elysia 不提取令牌。模型和权限采用显式配置，不自动更换模型或回退 API 计费。
+
+旧 SIWC 订阅继续使用公开 Responses、namespace 与 SSE 完成事件，账号注册、串行续期和退出撤销规则保持兼容。新增 API Key 由 Electron safeStorage 原子写入独立 api-keys.bin，设置接口不回显密钥，命令表只保存输入哈希和无秘密结果；轮换生成新引用，保留已有任务引用。
 
 订阅当前不接受 `max_output_tokens`：输出值仅用于请求前估算，最终按真实 usage 结算，单次输出没有本机承诺的硬 Token 上限。订阅 API 价格保持 null；货币预算沿用价格未知时拒绝准入。完成事件之前的失败和缺失 usage 不记为成功，也不把未知用量清零。
 
@@ -273,7 +278,7 @@ pnpm start                      # 一键准备并打开独立桌面窗口
 pnpm start:server               # 保留无桌面服务入口
 ```
 
-运行配置至少提供 `ELYSIA_DATA_DIR`、`ELYSIA_PORT`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`；模型 ID、厂商 base URL、上下文上限、输出上限、价格与能力配置由设置页保存。`.env.example` 仅包含变量名与非敏感示例，真实值通过服务端环境注入。模型配置变更先做显式连通性检查，再用于新任务。
+运行配置提供 `ELYSIA_DATA_DIR`、`ELYSIA_PORT`，可选 `ELYSIA_CODEX_BINARY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`；模型 ID、厂商 base URL、上下文上限、输出上限、价格与能力配置由设置页保存。`.env.example` 仅包含变量名与非敏感示例，密钥通过环境或桌面加密保存。模型配置变更先做显式连通性检查，再用于新任务。
 
 数据库迁移必须带 schema 版本。首版优先向前迁移，失败时停止启动并提供错误；回退旧应用须恢复相容备份，不直接用旧版读取新版数据库。首次安装、备份恢复和停止服务的入口随 M0 提供，并在 M6 复核。
 
@@ -281,8 +286,8 @@ pnpm start:server               # 保留无桌面服务入口
 
 | 阶段 | 状态 | 已实现与验证证据 | 剩余验收 |
 | --- | --- | --- | --- |
-| M0 | 已完成 | pnpm 锁文件安装、类型检查、前后端构建、开发与生产启动、schema v1 幂等迁移、单实例锁、停止、备份恢复；本机界面已预览 | M6 从新检出目录复核安装 |
-| M1 | 待验收 | 两家原生 SSE 解析、完整工具调用、原生内容重放、usage、消息与大内容对象引用；HTTP 协议夹具通过 | 两家真实工具调用、账号可用模型与协议能力核对 |
+| M0 | 已完成 | pnpm 锁文件安装、类型检查、前后端构建、开发与生产启动、schema v2 幂等迁移与 v1 备份恢复、单实例锁、停止；本机界面已预览 | M6 从新检出目录复核安装 |
+| M1 | 待验收 | 两家原生 SSE 解析、完整工具调用、原生内容重放、usage、消息与大内容对象引用；HTTP 夹具通过，Codex 订阅已实际返回文本、工具意图与 usage | 两家 API 真实工具调用、账号可用模型与协议能力核对 |
 | M2 | 待验收 | 约定与版本化计划、DAG、原子租约、多实例、深度/总量限制、join、祖先预算、账号并发与速率门控；合成执行器在并发 1 下完成 5 实例异构/同模型/孙代理闭环 | 真实模型分派、账号并发与 Token 上界观测 |
 | M3 | 待验收 | 独立 worktree、Code 集成与 diff、Work 快照和报告、产物对象、路径/原文哈希检查、指定 URL 与 DNS 固定连接、本机三栏工作台；临时 Git 主目录未提交内容保持完整 | 真实 Code/Work 端到端任务，混合任务、内容语义与来源完整性复核 |
 | M4 | 待验收 | 取消后代、清理已登记进程树、两次有限重试、部分流落盘、安全收件箱、重启恢复、已确认工具复用、写入哈希核验、待核验决定；实际流中进程终止、文件结果缺口、429 夹具通过 | 真实供应商断网/中断、各副作用时点故障注入及完整等待恢复 |
@@ -347,9 +352,26 @@ pnpm start:server               # 保留无桌面服务入口
 
 本轮无测试材料、截图、构建文件或凭据纳入 Git；有用的验收材料保留。此前被自动审批拒绝删除的旧目录仍保持原样。本轮没有新增失去用途的临时安装依赖或调试入口。
 
+### v0.4.0-preview.1 增量验收
+
+| 优先级 / 依赖 / 负责人 | 状态 | 交付与证据 |
+| --- | --- | --- |
+| P0 / 官方 Codex / 工程 | 已完成 | 本机登录复用，启用系统代理；真实 ChatGPT Pro 的 `gpt-6.1-sol` 返回完整 OK 和 usage，桌面实际调用验证通过 |
+| P0 / 现有内核 / 工程 | 已完成 | 单步结构化适配器；真实 Work 任务 3 次模型请求完成写入 result.md、产物登记、证据核验，原项目目录未修改 |
+| P0 / 数据兼容 / 工程 | 已完成 | schema v1 → v2 幂等升级；旧数据保留，新认证类型不会被旧应用按 API Key 处理；升级前备份不提前修改原 schema |
+| P1 / 连接服务 / 工程 | 已完成 | 官方浏览器登录、设备码、互斥、取消、独立退出及额度查询；协议验证覆盖取消、换号、限额和意外原生工具拒绝 |
+| P1 / 加密桌面桥 / 工程 | 已完成 | 提供商预设/新增/编辑/复制/删除、模型目录/思考强度、API Key 加密保存及不可变引用；Electron 实测卡片、保存、复制删除、系统加密和额度查询 |
+| P1 / 真人授权 / 用户 + 工程 | 待验收 | 独立网页登录/设备码流程已通过协议验证；本轮真实账号使用已有 Codex 登录，未重复进行真人独立授权 |
+
+原有 16 组核心回归与 5 组文件夹/SIWC 协议验证通过；新增 3 组提供商/密钥验证、4 组 Codex 协议验证、schema 升级/旧二进制拒读/v1 恢复验证、真实服务端调用和 Electron 窗口流程通过。订阅真实性以本机实际调用和 Work 产物闭环为据；不据此宣布两家 API、完整 Code/多代理任务或缓存基线已验收。订阅正文目前在步骤完成后显示，工具和产物预览按现有事件更新。
+
+本机现有数据已在升级前保存 schema v1 备份（数据目录 `backups/2026-10-07T11-24-43-575Z`）。生产数据升级至 v2，并新增“ChatGPT 订阅 · Codex”配置，真实验证返回 OK；原有项目、历史与 API 配置保留。
+
+正式内容纳入 Git，测试脚本、参考源码缓存、截图、日志和验证数据只保存在被忽略的 `.local-tests/`、`.local-qa/`。有用材料保留，未添加临时依赖或调试入口；此前被自动审批拒绝删除的旧目录未改动。实现参照下列固定版本的结构与官方协议，没有导入第三方代码或接管外部配置。
+
 ## 十二 版本管理与参考依据
 
-工程版本以根 `package.json` 为准，各包采用统一版本。本轮本地预览标签为 `v0.3.0-preview.1`，标记文件夹与订阅接入的本地验证版本，不代表真实账号验收、发布或部署；完成 M6 后才创建稳定版标签。本文版本单独维护为 0.3.0，历史标签保留。正式文档、代码、配置和资源入 Git；本机数据、测试材料、缓存与密钥按精确路径排除。
+工程版本以根 `package.json` 为准，各包采用统一版本。本轮本地预览标签为 `v0.4.0-preview.1`，标记订阅修复与模型配置重构，不代表稳定版发布或部署；完成 M6 后才创建稳定版标签。本文版本单独维护为 0.4.0，历史标签保留。正式文档、代码、配置和资源入 Git；本机数据、测试材料、缓存与密钥按精确路径排除。
 
 交付前核对差异、链接和版本，删除本次产生且已无用途的临时文件；产物、用户文件和仍用于验收的本地材料保留。版本记录只写日期、范围、验证结论和对应标签，提交通过标签定位。
 
@@ -359,13 +381,16 @@ pnpm start:server               # 保留无桌面服务入口
 | 2026-10-07 | 0.1.1 | v0.1.0 本地构建、操作入口、里程碑与验证边界 | 锁文件安装、类型、构建及本地核心验证通过；真实接入与缓存待验收，未发布产品 | docs-v0.1.1 |
 | 2026-10-07 | 0.2.0 | 0.1.0 → 0.2.0-preview.1：独立桌面、动态端口、一键入口、代理工作预览；schema v1 兼容 | 桌面实测、端口占用、实时预览与隔离、开发 HMR、16 组回归通过；真实模型仍待验收 | v0.2.0-preview.1 |
 | 2026-10-07 | 0.3.0 | 0.2.0-preview.1 → 0.3.0-preview.1：本机文件夹建项/浏览、OpenAI 官方订阅接入及账号管理；schema v1 兼容 | 核心回归、文件夹/授权协议、Electron 加密与操作流程通过；真实 OpenAI 登录端点 HTTP 403，账号调用待验收 | v0.3.0-preview.1 |
+| 2026-10-07 | 0.4.0 | 0.3.0-preview.1 → 0.4.0-preview.1：官方 Codex 订阅、系统代理、提供商与凭据重构；schema v2 向前升级，回退需 v1 备份 | 核心/文件夹/凭据/协议回归、真实订阅短请求、3 请求 Work 闭环、Electron 配置流程通过；真人独立授权及完整多代理/缓存待验收 | v0.4.0-preview.1 |
 
 | 参考 | 采用的设计依据 |
 | --- | --- |
 | [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window/) / [Security](https://www.electronjs.org/docs/latest/tutorial/security/) | 独立窗口、contextIsolation、sandbox、禁用 Node 和外部导航 |
 | [DeepSeek Harness 架构](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/architecture.md) | 生命周期、事件记录与上下文投影；首版不耦合其完整插件树 |
 | [Pi Agent](https://github.com/earendil-works/pi/blob/ae92585d3b3e5f1e4b123d14a34314d826d8d9f5/packages/agent/README.md) | 内部消息转换；并发完成事件与持久工具结果顺序分离 |
-| [Codex App Server](https://learn.chatgpt.com/docs/app-server) | 结构化会话、执行、流式事件和中断协议，供后续外部执行器接入 |
+| [Codex App Server](https://learn.chatgpt.com/docs/app-server) / [0.160.0 工具环境门控](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/tools/spec_plan.rs) | 官方登录、模型/额度、ephemeral turn、结构化输出；空环境与工具关闭；本机 CLI 0.160.0 协议生成和实际调用核对 |
+| [CC Switch 授权分离](https://github.com/farion1231/cc-switch/blob/a29a4f3868e9c6ffc2212957cfa66a718642e344/docs/guides/codex-official-auth-preservation-guide-zh.md) | 账号认证与提供商配置分离、保留官方登录；Elysia 仅使用官方运行时管理认证 |
+| [Windows CodexPlusPlus 提供商重构](https://github.com/qqheling/codexplusplus/blob/a114ae5ca7a6ca4e798482fc943848df0ccffabb/docs/superpowers/specs/2026-05-27-provider-configuration-redesign-design.md) | 独立提供商实体、预设、CRUD、配置与运行绑定分离；不复刻其代理接管功能 |
 | [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) | 完整外部运行时的会话、工具、Hooks 与权限边界 |
 | [OpenAI Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) | 按模型能力配置缓存，使用服务返回的 usage 观测 |
 | [ChatGPT 订阅注册与登录](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) / [账号与会话](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) | 官方公开 OAuth、系统浏览器、host/client/subject 绑定、刷新与撤销 |

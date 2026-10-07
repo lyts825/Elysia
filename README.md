@@ -2,7 +2,7 @@
 
 本机多 Agent 工作台。Code 与 Work 共用任务约定、权限、预算、事件和产物内核，接入 OpenAI Responses 与 DeepSeek Chat。
 
-当前是 **v0.3.0-preview.1 本地预览版**。本轮从 v0.2.0-preview.1 增加文件夹建项、本机文件浏览与 OpenAI ChatGPT 订阅接入。类型检查、本地协议及桌面流程已验证；真实订阅授权、模型调用和缓存仍待验收，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
+当前是 **v0.4.0-preview.1 本地预览版**。本轮从 v0.3.0-preview.1 重构订阅连接和模型配置，增加官方 Codex 登录复用、独立登录、提供商预设与加密 API Key。已通过本机真实 ChatGPT 订阅调用及 Work 文件产物闭环；两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
 
 ## 启动
 
@@ -50,22 +50,25 @@ HTML 在无 Node 权限的沙箱内运行，只加载当前预览目录的本地
 
 ### 使用 ChatGPT 订阅
 
-1. 在桌面窗口进入 **模型与设置 → OpenAI → 调用方式 → ChatGPT 订阅**。
-2. 点击 **Continue with ChatGPT**，在 OpenAI 页面登录并授权 Elysia 使用订阅，随后返回工作台。回调使用随机可用端口，可添加多个账号或工作区。
-3. 选择账号及其返回的可用模型，点击 **保存配置 → 验证已保存配置**。验证会发起一次使用订阅额度的短请求；只有收到完整完成事件才标记可用。
-4. 创建任务时选择已验证的 OpenAI 配置。已有任务保存原账号与模型绑定；切换设置只影响后续新建任务。用量面板和设置页均可打开 ChatGPT 的用量管理。
+1. 打开 **模型与设置 → 连接 ChatGPT 订阅**，或 **＋ 新增 → ChatGPT 订阅**。
+2. 默认选择 **复用本机 Codex 登录**。已在 Codex 中使用 ChatGPT 登录时，无需重复授权。应用自动寻找 PATH 或 Windows Codex 桌面版附带的 CLI；要求 **0.160.0 或更新版本**。未找到时安装或更新 Codex，也可用 `ELYSIA_CODEX_BINARY` 指定真实可执行文件。
+3. 也可选择 **在 Elysia 中独立登录**，使用官方网页登录或设备码登录。登录时打开系统授权页，完成后回到独立工作台；取消登录会停止当前授权等待。此模式的退出只影响 Elysia 的独立 Codex 环境。
+4. 等待“运行时、已登录、可选模型”三项连接状态，选择模型与思考强度，点击 **保存配置 → 验证实际调用**。检查会使用一次订阅请求，成功后显示返回文本与实际 Token。
+5. 创建任务时选择这份已验证配置。可在设置页查看额度和重置时间，也可打开 ChatGPT 管理订阅。
 
-接入遵循 [OpenAI 开源应用订阅授权](https://developers.openai.com/siwc/token-sharing-open-source/sign-in) 与 [Responses 调用要求](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)，通过官方公开端点调用。订阅资格、模型、地区/工作区策略及可用额度由 OpenAI 决定。订阅路径不会自动切换为 API Key 付费调用。
+默认接入使用 [官方 Codex App Server](https://learn.chatgpt.com/docs/app-server)，认证、刷新与网络调用交给官方运行时。Elysia 不读取或复制 Codex 的 `auth.json`，不改写用户 `config.toml`。子进程启用官方系统代理支持，修复本机已登录但独立通道连接超时的问题；未登录、模型目录和实际调用失败分别显示。登录环境是绑定来源，外部切换账号后需重新连接和验证；官方账号接口不提供工作区 ID，同邮箱切换工作区需人工重新验证。
 
-订阅不支持请求级 `max_output_tokens`，界面的“输出预算预估”用于准入预估和实际结算，不能保证单次输出的硬上限；订阅金额不按 API 单价计算。达到订阅额度限制会暂停新请求；在“管理 ChatGPT 用量”调整后，点击“重新检查额度”、验证连接，再恢复任务。
+Codex 订阅每次返回一个结构化模型步骤；工具调用仍交给 Elysia 的权限、预算与检查点内核。官方运行时关闭环境访问、MCP、插件、原生命令、浏览器及多代理能力；Elysia 的每个子代理仍使用独立工作区和历史。文本在模型步骤完成后显示，工具与文件预览照常更新。该通道不重放 Responses 原生推理项，缓存效果以返回 usage 为准。
 
-凭据存于数据目录 `credentials/chatgpt.bin`，由 Electron `safeStorage` 使用系统加密；Windows 绑定当前系统用户。渲染页面、模型上下文和子进程环境不包含令牌。退出账号会中止在途调用并尝试撤销刷新会话，保留账号注册映射供下次登录；远端撤销失败会明确提示。服务模式没有桌面加密桥，只支持 API Key。
+“输出预算预估”用于准入和实际结算，不能保证单次输出的硬上限；Codex 上下文额外保守预留运行时指令和 JSON 编码开销。订阅金额保持未知，不套用 API 价格，也不自动转用 API Key 计费。额度不足暂停任务，在额度恢复并验证后手动恢复。
 
-本机 2026-10-07 真实连接检查中，OpenAI 登录发现端点返回 HTTP 403，未完成真实账号授权或推理。应先恢复对 `auth.openai.com` 和 `api.openai.com` 的正常访问，再在上述入口完成登录与验证；本地测试结果不代表真实账号额度可用。
+旧版 **ChatGPT 直接授权**（SIWC）保留为兼容选项，旧凭据仍存于系统加密的 `credentials/chatgpt.bin`。原来的发现端点 HTTP 403 问题不再阻挡默认 Codex 接入。独立 Codex 登录凭据由官方运行时保存在数据目录 `codex-home/` 或其所选凭据存储中；Elysia 不承诺该官方存储一定使用系统加密。2026-10-07 已实测复用本机 ChatGPT Pro 登录、实际模型调用、额度查询，以及 3 次模型请求完成文件写入、产物登记和核验；独立网页/设备码交互通过协议验证，尚未由真人重复登录验收。
 
 ### 使用 API Key
 
-在启动服务的 PowerShell 中设置环境变量，密钥不写进配置文件或数据库。可以用以下方式避免明文输入出现在命令历史中：
+在 **＋ 新增** 中选择 OpenAI API、DeepSeek 或自定义服务，填写协议、Base URL 和模型。凭据可直接在桌面页输入并由系统加密保存，也可继续使用环境变量。保存后可读取服务商模型目录，目录不可用时手动输入模型 ID。每份配置可复制和删除；保存变更会清除验证状态。
+
+环境变量模式可以用以下方式避免明文输入出现在命令历史中：
 
 ```powershell
 $env:OPENAI_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'OpenAI API Key' -AsSecureString)).Password
@@ -76,7 +79,7 @@ pnpm start
 运行中的服务不会读取其他终端中新设的环境变量。配置密钥后需停止服务，再从具有这些环境变量的终端启动。
 
 1. 打开本机文件夹作为项目。Code 项目须有 Git commit；选择基线 ref 后保存具体 commit。Work 项目直接使用资料目录，已登记 Git 根目录及基线的项目也可运行混合 Code 子任务。
-2. 在“模型与设置”中填入账号可用的模型 ID、base URL、上下文和输出上限、账号额度以及已知的缓存能力和价格。初始模型 ID 是可编辑示例，不能代表账号可用性。保存配置后点击“验证已保存配置”，这会发起一次短请求。
+2. 在“模型与设置”中保存账号可用的模型配置，点击“验证实际调用”。预算、速率、缓存与价格在高级配置中。初始模型 ID 是可编辑示例，不能代表账号可用性。
 3. 输入目标，选择总代理、可写目录、命令和网页权限，以及请求/Token/并发上限。项目目录会自动传给代理，可选填重点资料路径。每个任务使用独立目录；相对文件路径以该任务目录为基准，资料使用项目内绝对路径。
 4. 总代理集中澄清关键问题，提出约定和计划。接受具体计划版本后执行；补充需求在工具消息配对闭合后应用，撤销旧计划授权并重新规划。已完成产物保留。
 5. 在右栏查看任务依赖、代理责任树、基线、产物、diff、请求清单与使用量。对于不确定副作用，先检查本机证据再提交核验决定；恢复不会盲目重做。
@@ -89,7 +92,7 @@ Code 不复制主目录未提交内容，不自动 push 或合并主分支。集
 
 ## 存储、停止与备份
 
-默认目录为 `%LOCALAPPDATA%/Elysia/`，包括 `state.db`、`objects/`、`workspaces/`、`logs/` 和加密的 `credentials/`。通过 `ELYSIA_DATA_DIR` 修改。API Key 仅存在于服务端环境，订阅令牌经桌面加密存储；前端只收到连接状态与账号标签。每个数据目录只允许一个服务实例。
+默认目录为 `%LOCALAPPDATA%/Elysia/`，包括 `state.db`、`objects/`、`workspaces/`、`logs/`、加密的 `credentials/` 和可选的 `codex-home/`。通过 `ELYSIA_DATA_DIR` 修改。API Key 在环境变量或系统加密的 `credentials/api-keys.bin` 中，数据库仅保存引用；页面提交密钥后清空输入，不回读密钥。更换密钥生成新引用，已有任务继续使用原引用；删除配置不删除任务或其凭据。每个数据目录只允许一个服务实例。
 
 关闭桌面窗口，或在使用相同数据目录的终端执行 `pnpm stop`，请求停止接单、保留检查点、回收已登记进程并关闭数据库。无桌面模式也可用 `Ctrl+C`。暂停/取消也会中断在途请求；供应商可能已产生费用。未返回使用量的调用保持待核验和预算预留。
 
@@ -99,10 +102,10 @@ Code 不复制主目录未提交内容，不自动 push 或合并主分支。集
 pnpm backup                          # 默认保存到数据目录的 backups/时间戳
 pnpm backup D:\ElysiaBackups\snapshot
 pnpm restore D:\ElysiaBackups\snapshot
-pnpm db:migrate                      # 幂等 schema v1
+pnpm db:migrate                      # 幂等 schema v2
 ```
 
-备份包括数据库与内容对象。订阅凭据不进入历史备份；更换数据目录或系统用户后应重新登录。Code worktree、Work 工作目录和流式中断日志保留在原数据目录，不随备份搬迁；恢复历史和已登记产物不依赖工作区，但继续未完成任务需要原工作区。恢复前的数据被移入 `backups/before-restore-*`，不会直接删除。不要用旧应用读取更新的 schema，回退须恢复相容备份。
+备份包括数据库与内容对象。API Key 和订阅凭据不进入历史备份；更换数据目录或系统用户后应重新保存密钥或登录。Code worktree、Work 工作目录和流式中断日志保留在原数据目录，不随备份搬迁；恢复历史和已登记产物不依赖工作区，但继续未完成任务需要原工作区及原凭据引用。恢复前的数据被移入 `backups/before-restore-*`，不会直接删除。首次启动将 schema v1 无损升级为 v2，旧应用将拒绝读取，避免把新的订阅配置误当作 API Key。升级前执行 `pnpm backup` 会保留原 schema；v0.4 可恢复 v1 或 v2 备份，回退 v0.3 须使用升级前备份。
 
 ## 验证与工程入口
 
@@ -114,6 +117,6 @@ pnpm verify:local
 
 `verify:local` 执行被忽略的 `.local-tests/verify.ts`，产物写入 `.local-qa/`。本机保留了本次核心用例与结果；新检出目录不包含测试材料，命令会以错误退出而不会跳过。按执行文档第十一节重新准备本地验收材料。协议夹具和合成执行器使用量不能替代真实模型、缓存、账号并发和厂商续接验收。
 
-前端位于 `apps/web/`，API/SSE 与维护入口在 `apps/server/`；内核、工具、模型协议、上下文、共享 contracts 与 SQLite 分属 `packages/`。Prompt 位于 `prompts/`。没有引入云端服务、自动搜索、浏览器操作或后续外部执行器。
+前端位于 `apps/web/`，API/SSE、Codex 连接与凭据服务在 `apps/server/`；内核、工具、模型协议、上下文、共享 contracts 与 SQLite 分属 `packages/`。Prompt 位于 `prompts/`。配置重构参考 [CC Switch](https://github.com/farion1231/cc-switch) 的账号与提供商分离，以及 [Windows CodexPlusPlus](https://github.com/qqheling/codexplusplus) 的提供商实体与预设设计；没有接管或改写这些应用的配置文件。
 
 实现协议于 2026-10-07 核对 [OpenAI Function calling](https://developers.openai.com/api/docs/guides/function-calling)、[OpenAI Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) 与 [DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/)。缓存参数按模型配置，只展示实际返回的 usage；未知价格与缺失字段保持未知。

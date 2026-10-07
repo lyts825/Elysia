@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, mutation, initializeSession } from './api';
 import { PreviewPanel } from './PreviewPanel';
-import { SubscriptionSettings } from './SubscriptionSettings';
 import { ProjectFiles } from './ProjectFiles';
 import { manageUsage } from './desktop';
 import { VERSION } from '../../../packages/contracts/src/index';
+const ProviderSettings = React.lazy(() =>
+  import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
+);
 import type {
   Run,
   Task,
@@ -989,17 +991,17 @@ function App() {
         />
       )}
       {modal === 'settings' && (
-        <SettingsModal
-          providers={providers}
-          close={() => setModal('')}
-          busy={busy}
-          submit={(p, check) =>
-            act(async () => {
-              if (check) await mutation('/providers/' + p.id + '/check', { expectedRevision: p.revision });
-              else await mutation('/providers/' + p.id, { ...p, expectedRevision: p.revision }, 'PUT');
-            })
+        <React.Suspense
+          fallback={
+            <div className="overlay">
+              <section className="modal">
+                <header>正在加载模型设置…</header>
+              </section>
+            </div>
           }
-        />
+        >
+          <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
+        </React.Suspense>
       )}
       {modal === 'contract' && detail && (
         <ContractModal
@@ -1180,7 +1182,7 @@ function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: numb
       <div className="info-note">
         资料快照复用、厂商 Prompt 缓存和会话续接分别记录。未返回用量的请求保留预算预留；成本需要有效价格配置。
       </div>
-      {detail.agents.some((a) => a.providerBinding.authMode === 'chatgpt') && (
+      {detail.agents.some((a) => ['chatgpt', 'codex'].includes(a.providerBinding.authMode || '')) && (
         <div className="info-note">
           此任务使用 ChatGPT 订阅；API 单价不适用于订阅调用。
           <button className="text-button" onClick={manageUsage}>
@@ -1439,7 +1441,7 @@ function RunModal({
               ))}
             </select>
           </label>
-          {selected?.authMode === 'chatgpt' && (
+          {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
             <p className="field-help">
               正在使用 ChatGPT 订阅 ·{' '}
               <button type="button" className="text-button" onClick={manageUsage}>
@@ -1539,245 +1541,6 @@ function RunModal({
           </button>
         </footer>
       </form>
-    </Modal>
-  );
-}
-function SettingsModal({
-  providers,
-  close,
-  busy,
-  submit,
-}: {
-  providers: Provider[];
-  close: () => void;
-  busy: boolean;
-  submit: (p: Provider, check: boolean) => void;
-}) {
-  const [selectedId, setSelectedId] = useState(providers[0]?.id || ''),
-    [config, setConfig] = useState<Provider>(providers[0]);
-  const current = providers.find((p) => p.id === selectedId)!;
-  const dirty =
-    config &&
-    Object.entries(config).some(
-      ([key, value]) =>
-        !['revision', 'checkedRevision', 'checkedAt', 'keyConfigured'].includes(key) &&
-        JSON.stringify(value) !== JSON.stringify(current?.[key as keyof Provider]),
-    );
-  useEffect(() => {
-    if (current) setConfig(current);
-  }, [current?.id, current?.revision]);
-  const change = (key: string, value: unknown) => setConfig((p) => ({ ...p, [key]: value }));
-  const [advanced, setAdvanced] = useState('');
-  return (
-    <Modal
-      title="模型与设置"
-      subtitle="支持 API Key 与 ChatGPT 订阅；订阅凭据由系统加密保存"
-      close={close}
-      wide
-    >
-      <div className="settings-layout">
-        <nav>
-          {providers.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSelectedId(p.id)}
-              className={selectedId === p.id ? 'active' : ''}
-            >
-              <span>{p.label}</span>
-              <small>
-                {p.keyConfigured
-                  ? p.checkedRevision === p.revision
-                    ? '可用于新任务'
-                    : '待验证'
-                  : p.authMode === 'chatgpt'
-                    ? '需要订阅登录'
-                    : '未配置密钥'}
-              </small>
-            </button>
-          ))}
-        </nav>
-        <div className="settings-form">
-          {config && (
-            <>
-              <div className="settings-status">
-                <span
-                  className={
-                    'status-dot ' +
-                    (!dirty && current.checkedRevision === current.revision ? 'done' : 'waiting')
-                  }
-                />
-                {dirty
-                  ? '配置尚未保存，保存后可验证连接'
-                  : current.checkedRevision === current.revision
-                    ? '连通性已验证'
-                    : current.keyConfigured
-                      ? '需要显式连通性验证'
-                      : current.authMode === 'chatgpt'
-                        ? '请连接 ChatGPT 订阅账号'
-                        : '服务端密钥未配置'}
-              </div>
-              {config.kind === 'openai' && (
-                <label>
-                  调用方式
-                  <select
-                    value={config.authMode || 'apiKey'}
-                    onChange={(e) =>
-                      setConfig((p) => ({
-                        ...p,
-                        authMode: e.target.value as 'apiKey' | 'chatgpt',
-                        ...(e.target.value === 'chatgpt'
-                          ? { baseUrl: 'https://api.openai.com/v1', prices: null, model: '' }
-                          : {}),
-                      }))
-                    }
-                  >
-                    <option value="apiKey">OpenAI API Key</option>
-                    <option value="chatgpt">ChatGPT 订阅</option>
-                  </select>
-                </label>
-              )}
-              {config.authMode === 'chatgpt' && (
-                <SubscriptionSettings
-                  accountId={config.subscriptionAccountId}
-                  model={config.model}
-                  change={(values) => setConfig((p) => ({ ...p, ...values }))}
-                />
-              )}
-              <label>
-                显示名称
-                <input value={config.label} onChange={(e) => change('label', e.target.value)} />
-              </label>
-              {config.authMode !== 'chatgpt' && (
-                <>
-                  <label>
-                    模型 ID
-                    <input value={config.model} onChange={(e) => change('model', e.target.value)} />
-                    <span className="field-help">示例值需按账号可用模型调整。</span>
-                  </label>
-                  <label>
-                    API Base URL
-                    <input value={config.baseUrl} onChange={(e) => change('baseUrl', e.target.value)} />
-                  </label>
-                  <div className="form-columns">
-                    <label>
-                      密钥环境变量名称
-                      <input value={config.apiKeyEnv} onChange={(e) => change('apiKeyEnv', e.target.value)} />
-                    </label>
-                    <label>
-                      账号额度作用域
-                      <input value={config.account} onChange={(e) => change('account', e.target.value)} />
-                    </label>
-                  </div>
-                </>
-              )}
-              <div className="form-columns">
-                <label>
-                  上下文上限
-                  <input
-                    type="number"
-                    value={config.contextLimit}
-                    onChange={(e) => change('contextLimit', Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  {config.authMode === 'chatgpt' ? '输出预算预估' : '输出上限'}
-                  <input
-                    type="number"
-                    value={config.outputLimit}
-                    onChange={(e) => change('outputLimit', Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  账号并发
-                  <input
-                    type="number"
-                    min={1}
-                    max={2}
-                    value={config.concurrency}
-                    onChange={(e) => change('concurrency', Number(e.target.value))}
-                  />
-                </label>
-              </div>
-              <div className="form-columns">
-                <label>
-                  账号 RPM
-                  <input
-                    type="number"
-                    value={config.rpm}
-                    onChange={(e) => change('rpm', Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  账号 TPM
-                  <input
-                    type="number"
-                    value={config.tpm}
-                    onChange={(e) => change('tpm', Number(e.target.value))}
-                  />
-                </label>
-              </div>
-              {config.authMode === 'chatgpt' && (
-                <p className="field-help">
-                  订阅接口不支持单次硬输出上限。此值用于请求前预算预估，完成后按实际 Token 结算；订阅额度请在
-                  ChatGPT 中管理。
-                </p>
-              )}
-              <details
-                onToggle={(e) => {
-                  if (e.currentTarget.open)
-                    setAdvanced(JSON.stringify({ cache: config.cache, prices: config.prices }, null, 2));
-                }}
-              >
-                <summary>缓存能力{config.authMode === 'chatgpt' ? '' : '与每百万 Token 价格'}</summary>
-                <textarea
-                  className="code-input"
-                  rows={12}
-                  value={advanced}
-                  onChange={(e) => setAdvanced(e.target.value)}
-                />
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    try {
-                      const data = JSON.parse(advanced);
-                      setConfig((p) => ({
-                        ...p,
-                        cache: data.cache,
-                        prices: p.authMode === 'chatgpt' ? null : data.prices,
-                      }));
-                    } catch {}
-                  }}
-                >
-                  应用配置到表单
-                </button>
-                <p className="field-help">未知价格保持 null。仅配置该模型明确支持的缓存参数。</p>
-              </details>
-              <div className="info-note">
-                保存变更后需重新验证，新任务使用已验证配置。运行中的实例保留原有模型绑定。验证会发起一次短模型请求。
-              </div>
-              <div className="settings-actions">
-                <button
-                  className="secondary"
-                  disabled={
-                    busy || !config.model || (config.authMode === 'chatgpt' && !config.subscriptionAccountId)
-                  }
-                  onClick={() => submit({ ...config, revision: current.revision }, false)}
-                >
-                  保存配置
-                </button>
-                <button
-                  className="primary"
-                  disabled={busy || dirty || !current.keyConfigured}
-                  onClick={() => submit(current, true)}
-                >
-                  <Icon name="check" size={15} />
-                  验证已保存配置
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
     </Modal>
   );
 }

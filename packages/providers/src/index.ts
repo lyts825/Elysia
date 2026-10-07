@@ -146,6 +146,8 @@ export class NativeProvider implements ProviderAdapter {
   ) {}
   compile(ctx: CompiledContext) {
     const p = this.config;
+    if (p.authMode === 'codex')
+      throw new ProviderError('SUBSCRIPTION_TRANSPORT', 'Codex 订阅需要官方运行时适配器', 400);
     if (p.kind === 'openai') {
       const subscription = p.authMode === 'chatgpt';
       const allowed = subscription
@@ -211,13 +213,19 @@ export class NativeProvider implements ProviderAdapter {
   }
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
     const p = this.config;
+    if (p.authMode === 'codex')
+      throw new ProviderError('SUBSCRIPTION_TRANSPORT', 'Codex 订阅需要官方运行时适配器', 400);
     if (
       p.authMode === 'chatgpt' &&
       (p.kind !== 'openai' || p.baseUrl !== 'https://api.openai.com/v1' || !this.credential)
     )
       throw new ProviderError('SUBSCRIPTION_BINDING', '订阅账号绑定或端点无效', 401);
-    const credential = p.authMode === 'chatgpt' ? await this.credential!() : undefined;
-    const key = p.authMode === 'chatgpt' ? credential?.token : process.env[p.apiKeyEnv];
+    const credential = this.credential ? await this.credential() : undefined;
+    const key = credential
+      ? credential.token
+      : p.authMode === 'chatgpt'
+        ? undefined
+        : process.env[p.apiKeyEnv];
     const callerSignal = signal;
     signal = AbortSignal.any([
       signal,

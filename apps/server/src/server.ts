@@ -32,6 +32,8 @@ import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
 import { desktopServices } from './desktop.js';
 import { inspectFolder, projectFiles, sameDirectory } from './projects.js';
+import { CodexSubscription } from './codex-subscription.js';
+import { ProviderKeys } from './provider-keys.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -74,19 +76,31 @@ export function defaultProviders(): ProviderConfig[] {
 }
 export function createServer(
   store: Store,
-  options: { port: number; dev?: boolean; subscription?: SubscriptionService },
+  options: {
+    port: number;
+    dev?: boolean;
+    subscription?: SubscriptionService;
+    codex?: CodexSubscription;
+    keys?: ProviderKeys;
+  },
 ) {
   const app = Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
   const kernel = new Kernel(store),
     executor = new NativeExecutor(kernel);
   const subscription = options.subscription ?? new SubscriptionService(desktopServices());
+  const codex = options.codex ?? new CodexSubscription(store.directory, desktopServices());
+  const keys = options.keys ?? new ProviderKeys(desktopServices());
   const providerAdapter = (provider: ProviderConfig) =>
-    new NativeProvider(
-      provider,
-      provider.authMode === 'chatgpt'
-        ? () => subscription.credential(provider.subscriptionAccountId!)
-        : undefined,
-    );
+    provider.authMode === 'codex'
+      ? codex.adapter(provider)
+      : new NativeProvider(
+          provider,
+          provider.authMode === 'chatgpt'
+            ? () => subscription.credential(provider.subscriptionAccountId!)
+            : provider.credentialId
+              ? () => keys.credential(provider)
+              : undefined,
+        );
   executor.adapterFactory = (agent) => providerAdapter(agent.providerBinding);
   for (const config of defaultProviders())
     if (!store.get('providers', config.id)) store.put('providers', config);
@@ -285,14 +299,48 @@ export function createServer(
   });
   app.get('/api/providers', async () => {
     await subscription.status().catch(() => {});
-    return store.all<ProviderConfig>('providers').map((p) => ({
-      ...p,
-      keyConfigured:
-        p.authMode === 'chatgpt'
-          ? subscription.configured(p.subscriptionAccountId)
-          : Boolean(process.env[p.apiKeyEnv]),
-    }));
+    const providers = store.all<ProviderConfig>('providers').filter((p) => !p.archived);
+    const sources = new Set(
+      providers.filter((p) => p.authMode === 'codex').map((p) => codex.source(p.subscriptionAccountId!)),
+    );
+    await Promise.all([...sources].map((s) => codex.status(s)));
+    return Promise.all(
+      providers.map(async (p) => ({
+        ...p,
+        keyConfigured:
+          p.authMode === 'codex'
+            ? codex.configured(p.subscriptionAccountId)
+            : p.authMode === 'chatgpt'
+              ? subscription.configured(p.subscriptionAccountId)
+              : await keys.configured(p),
+      })),
+    );
   });
+  app.get('/api/codex/status', (request) => {
+    const query = z
+      .object({
+        source: z.enum(['local', 'elysia']).default('local'),
+        refresh: z.enum(['1', '0']).optional(),
+      })
+      .parse(request.query);
+    return codex.status(query.source, query.refresh === '1');
+  });
+  app.post('/api/codex/login', (request) =>
+    codex.login(z.object({ method: z.enum(['browser', 'device']) }).parse(request.body).method),
+  );
+  app.post('/api/codex/cancel', async () => {
+    await codex.cancel();
+    return { ok: true };
+  });
+  app.post('/api/codex/logout', async () => {
+    const result = await codex.logout();
+    for (const p of store.all<ProviderConfig>('providers'))
+      if (p.authMode === 'codex' && p.subscriptionAccountId?.startsWith('codex-elysia-'))
+        store.put('providers', { ...p, checkedRevision: null });
+    return result;
+  });
+  app.get<{ Params: { id: string } }>('/api/codex/:id/models', (request) => codex.models(request.params.id));
+  app.get<{ Params: { id: string } }>('/api/codex/:id/usage', (request) => codex.usage(request.params.id));
   app.get('/api/subscription', () => subscription.status());
   app.post('/api/subscription/login', async (request) => {
     const body = z
@@ -324,8 +372,27 @@ export function createServer(
   });
   app.put<{ Params: { id: string } }>('/api/providers/:id', async (request) => {
     const body = request.body as any;
+    const parsedCommand = Command.parse(body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(parsedCommand.commandId))
+      return command(body, request.url, () => ({}));
     const config = ProviderConfig.parse({ ...body, id: request.params.id });
+    config.archived = false;
+    const existing = store.get<ProviderConfig>('providers', config.id);
+    if (existing) revision(body, existing);
+    if (config.authMode === 'codex') {
+      const models = await codex.models(config.subscriptionAccountId!);
+      const model = models.find((m) => m.id === config.model);
+      invariant(model, 'CODEX_MODEL', '请选择当前订阅模型目录中的模型');
+      invariant(
+        !config.reasoningEffort || model.efforts.includes(config.reasoningEffort),
+        'CODEX_EFFORT',
+        '该模型不支持所选思考强度',
+      );
+      config.account = 'codex:' + config.subscriptionAccountId!.split('-').at(-1);
+      config.credentialId = null;
+    }
     if (config.authMode === 'chatgpt') {
+      config.credentialId = null;
       invariant(
         subscription.configured(config.subscriptionAccountId),
         'CHATGPT_ACCOUNT',
@@ -350,6 +417,16 @@ export function createServer(
       'PROVIDER_ENDPOINT',
       '模型端点需要 HTTPS；本机测试可使用 loopback HTTP',
     );
+    // Validate command/revision before saving secrets. Command storage retains only a hash of the body.
+    Command.parse(body);
+    if (body.apiKey !== undefined) {
+      invariant(
+        !['chatgpt', 'codex'].includes(config.authMode || ''),
+        'PROVIDER_KEY',
+        '订阅连接不使用 API Key',
+      );
+      config.credentialId = await keys.save(z.string().trim().min(1).max(8192).parse(body.apiKey));
+    }
     return command(body, request.url, () => {
       const old = store.get<ProviderConfig>('providers', config.id);
       if (old) revision(body, old);
@@ -359,6 +436,39 @@ export function createServer(
         old?.revision ?? 0,
       );
     });
+  });
+  app.delete<{ Params: { id: string } }>('/api/providers/:id', (request) =>
+    command(request.body, request.url, (body) => {
+      const config = store.require<ProviderConfig>('providers', request.params.id);
+      revision(body, config);
+      store.put('providers', { ...config, archived: true, checkedRevision: null });
+      return { ok: true };
+    }),
+  );
+  app.get<{ Params: { id: string } }>('/api/providers/:id/models', async (request) => {
+    const config = store.require<ProviderConfig>('providers', request.params.id);
+    if (config.authMode === 'codex') return codex.models(config.subscriptionAccountId!);
+    if (config.authMode === 'chatgpt') return subscription.models(config.subscriptionAccountId!);
+    const { token } = await keys.credential(config);
+    let response: Response;
+    try {
+      response = await fetch(config.baseUrl.replace(/\/$/, '') + '/models', {
+        headers: { Authorization: 'Bearer ' + token },
+        redirect: 'error',
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      throw new AppError('MODEL_CATALOG', '无法读取模型目录，请检查端点与网络；也可手动填写模型 ID');
+    }
+    invariant(response.ok, 'MODEL_CATALOG', `模型目录返回 HTTP ${response.status}，也可手动填写模型 ID`);
+    const raw = await response.text();
+    invariant(raw.length <= 2 * 1024 * 1024, 'MODEL_CATALOG', '模型目录超过大小限制');
+    const data = JSON.parse(raw);
+    return z
+      .array(z.object({ id: z.string().min(1), name: z.string().optional() }))
+      .max(2000)
+      .parse(data.data)
+      .map((m) => ({ id: m.id, name: m.name || m.id }));
   });
   const pendingChecks = new Map<string, Promise<unknown>>();
   app.post<{ Params: { id: string } }>('/api/providers/:id/check', async (request) => {
@@ -371,6 +481,7 @@ export function createServer(
     const key = body.commandId;
     if (pendingChecks.has(key)) return pendingChecks.get(key);
     const provider = store.require<ProviderConfig>('providers', request.params.id);
+    invariant(!provider.archived, 'PROVIDER_ARCHIVED', '该模型配置已删除');
     revision(body, provider);
     const perform = async () => {
       const adapter = providerAdapter(provider);
@@ -382,7 +493,7 @@ export function createServer(
         manifest: {},
         estimatedTokens: 64,
       });
-      if (provider.authMode !== 'chatgpt')
+      if (!['chatgpt', 'codex'].includes(provider.authMode || ''))
         compiled[provider.kind === 'openai' ? 'max_output_tokens' : 'max_tokens'] = 256;
       let result: any;
       for await (const e of adapter.stream(compiled, new AbortController().signal))
@@ -686,8 +797,7 @@ export function createServer(
     app.get('/', async () => ({ message: '前端未构建，执行 pnpm build 或使用 pnpm dev', version: VERSION }));
   app.addHook('preClose', async () => {
     for (const set of streams.values()) for (const stream of set) stream.end();
-  });
-  app.addHook('onClose', async () => {
+    await codex.close();
     await subscription.close();
     await executor.dispose();
   });

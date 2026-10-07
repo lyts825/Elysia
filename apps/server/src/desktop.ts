@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../../packages/contracts/src/index.js';
 
 export interface DesktopServices {
-  request(operation: 'vault-read' | 'vault-write' | 'open-auth', value?: unknown): Promise<any>;
+  request(
+    operation: 'vault-read' | 'vault-write' | 'key-vault-read' | 'key-vault-write' | 'open-auth',
+    value?: unknown,
+  ): Promise<any>;
 }
 export function desktopServices(): DesktopServices | undefined {
   if (!process.send || process.env.ELYSIA_DESKTOP !== '1') return undefined;
