@@ -1,36 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <title>Elysia · 星瓣</title>
+  <title>Elysia · 晶花徽记</title>
   <defs>
-    <linearGradient id="tile" x1="68" y1="28" x2="434" y2="500" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#b09ae1"/>
-      <stop offset=".46" stop-color="#8867bf"/>
-      <stop offset="1" stop-color="#563581"/>
+    <linearGradient id="tile" x1="55" y1="25" x2="449" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#efb6d3"/><stop offset=".48" stop-color="#bb7aab"/><stop offset="1" stop-color="#70416f"/>
     </linearGradient>
-    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(122 32) rotate(53) scale(405 459)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f6d9f6" stop-opacity=".46"/>
-      <stop offset="1" stop-color="#eadcf9" stop-opacity="0"/>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(119 30) rotate(51) scale(463)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff5ee" stop-opacity=".52"/><stop offset="1" stop-color="#fff5ee" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="porcelain" x1="8" y1="2" x2="16" y2="12" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#fffdfd"/>
-      <stop offset="1" stop-color="#e1d2fa"/>
+    <linearGradient id="crystal" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffdfb"/><stop offset=".5" stop-color="#f6e3f3"/><stop offset="1" stop-color="#e2d4f3"/>
     </linearGradient>
-    <linearGradient id="lilac" x1="8" y1="2" x2="16" y2="12" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f7efff"/>
-      <stop offset="1" stop-color="#c4a9e6"/>
-    </linearGradient>
-    <filter id="lift" x="-30%" y="-30%" width="160%" height="170%">
-      <feDropShadow dx="0" dy=".35" stdDeviation=".4" flood-color="#321754" flood-opacity=".22"/>
-    </filter>
-    <path id="petal" d="M12 2.5C16.25 5.15 16.25 8.1 13.1 10.25L12 11.1L10.9 10.25C7.75 8.1 7.75 5.15 12 2.5Z"/>
+    <path id="emblem" d="M12 2.2L15.6 8.5L12 13.3L8.4 8.5ZM2.5 5.2C6.5 5.1 9.3 9.4 10.6 13.4L7.6 12.2C4.5 11.1 2.7 8.9 2.5 5.2ZM21.5 5.2C17.5 5.1 14.7 9.4 13.4 13.4L16.4 12.2C19.5 11.1 21.3 8.9 21.5 5.2ZM4.8 14.1C7.5 13.5 10.2 14.4 12 16.8C13.8 14.4 16.5 13.5 19.2 14.1C17.8 17.7 14.8 20.4 12 21.8C9.2 20.4 6.2 17.7 4.8 14.1Z"/>
   </defs>
   <rect x="8" y="8" width="496" height="496" rx="116" fill="url(#tile)"/>
   <rect x="8" y="8" width="496" height="496" rx="116" fill="url(#light)"/>
-  <rect x="9.5" y="9.5" width="493" height="493" rx="114.5" fill="none" stroke="#fff" stroke-opacity=".24" stroke-width="3"/>
-  <path d="M45 377C158 421 333 437 466 337" fill="none" stroke="#fff" stroke-opacity=".055" stroke-width="34"/>
-  <g transform="translate(52 52) scale(17)" filter="url(#lift)">
-    <use href="#petal" fill="url(#porcelain)"/>
-    <use href="#petal" transform="rotate(90 12 12)" fill="url(#lilac)"/>
-    <use href="#petal" transform="rotate(180 12 12)" fill="url(#porcelain)"/>
-    <use href="#petal" transform="rotate(270 12 12)" fill="url(#lilac)"/>
-  </g>
+  <rect x="10" y="10" width="492" height="492" rx="114" fill="none" stroke="#fff2e3" stroke-opacity=".65" stroke-width="4"/>
+  <use href="#emblem" transform="translate(52 52) scale(17)" fill="url(#crystal)"/>
 </svg>

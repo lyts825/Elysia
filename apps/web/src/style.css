@@ -6,14 +6,14 @@
   font-optical-sizing: auto;
   color: #292633;
   background: #f7f7fa;
-  --accent: #7056b5;
-  --accent-strong: #59408f;
-  --accent-pale: #f0ecf9;
-  --border: #e5e3eb;
-  --muted: #746f80;
+  --accent: #9e4f7e;
+  --accent-strong: #813c68;
+  --accent-pale: #faedf5;
+  --border: #ebdfe8;
+  --muted: #786b7a;
   --secondary: #555061;
   --surface: #fff;
-  --surface-soft: #f7f6fa;
+  --surface-soft: #fcf7fb;
   --success: #397552;
   --danger: #a94752;
 }
@@ -75,7 +75,7 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px #7056b514;
+  box-shadow: 0 0 0 3px #9e4f7e14;
 }
 input::placeholder,
 textarea::placeholder {
@@ -109,7 +109,7 @@ a {
   color: var(--accent);
 }
 ::selection {
-  background: #e7dcfa;
+  background: #f3d7e8;
   color: #342246;
 }
 .app-shell {
@@ -121,7 +121,7 @@ a {
 .sidebar {
   width: 236px;
   flex: none;
-  background: #23232d;
+  background: linear-gradient(165deg, #38293b, #272430 60%);
   color: #d6d3df;
   display: flex;
   flex-direction: column;
@@ -172,9 +172,9 @@ a {
   color: #b4adca;
 }
 .new-task {
-  background: #e5ddf7;
-  color: #483563;
-  border: 1px solid #eee6fc;
+  background: #f2d9e8;
+  color: #673c5b;
+  border: 1px solid #fae7f1;
   border-radius: 9px;
   width: 100%;
   min-height: 42px;
@@ -188,7 +188,7 @@ a {
   margin-bottom: 12px;
 }
 .new-task:hover {
-  background: #f0e9ff;
+  background: #fbe7f2;
 }
 .nav-item {
   display: flex;

@@ -1,20 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="148" viewBox="0 0 200 148" fill="none">
-  <title>等待交付的产物</title>
+  <title>飞花与待交付的信笺</title>
   <defs>
-    <linearGradient id="sheet" x1="61" y1="32" x2="133" y2="113" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#f4effa"/></linearGradient>
-    <linearGradient id="tray" x1="48" y1="102" x2="151" y2="128" gradientUnits="userSpaceOnUse"><stop stop-color="#d7c8ea"/><stop offset="1" stop-color="#b8a0d5"/></linearGradient>
+    <linearGradient id="envelope" x1="47" y1="73" x2="155" y2="127" gradientUnits="userSpaceOnUse"><stop stop-color="#f7dfed"/><stop offset="1" stop-color="#d6b7dc"/></linearGradient>
+    <linearGradient id="crystal" x1="95" y1="71" x2="108" y2="119" gradientUnits="userSpaceOnUse"><stop stop-color="#fff7fd"/><stop offset="1" stop-color="#cc9ec6"/></linearGradient>
   </defs>
-  <circle cx="100" cy="76" r="57" fill="#f2edf9"/>
-  <ellipse cx="100" cy="130" rx="63" ry="6" fill="#dfd5ee" opacity=".4"/>
-  <path d="M24 86C13 57 31 34 54 29M157 27C184 42 187 72 174 91" stroke="#d2c0e4" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 5"/>
-  <rect x="74" y="31" width="64" height="85" rx="7" transform="rotate(9 74 31)" fill="#e3d8ef" stroke="#c8b4dc" stroke-width="1.4"/>
-  <path d="M68 28H110L130 48V110A7 7 0 0 1 123 117H68A7 7 0 0 1 61 110V35A7 7 0 0 1 68 28Z" fill="url(#sheet)" stroke="#b9a4d2" stroke-width="1.5"/>
-  <path d="M110 29V43A5 5 0 0 0 115 48H129" fill="#e8def3"/><path d="M110 29V43A5 5 0 0 0 115 48H129" stroke="#c4afd9" stroke-width="1.5"/>
-  <rect x="74" y="46" width="21" height="20" rx="5" fill="#e7dbf3"/>
-  <path d="M79 56H90M84.5 50.5V61.5" stroke="#9c7cbb" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M75 78H116M75 87H105M75 96H111" stroke="#d0bfdf" stroke-width="3" stroke-linecap="round"/>
-  <path d="M46 108L57 96H67L75 108H126L134 96H143L155 108V123A5 5 0 0 1 150 128H51A5 5 0 0 1 46 123Z" fill="url(#tray)" stroke="#b8a0d2" stroke-width="1.5" stroke-linejoin="round"/>
-  <path d="M47 109H77L84 116H117L124 109H154" stroke="#eee4f7" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M152 46L155 54L163 57L155 60L152 68L149 60L141 57L149 54Z" fill="#c4abd9"/>
-  <circle cx="37" cy="102" r="4" fill="#d6e7df"/><circle cx="169" cy="109" r="3" fill="#decbe9"/>
+  <circle cx="100" cy="76" r="56" fill="#fcf0f7"/>
+  <ellipse cx="102" cy="131" rx="63" ry="6" fill="#edd9e7" opacity=".55"/>
+  <path d="M26 81C17 53 35 31 59 28M161 39C177 50 184 70 174 90" stroke="#dcb3d0" stroke-width="1.3" stroke-dasharray="3 5" stroke-linecap="round"/>
+  <path d="M46 78L99 41L154 78V119A6 6 0 0 1 148 125H52A6 6 0 0 1 46 119Z" fill="#ebd1e6" stroke="#c898b9" stroke-width="1.5" stroke-linejoin="round"/>
+  <rect x="68" y="34" width="66" height="73" rx="7" transform="rotate(7 68 34)" fill="#f0e3f4" stroke="#d6b8d9" stroke-width="1.4"/>
+  <path d="M67 28H112L129 45V105H61V34A6 6 0 0 1 67 28Z" fill="#fffdfc" stroke="#cfa8c5" stroke-width="1.5"/>
+  <path d="M112 29V41A4 4 0 0 0 116 45H128" fill="#f5e4ef" stroke="#d9b6ce" stroke-width="1.2"/>
+  <path d="M75 53H100M75 62H113M75 71H109" stroke="#dec1d4" stroke-width="2.7" stroke-linecap="round"/>
+  <path d="M46 78L100 104L154 78V119A6 6 0 0 1 148 125H52A6 6 0 0 1 46 119Z" fill="url(#envelope)" stroke="#c898b9" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M47 123L82 92M153 123L118 92" stroke="#fcecf6" stroke-width="1.5"/>
+  <path d="M100 86L110 102L100 117L90 102Z" fill="url(#crystal)" stroke="#b78cb5" stroke-width="1.3"/>
+  <path d="M100 86V117M90 102H110" stroke="#fff7fc" stroke-width="1.2"/>
+  <path d="M154 19C155 32 148 40 137 42C136 30 143 21 154 19Z" fill="#ebc0d9"/>
+  <path d="M160 52C162 41 170 36 179 37C176 47 170 52 160 52Z" fill="#d8bce5"/>
+  <path d="M32 106L35 112L41 115L35 118L32 124L29 118L23 115L29 112Z" fill="#d6a6c9"/>
+  <circle cx="170" cy="108" r="3" fill="#dfc6a7"/>
 </svg>

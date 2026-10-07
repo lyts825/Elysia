@@ -2,7 +2,7 @@
 
 本机多 Agent 工作台。Code 与 Work 共用任务约定、权限、预算、事件和产物内核，接入 OpenAI Responses 与 DeepSeek Chat。
 
-当前是 **v0.4.2-preview.1 本地预览版**。本轮从 v0.4.1-preview.1 优化美术资产：新增“星瓣”应用图标、单色标记与空状态插画，统一桌面快捷方式、独立窗口、启动画面和工作台的品牌呈现。两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
+当前是 **v0.4.3-preview.1 本地预览版**。本轮从 v0.4.2-preview.1 调整为爱莉希雅「真我·人之律者」同人主题：角色头像、晶花徽记、飞花插画及粉白/梅紫界面。桌面图标按尺寸选择头像或简化徽记。两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
 
 ## 启动
 
@@ -54,7 +54,7 @@ HTML 在无 Node 权限的沙箱内运行，只加载当前预览目录的本地
 
 弹窗支持 Tab / Shift + Tab 循环导航、Esc 关闭与关闭后焦点恢复；模型配置有未保存更改时，会提示继续编辑或舍弃。界面随窗口调整布局，并遵循系统减少动态效果的设置。
 
-图标、单色标记和两组空状态插画的原稿位于 `assets/brand/`，可打开[品牌资产总览](assets/brand/preview.html)检查颜色与尺寸。修改 SVG 原稿后，执行 `pnpm assets:build` 重新导出 512 px PNG、九尺寸 Windows ICO 和单色标记；完整约定见[品牌资产说明](docs/BRAND.md)。
+角色头像、晶花标记和两组空状态插画的原稿位于 `assets/brand/`，可打开[品牌资产总览](assets/brand/preview.html)检查颜色与尺寸。修改头像 PNG 或徽记 SVG 后，执行 `pnpm assets:build` 重新导出 512 px PNG、九尺寸 Windows ICO 和单色标记；完整约定与生成提示词见[品牌资产说明](docs/BRAND.md)。
 
 ## 配置模型与创建任务
 

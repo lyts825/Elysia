@@ -1,4 +1,4 @@
-import appIcon from '../../../assets/brand/app-icon.svg';
+import appIcon from '../../../assets/brand/app-icon.png';
 import mark from '../../../assets/brand/mark.svg';
 import workspace from '../../../assets/brand/workspace-empty.svg';
 import delivery from '../../../assets/brand/delivery-empty.svg';
