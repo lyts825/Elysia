@@ -31,7 +31,7 @@ app.whenReady().then(async () => {
     const svg = await readFile(path.join(directory, 'app-icon.svg'), 'utf8');
     const emblem = svg.match(/<path id="emblem" d="([^"]+)"/);
     if (!emblem) throw new Error('app-icon.svg must contain the canonical emblem path');
-    const mark = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Elysia · 日常花结</title><path fill="#92536f" d="${emblem[1]}"/></svg>\n`;
+    const mark = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Elysia · 花间日光</title><path fill="#965d6b" d="${emblem[1]}"/></svg>\n`;
     const source = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
     await window.loadURL(
       'data:text/html,<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:"><canvas></canvas>',
@@ -51,7 +51,7 @@ app.whenReady().then(async () => {
     await writeFile(path.join(directory, 'mark.svg'), mark);
     await writeFile(path.join(directory, 'app-icon.ico'), ico(frames));
     console.log(
-      'Brand assets: ribbon mark.svg, app-icon.png (512px), app-icon.ico (' + sizes.join(', ') + 'px).',
+      'Brand assets: blossom mark.svg, app-icon.png (512px), app-icon.ico (' + sizes.join(', ') + 'px).',
     );
     window.destroy();
     app.quit();

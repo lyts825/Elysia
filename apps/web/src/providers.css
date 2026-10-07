@@ -45,21 +45,21 @@
   border-radius: 10px;
   background: transparent;
   margin-bottom: 10px;
-  color: #535260;
+  color: #56635c;
   overflow-wrap: anywhere;
 }
 .provider-card:hover {
-  background: #f0eff4;
+  background: #f0f3ed;
 }
 .provider-card.selected {
   background: #fff;
-  border-color: #b8a4d8;
-  box-shadow: 0 2px 8px #35245407;
+  border-color: #cba6ad;
+  box-shadow: 0 2px 8px #25403207;
 }
 .provider-card-title {
   font-size: 13px;
   font-weight: 650;
-  color: #262131;
+  color: #293c33;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -69,13 +69,13 @@
 }
 .provider-card small {
   font-size: 11px;
-  color: #79727f;
+  color: #69756c;
 }
 .provider-state {
   padding: 3px 7px;
   border-radius: 5px;
-  background: #eeeaf4;
-  color: #6d567b;
+  background: #e8e9df;
+  color: #79515c;
 }
 .provider-state.ready {
   background: #eaf3ec;
@@ -115,7 +115,7 @@
 }
 .connection-panel {
   border: 1px solid var(--border);
-  background: #faf9fc;
+  background: #fafbf6;
   border-radius: 12px;
   padding: 20px;
   margin: 16px 0 20px;
@@ -136,8 +136,8 @@
 .connection-stages span {
   padding: 8px;
   border-radius: 6px;
-  background: #eeeaf0;
-  color: #797080;
+  background: #e8e9df;
+  color: #69756c;
   font-size: 11px;
 }
 .connection-stages .passed {
@@ -146,7 +146,7 @@
 }
 .account-label {
   font-size: 13px;
-  color: #4f425c;
+  color: #46594b;
   overflow-wrap: anywhere;
 }
 .device-code {
@@ -164,7 +164,7 @@
 }
 .quota-grid > div {
   padding: 11px;
-  border: 1px solid #e5dfed;
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
   font-size: 11px;
@@ -173,7 +173,7 @@
   margin: 6px 0;
 }
 .quota-grid small {
-  color: #807989;
+  color: #69756c;
 }
 .model-selection {
   display: flex;
@@ -205,28 +205,28 @@
   gap: 7px;
   padding: 16px;
   align-items: flex-start;
-  border: 1px solid #e5dfed;
+  border: 1px solid var(--border);
   background: #fff;
   border-radius: 10px;
   text-align: left;
   font-size: 13px;
 }
 .preset-card:hover {
-  border-color: #ab90bf;
-  background: #faf6ff;
+  border-color: #bb8b98;
+  background: #fff8f3;
 }
 .preset-card small {
   color: var(--muted);
 }
 .provider-advanced {
   padding: 16px 0;
-  border-top: 1px solid #eee9f2;
+  border-top: 1px solid #e8e9df;
 }
 .provider-advanced summary {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: #6c5b7b;
+  color: #79515c;
 }
 .provider-advanced textarea {
   width: 100%;
@@ -239,7 +239,7 @@
   position: sticky;
   bottom: 0;
   background: #fffffff5;
-  border-top: 1px solid #eae6ef;
+  border-top: 1px solid #e8e9df;
   padding: 16px 0;
   margin-top: 18px;
   z-index: 2;

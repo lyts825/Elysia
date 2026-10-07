@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import type { Project, ProviderConfig, Run } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
-import { EmptyArtwork } from './Brand';
+import { EmptyArtwork, GardenAccent } from './Brand';
 import './home.css';
 
 const statusLabels: Record<string, string> = {
@@ -69,6 +69,7 @@ export function HomeWorkspace({
   const active = runs.filter((r) => ['READY', 'RUNNING', 'WAITING', 'VERIFYING'].includes(r.status));
   return (
     <div className="welcome">
+      <GardenAccent />
       <div className="welcome-content">
         <header className="home-heading">
           <div>

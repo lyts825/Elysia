@@ -57,17 +57,29 @@ button {
 .empty-art {
   animation: artwork-arrive 320ms var(--ease-enter) both;
 }
+.garden-accent {
+  animation: garden-arrive 680ms var(--ease-enter) both;
+}
+@keyframes garden-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    transform: none;
+  }
+}
 .error-banner,
 .dialog-notice,
 .connection-notice {
   animation: surface-arrive var(--motion-exit) var(--ease-enter) both;
 }
 .app-shell {
-  background: linear-gradient(165deg, #3b3641, #2e2e39 60%);
+  background: var(--sidebar-background);
 }
 .main {
   position: relative;
-  box-shadow: 240px 0 0 #f7f7fa;
+  box-shadow: 240px 0 0 var(--canvas);
 }
 .sidebar {
   overflow: hidden;
@@ -90,7 +102,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 7px;
-  box-shadow: 0 1px 3px #2b1c4807;
+  box-shadow: 0 1px 3px #25403207;
   transform-origin: left center;
   z-index: -1;
 }

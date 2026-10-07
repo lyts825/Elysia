@@ -1,23 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="148" viewBox="0 0 200 148" fill="none">
-  <title>午后窗边的笔记与热茶</title>
+  <title>日光下的花枝与手记</title>
   <defs>
-    <linearGradient id="paper" x1="41" y1="55" x2="116" y2="127" gradientUnits="userSpaceOnUse"><stop stop-color="#fffdf9"/><stop offset="1" stop-color="#f9efe9"/></linearGradient>
-    <linearGradient id="tea" x1="133" y1="89" x2="155" y2="125" gradientUnits="userSpaceOnUse"><stop stop-color="#eed2dc"/><stop offset="1" stop-color="#c59bb1"/></linearGradient>
+    <linearGradient id="paper" x1="40" y1="60" x2="115" y2="127" gradientUnits="userSpaceOnUse"><stop stop-color="#fffdf5"/><stop offset="1" stop-color="#f1e7df"/></linearGradient>
+    <linearGradient id="vase" x1="131" y1="91" x2="162" y2="124" gradientUnits="userSpaceOnUse"><stop stop-color="#d5e1e2"/><stop offset="1" stop-color="#a9bec8"/></linearGradient>
+    <radialGradient id="light"><stop stop-color="#fff8d9"/><stop offset="1" stop-color="#faf7ef" stop-opacity="0"/></radialGradient>
+    <path id="flower" d="M0-4C-3-7-6-4-4-1C-8 0-6 4-3 4C-2 8 2 7 3 4C7 5 8 1 4-1C6-5 2-7 0-4Z" fill="#fffdf4" stroke="#d8cfb9" stroke-width=".8"/>
   </defs>
-  <ellipse cx="101" cy="131" rx="73" ry="5" fill="#e9dcd8" opacity=".55"/>
-  <path d="M59 89V61A40 40 0 0 1 139 61V89Z" fill="#faf1e8"/>
-  <path d="M70 88V61A29 29 0 0 1 128 61V88M99 33V88M71 61H127" stroke="#dfcdbf" stroke-width="1.4" stroke-linecap="round"/>
-  <path d="M69 32C58 54 57 79 64 97M130 32C142 54 142 79 135 97" stroke="#eedee3" stroke-width="8" stroke-linecap="round"/>
-  <rect x="33" y="61" width="71" height="63" rx="7" transform="rotate(-8 33 61)" fill="#e8c9d7" stroke="#cda4b7" stroke-width="1.3"/>
-  <rect x="44" y="57" width="70" height="69" rx="7" fill="url(#paper)" stroke="#c4a4b4" stroke-width="1.5"/>
-  <path d="M59 77H96M59 86H85M59 95H93" stroke="#d5bcc9" stroke-width="2.7" stroke-linecap="round"/>
-  <path d="M92 58V74L97 70L102 74V58" fill="#bc90a8"/>
-  <path d="M58 113C67 105 75 108 80 115" stroke="#cb98b2" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M155 99H161A8 8 0 0 1 161 115H154" stroke="#be97ad" stroke-width="3" stroke-linecap="round"/>
-  <path d="M130 96H156V116A8 8 0 0 1 148 124H138A8 8 0 0 1 130 116Z" fill="url(#tea)" stroke="#b68ea5" stroke-width="1.4"/>
-  <path d="M143 114C130 107 139 102 143 107C147 102 156 107 143 114Z" fill="#fff7f5"/>
-  <path d="M138 87C133 82 143 79 138 73M149 86C144 81 154 78 149 72" stroke="#dfc8d1" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M32 94C21 89 20 81 21 76C28 77 34 84 32 94Z" fill="#ceb6c8"/>
-  <path d="M167 60C167 50 174 45 181 45C180 53 175 59 167 60Z" fill="#d4bccd"/>
-  <circle cx="47" cy="43" r="2.5" fill="#d8bd9c"/>
+  <circle cx="104" cy="72" r="62" fill="url(#light)"/>
+  <ellipse cx="103" cy="132" rx="71" ry="5" fill="#e5e4d9" opacity=".6"/>
+  <path d="M25 68C41 38 73 29 103 37" stroke="#c9d2bd" stroke-width="1.3"/>
+  <path d="M42 45C39 35 45 28 54 27C55 36 51 42 42 45ZM62 36C66 25 77 22 86 25C81 34 74 37 62 36ZM35 59C23 56 18 48 21 40C32 43 37 49 35 59Z" fill="#9cae94"/>
+  <path d="M96 23C99 14 106 12 112 15C109 23 103 26 96 23Z" fill="#c4cfac"/>
+  <rect x="34" y="65" width="74" height="62" rx="6" transform="rotate(-7 34 65)" fill="#dfb8ba" stroke="#bf979f" stroke-width="1.3"/>
+  <rect x="45" y="60" width="68" height="67" rx="6" fill="url(#paper)" stroke="#bbaaa2" stroke-width="1.4"/>
+  <path d="M59 80H95M59 89H85M59 98H93" stroke="#cbbcb4" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M92 61V76L97 72L102 76V61" fill="#c58d9a"/>
+  <path d="M60 115C67 109 74 110 80 115" stroke="#c99ca6" stroke-width="2" stroke-linecap="round"/>
+  <path d="M144 100L136 63M147 100L157 50M143 100L124 77" stroke="#78907a" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M141 89C128 88 120 81 122 74C132 74 139 80 141 89ZM148 83C149 71 157 64 168 65C165 76 159 82 148 83Z" fill="#8fa58c"/>
+  <path d="M151 64C143 61 141 55 143 48C151 50 153 56 151 64Z" fill="#a9b69a"/>
+  <use href="#flower" transform="translate(136 62) scale(1.35)"/>
+  <use href="#flower" transform="translate(158 47) scale(1.25)"/>
+  <use href="#flower" transform="translate(122 75) scale(.95)"/>
+  <circle cx="136" cy="63" r="1.7" fill="#d5c291"/><circle cx="158" cy="48" r="1.6" fill="#d5c291"/><circle cx="122" cy="76" r="1.3" fill="#d5c291"/>
+  <path d="M131 96H158L162 119A7 7 0 0 1 155 127H134A7 7 0 0 1 127 119Z" fill="url(#vase)" stroke="#91a9b1" stroke-width="1.4"/>
+  <path d="M131 105C139 109 150 109 159 104M145 108C139 112 137 117 136 122M145 108C149 112 155 115 160 114" stroke="#fffaf0" stroke-width="2.7" stroke-linecap="round"/>
+  <circle cx="175" cy="33" r="3" fill="#ecdfb7"/><circle cx="113" cy="30" r="1.6" fill="#dfbcaf"/>
 </svg>

@@ -1,14 +1,39 @@
 .welcome {
+  position: relative;
+  isolation: isolate;
   flex: 1;
   overflow: auto;
   min-height: 0;
-  background: radial-gradient(ellipse at 10% 0, #f2e2e880, transparent 55%);
+  background: radial-gradient(ellipse at 12% 0, #f0dfd680, transparent 55%);
+}
+.garden-accent {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(62%, 720px);
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.72;
 }
 .welcome-content {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: clamp(28px, 4vw, 56px);
+}
+@media (max-width: 1050px) {
+  .garden-accent {
+    width: 48%;
+    opacity: 0.42;
+  }
+}
+@media (max-width: 760px) {
+  .garden-accent {
+    display: none;
+  }
 }
 .home-heading {
   display: flex;
@@ -53,9 +78,9 @@
 }
 .composer {
   background: var(--surface);
-  border: 1px solid #d7d4e4;
+  border: 1px solid #d2d7cd;
   border-radius: 16px;
-  box-shadow: 0 4px 20px #30245207;
+  box-shadow: 0 4px 20px #25403207;
   overflow: hidden;
   transition:
     border-color var(--motion-fast),
@@ -64,8 +89,8 @@
 .composer:focus-within {
   border-color: var(--accent);
   box-shadow:
-    0 0 0 3px #92536f12,
-    0 8px 24px #30245208;
+    0 0 0 3px #965d6b12,
+    0 8px 24px #25403208;
 }
 .composer-title {
   display: flex;
@@ -98,7 +123,7 @@
   box-shadow: none;
 }
 .composer textarea::placeholder {
-  color: #858091;
+  color: #747e75;
 }
 .composer-bottom {
   display: flex;
@@ -149,7 +174,7 @@
 }
 .context-button:hover {
   background: var(--surface-soft);
-  border-color: #c6bfda;
+  border-color: #b8c8b9;
 }
 .composer-bottom .primary {
   min-width: 84px;
@@ -174,7 +199,7 @@
 }
 .suggestions button:hover {
   background: var(--surface);
-  border-color: #bdb1da;
+  border-color: #cba6ad;
 }
 .starter-icon {
   width: 31px;
@@ -288,7 +313,7 @@
   align-items: center;
   gap: 16px;
   padding: 26px 22px;
-  border: 1px dashed #d8d4e2;
+  border: 1px dashed #d2d7cd;
   border-radius: 12px;
 }
 .recent-empty .empty-art {
