@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Elysia · 品牌资产</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f7f5fa;
+        color: #352c43;
+        font:
+          14px/1.6 'Segoe UI',
+          'Microsoft YaHei UI',
+          sans-serif;
+      }
+      main {
+        max-width: 1160px;
+        margin: auto;
+        padding: 48px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 32px;
+      }
+      header h1 {
+        font-size: 30px;
+        letter-spacing: -0.7px;
+        margin: 4px 0;
+      }
+      header p {
+        margin: 0;
+        color: #746f80;
+      }
+      .eyebrow {
+        color: #82659e;
+        letter-spacing: 2px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .version {
+        border: 1px solid #dbd0e8;
+        border-radius: 99px;
+        padding: 6px 12px;
+        color: #746f80;
+        font-size: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e3ddeb;
+        border-radius: 18px;
+        overflow: hidden;
+      }
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        padding: 40px;
+        background: #24212e;
+        color: #f5f0fc;
+        grid-row: span 2;
+      }
+      .hero img {
+        width: 178px;
+        height: 178px;
+      }
+      .hero h2 {
+        font-size: 34px;
+        font-weight: 600;
+        letter-spacing: -0.7px;
+        margin: 0;
+      }
+      .hero p {
+        font-size: 12px;
+        color: #c3b6d6;
+        margin: 4px 0 0;
+      }
+      .card-head {
+        padding: 18px 22px;
+        border-bottom: 1px solid #eee8f4;
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #746f80;
+      }
+      .card-head strong {
+        color: #493b5a;
+        font-weight: 600;
+      }
+      .scale-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 28px;
+        padding: 26px 24px;
+      }
+      .scale-row figure {
+        margin: 0;
+        text-align: center;
+      }
+      .scale-row img {
+        display: block;
+        margin: auto;
+      }
+      .scale-row figcaption {
+        font-size: 11px;
+        color: #746f80;
+        margin-top: 12px;
+      }
+      .marks {
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        padding: 22px;
+        gap: 24px;
+      }
+      .marks img {
+        width: 42px;
+        height: 42px;
+      }
+      .swatches {
+        display: flex;
+        gap: 7px;
+      }
+      .swatch {
+        width: 29px;
+        height: 29px;
+        border-radius: 8px;
+        border: 1px solid #00000008;
+      }
+      .art {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 28px 22px;
+        min-height: 190px;
+      }
+      .art img {
+        width: 172px;
+        height: auto;
+      }
+      .art h3 {
+        font-size: 15px;
+        margin: 0 0 7px;
+      }
+      .art p {
+        font-size: 12px;
+        color: #746f80;
+        margin: 0;
+        max-width: 170px;
+      }
+      footer {
+        font-size: 12px;
+        color: #746f80;
+        margin-top: 25px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        main {
+          padding: 24px;
+        }
+        .hero {
+          gap: 16px;
+          padding: 28px;
+          flex-direction: column;
+        }
+        .hero img {
+          width: 140px;
+          height: 140px;
+        }
+        .scale-row {
+          gap: 18px;
+        }
+        .art {
+          flex-direction: column;
+          text-align: center;
+        }
+        .art img {
+          width: 148px;
+        }
+      }
+      @media (max-width: 560px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        header {
+          align-items: flex-start;
+        }
+        .version {
+          display: none;
+        }
+        .hero {
+          flex-direction: row;
+        }
+        footer {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <span class="eyebrow">ELYSIA / VISUAL IDENTITY</span>
+          <h1>星瓣 · 品牌资产</h1>
+          <p>四片花瓣，一束星光。为本机协作空间而设计。</p>
+        </div>
+        <span class="version">矢量原稿 · 多尺寸导出</span>
+      </header>
+      <div class="grid">
+        <section class="card hero">
+          <img src="app-icon.svg" alt="Elysia 应用图标" />
+          <div>
+            <h2>Elysia</h2>
+            <p>让想法，在这里绽放。</p>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><strong>应用图标</strong><span>16–256 px · Windows ICO</span></div>
+          <div class="scale-row">
+            <figure>
+              <img src="app-icon.svg" width="16" height="16" alt="16 像素" />
+              <figcaption>16</figcaption>
+            </figure>
+            <figure>
+              <img src="app-icon.svg" width="24" height="24" alt="24 像素" />
+              <figcaption>24</figcaption>
+            </figure>
+            <figure>
+              <img src="app-icon.svg" width="32" height="32" alt="32 像素" />
+              <figcaption>32</figcaption>
+            </figure>
+            <figure>
+              <img src="app-icon.svg" width="48" height="48" alt="48 像素" />
+              <figcaption>48</figcaption>
+            </figure>
+            <figure>
+              <img src="app-icon.svg" width="64" height="64" alt="64 像素" />
+              <figcaption>64</figcaption>
+            </figure>
+            <figure>
+              <img src="app-icon.svg" width="96" height="96" alt="96 像素" />
+              <figcaption>96</figcaption>
+            </figure>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><strong>单色标记与主色</strong><span>随界面文字颜色使用</span></div>
+          <div class="marks">
+            <img src="mark.svg" alt="Elysia 单色标记" />
+            <div class="swatches">
+              <span class="swatch" style="background: #563581" title="#563581"></span
+              ><span class="swatch" style="background: #7056b5" title="#7056b5"></span
+              ><span class="swatch" style="background: #b09ae1" title="#b09ae1"></span
+              ><span class="swatch" style="background: #e1d2fa" title="#e1d2fa"></span
+              ><span class="swatch" style="background: #f7f5fa" title="#f7f5fa"></span>
+            </div>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><strong>工作空间插画</strong><span>首页 · 预览空状态</span></div>
+          <div class="art">
+            <img src="workspace-empty.svg" alt="带花瓣标识的工作窗口与文件夹" />
+            <div>
+              <h3>给下一步留出空间</h3>
+              <p>轻量线条与柔和色块，让空状态有清晰的视觉落点。</p>
+            </div>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><strong>产物插画</strong><span>交付列表空状态</span></div>
+          <div class="art">
+            <img src="delivery-empty.svg" alt="纸张与交付托盘" />
+            <div>
+              <h3>让成果有处可见</h3>
+              <p>用文档和托盘连接任务过程与最终交付。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+      <footer><span>SVG 可缩放 · PNG 512 px · ICO 9 个尺寸</span><span>Elysia / 本机协作空间</span></footer>
+    </main>
+  </body>
+</html>

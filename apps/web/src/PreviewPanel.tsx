@@ -4,6 +4,7 @@ import { api } from './api';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type { PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview';
 import { Icon } from './Icon';
+import { EmptyArtwork } from './Brand';
 import './preview.css';
 
 const labels: Record<string, string> = {
@@ -438,9 +439,7 @@ export function PreviewPanel({
 function PreviewEmpty({ title, text }: { title: string; text: string }) {
   return (
     <div className="preview-empty">
-      <span>
-        <Icon name="panel" size={32} />
-      </span>
+      <EmptyArtwork kind="workspace" />
       <h3>{title}</h3>
       <p>{text}</p>
     </div>

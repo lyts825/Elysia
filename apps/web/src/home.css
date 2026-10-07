@@ -294,8 +294,9 @@
   border: 1px dashed #d8d4e2;
   border-radius: 12px;
 }
-.recent-empty > span {
-  color: #837697;
+.recent-empty .empty-art {
+  width: 96px;
+  height: 72px;
 }
 .recent-empty strong {
   font-size: 13px;

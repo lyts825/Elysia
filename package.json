@@ -1,6 +1,6 @@
 {
   "name": "elysia",
-  "version": "0.4.1-preview.1",
+  "version": "0.4.2-preview.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -19,7 +19,8 @@
     "backup": "tsx apps/server/src/maintenance.ts backup",
     "restore": "tsx apps/server/src/maintenance.ts restore",
     "stop": "tsx apps/server/src/maintenance.ts stop",
-    "verify:local": "node scripts/verify-local.mjs"
+    "verify:local": "node scripts/verify-local.mjs",
+    "assets:build": "node scripts/build-brand-assets.mjs"
   },
   "dependencies": {
     "@fastify/static": "10.1.5",

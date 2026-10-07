@@ -184,9 +184,8 @@
   max-width: 440px;
   color: var(--muted);
 }
-.preview-empty > span {
-  font-size: 37px;
-  color: var(--muted);
+.preview-empty .empty-art {
+  margin: 0 auto;
 }
 .preview-empty h3 {
   font-size: 14px;
@@ -196,6 +195,21 @@
 .preview-empty p {
   font-size: 12px;
   line-height: 1.8;
+}
+@media (max-height: 760px) {
+  .preview-empty {
+    padding: 16px 24px;
+  }
+  .preview-empty .empty-art {
+    width: 80px;
+  }
+  .preview-empty h3 {
+    margin: 8px 0 4px;
+  }
+  .preview-empty p {
+    margin: 0;
+    line-height: 1.6;
+  }
 }
 .preview-page {
   flex: 1;

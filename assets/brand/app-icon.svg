@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Elysia · 星瓣</title>
+  <defs>
+    <linearGradient id="tile" x1="68" y1="28" x2="434" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b09ae1"/>
+      <stop offset=".46" stop-color="#8867bf"/>
+      <stop offset="1" stop-color="#563581"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(122 32) rotate(53) scale(405 459)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f6d9f6" stop-opacity=".46"/>
+      <stop offset="1" stop-color="#eadcf9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="porcelain" x1="8" y1="2" x2="16" y2="12" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffdfd"/>
+      <stop offset="1" stop-color="#e1d2fa"/>
+    </linearGradient>
+    <linearGradient id="lilac" x1="8" y1="2" x2="16" y2="12" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f7efff"/>
+      <stop offset="1" stop-color="#c4a9e6"/>
+    </linearGradient>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy=".35" stdDeviation=".4" flood-color="#321754" flood-opacity=".22"/>
+    </filter>
+    <path id="petal" d="M12 2.5C16.25 5.15 16.25 8.1 13.1 10.25L12 11.1L10.9 10.25C7.75 8.1 7.75 5.15 12 2.5Z"/>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="116" fill="url(#tile)"/>
+  <rect x="8" y="8" width="496" height="496" rx="116" fill="url(#light)"/>
+  <rect x="9.5" y="9.5" width="493" height="493" rx="114.5" fill="none" stroke="#fff" stroke-opacity=".24" stroke-width="3"/>
+  <path d="M45 377C158 421 333 437 466 337" fill="none" stroke="#fff" stroke-opacity=".055" stroke-width="34"/>
+  <g transform="translate(52 52) scale(17)" filter="url(#lift)">
+    <use href="#petal" fill="url(#porcelain)"/>
+    <use href="#petal" transform="rotate(90 12 12)" fill="url(#lilac)"/>
+    <use href="#petal" transform="rotate(180 12 12)" fill="url(#porcelain)"/>
+    <use href="#petal" transform="rotate(270 12 12)" fill="url(#lilac)"/>
+  </g>
+</svg>

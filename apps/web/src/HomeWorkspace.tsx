@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import type { Project, ProviderConfig, Run } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
+import { EmptyArtwork } from './Brand';
 import './home.css';
 
 const statusLabels: Record<string, string> = {
@@ -197,9 +198,7 @@ export function HomeWorkspace({
                 </div>
               ) : (
                 <div className="recent-empty">
-                  <span>
-                    <Icon name="history" size={22} />
-                  </span>
+                  <EmptyArtwork kind="workspace" />
                   <div>
                     <strong>你的下一项成果，从这里开始</strong>
                     <p>创建任务后，可随时回来查看进度和交付。</p>

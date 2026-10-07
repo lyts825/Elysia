@@ -21,6 +21,7 @@ import type {
   ProviderConfig,
 } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
+import { BrandIcon, EmptyArtwork } from './Brand';
 import { Modal } from './Modal';
 import { HomeWorkspace } from './HomeWorkspace';
 import './style.css';
@@ -194,9 +195,7 @@ function App() {
   if (!ready)
     return (
       <div className="auth-screen">
-        <div className="brand-mark">
-          <Icon name="spark" size={32} />
-        </div>
+        <BrandIcon />
         <h1>Elysia</h1>
         <p>{error || '正在连接本机工作台…'}</p>
         {error && (
@@ -212,9 +211,7 @@ function App() {
     <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">
-            <Icon name="spark" size={22} />
-          </span>
+          <BrandIcon />
           <span>
             Elysia<small>你的本机协作空间</small>
           </span>
@@ -772,11 +769,7 @@ function App() {
                           </button>
                         ))}
                         {!detail.artifacts.length && (
-                          <Empty
-                            icon="file"
-                            title="产物将在这里交付"
-                            text="报告、附件和 Git diff 会保留版本与来源。"
-                          />
+                          <Empty title="产物将在这里交付" text="报告、附件和 Git diff 会保留版本与来源。" />
                         )}
                         <div className="panel-heading">
                           <h3>待核验操作</h3>
@@ -918,10 +911,18 @@ function App() {
     </div>
   );
 }
-function Empty({ icon, title, text }: { icon: string; title: string; text: string }) {
+function Empty({
+  kind = 'delivery',
+  title,
+  text,
+}: {
+  kind?: 'workspace' | 'delivery';
+  title: string;
+  text: string;
+}) {
   return (
     <div className="empty-state">
-      <Icon name={icon} size={32} />
+      <EmptyArtwork kind={kind} />
       <strong>{title}</strong>
       <p>{text}</p>
     </div>
@@ -1035,7 +1036,7 @@ function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: numb
         );
       })}
       {!detail.requests.length && (
-        <Empty icon="chart" title="等待真实调用" text="使用供应商返回的 usage；缺失指标显示为未知。" />
+        <Empty kind="workspace" title="等待真实调用" text="使用供应商返回的 usage；缺失指标显示为未知。" />
       )}
       <div className="info-note">
         资料快照复用、厂商 Prompt 缓存和会话续接分别记录。未返回用量的请求保留预算预留；成本需要有效价格配置。

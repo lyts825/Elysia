@@ -2,7 +2,7 @@
 
 本机多 Agent 工作台。Code 与 Work 共用任务约定、权限、预算、事件和产物内核，接入 OpenAI Responses 与 DeepSeek Chat。
 
-当前是 **v0.4.1-preview.1 本地预览版**。本轮从 v0.4.0-preview.1 优化界面：重排工作台首页，统一任务详情、代理预览和模型设置，改善文字对比度、小窗口适配与键盘操作。既有订阅调用和文件夹项目继续沿用；两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
+当前是 **v0.4.2-preview.1 本地预览版**。本轮从 v0.4.1-preview.1 优化美术资产：新增“星瓣”应用图标、单色标记与空状态插画，统一桌面快捷方式、独立窗口、启动画面和工作台的品牌呈现。两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
 
 ## 启动
 
@@ -10,7 +10,7 @@
 
 首次启动自动安装锁定依赖、构建并迁移数据库；以后仅在源代码变化时重新构建。首次下载 Electron 需要网络。关闭窗口会安全停止本轮服务；重复启动会聚焦已有窗口。启动错误会显示对话框，日志在 `.elysia-runtime/launcher.log` 和 `desktop.log`。
 
-需要桌面快捷方式时，执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-shortcut.ps1`。它创建桌面的 `Elysia.lnk`，指向本项目入口；移动项目后需重新创建。桌面进程异常日志另存 `.elysia-runtime/desktop-launch.log`。
+需要桌面快捷方式时，执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-shortcut.ps1`。它创建或更新桌面的 `Elysia.lnk`，指向本项目入口并使用应用图标；已有本项目快捷方式也可运行此命令更新图标。移动项目后需重新创建。桌面进程异常日志另存 `.elysia-runtime/desktop-launch.log`。
 
 ```powershell
 pnpm start                 # 同一个独立桌面入口
@@ -53,6 +53,8 @@ HTML 在无 Node 权限的沙箱内运行，只加载当前预览目录的本地
 左上角按钮可收起侧栏，为任务和预览留出更多空间。任务右侧可切换任务、代理、产物和用量；完成后底部提供 **查看产物**。预览支持选择各代理、页面/更改/源文件/动态切换及展开查看；窄窗口会优先显示预览内容。
 
 弹窗支持 Tab / Shift + Tab 循环导航、Esc 关闭与关闭后焦点恢复；模型配置有未保存更改时，会提示继续编辑或舍弃。界面随窗口调整布局，并遵循系统减少动态效果的设置。
+
+图标、单色标记和两组空状态插画的原稿位于 `assets/brand/`，可打开[品牌资产总览](assets/brand/preview.html)检查颜色与尺寸。修改 SVG 原稿后，执行 `pnpm assets:build` 重新导出 512 px PNG、九尺寸 Windows ICO 和单色标记；完整约定见[品牌资产说明](docs/BRAND.md)。
 
 ## 配置模型与创建任务
 

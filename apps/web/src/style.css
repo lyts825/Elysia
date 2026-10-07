@@ -140,15 +140,28 @@ a {
   letter-spacing: -0.5px;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 36px;
   height: 36px;
   flex: none;
-  border: 1px solid #b5a0e570;
-  background: linear-gradient(140deg, #a88bdb, #7055a9);
-  color: white;
-  border-radius: 11px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px #120c2426);
+}
+.brand-glyph {
+  display: inline-block;
+  flex: none;
+  background: currentColor;
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+.empty-art {
+  display: block;
+  width: 144px;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  flex: none;
 }
 .brand small {
   display: block;
@@ -1476,9 +1489,8 @@ a {
   padding: 30px;
 }
 .auth-screen .brand-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 17px;
+  width: 72px;
+  height: 72px;
 }
 .auth-screen h1 {
   font-size: 30px;

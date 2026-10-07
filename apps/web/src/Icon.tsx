@@ -1,6 +1,8 @@
 import type React from 'react';
+import { BrandGlyph } from './Brand';
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+  if (name === 'spark') return <BrandGlyph size={size} />;
   const paths: Record<string, React.ReactNode> = {
     panel: (
       <>
@@ -74,11 +76,6 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
       <>
         <rect x="5" y="10" width="14" height="11" rx="2" />
         <path d="M8 10V6a4 4 0 0 1 8 0v4" />
-      </>
-    ),
-    spark: (
-      <>
-        <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" />
       </>
     ),
     history: (

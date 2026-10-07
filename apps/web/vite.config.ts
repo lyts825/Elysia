@@ -10,5 +10,5 @@ export default defineConfig({
     strictPort: true,
     proxy: { '/api': 'http://127.0.0.1:' + (process.env.ELYSIA_PORT || '4317') },
   },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },
 });

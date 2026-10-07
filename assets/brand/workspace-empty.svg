@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="148" viewBox="0 0 200 148" fill="none">
+  <title>等待开启的工作空间</title>
+  <defs>
+    <linearGradient id="paper" x1="50" y1="32" x2="149" y2="121" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#f3eefb"/></linearGradient>
+    <linearGradient id="folder" x1="69" y1="71" x2="135" y2="118" gradientUnits="userSpaceOnUse"><stop stop-color="#bba3dd"/><stop offset="1" stop-color="#8a6db5"/></linearGradient>
+  </defs>
+  <ellipse cx="101" cy="125" rx="69" ry="7" fill="#dfd5ee" opacity=".4"/>
+  <circle cx="102" cy="75" r="58" fill="#f2edf9"/>
+  <path d="M22 88C10 54 31 24 63 27M170 47C187 75 178 109 154 119" stroke="#d0bfe6" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 5"/>
+  <rect x="31" y="42" width="117" height="78" rx="10" transform="rotate(-9 31 42)" fill="#e9e0f5" stroke="#d1c0e6" stroke-width="1.4"/>
+  <rect x="42" y="38" width="117" height="83" rx="10" fill="url(#paper)" stroke="#b9a4d2" stroke-width="1.5"/>
+  <path d="M43 57H158" stroke="#ddd1ed" stroke-width="1.4"/>
+  <circle cx="54" cy="48" r="2" fill="#bea9da"/><circle cx="62" cy="48" r="2" fill="#d0bfe4"/><circle cx="70" cy="48" r="2" fill="#e1d5ed"/>
+  <path d="M72 76A5 5 0 0 1 77 71H91L97 77H128A5 5 0 0 1 133 82V106A5 5 0 0 1 128 111H77A5 5 0 0 1 72 106Z" fill="url(#folder)"/>
+  <path d="M72 86H133V106A5 5 0 0 1 128 111H77A5 5 0 0 1 72 106Z" fill="#cbb6e6"/>
+  <path d="M94 94H110M102 86V102" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="158" cy="34" r="17" fill="#fff" stroke="#dfd2ec" stroke-width="1.4"/>
+  <path d="M158 23C163 27 163 29 159 32L158 33L157 32C153 29 153 27 158 23ZM169 34C165 39 163 39 160 35L159 34L160 33C163 29 165 29 169 34ZM158 45C153 41 153 39 157 36L158 35L159 36C163 39 163 41 158 45ZM147 34C151 29 153 29 156 33L157 34L156 35C153 39 151 39 147 34Z" fill="#9b7cc2"/>
+  <circle cx="32" cy="108" r="4" fill="#d6e7df"/><circle cx="176" cy="88" r="3" fill="#dbc7e6"/>
+</svg>

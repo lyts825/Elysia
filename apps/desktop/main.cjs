@@ -4,6 +4,12 @@ const path = require('node:path');
 const { mkdirSync, appendFileSync } = require('node:fs');
 const { attachServices } = require('./services.cjs');
 const root = path.resolve(__dirname, '../..');
+const iconPath = path.join(
+  root,
+  'assets',
+  'brand',
+  process.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png',
+);
 const data = path.resolve(
   process.env.ELYSIA_DATA_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'Elysia'),
 );
@@ -56,6 +62,7 @@ if (!app.requestSingleInstanceLock()) {
       Menu.setApplicationMenu(null);
       window = new BrowserWindow({
         title: 'Elysia',
+        icon: iconPath,
         width: 1480,
         height: 960,
         minWidth: 1000,
@@ -72,6 +79,15 @@ if (!app.requestSingleInstanceLock()) {
           preload: path.join(__dirname, 'preload.cjs'),
         },
       });
+      if (process.platform === 'win32') {
+        window.setAppDetails({
+          appId: 'local.elysia.desktop',
+          appIconPath: iconPath,
+          appIconIndex: 0,
+          relaunchCommand: `"${path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe')}" "${path.join(root, 'Start-Elysia.vbs')}"`,
+          relaunchDisplayName: 'Elysia',
+        });
+      }
       window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
       window.webContents.session.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
