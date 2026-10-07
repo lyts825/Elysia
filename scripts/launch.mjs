@@ -14,12 +14,26 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const require = createRequire(import.meta.url);
 process.chdir(root);
 const runtime = path.join(root, '.elysia-runtime');
 mkdirSync(runtime, { recursive: true });
 function pnpm(command) {
-  const result =
-    process.platform === 'win32'
+  const corepack = path.join(
+    path.dirname(process.execPath),
+    'node_modules',
+    'corepack',
+    'dist',
+    'corepack.js',
+  );
+  const result = existsSync(corepack)
+    ? spawnSync(process.execPath, [corepack, 'pnpm', ...command.split(' ')], {
+        cwd: root,
+        stdio: 'inherit',
+        windowsHide: true,
+        env: { ...process.env, COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' },
+      })
+    : process.platform === 'win32'
       ? spawnSync(process.env.COMSPEC || 'cmd.exe', ['/d', '/s', '/c', `pnpm ${command}`], {
           cwd: root,
           stdio: 'inherit',
@@ -29,9 +43,22 @@ function pnpm(command) {
   if (result.error || result.status !== 0)
     throw result.error || new Error(`pnpm ${command} 失败，请查看启动日志`);
 }
+function packageCommand(packageName, binary, args) {
+  const manifestPath = require.resolve(packageName + '/package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const entry = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.[binary];
+  if (!entry) throw new Error(`本地依赖缺少 ${binary} 入口，请重新安装锁定依赖`);
+  const result = spawnSync(process.execPath, [path.resolve(path.dirname(manifestPath), entry), ...args], {
+    cwd: root,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0)
+    throw result.error || new Error(`${binary} 构建失败，请查看启动日志`);
+}
 try {
-  if (Number(process.versions.node.split('.')[0]) !== 24)
-    throw new Error('请先安装 Node.js 24 LTS 和 pnpm 11');
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  if (nodeMajor !== 24 || nodeMinor < 15) throw new Error('请先安装 Node.js 24.15 或更高版本的 24 LTS');
   if (
     !existsSync('node_modules/electron') ||
     !existsSync('node_modules/.pnpm/lock.yaml') ||
@@ -61,11 +88,11 @@ try {
     !existsSync('apps/server/dist/apps/server/src/index.js')
   ) {
     console.log('正在构建 Elysia…');
-    pnpm('build');
+    packageCommand('typescript', 'tsc', ['-p', 'tsconfig.server.json']);
+    packageCommand('vite', 'vite', ['build', '--config', 'apps/web/vite.config.ts']);
     writeFileSync(marker, digest);
   }
-  const require = createRequire(import.meta.url),
-    electron = require('electron');
+  const electron = require('electron');
   const environment = {
     ...process.env,
     ELYSIA_NODE_BINARY: process.execPath,

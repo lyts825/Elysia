@@ -2,11 +2,11 @@
 
 本机多 Agent 工作台。文件修改、资料分析与办公产物使用统一项目和任务入口，接入 OpenAI Responses 与 DeepSeek Chat。模型按需加载办公技能，无需选择 Code / Work 分类。
 
-当前是 **v0.5.0-preview.1 本地预览版**。本轮从 v0.4.6-preview.1 合并 Code / Work 分类，统一提示词及工具入口，配置按需加载的办公技能。Git 基线与独立任务目录继续保护原项目，已有任务保留原工作区。两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
+当前是 **v0.5.1-preview.1 本地预览版**。本轮从 v0.5.0-preview.1 修复 Windows 双击入口无法找到 pnpm 时的构建失败；项目、任务和办公技能沿用统一入口。Git 基线与独立任务目录继续保护原项目，已有任务保留原工作区。两家 API 和完整多代理、缓存验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
 
 ## 启动
 
-需要 Node.js 24.15 或更高的 24 LTS，以及 pnpm 11。**双击根目录 `Start-Elysia.vbs` 即可打开 Elysia 独立桌面窗口**。工作台及代理预览均在独立窗口中；ChatGPT 登录按官方要求在系统浏览器中完成授权后返回。`Start-Elysia.cmd` 是保留终端输出的备用入口。
+需要 Node.js 24.15 或更高的 24 LTS。**双击根目录 `Start-Elysia.vbs` 即可打开 Elysia 独立桌面窗口**。已安装依赖时直接用当前 Node 构建，不要求系统 PATH 中有 pnpm；首次安装使用 Node 附带的 Corepack 调用项目锁定的 pnpm 11，没有 Corepack 时需可用的 pnpm 11。工作台及代理预览均在独立窗口中；ChatGPT 登录按官方要求在系统浏览器中完成授权后返回。`Start-Elysia.cmd` 是保留终端输出的备用入口。
 
 首次启动自动安装锁定依赖、构建并迁移数据库；以后仅在源代码变化时重新构建。首次下载 Electron 需要网络。关闭窗口会安全停止本轮服务；重复启动会聚焦已有窗口。启动错误会显示对话框，日志在 `.elysia-runtime/launcher.log` 和 `desktop.log`。
 
