@@ -1863,3 +1863,166 @@ a {
     animation: none !important;
   }
 }
+/* Local folders and subscription accounts. */
+.folder-picker {
+  width: 100%;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 22px;
+  border: 1px dashed #b9b8d0;
+  border-radius: 14px;
+  background: #f8f7ff;
+  color: #575082;
+  cursor: pointer;
+}
+.folder-picker span,
+.folder-entries {
+  font-size: 12px;
+  color: #727383;
+}
+.folder-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-path-row input {
+  flex: 1;
+  min-width: 0;
+}
+.folder-path-row button {
+  flex-shrink: 0;
+}
+.folder-inspection,
+.subscription-card {
+  border: 1px solid #e0e1e9;
+  border-radius: 12px;
+  padding: 15px;
+}
+.folder-inspection {
+  margin: 16px 0;
+}
+.folder-entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  max-height: 80px;
+  overflow: auto;
+}
+.project-folder-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  color: #727383;
+  margin: 12px 0 20px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.project-folder-link span {
+  color: #6a59c6;
+  white-space: nowrap;
+}
+.subscription-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fcfcfd;
+}
+.subscription-card p {
+  margin: 0;
+}
+.subscription-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chatgpt-signin {
+  border: 1px solid #161616;
+  border-radius: 8px;
+  padding: 11px 18px;
+  font: inherit;
+  background: #171717;
+  color: white;
+  cursor: pointer;
+}
+.subscription-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: #eff7f2;
+  border: 1px solid #d4e8db;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.text-button {
+  color: #6855ad;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.project-files {
+  padding: 22px;
+  min-height: 330px;
+}
+.project-files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+.project-files-toolbar code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-file-list {
+  display: grid;
+  gap: 2px;
+  max-height: 55vh;
+  overflow: auto;
+}
+.project-file-list button {
+  display: flex;
+  text-align: left;
+  gap: 16px;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.project-file-list button:hover {
+  background: #f0eff8;
+}
+.project-file-list button span {
+  color: #9492a4;
+  min-width: 40px;
+  font-size: 12px;
+}
+.project-file-text {
+  margin: 0;
+  padding: 16px;
+  background: #f4f5f8;
+  border-radius: 8px;
+  max-height: 56vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.7 Consolas,
+    monospace;
+}

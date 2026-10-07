@@ -29,6 +29,9 @@ import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { NativeProvider } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
+import { SubscriptionService } from './subscription.js';
+import { desktopServices } from './desktop.js';
+import { inspectFolder, projectFiles, sameDirectory } from './projects.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -69,10 +72,22 @@ export function defaultProviders(): ProviderConfig[] {
     },
   ];
 }
-export function createServer(store: Store, options: { port: number; dev?: boolean }) {
+export function createServer(
+  store: Store,
+  options: { port: number; dev?: boolean; subscription?: SubscriptionService },
+) {
   const app = Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
   const kernel = new Kernel(store),
     executor = new NativeExecutor(kernel);
+  const subscription = options.subscription ?? new SubscriptionService(desktopServices());
+  const providerAdapter = (provider: ProviderConfig) =>
+    new NativeProvider(
+      provider,
+      provider.authMode === 'chatgpt'
+        ? () => subscription.credential(provider.subscriptionAccountId!)
+        : undefined,
+    );
+  executor.adapterFactory = (agent) => providerAdapter(agent.providerBinding);
   for (const config of defaultProviders())
     if (!store.get('providers', config.id)) store.put('providers', config);
   const bootstrapToken = randomBytes(32).toString('hex'),
@@ -210,6 +225,21 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     version: VERSION,
   }));
   app.get('/api/projects', async () => store.all<Project>('projects'));
+  app.post('/api/projects/inspect', async (request) => {
+    const { workspaceRoot } = z.object({ workspaceRoot: z.string().min(1).max(4096) }).parse(request.body);
+    const folder = await inspectFolder(workspaceRoot, executor.gateway.processes);
+    return {
+      ...folder,
+      existing:
+        store.all<Project>('projects').find((p) => sameDirectory(p.workspaceRoot, folder.workspaceRoot)) ??
+        null,
+    };
+  });
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    '/api/projects/:id/files',
+    async (request) =>
+      projectFiles(store, request.params.id, z.string().max(4096).default('.').parse(request.query.path)),
+  );
   app.post('/api/projects', async (request) => {
     const body = z
       .object({
@@ -220,21 +250,29 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
         baseline: z.string().optional(),
       })
       .parse(request.body);
-    const root = await fs.realpath(path.resolve(body.workspaceRoot));
-    invariant((await fs.stat(root)).isDirectory(), 'PROJECT_PATH', '项目路径必须是目录');
-    let baseline: string | null = null;
-    const probe = await executor.gateway.processes.run(
-      'registration',
-      'git',
-      ['-C', root, 'rev-parse', '--verify', '--end-of-options', (body.baseline || 'HEAD') + '^{commit}'],
-      root,
-      10000,
-      3000,
+    const folder = await inspectFolder(body.workspaceRoot, executor.gateway.processes);
+    const root = folder.workspaceRoot;
+    let baseline: string | null = folder.codeAvailable ? folder.baseline : null;
+    if (body.mode === 'code' && body.baseline && body.baseline !== 'HEAD') {
+      const probe = await executor.gateway.processes.run(
+        'registration',
+        'git',
+        ['-C', root, 'rev-parse', '--verify', '--end-of-options', (body.baseline || 'HEAD') + '^{commit}'],
+        root,
+        10000,
+        3000,
+      );
+      baseline = probe.exitCode === 0 ? probe.stdout.trim() : null;
+    }
+    invariant(
+      body.mode !== 'code' || (baseline && folder.codeAvailable),
+      'GIT_REQUIRED',
+      'Code 模式需要选择有提交的 Git 根目录；普通文件夹可使用 Work 模式',
     );
-    if (probe.exitCode === 0) baseline = probe.stdout.trim();
-    invariant(body.mode !== 'code' || baseline, 'GIT_REQUIRED', 'Code 模式需要有提交的 Git 项目');
-    return command(body, '/projects', () =>
-      store.put<Project>('projects', {
+    return command(body, '/projects', () => {
+      const existing = store.all<Project>('projects').find((p) => sameDirectory(p.workspaceRoot, root));
+      if (existing) return existing;
+      return store.put<Project>('projects', {
         id: id(),
         revision: 0,
         name: body.name,
@@ -242,17 +280,65 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
         workspaceRoot: root,
         baseline,
         configVersion: 1,
-      }),
-    );
+      });
+    });
   });
-  app.get('/api/providers', async () =>
-    store
-      .all<ProviderConfig>('providers')
-      .map((p) => ({ ...p, keyConfigured: Boolean(process.env[p.apiKeyEnv]) })),
+  app.get('/api/providers', async () => {
+    await subscription.status().catch(() => {});
+    return store.all<ProviderConfig>('providers').map((p) => ({
+      ...p,
+      keyConfigured:
+        p.authMode === 'chatgpt'
+          ? subscription.configured(p.subscriptionAccountId)
+          : Boolean(process.env[p.apiKeyEnv]),
+    }));
+  });
+  app.get('/api/subscription', () => subscription.status());
+  app.post('/api/subscription/login', async (request) => {
+    const body = z
+      .object({ accountId: z.string().optional(), consent: z.boolean().default(false) })
+      .parse(request.body);
+    return subscription.start(body.accountId, body.consent);
+  });
+  app.post('/api/subscription/cancel', async () => {
+    subscription.cancel();
+    return { ok: true };
+  });
+  app.get<{ Params: { id: string } }>('/api/subscription/:id/models', (request) =>
+    subscription.models(request.params.id),
   );
+  app.post<{ Params: { id: string } }>('/api/subscription/:id/welcome', async (request) => {
+    await subscription.welcome(request.params.id);
+    return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>('/api/subscription/:id/retry', async (request) => {
+    subscription.retryUsage(request.params.id);
+    return { ok: true };
+  });
+  app.post<{ Params: { id: string } }>('/api/subscription/:id/logout', async (request) => {
+    const result = await subscription.logout(request.params.id);
+    for (const p of store.all<ProviderConfig>('providers'))
+      if (p.authMode === 'chatgpt' && p.subscriptionAccountId === request.params.id)
+        store.put('providers', { ...p, checkedRevision: null });
+    return result;
+  });
   app.put<{ Params: { id: string } }>('/api/providers/:id', async (request) => {
     const body = request.body as any;
     const config = ProviderConfig.parse({ ...body, id: request.params.id });
+    if (config.authMode === 'chatgpt') {
+      invariant(
+        subscription.configured(config.subscriptionAccountId),
+        'CHATGPT_ACCOUNT',
+        '请先登录并授权使用 ChatGPT 订阅',
+      );
+      const models = await subscription.models(config.subscriptionAccountId!);
+      invariant(
+        models.some((m: { id: string }) => m.id === config.model),
+        'CHATGPT_MODEL',
+        '请选择当前订阅账号提供的模型',
+      );
+      config.account = 'chatgpt:' + config.subscriptionAccountId;
+    }
     const endpoint = new URL(config.baseUrl);
     invariant(
       !endpoint.username &&
@@ -287,7 +373,7 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     const provider = store.require<ProviderConfig>('providers', request.params.id);
     revision(body, provider);
     const perform = async () => {
-      const adapter = new NativeProvider(provider);
+      const adapter = providerAdapter(provider);
       const compiled: Record<string, unknown> = adapter.compile({
         system: 'Reply with OK. This is an explicit connectivity check.',
         task: 'OK',
@@ -296,7 +382,8 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
         manifest: {},
         estimatedTokens: 64,
       });
-      compiled[provider.kind === 'openai' ? 'max_output_tokens' : 'max_tokens'] = 256;
+      if (provider.authMode !== 'chatgpt')
+        compiled[provider.kind === 'openai' ? 'max_output_tokens' : 'max_tokens'] = 256;
       let result: any;
       for await (const e of adapter.stream(compiled, new AbortController().signal))
         if (e.type === 'completed') result = e;
@@ -601,6 +688,7 @@ export function createServer(store: Store, options: { port: number; dev?: boolea
     for (const set of streams.values()) for (const stream of set) stream.end();
   });
   app.addHook('onClose', async () => {
+    await subscription.close();
     await executor.dispose();
   });
   return {

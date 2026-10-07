@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, mutation, initializeSession } from './api';
 import { PreviewPanel } from './PreviewPanel';
+import { SubscriptionSettings } from './SubscriptionSettings';
+import { ProjectFiles } from './ProjectFiles';
+import { manageUsage } from './desktop';
 import { VERSION } from '../../../packages/contracts/src/index';
 import type {
   Run,
@@ -39,6 +42,7 @@ const statuses: Record<string, string> = {
   CANCELLED: '已取消',
 };
 const reasons: Record<string, string> = {
+  subscription_limit: 'ChatGPT 订阅额度受限，请在模型设置中管理用量',
   plan: '等待接受计划',
   user: '等待你的回答',
   children: '等待子任务',
@@ -382,7 +386,7 @@ function App() {
           ))}
           {!projects.length && (
             <button className="empty-project" onClick={() => setModal('project')}>
-              注册第一个本机项目 <Icon name="plus" size={14} />
+              打开本机文件夹 <Icon name="plus" size={14} />
             </button>
           )}
         </div>
@@ -474,6 +478,11 @@ function App() {
                   </button>
                 </div>
               </div>
+              {project && (
+                <button className="project-folder-link" onClick={() => setModal('project-files')}>
+                  <Icon name="file" size={15} /> {project.workspaceRoot} <span>浏览文件</span>
+                </button>
+              )}
               <div className="suggestions">
                 {[
                   {
@@ -956,6 +965,11 @@ function App() {
           }
         />
       )}
+      {modal === 'project-files' && project && (
+        <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
+          <ProjectFiles projectId={project.id} />
+        </Modal>
+      )}
       {modal === 'run' && project && (
         <RunModal
           project={project}
@@ -1166,6 +1180,14 @@ function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: numb
       <div className="info-note">
         资料快照复用、厂商 Prompt 缓存和会话续接分别记录。未返回用量的请求保留预算预留；成本需要有效价格配置。
       </div>
+      {detail.agents.some((a) => a.providerBinding.authMode === 'chatgpt') && (
+        <div className="info-note">
+          此任务使用 ChatGPT 订阅；API 单价不适用于订阅调用。
+          <button className="text-button" onClick={manageUsage}>
+            管理 ChatGPT 用量
+          </button>
+        </div>
+      )}
       <div className="panel-heading">
         <h3>请求清单</h3>
       </div>
@@ -1200,8 +1222,27 @@ function ProjectModal({
     [root, setRoot] = useState(''),
     [mode, setMode] = useState('work'),
     [baseline, setBaseline] = useState('HEAD');
+  const [folder, setFolder] = useState<any>(),
+    [inspecting, setInspecting] = useState(false),
+    [error, setError] = useState('');
+  const inspect = async (directory: string) => {
+    setInspecting(true);
+    setError('');
+    setFolder(undefined);
+    try {
+      const info = await mutation('/projects/inspect', { workspaceRoot: directory });
+      setRoot(info.workspaceRoot);
+      setName(info.name.slice(0, 80));
+      setMode(info.codeAvailable ? 'code' : 'work');
+      setFolder(info);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setInspecting(false);
+    }
+  };
   return (
-    <Modal title="注册本机项目" subtitle="指定资料目录，或选择已有提交的 Git 项目" close={close}>
+    <Modal title="打开本机文件夹" subtitle="将文件夹直接作为项目，自动识别名称与 Git 状态" close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1209,6 +1250,84 @@ function ProjectModal({
         }}
       >
         <div className="form-body">
+          <button
+            type="button"
+            className="folder-picker"
+            disabled={inspecting || !window.elysia}
+            onClick={async () => {
+              try {
+                const directory = await window.elysia?.chooseDirectory();
+                if (directory) {
+                  setRoot(directory);
+                  await inspect(directory);
+                }
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
+          >
+            <Icon name="file" size={25} />
+            <strong>选择本机文件夹</strong>
+            <span>代码仓库、文档或资料目录</span>
+          </button>
+          {!window.elysia && (
+            <p className="field-help">命令行模式可填写下方路径；桌面入口支持系统文件夹选择。</p>
+          )}
+          <label>
+            文件夹路径
+            <div className="folder-path-row">
+              <input
+                required
+                value={root}
+                disabled={inspecting}
+                onChange={(e) => {
+                  setRoot(e.target.value);
+                  setFolder(undefined);
+                }}
+                placeholder="D:\项目或资料目录"
+              />
+              <button
+                type="button"
+                className="secondary"
+                disabled={inspecting || !root.trim()}
+                onClick={() => void inspect(root)}
+              >
+                读取目录
+              </button>
+            </div>
+          </label>
+          {inspecting && <p role="status">正在读取文件夹…</p>}
+          {error && (
+            <p className="inline-warning" role="alert">
+              {error}
+            </p>
+          )}
+          {folder && (
+            <div className="folder-inspection">
+              <strong>
+                {folder.existing
+                  ? '该文件夹已经是项目，点击下方按钮即可打开'
+                  : folder.codeAvailable
+                    ? '已识别 Git 项目'
+                    : '本机文件夹 · Work 项目'}
+              </strong>
+              <p className="field-help">
+                {folder.codeAvailable
+                  ? 'Code 使用独立工作区；Work 可直接读取本机文件及未提交内容。'
+                  : folder.gitRoot
+                    ? '当前目录是仓库子目录或还没有提交。可直接使用 Work；Code 需选择有提交的仓库根目录。'
+                    : '代理可读取此目录中的资料，并在独立任务目录生成结果。'}
+              </p>
+              <div className="folder-entries">
+                {folder.entries.map((e: any) => (
+                  <span key={e.name}>
+                    {e.directory ? '▸ ' : ''}
+                    {e.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <label>
             项目名称
             <input
@@ -1220,22 +1339,19 @@ function ProjectModal({
           </label>
           <div className="mode-picker">
             {['work', 'code'].map((m) => (
-              <button type="button" className={mode === m ? 'active' : ''} onClick={() => setMode(m)} key={m}>
+              <button
+                type="button"
+                disabled={m === 'code' && !folder?.codeAvailable}
+                className={mode === m ? 'active' : ''}
+                onClick={() => setMode(m)}
+                key={m}
+              >
                 <Icon name={m} size={20} />
                 <strong>{m === 'code' ? 'Code' : 'Work'}</strong>
                 <span>{m === 'code' ? 'Git 项目与独立 worktree' : '资料分析、报告与附件'}</span>
               </button>
             ))}
           </div>
-          <label>
-            本机目录的绝对路径
-            <input
-              required
-              value={root}
-              onChange={(e) => setRoot(e.target.value)}
-              placeholder="D:\项目或资料目录"
-            />
-          </label>
           {mode === 'code' && (
             <label>
               工作区基线
@@ -1248,8 +1364,8 @@ function ProjectModal({
           <button type="button" className="secondary" onClick={close}>
             取消
           </button>
-          <button className="primary" disabled={busy}>
-            注册项目
+          <button className="primary" disabled={busy || inspecting || !folder || !name.trim()}>
+            {folder?.existing ? '打开已有项目' : '打开文件夹作为项目'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>
@@ -1323,6 +1439,14 @@ function RunModal({
               ))}
             </select>
           </label>
+          {selected?.authMode === 'chatgpt' && (
+            <p className="field-help">
+              正在使用 ChatGPT 订阅 ·{' '}
+              <button type="button" className="text-button" onClick={manageUsage}>
+                管理用量
+              </button>
+            </p>
+          )}
           {selected?.checkedRevision !== selected?.revision && (
             <div className="inline-warning">
               模型尚未完成连通性验证。
@@ -1332,11 +1456,11 @@ function RunModal({
             </div>
           )}
           <label>
-            指定资料路径（每行一项）
+            补充资料路径（可选，每行一项）
             <textarea
               value={inputs}
               onChange={(e) => setInputs(e.target.value)}
-              placeholder="使用项目目录内文件的绝对路径"
+              placeholder="已可读取整个项目目录；可在此指定重点文件"
               rows={2}
             />
           </label>
@@ -1432,13 +1556,25 @@ function SettingsModal({
   const [selectedId, setSelectedId] = useState(providers[0]?.id || ''),
     [config, setConfig] = useState<Provider>(providers[0]);
   const current = providers.find((p) => p.id === selectedId)!;
+  const dirty =
+    config &&
+    Object.entries(config).some(
+      ([key, value]) =>
+        !['revision', 'checkedRevision', 'checkedAt', 'keyConfigured'].includes(key) &&
+        JSON.stringify(value) !== JSON.stringify(current?.[key as keyof Provider]),
+    );
   useEffect(() => {
     if (current) setConfig(current);
-  }, [current]);
+  }, [current?.id, current?.revision]);
   const change = (key: string, value: unknown) => setConfig((p) => ({ ...p, [key]: value }));
   const [advanced, setAdvanced] = useState('');
   return (
-    <Modal title="模型与设置" subtitle="配置保存在本机；密钥只从服务端环境读取" close={close} wide>
+    <Modal
+      title="模型与设置"
+      subtitle="支持 API Key 与 ChatGPT 订阅；订阅凭据由系统加密保存"
+      close={close}
+      wide
+    >
       <div className="settings-layout">
         <nav>
           {providers.map((p) => (
@@ -1453,7 +1589,9 @@ function SettingsModal({
                   ? p.checkedRevision === p.revision
                     ? '可用于新任务'
                     : '待验证'
-                  : '未配置密钥'}
+                  : p.authMode === 'chatgpt'
+                    ? '需要订阅登录'
+                    : '未配置密钥'}
               </small>
             </button>
           ))}
@@ -1464,38 +1602,74 @@ function SettingsModal({
               <div className="settings-status">
                 <span
                   className={
-                    'status-dot ' + (current.checkedRevision === current.revision ? 'done' : 'waiting')
+                    'status-dot ' +
+                    (!dirty && current.checkedRevision === current.revision ? 'done' : 'waiting')
                   }
                 />
-                {current.checkedRevision === current.revision
-                  ? '连通性已验证'
-                  : current.keyConfigured
-                    ? '需要显式连通性验证'
-                    : '服务端密钥未配置'}
+                {dirty
+                  ? '配置尚未保存，保存后可验证连接'
+                  : current.checkedRevision === current.revision
+                    ? '连通性已验证'
+                    : current.keyConfigured
+                      ? '需要显式连通性验证'
+                      : current.authMode === 'chatgpt'
+                        ? '请连接 ChatGPT 订阅账号'
+                        : '服务端密钥未配置'}
               </div>
+              {config.kind === 'openai' && (
+                <label>
+                  调用方式
+                  <select
+                    value={config.authMode || 'apiKey'}
+                    onChange={(e) =>
+                      setConfig((p) => ({
+                        ...p,
+                        authMode: e.target.value as 'apiKey' | 'chatgpt',
+                        ...(e.target.value === 'chatgpt'
+                          ? { baseUrl: 'https://api.openai.com/v1', prices: null, model: '' }
+                          : {}),
+                      }))
+                    }
+                  >
+                    <option value="apiKey">OpenAI API Key</option>
+                    <option value="chatgpt">ChatGPT 订阅</option>
+                  </select>
+                </label>
+              )}
+              {config.authMode === 'chatgpt' && (
+                <SubscriptionSettings
+                  accountId={config.subscriptionAccountId}
+                  model={config.model}
+                  change={(values) => setConfig((p) => ({ ...p, ...values }))}
+                />
+              )}
               <label>
                 显示名称
                 <input value={config.label} onChange={(e) => change('label', e.target.value)} />
               </label>
-              <label>
-                模型 ID
-                <input value={config.model} onChange={(e) => change('model', e.target.value)} />
-                <span className="field-help">示例值需按账号可用模型调整。</span>
-              </label>
-              <label>
-                API Base URL
-                <input value={config.baseUrl} onChange={(e) => change('baseUrl', e.target.value)} />
-              </label>
-              <div className="form-columns">
-                <label>
-                  密钥环境变量名称
-                  <input value={config.apiKeyEnv} onChange={(e) => change('apiKeyEnv', e.target.value)} />
-                </label>
-                <label>
-                  账号额度作用域
-                  <input value={config.account} onChange={(e) => change('account', e.target.value)} />
-                </label>
-              </div>
+              {config.authMode !== 'chatgpt' && (
+                <>
+                  <label>
+                    模型 ID
+                    <input value={config.model} onChange={(e) => change('model', e.target.value)} />
+                    <span className="field-help">示例值需按账号可用模型调整。</span>
+                  </label>
+                  <label>
+                    API Base URL
+                    <input value={config.baseUrl} onChange={(e) => change('baseUrl', e.target.value)} />
+                  </label>
+                  <div className="form-columns">
+                    <label>
+                      密钥环境变量名称
+                      <input value={config.apiKeyEnv} onChange={(e) => change('apiKeyEnv', e.target.value)} />
+                    </label>
+                    <label>
+                      账号额度作用域
+                      <input value={config.account} onChange={(e) => change('account', e.target.value)} />
+                    </label>
+                  </div>
+                </>
+              )}
               <div className="form-columns">
                 <label>
                   上下文上限
@@ -1506,7 +1680,7 @@ function SettingsModal({
                   />
                 </label>
                 <label>
-                  输出上限
+                  {config.authMode === 'chatgpt' ? '输出预算预估' : '输出上限'}
                   <input
                     type="number"
                     value={config.outputLimit}
@@ -1542,13 +1716,19 @@ function SettingsModal({
                   />
                 </label>
               </div>
+              {config.authMode === 'chatgpt' && (
+                <p className="field-help">
+                  订阅接口不支持单次硬输出上限。此值用于请求前预算预估，完成后按实际 Token 结算；订阅额度请在
+                  ChatGPT 中管理。
+                </p>
+              )}
               <details
                 onToggle={(e) => {
                   if (e.currentTarget.open)
                     setAdvanced(JSON.stringify({ cache: config.cache, prices: config.prices }, null, 2));
                 }}
               >
-                <summary>缓存能力与每百万 Token 价格</summary>
+                <summary>缓存能力{config.authMode === 'chatgpt' ? '' : '与每百万 Token 价格'}</summary>
                 <textarea
                   className="code-input"
                   rows={12}
@@ -1560,7 +1740,11 @@ function SettingsModal({
                   onClick={() => {
                     try {
                       const data = JSON.parse(advanced);
-                      setConfig((p) => ({ ...p, cache: data.cache, prices: data.prices }));
+                      setConfig((p) => ({
+                        ...p,
+                        cache: data.cache,
+                        prices: p.authMode === 'chatgpt' ? null : data.prices,
+                      }));
                     } catch {}
                   }}
                 >
@@ -1574,14 +1758,16 @@ function SettingsModal({
               <div className="settings-actions">
                 <button
                   className="secondary"
-                  disabled={busy}
+                  disabled={
+                    busy || !config.model || (config.authMode === 'chatgpt' && !config.subscriptionAccountId)
+                  }
                   onClick={() => submit({ ...config, revision: current.revision }, false)}
                 >
                   保存配置
                 </button>
                 <button
                   className="primary"
-                  disabled={busy || !current.keyConfigured}
+                  disabled={busy || dirty || !current.keyConfigured}
                   onClick={() => submit(current, true)}
                 >
                   <Icon name="check" size={15} />

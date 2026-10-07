@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, Menu } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { mkdirSync, appendFileSync } = require('node:fs');
+const { attachServices } = require('./services.cjs');
 const root = path.resolve(__dirname, '../..');
 const data = path.resolve(
   process.env.ELYSIA_DATA_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'Elysia'),
@@ -12,6 +13,7 @@ app.setAppUserModelId('local.elysia.desktop');
 app.enableSandbox();
 let window,
   backend,
+  uiOrigin,
   quitting = false,
   ready = false;
 const logFile = path.join(root, '.elysia-runtime', 'desktop.log');
@@ -67,12 +69,14 @@ if (!app.requestSingleInstanceLock()) {
           sandbox: true,
           webviewTag: false,
           spellcheck: false,
+          preload: path.join(__dirname, 'preload.cjs'),
         },
       });
       window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
       window.webContents.session.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+      const desktopService = attachServices(window, data, () => uiOrigin);
       window.on('close', (event) => {
         if (!quitting) {
           event.preventDefault();
@@ -89,7 +93,7 @@ if (!app.requestSingleInstanceLock()) {
           cwd: root,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-          env: { ...process.env, ELYSIA_DATA_DIR: data },
+          env: { ...process.env, ELYSIA_DATA_DIR: data, ELYSIA_DESKTOP: '1' },
         },
       );
       let failed = false;
@@ -114,10 +118,21 @@ if (!app.requestSingleInstanceLock()) {
         }
       });
       backend.on('message', async (message) => {
+        if (message?.type === 'desktop-request' && typeof message.id === 'string') {
+          try {
+            const value = await desktopService(message);
+            if (backend.connected) backend.send({ type: 'desktop-response', id: message.id, value });
+          } catch (error) {
+            if (backend.connected)
+              backend.send({ type: 'desktop-response', id: message.id, error: error.message });
+          }
+          return;
+        }
         if (message.type === 'startup-error') return fail(message.message);
         if (message.type !== 'ready') return;
         try {
           const origin = new URL(message.origin).origin;
+          uiOrigin = origin;
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
           const allowed = (url, main) => {
             try {

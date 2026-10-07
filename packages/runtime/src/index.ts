@@ -272,7 +272,11 @@ export class NativeExecutor implements ExecutorAdapter {
         successfulStreamPath = streamPath;
         break;
       } catch (error) {
-        const rejected = error instanceof ProviderError && error.status >= 400 && error.status < 500;
+        const rejected =
+          error instanceof ProviderError &&
+          !error.responseStarted &&
+          error.status >= 400 &&
+          error.status < 500;
         if (partial) {
           const object = store.object(
             stable({ requestId: record.id, partialText: partial, completed: false }),
@@ -280,6 +284,13 @@ export class NativeExecutor implements ExecutorAdapter {
           store.put('requests', {
             ...store.require<RequestRecord>('requests', record.id),
             manifest: { ...context.manifest, interruptedRef: object.objectRef },
+          });
+        }
+        if (error instanceof ProviderError && error.details) {
+          const current = store.require<RequestRecord>('requests', record.id);
+          store.put('requests', {
+            ...current,
+            manifest: { ...current.manifest, providerError: error.details },
           });
         }
         this.kernel.settle(record.id, null, error instanceof Error ? error.message : String(error), rejected);
@@ -334,7 +345,9 @@ export class NativeExecutor implements ExecutorAdapter {
     if (['WAITING', 'CANCELLED', 'DONE'].includes(current.status)) return;
     const e = error instanceof Error ? error : new Error(String(error));
     store.tx(() => {
-      if (e instanceof AppError && /BUDGET|CONTEXT_LIMIT|TIME_BUDGET/.test(e.code))
+      if (e instanceof AppError && e.code === 'CHATGPT_USAGE_LIMIT')
+        this.kernel.wait(current, 'subscription_limit');
+      else if (e instanceof AppError && /BUDGET|CONTEXT_LIMIT|TIME_BUDGET/.test(e.code))
         this.kernel.wait(current, 'limit');
       else {
         this.kernel.updateTask(current, 'FAILED', {

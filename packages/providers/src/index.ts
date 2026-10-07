@@ -8,6 +8,7 @@ import {
 } from '../../contracts/src/index.js';
 import { type CompiledContext } from '../../context/src/index.js';
 export class ProviderError extends AppError {
+  responseStarted = false;
   constructor(
     code: string,
     message: string,
@@ -139,11 +140,17 @@ function openaiInput(m: Message): unknown[] {
 }
 export class NativeProvider implements ProviderAdapter {
   capabilities = { streaming: true, tools: true, nativeReplay: true };
-  constructor(public config: ProviderConfig) {}
+  constructor(
+    public config: ProviderConfig,
+    private credential?: () => Promise<{ token: string; signal: AbortSignal; onUsageLimit?: () => void }>,
+  ) {}
   compile(ctx: CompiledContext) {
     const p = this.config;
     if (p.kind === 'openai') {
-      const allowed = ['prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options'];
+      const subscription = p.authMode === 'chatgpt';
+      const allowed = subscription
+        ? ['prompt_cache_key']
+        : ['prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options'];
       const cache = Object.fromEntries(
         Object.entries(p.cache.parameters).filter(([k]) => allowed.includes(k)),
       );
@@ -152,13 +159,23 @@ export class NativeProvider implements ProviderAdapter {
         stream: true,
         store: false,
         include: ['reasoning.encrypted_content'],
-        max_output_tokens: p.outputLimit,
+        ...(!subscription ? { max_output_tokens: p.outputLimit } : {}),
         input: [
           { role: 'developer', content: ctx.system },
           { role: 'user', content: ctx.task },
           ...ctx.history.flatMap(openaiInput),
         ],
-        tools: ctx.tools.map((t) => ({ type: 'function', ...t, strict: false })),
+        tools:
+          subscription && ctx.tools.length
+            ? [
+                {
+                  type: 'namespace',
+                  name: 'elysia',
+                  description: 'Elysia 本机任务与文件工具。',
+                  tools: ctx.tools.map((t) => ({ type: 'function', ...t, strict: false })),
+                },
+              ]
+            : ctx.tools.map((t) => ({ type: 'function', ...t, strict: false })),
         ...cache,
       };
     }
@@ -193,8 +210,20 @@ export class NativeProvider implements ProviderAdapter {
     };
   }
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
-    const p = this.config,
-      key = process.env[p.apiKeyEnv];
+    const p = this.config;
+    if (
+      p.authMode === 'chatgpt' &&
+      (p.kind !== 'openai' || p.baseUrl !== 'https://api.openai.com/v1' || !this.credential)
+    )
+      throw new ProviderError('SUBSCRIPTION_BINDING', '订阅账号绑定或端点无效', 401);
+    const credential = p.authMode === 'chatgpt' ? await this.credential!() : undefined;
+    const key = p.authMode === 'chatgpt' ? credential?.token : process.env[p.apiKeyEnv];
+    const callerSignal = signal;
+    signal = AbortSignal.any([
+      signal,
+      ...(credential ? [credential.signal] : []),
+      AbortSignal.timeout(120000),
+    ]);
     if (!key) throw new ProviderError('API_KEY_MISSING', `服务端未配置 ${p.apiKeyEnv}`, 401);
     const url = p.baseUrl.replace(/\/$/, '') + (p.kind === 'openai' ? '/responses' : '/chat/completions');
     const started = Date.now();
@@ -205,11 +234,11 @@ export class NativeProvider implements ProviderAdapter {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
         body: JSON.stringify(request),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+        signal,
         redirect: 'error',
       });
     } catch (error) {
-      if (signal.aborted) throw error;
+      if (callerSignal.aborted) throw error;
       throw new ProviderError('PROVIDER_NETWORK', '模型网络请求失败或超时', 0);
     }
     if (!response.ok) {
@@ -219,12 +248,20 @@ export class NativeProvider implements ProviderAdapter {
           ? Number(retry) * 1000
           : Math.max(0, Date.parse(retry) - Date.now())
         : 0;
-      await response.body?.cancel();
-      throw new ProviderError(
-        'PROVIDER_HTTP',
-        `模型服务返回 HTTP ${response.status}`,
+      let body: any;
+      try {
+        body = JSON.parse((await response.text()).slice(0, 16000));
+      } catch {
+        body = {};
+      }
+      throw providerFailure(
+        body.error?.code,
         response.status,
+        false,
+        body,
+        response,
         retryAfterMs,
+        credential?.onUsageLimit,
       );
     }
     if (!response.body) throw new ProviderError('EMPTY_STREAM', '模型服务未返回流', 502);
@@ -236,11 +273,17 @@ export class NativeProvider implements ProviderAdapter {
     const calls = new Map<number, any>();
     for await (const event of sseData(response.body, signal)) {
       if (event.error || ['error', 'response.failed', 'response.incomplete'].includes(event.type))
-        throw new ProviderError(
-          'PROVIDER_STREAM',
-          '模型响应失败或不完整：' +
-            (event.response?.incomplete_details?.reason ?? event.error?.code ?? event.code ?? 'unknown'),
-          event.error?.code === 'invalid_api_key' ? 401 : 502,
+        throw providerFailure(
+          event.response?.error?.code ??
+            event.error?.code ??
+            event.code ??
+            event.response?.incomplete_details?.reason,
+          502,
+          true,
+          event,
+          response,
+          0,
+          credential?.onUsageLimit,
         );
       if (p.kind === 'openai') {
         if (event.type === 'response.output_text.delta') {
@@ -280,7 +323,11 @@ export class NativeProvider implements ProviderAdapter {
       p.kind === 'openai'
         ? native
             .filter((x) => x.type === 'function_call')
-            .map((x) => ({ id: x.call_id, name: x.name, arguments: x.arguments }))
+            .map((x) => ({
+              id: x.call_id,
+              name: p.authMode === 'chatgpt' ? x.name?.replace(/^elysia\./, '') : x.name,
+              arguments: x.arguments,
+            }))
         : [...calls.entries()].sort(([a], [b]) => a - b).map(([, c]) => c);
     if (
       toolCalls.some((c) => !c.id || !c.name) ||
@@ -296,4 +343,48 @@ export class NativeProvider implements ProviderAdapter {
       ...(p.kind === 'deepseek' ? { reasoningContent } : {}),
     };
   }
+}
+function providerFailure(
+  code: unknown,
+  status: number,
+  started: boolean,
+  body: any,
+  response: Response,
+  retry = 0,
+  onUsageLimit?: () => void,
+) {
+  const safeCode = typeof code === 'string' && /^[a-zA-Z0-9_]{1,100}$/.test(code) ? code : 'PROVIDER_HTTP';
+  const usageLimit = safeCode === 'subscription_sharing_usage_limit_exceeded';
+  const terminal =
+    usageLimit ||
+    [
+      'subscription_sharing_user_not_eligible',
+      'subscription_sharing_unsupported_capability',
+      'subscription_sharing_route_not_supported',
+      'subscription_sharing_invalid_user',
+      'chatpass_v2_scope_not_authorized',
+      'chatpass_v2_invalid_authorization_context',
+    ].includes(safeCode);
+  const error = new ProviderError(
+    usageLimit ? 'CHATGPT_USAGE_LIMIT' : safeCode,
+    usageLimit
+      ? 'ChatGPT 订阅额度已达限制，请在模型设置中管理用量后重新检查'
+      : started
+        ? `模型流返回错误（${safeCode}）`
+        : `模型服务返回 HTTP ${status}（${safeCode}）`,
+    status,
+    retry,
+  );
+  error.responseStarted = started;
+  if (terminal) error.retryable = false;
+  error.details = {
+    status,
+    httpStatus: response.status,
+    code: safeCode,
+    param: body.error?.param ?? body.response?.error?.param,
+    shape: Object.keys(body).slice(0, 20),
+    requestId: response.headers.get('x-request-id') ?? response.headers.get('openai-request-id'),
+  };
+  if (usageLimit) onUsageLimit?.();
+  return error;
 }

@@ -616,7 +616,9 @@ export class Kernel {
           (t) =>
             t.status === 'FAILED' ||
             (t.status === 'WAITING' &&
-              ['paused', 'interrupted', 'limit', 'rate_limit'].includes(t.waitReason ?? '')),
+              ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit'].includes(
+                t.waitReason ?? '',
+              )),
         )) {
           if (t.status === 'FAILED') {
             const agent = this.store.require<Agent>('agents', t.agentId);

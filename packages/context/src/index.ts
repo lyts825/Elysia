@@ -9,6 +9,7 @@ import {
   type ProviderConfig,
   type Snapshot,
   type Artifact,
+  type Project,
 } from '../../contracts/src/index.js';
 import { Store, hash, stable } from '../../storage/src/index.js';
 export interface ToolDefinition {
@@ -73,6 +74,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     lastResult: task.result,
     phase: task.phase,
     workspace: task.workspace,
+    projectDirectory: store.require<Project>('projects', run.projectId).workspaceRoot,
     baseline: task.baseline,
     accessibleArtifacts: store
       .all<Artifact>('artifacts', run.id)

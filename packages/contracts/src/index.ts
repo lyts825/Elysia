@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.2.0-preview.1';
+export const VERSION = '0.3.0-preview.1';
 export const Mode = z.enum(['code', 'work']);
 export const Status = z.enum([
   'DRAFT',
@@ -76,6 +76,8 @@ export const ProviderConfig = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
     kind: z.enum(['openai', 'deepseek']),
+    authMode: z.enum(['apiKey', 'chatgpt']).optional(),
+    subscriptionAccountId: z.string().min(1).nullable().optional(),
     label: z.string().min(1),
     model: z.string().min(1),
     baseUrl: z.string().url(),
@@ -104,7 +106,16 @@ export const ProviderConfig = z
       .nullable()
       .default(null),
   })
-  .refine((p) => p.outputLimit < p.contextLimit, '输出上限必须小于上下文上限');
+  .refine((p) => p.outputLimit < p.contextLimit, '输出上限必须小于上下文上限')
+  .refine(
+    (p) =>
+      p.authMode !== 'chatgpt' ||
+      (p.kind === 'openai' &&
+        p.baseUrl === 'https://api.openai.com/v1' &&
+        !!p.subscriptionAccountId &&
+        p.prices === null),
+    'ChatGPT 订阅需要 OpenAI 官方端点、已登录账号；API 单价不适用于订阅',
+  );
 export type ProviderConfig = z.infer<typeof ProviderConfig> & {
   revision: number;
   checkedRevision: number | null;
