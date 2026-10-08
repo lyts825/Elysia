@@ -8,12 +8,17 @@ import type {
   PreviewResourceIssue,
   PreviewSnapshot,
 } from '../../../packages/contracts/src/preview.js';
-import { fileMediaType, isBinaryFile } from '../../../packages/contracts/src/files.js';
+import {
+  fileMediaType,
+  isBinaryFile,
+  type TextFileEncoding,
+  type TextPageOptions,
+} from '../../../packages/contracts/src/files.js';
 import { Store, hash } from '../../../packages/storage/src/index.js';
 import { ToolGateway } from '../../../packages/tools/src/index.js';
+import { inspectFile, readTextPage, streamFile } from './file-reader.js';
 
 const textLimit = 1024 * 1024,
-  assetLimit = 12 * 1024 * 1024,
   listLimit = 1500;
 const excluded = new Set(['.git', 'node_modules', '.local-tests', '.local-qa', '.tmp', '.elysia-runtime']);
 const sensitive = (segment: string) =>
@@ -169,7 +174,6 @@ export class PreviewService {
         const stat = await fs.stat(await this.filename(task, resource));
         version = resourceVersion(stat);
         if (!stat.isFile()) issue = 'not-file';
-        else if (stat.size > assetLimit) issue = 'too-large';
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         version = code === 'ENOENT' ? 'missing' : 'unavailable:' + (code || 'UNKNOWN');
@@ -346,53 +350,95 @@ export class PreviewService {
       renderBase: `/preview/${token}/`,
     };
   }
-  async file(runId: string, taskId: string, input: string): Promise<PreviewFile> {
+  async file(
+    runId: string,
+    taskId: string,
+    input: string,
+    encoding: TextFileEncoding = 'auto',
+    options: TextPageOptions = {},
+  ): Promise<PreviewFile> {
     const task = this.task(runId, taskId),
       name = normalized(input);
     const ext = path.extname(name).toLowerCase(),
       mediaType = fileMediaType(name);
-    const maxSize = mediaType.startsWith('image/') ? assetLimit : textLimit;
     let bytes: Buffer | null = null,
-      deleted = false;
+      deleted = false,
+      page: PreviewFile['page'] = null,
+      resolvedEncoding: PreviewFile['encoding'] = null,
+      encodingSource: PreviewFile['encodingSource'] = null,
+      text: string | null = null,
+      version = '',
+      binary = false,
+      largeDiff = false,
+      baselineRecord = '';
     try {
       const filename = await this.filename(task, name),
-        stat = await fs.stat(filename);
-      invariant(
-        stat.isFile() && stat.size <= maxSize,
-        'PREVIEW_SIZE',
-        '源文件预览上限为 1 MiB，图片上限为 12 MiB',
-      );
-      bytes = await fs.readFile(filename);
-      invariant(bytes.length <= maxSize, 'PREVIEW_SIZE', '文件超过预览上限');
+        info = await inspectFile(filename, options.signal);
+      version = info.version;
+      largeDiff = info.stat.size > textLimit;
+      if (options.version && options.version !== version)
+        throw new AppError(
+          'FILE_CHANGED',
+          '文件已改变，请重新从第一页读取。',
+          false,
+          { version, totalBytes: info.stat.size },
+          409,
+        );
+      const unicode16 =
+        encoding.startsWith('utf-16') ||
+        (info.prefix[0] === 0xff && info.prefix[1] === 0xfe) ||
+        (info.prefix[0] === 0xfe && info.prefix[1] === 0xff);
+      binary = !unicode16 && isBinaryFile(name, info.prefix);
+      if (!mediaType.startsWith('image/') && !binary) {
+        const result = await readTextPage(filename, encoding, options);
+        invariant((await this.filename(task, name)) === filename, 'PREVIEW_PATH', '文件路径在读取时改变');
+        bytes = result.bytes;
+        text = result.text;
+        page = result.page;
+        resolvedEncoding = result.encoding;
+        encodingSource = result.encodingSource;
+        binary = isBinaryFile(name, Buffer.from(text, 'utf8'));
+        if (binary) {
+          text = null;
+          page = null;
+          resolvedEncoding = null;
+          encodingSource = null;
+        }
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !task.baseline) throw error;
-      const existed = await this.git(task, ['ls-tree', '-z', task.baseline, '--', name]);
+      const existed = await this.git(task, ['ls-tree', '-l', '-z', task.baseline, '--', name]);
       invariant(existed.stdout.length > 0, 'PREVIEW_MISSING', '文件不存在');
+      baselineRecord = existed.stdout;
       deleted = true;
     }
     const kind: PreviewFile['kind'] = mediaType.startsWith('image/')
       ? 'image'
-      : bytes && isBinaryFile(name, bytes)
+      : binary
         ? 'binary'
         : ['.html', '.htm'].includes(ext)
           ? 'html'
           : ['.md', '.markdown'].includes(ext)
             ? 'markdown'
             : 'text';
-    const text = bytes && !['image', 'binary'].includes(kind) ? bytes.toString('utf8') : null;
     let diff = '',
-      diffTruncated = false;
-    if (task.baseline) {
+      diffTruncated = !!page?.paged;
+    if (task.baseline && !(options.offset && options.offset > 0) && !baselineRecord)
+      baselineRecord = (await this.git(task, ['ls-tree', '-l', '-z', task.baseline, '--', name])).stdout;
+    const baselineBytes = baselineRecord
+      ? Number(/^\d+\s+\w+\s+[a-f0-9]+\s+(\d+)\t/.exec(baselineRecord)?.[1] ?? Infinity)
+      : 0;
+    if (task.baseline && (largeDiff || baselineBytes > textLimit)) diffTruncated = true;
+    else if (task.baseline && !(options.offset && options.offset > 0)) {
       const result = await this.git(
         task,
         ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--unified=3', task.baseline, '--', name],
         textLimit,
       );
       diff = result.stdout;
-      diffTruncated = result.truncated;
+      diffTruncated ||= result.truncated;
       if (!diff && bytes) {
-        const tracked = await this.git(task, ['ls-tree', '-z', task.baseline, '--', name]);
-        if (!tracked.stdout && text !== null)
+        if (!baselineRecord && text !== null)
           diff =
             `--- /dev/null\n+++ b/${name}\n` +
             text
@@ -400,7 +446,7 @@ export class PreviewService {
               .map((line) => '+' + line)
               .join('\n');
       }
-    } else if (text !== null)
+    } else if (!task.baseline && text !== null)
       diff =
         `--- /dev/null\n+++ b/${name}\n` +
         text
@@ -412,6 +458,15 @@ export class PreviewService {
       diff = Buffer.from(lines.slice(0, 12000).join('\n')).subarray(0, textLimit).toString('utf8');
       diffTruncated = true;
     }
+    const scope = path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name);
+    const resourceBase = !deleted
+      ? `/preview/${this.capability(runId, taskId)}/${scope ? scope.split('/').map(encodeURIComponent).join('/') + '/' : ''}`
+      : null;
+    const resourceUrl = !deleted
+      ? `/preview/${this.capability(runId, taskId, scope)}/` +
+        encodeURIComponent(path.posix.basename(name)) +
+        (version ? '?version=' + version : '')
+      : null;
     return {
       path: name,
       text,
@@ -421,13 +476,23 @@ export class PreviewService {
       diff,
       diffTruncated,
       deleted,
+      page,
+      encoding: resolvedEncoding,
+      encodingSource,
+      resourceBase,
+      resourceUrl,
       renderUrl:
         kind === 'html' && !deleted
-          ? `/preview/${this.capability(runId, taskId, path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name), name)}/${encodeURIComponent(path.posix.basename(name))}`
+          ? `/preview/${this.capability(runId, taskId, scope, name)}/${encodeURIComponent(path.posix.basename(name))}`
           : null,
     };
   }
-  async resource(token: string, input: string, document = false) {
+  async resource(
+    token: string,
+    input: string,
+    document = false,
+    options: { range?: string; version?: string; signal?: AbortSignal } = {},
+  ) {
     const capability = this.capabilities.get(token);
     invariant(
       capability && Date.now() - capability.touched < 30 * 60000,
@@ -438,7 +503,7 @@ export class PreviewService {
     const observation = ++capability.observation;
     let name = '',
       version = '';
-    let filename: string, bytes: Buffer;
+    let filename: string;
     try {
       const relative = normalized(input || 'index.html');
       name = capability.scope ? capability.scope + '/' + relative : relative;
@@ -451,9 +516,6 @@ export class PreviewService {
       const stat = await fs.stat(filename);
       version = resourceVersion(stat);
       invariant(stat.isFile(), 'PREVIEW_NOT_FILE', '页面资源不是文件');
-      invariant(stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
-      bytes = await fs.readFile(filename);
-      invariant(bytes.length <= assetLimit, 'PREVIEW_SIZE', '预览资源超过大小上限');
       if (capability.page) this.observe(capability, name, version, observation, false, null);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -477,8 +539,6 @@ export class PreviewService {
           reason,
         );
       if (code === 'ENOENT') throw new AppError('PREVIEW_MISSING', '页面资源不存在', false, null, 404);
-      if (code === 'PREVIEW_SIZE')
-        throw new AppError('PREVIEW_SIZE', '页面资源超过 12 MiB 预览上限', false, null, 413);
       if (error instanceof AppError) throw error;
       throw new AppError(
         'PREVIEW_READ',
@@ -488,15 +548,19 @@ export class PreviewService {
         ['EACCES', 'EPERM'].includes(code || '') ? 403 : 500,
       );
     }
-    const mediaType = fileMediaType(filename);
-    const prefix = `/preview/${token}/`;
-    // Preserve the file on disk; scope root-relative static asset URLs to this page root.
-    if (mediaType === 'text/html')
-      bytes = Buffer.from(
-        bytes.toString('utf8').replace(/(\b(?:src|href|poster)\s*=\s*["'])\/(?!\/)/gi, '$1' + prefix),
-      );
-    if (mediaType === 'text/css')
-      bytes = Buffer.from(bytes.toString('utf8').replace(/(url\(\s*["']?)\/(?!\/)/gi, '$1' + prefix));
-    return { bytes, mediaType };
+    const result = await streamFile(filename, fileMediaType(filename), {
+      ...options,
+      rewritePrefix: `/preview/${token}/`,
+    });
+    try {
+      invariant((await this.filename(task, name)) === filename, 'PREVIEW_PATH', '文件路径在读取时改变');
+    } catch (error) {
+      result.stream.destroy();
+      throw error;
+    }
+    result.stream.once('error', () => {
+      if (capability.page) this.observe(capability, name, version, observation, false, 'unreadable');
+    });
+    return result;
   }
 }

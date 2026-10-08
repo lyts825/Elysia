@@ -1,17 +1,17 @@
 .modal.provider-center {
-  width: min(1140px, 95vw);
-  max-height: 92vh;
-  height: min(860px, 92vh);
+  width: min(1080px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  height: min(800px, calc(100dvh - 40px));
 }
 .provider-workspace {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 228px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   flex: 1;
 }
 .provider-list {
-  padding: 22px 14px;
+  padding: 18px 10px;
   background: var(--surface-soft);
   border-right: 1px solid var(--border);
   overflow-y: auto;
@@ -21,11 +21,13 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 15px;
+  margin-bottom: 16px;
+  min-width: 0;
 }
 .section-heading h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .section-heading .field-help {
   margin: 5px 0 0;
@@ -38,28 +40,27 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 5px;
   text-align: left;
-  padding: 16px 12px;
+  padding: 12px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
-  margin-bottom: 10px;
-  color: #56635c;
+  margin-bottom: 6px;
+  color: var(--secondary);
   overflow-wrap: anywhere;
 }
-.provider-card:hover {
-  background: #f0f3ed;
+.provider-card:hover:not(:disabled) {
+  background: var(--surface-hover);
 }
 .provider-card.selected {
-  background: #fff;
-  border-color: #cba6ad;
-  box-shadow: 0 2px 8px #25403207;
+  background: var(--surface);
+  border-color: var(--border);
 }
 .provider-card-title {
   font-size: 13px;
-  font-weight: 650;
-  color: #293c33;
+  font-weight: 600;
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 9px;
@@ -69,29 +70,30 @@
 }
 .provider-card small {
   font-size: 11px;
-  color: #69756c;
+  color: var(--muted);
 }
 .provider-state {
   padding: 3px 7px;
   border-radius: 5px;
-  background: #e8e9df;
-  color: #79515c;
+  background: var(--surface-hover);
+  color: var(--secondary);
 }
 .provider-state.ready {
   background: #eaf3ec;
   color: #3c7050;
 }
 .provider-editor {
-  padding: 26px 30px 0;
+  padding: 22px 24px 0;
   overflow-y: auto;
   max-height: none;
   min-height: 0;
   scroll-padding-bottom: 86px;
+  min-width: 0;
 }
 .provider-editor label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   font-size: 13px;
   font-weight: 550;
   margin-bottom: 16px;
@@ -107,7 +109,7 @@
   display: grid;
   margin-top: 14px;
   margin-bottom: 0;
-  gap: 18px;
+  gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .provider-fields {
@@ -119,15 +121,16 @@
 .provider-fields:disabled input,
 .provider-fields:disabled select,
 .provider-fields:disabled textarea {
-  opacity: 0.65;
+  opacity: 0.75;
 }
 .deepseek-guide {
   margin-bottom: 18px;
 }
 .deepseek-guide h4 {
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 600;
   margin: 10px 0 4px;
-  color: #2e3935;
+  color: var(--text);
 }
 .deepseek-guide p {
   color: var(--muted);
@@ -136,12 +139,12 @@
 .deepseek-model-presets {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 .deepseek-model-presets button {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 12px;
   background: var(--surface);
   display: flex;
@@ -152,21 +155,22 @@
   text-align: left;
 }
 .deepseek-model-presets button[aria-pressed='true'] {
-  border-color: #bf8c98;
+  border-color: var(--accent);
   background: var(--accent-pale);
 }
-.deepseek-model-presets button:hover {
-  border-color: #bf8c98;
+.deepseek-model-presets button:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 .deepseek-model-presets strong {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .deepseek-model-presets small {
   font-size: 11px;
   color: var(--muted);
 }
 .deepseek-model-presets code {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
@@ -187,15 +191,16 @@
 }
 .provider-tools {
   display: flex;
-  gap: 14px;
+  gap: 8px;
+  flex-wrap: wrap;
   align-items: center;
 }
 .connection-panel {
   border: 1px solid var(--border);
-  background: #fafbf6;
-  border-radius: 12px;
-  padding: 20px;
-  margin: 16px 0 20px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
 }
 .provider-badge {
   font-size: 11px;
@@ -208,13 +213,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 13px 0;
+  margin: 12px 0;
 }
 .connection-stages span {
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 6px;
-  background: #e8e9df;
-  color: #69756c;
+  background: var(--surface-hover);
+  color: var(--muted);
   font-size: 11px;
 }
 .connection-stages .passed {
@@ -223,7 +228,7 @@
 }
 .account-label {
   font-size: 13px;
-  color: #46594b;
+  color: var(--secondary);
   overflow-wrap: anywhere;
 }
 .device-code {
@@ -235,22 +240,25 @@
 }
 .quota-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 8px;
   margin-top: 14px;
 }
 .quota-grid > div {
-  padding: 11px;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   font-size: 11px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 .quota-grid p {
   margin: 6px 0;
 }
 .quota-grid small {
-  color: #69756c;
+  color: var(--muted);
 }
 .model-selection {
   display: flex;
@@ -279,31 +287,31 @@
 .preset-card {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 16px;
+  gap: 6px;
+  padding: 14px;
   align-items: flex-start;
   border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 10px;
+  background: var(--surface);
+  border-radius: 8px;
   text-align: left;
   font-size: 13px;
 }
-.preset-card:hover {
-  border-color: #bb8b98;
-  background: #fff8f3;
+.preset-card:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
 }
 .preset-card small {
   color: var(--muted);
 }
 .provider-advanced {
   padding: 16px 0;
-  border-top: 1px solid #e8e9df;
+  border-top: 1px solid var(--border);
 }
 .provider-advanced summary {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: #79515c;
+  color: var(--secondary);
 }
 .provider-advanced textarea {
   width: 100%;
@@ -311,17 +319,16 @@
 }
 .provider-footer {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
   position: sticky;
   bottom: 0;
-  background: #fffffff5;
-  border-top: 1px solid #e8e9df;
-  padding: 16px 0;
-  margin-top: 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+  margin-top: 16px;
   z-index: 2;
-  box-shadow: 0 -8px 16px #ffffffcc;
-  backdrop-filter: blur(12px);
+  box-shadow: 0 -8px 0 var(--surface);
 }
 .provider-footer > span {
   margin-right: auto;
@@ -352,7 +359,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 6px;
   flex: none;
   color: var(--accent);
   background: var(--accent-pale);
@@ -391,8 +398,9 @@
 }
 @media (max-width: 760px) {
   .modal.provider-center {
-    height: 94vh;
-    max-height: 94vh;
+    width: 100%;
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
   }
   .provider-workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -406,7 +414,7 @@
     overflow-y: hidden;
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    max-height: 162px;
+    max-height: 150px;
   }
   .provider-list .section-heading {
     flex: none;
@@ -419,7 +427,7 @@
     padding: 0;
   }
   .provider-list .provider-card {
-    flex: 0 0 180px;
+    flex: 0 0 168px;
     margin: 0;
     padding: 10px 12px;
     gap: 3px;
@@ -504,7 +512,8 @@
 
 @media (max-width: 760px) {
   .connection-stages {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .section-heading {
     flex-wrap: wrap;

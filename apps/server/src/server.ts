@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import staticFiles from '@fastify/static';
 import { z } from 'zod';
 import { promises as fs, existsSync } from 'node:fs';
@@ -34,13 +34,54 @@ import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
 import { desktopServices } from './desktop.js';
-import { inspectFolder, projectFiles, projectTextEncodings, sameDirectory } from './projects.js';
+import {
+  inspectFolder,
+  projectFiles,
+  projectResource,
+  projectTextEncodings,
+  sameDirectory,
+} from './projects.js';
+import { TEXT_PAGE_BYTES } from '../../../packages/contracts/src/files.js';
+import type { FileResource } from './file-reader.js';
+import { ArtifactPreviewService } from './artifact-preview.js';
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
 import { registerWorkbench } from './workbench.js';
 import { availableModels, resolveModelChoice } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
+const textPageQuery = z.object({
+  offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
+  version: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  encoding: z.enum(projectTextEncodings).default('auto'),
+});
+function fileRequestSignal(request: FastifyRequest, reply: FastifyReply) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  request.raw.once('aborted', abort);
+  reply.raw.once('close', () => {
+    if (!reply.raw.writableEnded) abort();
+    request.raw.removeListener('aborted', abort);
+  });
+  return controller.signal;
+}
+function sendFileResource(reply: FastifyReply, resource: FileResource) {
+  reply
+    .code(resource.status)
+    .type(resource.mediaType)
+    .header('Cache-Control', 'no-store')
+    .header('ETag', '"' + resource.version + '"');
+  if (resource.acceptRanges) reply.header('Accept-Ranges', 'bytes');
+  if (resource.contentRange) reply.header('Content-Range', resource.contentRange);
+  if (resource.contentLength !== undefined) reply.header('Content-Length', resource.contentLength);
+  return reply.send(resource.stream);
+}
+const restrictedResourcePolicy =
+  "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -124,6 +165,10 @@ export function createServer(
   ]);
   const hosts = new Set([`127.0.0.1:${options.port}`, ...(options.dev ? ['127.0.0.1:5173'] : [])]);
   const previews = new PreviewService(store, executor.gateway);
+  const artifactPreviews = new ArtifactPreviewService(store);
+  app.addHook('onClose', async () => {
+    await artifactPreviews.close();
+  });
   const cookieSession = (header?: string) =>
     header
       ?.split(';')
@@ -174,6 +219,12 @@ export function createServer(
     const e = error as any;
     const code =
       e instanceof AppError ? e.code : e instanceof z.ZodError ? 'VALIDATION_ERROR' : 'SERVER_ERROR';
+    const rangeDetails =
+      e instanceof AppError && e.details && typeof e.details === 'object'
+        ? (e.details as { totalBytes?: number })
+        : null;
+    if (e instanceof AppError && e.httpStatus === 416 && Number.isSafeInteger(rangeDetails?.totalBytes))
+      reply.header('Content-Range', `bytes */${rangeDetails!.totalBytes}`);
     reply
       .code(e instanceof AppError ? e.httpStatus : e instanceof z.ZodError ? 400 : (e.statusCode ?? 500))
       .send({
@@ -220,15 +271,19 @@ export function createServer(
         z.string().min(1).max(1000).optional().parse(request.query.path),
       ),
   );
-  app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
-    '/api/runs/:runId/tasks/:taskId/preview/file',
-    async (request) =>
-      previews.file(
-        request.params.runId,
-        request.params.taskId,
-        z.string().min(1).max(1000).parse(request.query.path),
-      ),
-  );
+  app.get<{
+    Params: { runId: string; taskId: string };
+    Querystring: { path: string; offset?: string; limit?: string; version?: string; encoding?: string };
+  }>('/api/runs/:runId/tasks/:taskId/preview/file', async (request, reply) => {
+    const { encoding, ...page } = textPageQuery.parse(request.query);
+    return previews.file(
+      request.params.runId,
+      request.params.taskId,
+      z.string().min(1).max(1000).parse(request.query.path),
+      encoding,
+      { ...page, signal: fileRequestSignal(request, reply) },
+    );
+  });
   app.get<{ Params: { token: string; '*': string } }>('/preview/:token/*', async (request, reply) => {
     const base = `http://${request.headers.host}/preview/${encodeURIComponent(request.params.token)}/`;
     reply
@@ -242,9 +297,17 @@ export function createServer(
       request.params.token,
       request.params['*'],
       ['iframe', 'document'].includes(String(request.headers['sec-fetch-dest'] || '')),
+      {
+        range: request.headers.range,
+        version: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional()
+          .parse((request.query as { version?: string }).version),
+        signal: fileRequestSignal(request, reply),
+      },
     );
-    reply.type(result.mediaType);
-    return result.bytes;
+    return sendFileResource(reply, result);
   });
   app.post('/api/session', async (request, reply) => {
     const body = z.object({ token: z.string() }).parse(request.body);
@@ -278,15 +341,64 @@ export function createServer(
         null,
     };
   });
-  app.get<{ Params: { id: string }; Querystring: { path?: string; encoding?: string } }>(
-    '/api/projects/:id/files',
-    async (request) =>
-      projectFiles(
-        store,
-        request.params.id,
-        z.string().max(4096).default('.').parse(request.query.path),
-        z.enum(projectTextEncodings).default('auto').parse(request.query.encoding),
-      ),
+  app.get<{
+    Params: { id: string };
+    Querystring: { path?: string; encoding?: string; offset?: string; limit?: string; version?: string };
+  }>('/api/projects/:id/files', async (request, reply) => {
+    const { encoding, ...page } = textPageQuery.parse(request.query);
+    return projectFiles(
+      store,
+      request.params.id,
+      z.string().max(4096).default('.').parse(request.query.path),
+      encoding,
+      { ...page, signal: fileRequestSignal(request, reply) },
+    );
+  });
+  app.get<{ Params: { id: string; '*': string }; Querystring: { version?: string } }>(
+    '/api/projects/:id/resources/*',
+    async (request, reply) => {
+      reply.header('Content-Security-Policy', restrictedResourcePolicy);
+      return sendFileResource(
+        reply,
+        await projectResource(
+          store,
+          request.params.id,
+          z.string().min(1).max(4096).parse(request.params['*']),
+          {
+            range: request.headers.range,
+            version: z
+              .string()
+              .regex(/^[a-f0-9]{64}$/)
+              .optional()
+              .parse(request.query.version),
+            signal: fileRequestSignal(request, reply),
+          },
+        ),
+      );
+    },
+  );
+  app.get<{ Params: { id: string }; Querystring: { path: string; version?: string } }>(
+    '/api/projects/:id/files/resource',
+    async (request, reply) => {
+      reply.header('Content-Security-Policy', restrictedResourcePolicy);
+      return sendFileResource(
+        reply,
+        await projectResource(
+          store,
+          request.params.id,
+          z.string().min(1).max(4096).parse(request.query.path),
+          {
+            range: request.headers.range,
+            version: z
+              .string()
+              .regex(/^[a-f0-9]{64}$/)
+              .optional()
+              .parse(request.query.version),
+            signal: fileRequestSignal(request, reply),
+          },
+        ),
+      );
+    },
   );
   app.post('/api/projects', async (request) => {
     const body = z
@@ -992,8 +1104,26 @@ export function createServer(
         'Content-Disposition',
         `inline; filename*=UTF-8''${encodeURIComponent(artifact.name.replace(/[\r\n]/g, ''))}`,
       )
-      .type(artifact.mediaType);
-    return store.readObject(artifact.objectRef);
+      .header('Content-Security-Policy', restrictedResourcePolicy);
+    return sendFileResource(
+      reply,
+      await artifactPreviews.resource(artifact, {
+        range: request.headers.range,
+        signal: fileRequestSignal(request, reply),
+      }),
+    );
+  });
+  app.get<{
+    Params: { id: string };
+    Querystring: { offset?: string; limit?: string; version?: string; encoding?: string };
+  }>('/api/artifacts/:id/preview', async (request, reply) => {
+    const artifact = store.require<Artifact>('artifacts', request.params.id);
+    store.require<Run>('runs', artifact.runId);
+    const { encoding, ...page } = textPageQuery.parse(request.query);
+    return artifactPreviews.preview(artifact, encoding, {
+      ...page,
+      signal: fileRequestSignal(request, reply),
+    });
   });
   const webRoot = path.join(process.cwd(), 'apps', 'web', 'dist');
   if (existsSync(webRoot)) {
@@ -1029,7 +1159,9 @@ export function createServer(
   };
 }
 function requestPreviewPolicy(url: string, policy: unknown) {
-  return url.startsWith('/preview/')
+  return url.startsWith('/preview/') ||
+    /^\/api\/projects\/[^/]+\/(?:resources\/|files\/resource(?:\?|$))/.test(url) ||
+    /^\/api\/artifacts\/[^/?]+(?:\?|$)/.test(url)
     ? typeof policy === 'string'
       ? policy
       : "default-src 'none'; sandbox; frame-ancestors 'self'"

@@ -31,4 +31,10 @@ export type PreviewFile = {
   diffTruncated: boolean;
   deleted: boolean;
   renderUrl: string | null;
+  resourceUrl: string | null;
+  resourceBase: string | null;
+  page: TextFilePage | null;
+  encoding: ResolvedTextEncoding | null;
+  encodingSource: 'bom' | 'default' | 'manual' | null;
 };
+import type { ResolvedTextEncoding, TextFilePage } from './files.js';

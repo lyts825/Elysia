@@ -1,10 +1,10 @@
 # Elysia 首版执行文档
 
-文档版本：0.10.1　日期：2026-10-09　最近本地隔离验收构建：v0.10.1-preview.1　本机待实机验收源码：v0.10.1-preview.1　稳定版目标：v0.10.1
+文档版本：0.11.0　日期：2026-10-09　最近本地隔离验收构建：v0.11.0-preview.1　本机待实机验收源码：v0.11.0-preview.1　稳定版目标：v0.11.0
 
-本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项、官方 Codex 订阅和提供商配置中心，沿用白花、灰绿、雾蓝与暖粉主题及既有交互动效。本机 ChatGPT 订阅及单代理资料产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。项目和任务不再分 Code / Work，文件修改与办公产物使用统一上下文、权限、预算内核及模型按需加载的技能。
+本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项、官方 Codex 订阅和提供商配置中心。当前界面采用 Codex 风格的灰白配色、紧凑控件、细边框及克制动效，保留白花品牌资源。本机 ChatGPT 订阅及单代理资料产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。项目和任务不再分 Code / Work，文件修改与办公产物使用统一上下文、权限、预算内核及模型按需加载的技能。
 
-本轮目标为“v0.10.0-preview.1 → v0.10.1-preview.1”；移除侧栏工作台入口并优化新建与回复输入区。主代理负责导航、文案、整合及版本，子代理负责输入区样式和隔离界面验收。验收为独立对话/项目任务新建可达，输入区短内容紧凑、长内容自适应且有高度上限，模型/窗口入口可达、草稿恢复和快捷键保持，小屏无溢出。缓存API、任务流程、schema v3及依赖沿用。用户此前明确停止实机、继续源码工作，本轮只使用独立临时数据库、本机HTTP夹具和隐藏offscreen Electron，不读取真实密钥、不重启正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
+本轮目标为“v0.10.1-preview.1 → v0.11.0-preview.1”；统一界面细节，重点完成格式化 Markdown 与大文件有界预览。主代理负责共享渲染、项目/产物界面、整合及版本；子代理分别负责全局样式、代理预览和文件读取链路。验收为常用 Markdown 结构、本地图片与锚点正确，文本可分页/跳转、编码边界完整、文件变化可恢复，资源和压缩产物不整份读入内存且保留授权/完整哈希核验，四种窗口及草稿/快捷键回归保持。缓存API、任务流程及schema v3沿用，新增锁定remark-gfm 4.0.1。用户此前明确停止实机、继续源码工作，本轮只使用独立临时数据库、本机HTTP夹具和隐藏offscreen Electron，不读取真实密钥、不重启正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
 
 ## 一 首版范围
 
@@ -31,7 +31,7 @@ Codex App Server 在本轮仅作为官方认证及单步模型连接接入，工
 
 ```mermaid
 flowchart TB
-    UI[本机工作台] <--> API[本地 API 与 SSE 事件流]
+    UI[本机对话界面] <--> API[本地 API 与 SSE 事件流]
     API <--> CO[总代理会话]
     CO <--> K[调度内核\n任务依赖 权限 预算 验收]
     K <--> DB[(SQLite\n状态 事件 检查点 账本)]
@@ -72,14 +72,14 @@ flowchart TB
 
 采用 Node.js 24 LTS、pnpm 11、TypeScript、React、Vite、Fastify、Zod。SQLite 通过 Node 内置 `node:sqlite` 使用；存储操作封装在独立模块，短事务同步完成，大文件处理放在事务外。M0 锁定实际通过构建的依赖版本与锁文件，不使用浮动版本作为交付依据。
 
-桌面采用锁定版本 Electron 44.6.0；主进程以系统 Node.js 24 启动后端，避免 SQLite 与 Electron ABI 耦合。Markdown 使用 react-markdown 10.1.0，禁用原始 HTML。桌面依赖、校验和与锁文件一起核对。
+桌面采用锁定版本 Electron 44.6.0；主进程以系统 Node.js 24 启动后端，避免 SQLite 与 Electron ABI 耦合。Markdown 使用 react-markdown 10.1.0 与 remark-gfm 4.0.1，禁用原始 HTML，外部图片不自动请求。桌面依赖、校验和与锁文件一起核对。
 
 默认订阅通过 Codex CLI 0.160.0 或更新版本的 App Server 接入，认证与刷新交给官方运行时，不读取 auth.json 或改写用户 config.toml。旧 SIWC 身份验证保留 jose 6.2.12 和 OpenAI OIDC/JWKS；动态注册、稳定 host ID、客户端与 subject 隔离规则不变。
 
 原生模型适配器分别处理两家的请求和流式协议；可复用官方 SDK。Pi 的模型库可以在以后替换适配器内部实现，业务代码只依赖平台接口。
 
 ```text
-apps/web/                 工作台
+apps/web/                 对话与预览界面
 apps/desktop/             独立桌面窗口与启动页
 apps/server/              API、SSE、启动与恢复
 packages/contracts/      Schema 与事件协议
@@ -240,9 +240,12 @@ compileContext生成ContextRuntimeMetrics，运行时将compiled、streaming、s
 | POST /runs/:id/actions | start、pause、resume、cancel；支持 taskId 范围，返回操作状态 |
 | POST /runs/:id/decisions | 提交权限或待核验结果的用户决定，绑定具体请求及版本 |
 | GET /runs/:id/events?after=seq | SSE 增量事件，支持断线续接与序号去重 |
-| GET /artifacts/:id | 校验访问范围后读取产物；文件必须从已登记引用解析 |
+| GET /artifacts/:id | 校验访问范围后流式下载产物；仅使用已登记引用，核验完整哈希 |
+| GET /artifacts/:id/preview?encoding&offset&limit&version | 产物文本分页或二进制元数据；磁盘对象及 SQLite 压缩对象均有界读取 |
+| GET /projects/:id/files?path&encoding&offset&limit&version | 项目目录及文本分页；字符边界完整，文件版本冲突返回 FILE_CHANGED |
+| GET /projects/:id/resources/* | 登录与项目范围校验后的本地资源流；图片/PDF 支持单段 Range |
 | GET /runs/:id/tasks/:taskId/preview?path=相对路径 | 只读文件快照；可选 path 限定当前页面的依赖观察，省略时兼容原全快照行为 |
-| GET /runs/:id/tasks/:taskId/preview/file?path=相对路径 | 只读文件内容、hash 和差异；HTML 返回独立入口的受限资源地址 |
+| GET /runs/:id/tasks/:taskId/preview/file?path&encoding&offset&limit&version | 只读文本分页、当前段 hash 和有限差异；每段最多 256 KiB，版本冲突返回 FILE_CHANGED，资源使用受限入口 |
 
 事件至少包括 `run.updated`、`plan.proposed`、`task.updated`、`agent.started`、`message.delta`、`message.completed`、`tool.started`、`tool.completed`、`decision.required`、`artifact.created`、`usage.updated`、`error`。持久事件带 runId 和 seq；文本增量是临时帧，重连以已落盘消息和状态快照恢复，不能把临时帧当检查点。
 
@@ -265,6 +268,8 @@ compileContext生成ContextRuntimeMetrics，运行时将compiled、streaming、s
 预览 API 按 run/task 校验归属和读取授权，路径限定当前代理工作区，拒绝 junction、符号链接、Git 内部目录和常见密钥文件。快照和 Git diff 全程只读。HTML 资源凭短期随机能力令牌读取，令牌限制在对应代理及页面目录；此类资源允许无凭据 CORS 以支持沙箱模块加载，不开放 API CORS。HTML 使用独立源沙箱，只加载该目录资源，阻止顶层导航、弹窗、外部网络和 Node 访问。
 
 页面支持静态 HTML、本地脚本/样式、Markdown、图片及常见构建目录，约 1.5 秒同步文件列表。选中 HTML 按实际内容 hash 决定重载，同内容保存与无关列表更新保留页面；已实际请求的本地依赖按入口独立观察，以 size/mtime/ctime 版本检查变化，只轮询当前选中页面的依赖。每页最多观察 1,500 条路径，超过时提示手动刷新。文件首次失败加两次自动重试后保留错误，列表/资源变化及自动更新开关不重开同一版本预算，手动重试可恢复。代理动态独立展示流式会话、工具记录和产物。动态后端和依赖外部 API 的应用不在此静态预览验收内；TSX/JSX 入口需先构建。预览不自动执行项目命令。
+
+项目、代理与产物使用共享 Markdown 文档渲染，支持 GFM 表格、任务列表、删除线、脚注、嵌套列表、代码复制、本地图片和跨文档锚点；对话模型消息也使用相同排版。大文本使用分页与位置跳转，Markdown 每段 64 KiB，代理普通源码最多 256 KiB；未请求分页的小文本兼容原完整读取。UTF-8、UTF-16 LE/BE 及 GB18030 保持字符边界。分页 Markdown 的跨段代码、表格和引用不能保证整块排版，提供源码核对。超过 8 MiB 的 HTML 默认源码，点击加载后才整页渲染；资源有界流式传送不代表浏览器可以同时排版任意大小的页面。大型当前文件或基线超过 1 MiB 时跳过完整 Git diff，不显示为无差异。图片、PDF 及 HTML/CSS 不沿用旧 12 MiB 拒绝上限；不支持的二进制格式提供元数据及下载。产物预览和下载保留完整 SHA-256 核验，SQLite gzip 从只读快照分段解压；首次核验和压缩对象远处跳转可能耗时，取消会释放读取及数据库快照。
 
 ## 十 施工顺序与操作入口
 
@@ -944,9 +949,25 @@ server/web类型及构建、局部格式、差异与11份清单/contracts VERSIO
 
 证据为.local-qa/conversation-layout-v0101-KFxrtj/result.json及ui-result.json，截图和脚本均被Git忽略，仍用于验收的材料保留。废弃工作台选中样式已清理，无无用途正式文件、新临时依赖或新清理拒绝。正式源码与文档通过v0.10.1-preview.1本地标签定位，未推送或发布；未重启正式应用、未访问正式数据库或真实密钥，既有实机及供应商验收缺口保留。
 
+### v0.11.0-preview.1 Codex 风格界面与有界文档预览（隔离验收通过，真人实机待验收）
+
+2026-10-09，v0.10.1-preview.1 → v0.11.0-preview.1，以d97d3c5为基线，分支codex/initial-build。统一灰白配色、细边框、32/36px控件、小屏40px点击区域、侧栏选中/焦点、输入、菜单、设置、弹窗与短动效；保留品牌资产，缩小装饰插画。模型、窗口、权限、计划模块及持久草稿流程沿用。全局样式先加载，文件界面样式随后覆盖，解决低高度窗口中文件弹窗裁剪。
+
+共享MarkdownDocument覆盖对话模型消息、项目资料、代理与产物：标题与中文锚点、嵌套列表、GFM表格、任务列表、删除线、脚注及返回定位、代码复制、本地图片和跨文档链接。表格与代码内部滚动，失败图片和不支持的附件显示明确反馈；本地链接限定项目/代理读取范围，外部图片不自动请求，原始HTML禁用。项目资料支持目录筛选、文档/源码、编码、折行、刷新及下载；产物使用同一文档与分页界面，关闭、换项目或任务会取消读取并忽略迟到响应。
+
+文本预览新增offset/limit/version及页元数据，浏览器Markdown和项目/产物文本每段64KiB，代理普通源码每段最多256KiB；翻页历史最多128项，提供按位置跳转。UTF-8、UTF-16 LE/BE和GB18030保留完整字符，100%跳转仍可读取有效末段，文件变化409后回到开头并提示。磁盘资源64KiB流式读取并响应背压，HTML/CSS跨块改写本地根路径，图片/PDF支持单段Range；保持授权、敏感路径、junction和沙箱边界。产物磁盘对象及SQLite gzip对象保留SHA-256核验、有限缓存、单飞、只读快照及取消释放，末块核验失败不发送成功完整流；兼容旧对象迁移。大型当前文件或基线超过1MiB时跳过自动完整Git差异，普通小文件沿用有限diff。
+
+已知限制：大Markdown按片段渲染，跨段代码块、表格和引用需要源码核对；不是整份无损排版。超过8MiB的HTML默认源码，明确点击加载后才请求整页，浏览器整页渲染仍受内存限制。首次巨大产物哈希核验、GB18030远处跳转和gzip跳读可能线性扫描，允许取消；不支持的二进制格式保留元数据及下载。未新增真实供应商验收；既有主包超过500kB的构建提示仍存在，本轮约512kB，不阻止构建。
+
+server/web类型、生产构建、局部格式、差异及11份清单/contracts VERSION一致性通过。共72组隔离验证通过：后端23组（19组大文件/编码/授权/资源/取消，3组流完整性，1组巨大Git diff）；源界面18组（7组代理预览、7组共享文件阅读、4组最终预览边界）；最终dist会话回归12组；真实本机API与最终dist项目/代理/SQLite压缩产物界面3组；原有核心16组。四种尺寸覆盖1440/900/390/320宽及低高度，文件弹窗可滚到完整控件；项目/聊天/刷新草稿、Ctrl+Enter单次提交、IME、迟到创建、无关文件更新保留HTML输入与有限重试保持。专项外网、真实凭据、模型调用为0；最终真实API预览execution=0，会话resume仅为空计数函数；临时SQLite integrity=ok，界面console errors为空。核心验证采用原协议夹具及合成执行器，不代表真实模型。
+
+证据均被Git忽略：.local-qa/large-preview-v0110-MsCfs6/results.json、stream-integrity-v0110-LsohKc/results.json、large-preview-v0110-r9v9qh/results.json、preview-panel-v0110-piELTM/result.json、file-reading-v0110-Cw5CLp/result.json、preview-panel-v0110-uZlRgg/result.json、conversation-layout-v0110-9QXHNW/result.json、preview-full-v0110-kvew5I/result.json及acceptance-ZwlI07/results.json。仍有复核用途的脚本和截图保留；已删除两份无用途的临时生成/拼接脚本。自动审批以“blocked by policy”拒绝递归清理6个已替代QA目录，未提供进一步原因：large-preview-v0110-0h8iS1、0YT0kR、96pVGx、woqS41，file-reading-v0110-41DpDM、LBn2ls；目录保持ignored，未绕过拒绝。本轮正式差异不包含测试材料、调试入口、缓存或新临时依赖。
+
+11份包清单/contracts VERSION同步0.11.0-preview.1，文档同步0.11.0，remark-gfm 4.0.1与锁文件一起维护。schema3及既有数据兼容，分页查询和响应字段可选，小文件未请求分页时保持完整读取。源码与说明通过v0.11.0-preview.1本地标签定位，未推送或发布；正式应用、服务、数据库和真实密钥未访问，此前真人实机及供应商/恢复缺口保留。
+
 ## 十二 版本管理与参考依据
 
-工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐，`v0.10.0-preview.1`标签定位上下文窗口及分层压缩，`v0.10.1-preview.1`标签定位导航和输入区优化的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.10.1，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
+工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐，`v0.10.0-preview.1`标签定位上下文窗口及分层压缩，`v0.10.1-preview.1`标签定位导航和输入区优化，`v0.11.0-preview.1`标签定位Codex风格界面、共享Markdown与有界文件预览的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.11.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
 
 交付前核对差异、链接和版本，删除本次产生且已无用途的临时文件；产物、用户文件和仍用于验收的本地材料保留。版本记录只写日期、范围、验证结论和对应标签，提交通过标签定位。
 
@@ -991,10 +1012,12 @@ server/web类型及构建、局部格式、差异与11份清单/contracts VERSIO
 | 2026-10-08 | 0.9.0 | 0.8.2-preview.1 → 0.9.0-preview.1：模型输入、侧栏选中样式、前后端按需计划对齐模块；schema3与执行协议兼容 | 类型/构建/格式/差异、10组后端模块、9组模型UI、6组计划UI、16组核心回归通过；正式服务未重启，真人实机待验收 | v0.9.0-preview.1 |
 | 2026-10-09 | 0.10.0 | 0.9.0-preview.1 → 0.10.0-preview.1：实时上下文指标、手动/直属父模型托管窗口、分层压缩和原文/公开工具参数回查；schema3兼容 | 类型/构建/格式/差异/版本及60组隔离验证通过；正式服务未重载，真实模型质量和性能待验收 | v0.10.0-preview.1 |
 | 2026-10-09 | 0.10.1 | 0.10.0-preview.1 → 0.10.1-preview.1：移除工作台入口，自适应紧凑输入、控件与导航文案整理；流程/schema3兼容 | 类型/构建/格式/差异/版本及12组最终dist隔离UI通过，四尺寸、草稿、快捷键/IME、慢创建保护；正式应用未重载 | v0.10.1-preview.1 |
+| 2026-10-09 | 0.11.0 | 0.10.1-preview.1 → 0.11.0-preview.1：Codex风格灰白界面、共享GFM Markdown、文本分页/跳转、资源有界流与压缩产物完整性；schema3兼容 | 类型/构建/格式/差异/版本及72组隔离验证通过，编码/路径/取消/哈希/窗口/草稿覆盖；正式应用未重载，分页Markdown跨段排版有限 | v0.11.0-preview.1 |
 
 | 参考 | 采用的设计依据 |
 | --- | --- |
 | [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window/) / [Security](https://www.electronjs.org/docs/latest/tutorial/security/) | 独立窗口、contextIsolation、sandbox、禁用 Node 和外部导航 |
+| [remark-gfm](https://github.com/remarkjs/remark-gfm) | 2026-10-09核对并锁定4.0.1；为共享Markdown加入表格、任务列表、删除线、自动链接及脚注语法 |
 | [DeepSeek Harness 架构](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/architecture.md) | 生命周期、事件记录与上下文投影；首版不耦合其完整插件树 |
 | [DSH 客户端模块](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/README.md) / [卸载流程](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/src/client/entry-lifecycle.ts) | 计划对齐借鉴按需加载、pending共享、过期保护及异步清理；Elysia使用自己的固定模块契约 |
 | [DSH 工具结果裁剪](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction-tool-result-pruner/README.md) / [压缩契约](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction/README.md) | 2026-10-09核对，参考先裁剪工具大输出、原文留存、完整调用边界与历史资料角色；8192/4096/1024码点借鉴其默认值，75%/60%为Elysia默认值 |

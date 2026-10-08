@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, apiBytes, mutation, initializeSession, ApiError, canRetryConnection } from './api';
+import './style.css';
+import './motion.css';
+import { api, mutation, initializeSession, ApiError, canRetryConnection } from './api';
 import { PreviewPanel } from './PreviewPanel';
 import { ProjectFiles } from './ProjectFiles';
+import { ArtifactFilePreview } from './ArtifactFilePreview';
+import { MarkdownDocument } from './MarkdownDocument';
 import { manageUsage } from './desktop';
 import { VERSION, minimumContextWindowTokens } from '../../../packages/contracts/src/index';
-import { isBinaryFile } from '../../../packages/contracts/src/files';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -59,8 +62,6 @@ import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import { useDrawerFocus, useViewportMatch } from './ResponsiveLayout';
-import './style.css';
-import './motion.css';
 type Detail = {
   run: Run;
   tasks: Task[];
@@ -75,12 +76,7 @@ type Detail = {
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
 type ArtifactTarget = Pick<Artifact, 'id' | 'name' | 'runId'>;
-type ArtifactView = ArtifactTarget &
-  (
-    | { status: 'loading' }
-    | { status: 'error'; error: string }
-    | { status: 'ready'; text: string | null; bytes: number }
-  );
+type ArtifactView = ArtifactTarget;
 type ReadSource = 'session' | 'lists' | 'detail';
 type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
 function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
@@ -300,13 +296,6 @@ function App() {
   const sessionReady = useRef(false);
   const connectPending = useRef(false);
   const sessionRequest = useRef(0);
-  const artifactSequence = useRef(0);
-  const artifactRequest = useRef<{
-    id: string;
-    runId: string;
-    sequence: number;
-    controller: AbortController;
-  } | null>(null);
   const replyKey = `draft:run:${runId}`;
   const reply =
     typeof cacheState.entries[replyKey]?.value === 'string'
@@ -326,12 +315,8 @@ function App() {
     };
   }, [cache]);
   const closeArtifact = useCallback(() => {
-    artifactSequence.current++;
-    artifactRequest.current?.controller.abort();
-    artifactRequest.current = null;
     setArtifactView(null);
   }, []);
-  useEffect(() => () => artifactRequest.current?.controller.abort(), []);
   const clearReadIssue = useCallback((source: ReadSource, request = Infinity) => {
     setReadIssues((old) => {
       if (!old[source] || old[source]!.request > request) return old;
@@ -741,44 +726,9 @@ function App() {
     act(() =>
       mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
     );
-  async function openArtifact(a: ArtifactTarget) {
+  function openArtifact(a: ArtifactTarget) {
     if (a.runId !== activeRunId.current) return;
-    if (artifactRequest.current?.id === a.id && artifactRequest.current.runId === a.runId) return;
-    artifactRequest.current?.controller.abort();
-    const target = { id: a.id, name: a.name, runId: a.runId };
-    const request = {
-      id: target.id,
-      runId: target.runId,
-      sequence: ++artifactSequence.current,
-      controller: new AbortController(),
-    };
-    artifactRequest.current = request;
-    const current = () =>
-      !request.controller.signal.aborted &&
-      activeRunId.current === target.runId &&
-      artifactSequence.current === request.sequence &&
-      artifactRequest.current?.id === target.id &&
-      artifactRequest.current.runId === target.runId;
-    setArtifactView({ ...target, status: 'loading' });
-    try {
-      const bytes = await apiBytes('/artifacts/' + target.id, request.controller.signal);
-      if (current())
-        setArtifactView({
-          ...target,
-          status: 'ready',
-          text: isBinaryFile(target.name, bytes) ? null : new TextDecoder().decode(bytes),
-          bytes: bytes.length,
-        });
-    } catch (error) {
-      if (current())
-        setArtifactView({
-          ...target,
-          status: 'error',
-          error: error instanceof Error ? error.message : '无法读取产物，请重试。',
-        });
-    } finally {
-      if (artifactRequest.current === request) artifactRequest.current = null;
-    }
+    setArtifactView({ id: a.id, name: a.name, runId: a.runId });
   }
   if (!ready)
     return (
@@ -1258,7 +1208,8 @@ function App() {
                                   : ''}
                               </small>
                             </div>
-                            {m.text && <p>{m.text}</p>}
+                            {m.text &&
+                              (m.role === 'assistant' ? <MarkdownDocument text={m.text} /> : <p>{m.text}</p>)}
                             {m.calls?.map((c) => (
                               <ToolActivity
                                 key={c.id}
@@ -1286,7 +1237,7 @@ function App() {
                             正在生成
                             <span className="typing-dot" />
                           </div>
-                          <p>{value}</p>
+                          <MarkdownDocument text={value} />
                         </div>
                       </div>
                     ))}
@@ -2057,31 +2008,13 @@ function App() {
             close={closeArtifact}
             wide
           >
-            <div className="artifact-preview">
-              {artifactView.status === 'loading' ? (
-                <p role="status">正在读取产物内容…</p>
-              ) : artifactView.status === 'error' ? (
-                <div className="inline-warning" role="alert">
-                  <p>读取产物失败：{artifactView.error}</p>
-                  <button onClick={() => void openArtifact(artifactView)}>重试</button>
-                </div>
-              ) : artifactView.text === null ? (
-                <p>
-                  已登记附件（{Math.max(1, Math.ceil(artifactView.bytes / 1024))}{' '}
-                  KiB），下载后使用对应应用打开。
-                </p>
-              ) : (
-                <pre>{artifactView.text}</pre>
-              )}
-            </div>
+            <ArtifactFilePreview key={artifactView.id} id={artifactView.id} />
             <footer className="modal-footer">
-              {artifactView.status === 'ready' && (
-                <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
-                  下载产物
-                </a>
-              )}
+              <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
+                下载产物
+              </a>
               <button className="primary" onClick={closeArtifact}>
-                {artifactView.status === 'ready' ? '完成' : '关闭'}
+                关闭
               </button>
             </footer>
           </Modal>

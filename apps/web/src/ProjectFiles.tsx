@@ -1,127 +1,166 @@
-import { useEffect, useRef, useState } from 'react';
-import { api } from './api';
-const encodings = [
-  ['auto', '自动'],
-  ['utf-8', 'UTF-8'],
-  ['utf-16le', 'UTF-16 LE'],
-  ['utf-16be', 'UTF-16 BE'],
-  ['gb18030', 'GB18030 / GBK'],
-] as const;
+import { useEffect, useState } from 'react';
+import { Icon } from './Icon';
+import { FilePageControls, formatFileBytes } from './FilePageControls';
+import { FileContentView, fileEncodingOptions } from './FileContentView';
+import { useFilePage } from './useFilePage';
+import './project-files.css';
+
 export function ProjectFiles({ projectId }: { projectId: string }) {
-  const [selection, setSelection] = useState({ projectId, path: '.', encoding: 'auto', file: false });
-  const { path, encoding, file } =
-    selection.projectId === projectId ? selection : { path: '.', encoding: 'auto', file: false };
-  const [result, setResult] = useState<{ key: string; value?: any; error?: string; loading: boolean }>({
-    key: '',
-    loading: true,
+  const [selection, setSelection] = useState({
+    projectId,
+    path: '.',
+    encoding: 'auto',
+    file: false,
+    anchor: '',
   });
+  const { path, encoding, file, anchor } =
+    selection.projectId === projectId ? selection : { path: '.', encoding: 'auto', file: false, anchor: '' };
   const [revision, setRevision] = useState(0);
-  const request = useRef<AbortController | null>(null);
-  const pending = useRef(false);
-  const key = JSON.stringify([projectId, path, encoding, revision]);
-  const value = result.key === key ? result.value : undefined;
-  const error = result.key === key ? result.error : '';
-  const loading = result.key !== key || result.loading;
-  const choose = (nextPath: string, nextFile: boolean, nextEncoding = 'auto') => {
-    if (nextPath === path && nextEncoding === encoding) return;
-    request.current?.abort();
-    pending.current = true;
-    setSelection({ projectId, path: nextPath, encoding: nextEncoding, file: nextFile });
+  const [filter, setFilter] = useState('');
+  const reader = useFilePage(
+    '/projects/' + projectId + '/files?path=' + encodeURIComponent(path),
+    encoding,
+    revision,
+  );
+  const { value, loading, error } = reader;
+  const choose = (next: string, isFile: boolean, nextEncoding = 'auto') => {
+    setFilter('');
+    const hash = next.indexOf('#');
+    setSelection({
+      projectId,
+      path: hash < 0 ? next : next.slice(0, hash),
+      encoding: nextEncoding,
+      file: isFile,
+      anchor: hash < 0 ? '' : next.slice(hash + 1),
+    });
   };
   useEffect(() => {
-    setSelection({ projectId, path: '.', encoding: 'auto', file: false });
+    setSelection({ projectId, path: '.', encoding: 'auto', file: false, anchor: '' });
+    setFilter('');
   }, [projectId]);
-  useEffect(() => {
-    let alive = true;
-    const controller = new AbortController();
-    request.current = controller;
-    pending.current = true;
-    setResult({ key, loading: true });
-    api(
-      '/projects/' + projectId + '/files?path=' + encodeURIComponent(path) + '&encoding=' + encoding,
-      undefined,
-      undefined,
-      controller.signal,
-    )
-      .then((value) => {
-        if (alive && !controller.signal.aborted) setResult({ key, value, loading: false });
-      })
-      .catch((e) => {
-        if (alive && !controller.signal.aborted) setResult({ key, error: e.message, loading: false });
-      })
-      .finally(() => {
-        if (request.current === controller) {
-          request.current = null;
-          pending.current = false;
-        }
-      });
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [projectId, path, encoding, key]);
   const parent = path.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '.';
+  const entries =
+    value?.entries?.filter((entry) => entry.name.toLowerCase().includes(filter.toLowerCase())) || [];
   return (
-    <div className="project-files">
+    <div className="project-files" aria-busy={loading}>
       <div className="project-files-toolbar">
-        <button className="secondary" disabled={path === '.'} onClick={() => choose(parent, false)}>
-          上一级
-        </button>
-        <code>{path}</code>
         <button
-          className="secondary"
-          disabled={loading}
-          onClick={() => {
-            if (loading || pending.current) return;
-            pending.current = true;
-            setRevision((v) => v + 1);
-          }}
+          type="button"
+          className="icon-button"
+          aria-label="上一级文件夹"
+          title="上一级文件夹"
+          disabled={path === '.'}
+          onClick={() => choose(parent, false)}
         >
-          刷新
+          <Icon name="arrow" size={16} />
+        </button>
+        <code title={path}>{path === '.' ? '项目文件' : path}</code>
+        {value?.page && <span className="project-file-size">{formatFileBytes(value.page.totalBytes)}</span>}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="刷新文件"
+          title="刷新文件"
+          disabled={loading}
+          onClick={() => setRevision((value) => value + 1)}
+        >
+          <Icon name="refresh" size={16} />
         </button>
       </div>
-      {(file || (value && !value.directory)) && (
-        <div className="project-file-encoding">
-          <label>
-            文本编码
-            <select value={encoding} onChange={(e) => choose(path, true, e.target.value)}>
-              {encodings.map(([name, label]) => (
-                <option key={name} value={name}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="field-help">
-            {value?.encoding && (
-              <>
-                读取编码：{encodings.find(([name]) => name === value.encoding)?.[1] || value.encoding}
-                {value.encodingSource === 'bom' ? '（BOM）' : ''}。{' '}
-              </>
-            )}
-            仅改变读取方式，不修改文件。
-          </p>
+      {(value ? !value.directory : file) && (
+        <div className="file-encoding-choice">
+          {(value?.text !== null || !value) && (
+            <label>
+              编码{' '}
+              <select
+                aria-label="文本编码"
+                value={encoding}
+                disabled={loading}
+                onChange={(event) => choose(path, true, event.target.value)}
+              >
+                {fileEncodingOptions.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {value?.resourceUrl && (
+            <a className="file-download-link" href={value.resourceUrl} download={path.split('/').at(-1)}>
+              下载
+            </a>
+          )}
         </div>
       )}
-      {error && (
-        <p className="inline-warning" role="alert">
-          {error}
+      {reader.notice && (
+        <p className="file-read-notice" role="status">
+          {reader.notice}
         </p>
       )}
-      {loading && <p role="status">正在读取本机文件…</p>}
-      {value?.directory ? (
-        <div className="project-file-list">
-          {value.entries.map((e: any) => (
-            <button key={e.path} onClick={() => choose(e.path, !e.directory)}>
-              <span>{e.directory ? '文件夹' : '文件'}</span>
-              {e.name}
-            </button>
-          ))}
-          {!value.entries.length && <p>此文件夹没有可预览的文件。</p>}
-          {value.truncated && <p className="field-help">显示前 300 项。</p>}
+      {error && (
+        <div className="inline-warning" role="alert">
+          <span>{error}</span>
+          <button type="button" disabled={loading} onClick={reader.restart}>
+            重试
+          </button>
         </div>
+      )}
+      {loading && (
+        <p className="file-loading" role="status">
+          正在读取文件…
+        </p>
+      )}
+      {value?.directory ? (
+        <>
+          <div className="project-file-search">
+            <Icon name="search" size={15} />
+            <input
+              type="search"
+              aria-label="筛选项目文件"
+              placeholder="筛选文件"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          </div>
+          <div className="project-file-list">
+            {entries.map((entry) => (
+              <button type="button" key={entry.path} onClick={() => choose(entry.path, !entry.directory)}>
+                <Icon name={entry.directory ? 'folder' : 'file'} size={17} />
+                <span className="project-file-name">{entry.name}</span>
+                <small>
+                  {entry.directory ? '文件夹' : entry.size === undefined ? '' : formatFileBytes(entry.size)}
+                </small>
+              </button>
+            ))}
+            {!entries.length && (
+              <p className="file-read-notice">{filter ? '没有匹配的文件。' : '此文件夹没有文件。'}</p>
+            )}
+            {value.truncated && <p className="file-read-notice">目录显示前 300 项；进入子目录可继续浏览。</p>}
+          </div>
+        </>
       ) : (
-        value && <pre className="project-file-text">{value.text}</pre>
+        value && (
+          <>
+            {value.page?.paged && (
+              <FilePageControls
+                page={value.page}
+                loading={loading}
+                hasPrevious={reader.hasPrevious}
+                previous={reader.previous}
+                next={reader.next}
+                jump={reader.jump}
+                restart={reader.restart}
+              />
+            )}
+            <FileContentView
+              key={projectId + ':' + path + ':' + encoding}
+              file={value}
+              onLocalLink={(target) => choose(target, true)}
+              anchor={anchor}
+            />
+          </>
+        )
       )}
     </div>
   );

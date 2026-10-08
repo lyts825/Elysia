@@ -1,8 +1,8 @@
 :root {
-  --motion-press: 90ms;
-  --motion-fast: 140ms;
-  --motion-enter: 240ms;
-  --motion-exit: 160ms;
+  --motion-press: 70ms;
+  --motion-fast: 120ms;
+  --motion-enter: 160ms;
+  --motion-exit: 120ms;
   --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
@@ -10,20 +10,15 @@ button {
   transition:
     background-color var(--motion-fast),
     border-color var(--motion-fast),
-    color var(--motion-fast),
-    transform var(--motion-fast) var(--ease-enter);
+    color var(--motion-fast);
 }
 :is(.primary, .secondary, .new-task, .icon-button, .send-button):active:not(:disabled) {
-  transform: scale(0.97);
   transition-duration: var(--motion-press);
 }
 .home-heading,
 .composer,
 .run-toolbar {
   animation: surface-arrive var(--motion-enter) var(--ease-enter) both;
-}
-.empty-art {
-  animation: artwork-arrive 320ms var(--ease-enter) both;
 }
 .error-banner,
 .dialog-notice,
@@ -58,7 +53,6 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 7px;
-  box-shadow: 0 1px 3px #25403207;
   transform-origin: left center;
   z-index: -1;
 }
@@ -78,22 +72,10 @@ button {
 }
 @keyframes surface-arrive {
   from {
-    opacity: 0.65;
-    transform: translateY(6px);
+    opacity: 0.8;
   }
   to {
     opacity: 1;
-    transform: none;
-  }
-}
-@keyframes artwork-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(5px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 @keyframes working-pulse {
@@ -111,8 +93,5 @@ button {
   *::after {
     animation: none !important;
     transition: none !important;
-  }
-  button:active:not(:disabled) {
-    transform: none !important;
   }
 }

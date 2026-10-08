@@ -9,14 +9,14 @@
   width: 100%;
   max-width: 908px;
   margin: auto;
-  padding: 32px 24px 48px;
+  padding: 32px 24px 64px;
 }
 .home-heading {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 .home-heading h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: -0.025em;
@@ -24,23 +24,23 @@
 .composer {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--surface);
   transition:
     border-color var(--motion-fast),
     box-shadow var(--motion-fast);
 }
 .composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px #965d6b12;
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .composer textarea {
   display: block;
   width: 100%;
   field-sizing: content;
-  min-height: 72px;
+  min-height: 88px;
   max-height: min(40vh, 280px);
-  padding: 16px 18px 10px;
+  padding: 16px 16px 10px;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -59,8 +59,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px 12px;
+  gap: 8px;
+  padding: 6px 10px 10px;
 }
 .composer-options {
   display: flex;
@@ -80,6 +80,7 @@
   max-width: 360px;
   min-width: 0;
   padding: 7px 9px;
+  min-height: 32px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -98,20 +99,23 @@
 .composer-model > svg:last-child {
   transform: rotate(90deg);
 }
-.composer-model:hover {
-  background: var(--canvas);
+.composer-model:hover:not(:disabled),
+.composer-model[aria-expanded='true'] {
+  background: var(--surface-hover);
 }
 .composer-model-panel {
   position: fixed;
   inset: auto;
   margin: 0;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface);
-  color: #2e3935;
+  color: var(--text);
   overflow: auto;
-  box-shadow: 0 12px 36px #17251f24;
+  box-shadow: var(--menu-shadow);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
 }
 .composer-model-heading,
 .composer-model-footer {
@@ -121,11 +125,13 @@
   gap: 12px;
 }
 .composer-model-heading {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   font-size: 13px;
 }
 .composer-model-footer {
-  margin-top: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .reply-model-controls {
   display: flex;
@@ -152,11 +158,12 @@
 .composer-shortcut {
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
 }
 .composer-actions .primary {
   min-width: 76px;
   min-height: 34px;
-  padding: 8px 12px;
+  padding: 7px 12px;
 }
 .home-connection {
   display: flex;
@@ -164,7 +171,7 @@
   justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -173,7 +180,7 @@
     padding: 24px 16px 32px;
   }
   .home-heading h1 {
-    font-size: 20px;
+    font-size: 22px;
   }
   .composer textarea {
     padding: 14px 14px 8px;
@@ -188,6 +195,10 @@
   .reply-model-controls .reply-hint {
     display: none;
   }
+  .composer-actions .primary,
+  .composer-model {
+    min-height: 36px;
+  }
 }
 @media (max-width: 420px) {
   .composer-bottom {
@@ -198,5 +209,11 @@
   }
   .reply-model-controls .composer-model {
     max-width: 100%;
+  }
+  .composer-options {
+    gap: 2px;
+  }
+  .composer-model {
+    padding-inline: 7px;
   }
 }

@@ -1,0 +1,97 @@
+.project-files.project-files {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+  min-width: 0;
+}
+.project-files-toolbar {
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.project-files-toolbar > .icon-button:first-child svg {
+  transform: rotate(180deg);
+}
+.project-files-toolbar code {
+  font:
+    12px/1.6 'Cascadia Code',
+    Consolas,
+    monospace;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.project-file-size {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.file-encoding-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-download-link {
+  color: var(--secondary);
+  text-decoration: none;
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.file-download-link:hover {
+  background: var(--surface-hover, #eee);
+}
+.project-file-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding-left: 10px;
+  margin-bottom: 8px;
+}
+.project-file-search input {
+  min-width: 0;
+  padding: 7px 8px 7px 0;
+  border: 0;
+  font-size: 12px;
+  background: transparent;
+}
+.project-file-search:focus-within {
+  outline: 2px solid var(--border-strong, #bbb);
+  outline-offset: 1px;
+}
+.project-file-search input:focus {
+  box-shadow: none;
+}
+.project-file-list button {
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.project-file-list button > svg {
+  flex: none;
+  color: var(--muted);
+}
+.project-file-list button .project-file-name {
+  color: var(--text, #202020);
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-file-list button small {
+  color: var(--muted);
+  font-size: 11px;
+  flex: none;
+}
+@media (max-width: 560px) {
+  .project-files {
+    padding: 12px;
+  }
+  .project-file-list {
+    max-height: 52vh;
+  }
+}

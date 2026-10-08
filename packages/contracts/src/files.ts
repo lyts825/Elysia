@@ -1,3 +1,24 @@
+export const textFileEncodings = ['auto', 'utf-8', 'utf-16le', 'utf-16be', 'gb18030'] as const;
+export type TextFileEncoding = (typeof textFileEncodings)[number];
+export type ResolvedTextEncoding = Exclude<TextFileEncoding, 'auto'>;
+export type TextFilePage = {
+  requestedOffset: number;
+  offset: number;
+  endOffset: number;
+  nextOffset: number | null;
+  totalBytes: number;
+  version: string;
+  paged: boolean;
+};
+export type TextPageOptions = {
+  offset?: number;
+  limit?: number;
+  version?: string;
+  signal?: AbortSignal;
+};
+export const TEXT_PAGE_BYTES = 256 * 1024;
+export const LEGACY_TEXT_BYTES = 1024 * 1024;
+
 const media: Record<string, string> = {
   html: 'text/html',
   htm: 'text/html',

@@ -8,32 +8,41 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 10px 4px 0;
-  padding: 0 8px;
-  border: 1px solid #647b70;
+  margin: 8px 2px 0;
+  padding: 0 9px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  color: #c4d1c3;
+  color: var(--muted);
+  background: var(--surface-hover);
+  transition:
+    border-color var(--motion-fast),
+    background-color var(--motion-fast);
+}
+.session-search:focus-within {
+  border-color: var(--border-strong);
+  background: var(--surface);
 }
 .session-search input {
   min-width: 0;
-  padding: 7px 0;
+  padding: 8px 0;
   border: 0;
   background: transparent;
-  color: #fffaf0;
-  font-size: 12px;
+  color: var(--text);
+  font-size: 13px;
   box-shadow: none;
 }
 .session-search input::placeholder {
-  color: #b4c7b8;
+  color: var(--muted);
 }
 .session-tree {
   overflow: auto;
   min-height: 0;
   flex: 1;
-  padding-bottom: 10px;
+  padding-block: 4px 10px;
+  scroll-padding-block: 8px;
 }
 .session-heading {
-  padding: 12px 4px 5px;
+  padding: 12px 2px 4px;
   gap: 5px;
 }
 .session-heading .group-toggle {
@@ -45,7 +54,7 @@
   min-height: 28px;
 }
 .session-heading .group-toggle small {
-  color: #afc2b3;
+  color: var(--muted);
   margin-left: 3px;
 }
 .group-toggle[aria-expanded='true'] > svg,
@@ -54,6 +63,7 @@
 }
 .heading-actions {
   display: flex;
+  gap: 2px;
 }
 .session-navigation .project-list {
   overflow: visible;
@@ -69,24 +79,26 @@
   align-items: center;
   border-radius: 8px;
   position: relative;
+  margin-bottom: 2px;
+  transition: background-color var(--motion-fast);
 }
 .session-row.selected {
-  background: #46625a;
-  color: #fffaf0;
+  background: var(--surface-selected);
+  color: var(--text);
 }
 .project-row.selected {
-  background: #38524a;
+  background: var(--surface-hover);
 }
 .project-row:hover,
 .session-row:hover {
-  background: #38524a;
+  background: var(--surface-hover);
 }
 .session-row.selected:hover {
-  background: #4a675e;
+  background: var(--surface-selected);
 }
 .session-navigation .history-item:focus-visible,
 .session-navigation .project-item:focus-visible {
-  outline: 1px solid #edc9c2;
+  outline: 2px solid var(--accent);
   outline-offset: -3px;
 }
 .session-navigation .history-item:focus:not(:focus-visible),
@@ -99,7 +111,7 @@
   width: auto;
   min-width: 0;
   background: transparent;
-  padding: 8px 5px;
+  padding: 7px 5px;
 }
 .project-row .project-item > span,
 .session-row .history-item > span:nth-child(2) {
@@ -111,40 +123,41 @@
 .session-row .history-item {
   gap: 8px;
   padding-left: 9px;
-  min-height: 36px;
+  min-height: 34px;
+  font-size: 13px;
 }
 .session-row .history-item > small {
   flex: none;
   font-size: 10px;
-  color: #e2c3ba;
+  color: var(--muted);
 }
 .session-row.unread .history-item > span:nth-child(2) {
-  color: #fffaf0;
-  font-weight: 650;
+  color: var(--text);
+  font-weight: 600;
 }
 .unread-dot {
   border-radius: 50%;
   width: 6px;
   height: 6px;
-  background: #e8b7bf;
+  background: var(--accent);
   flex: none;
 }
 .project-toggle,
 .session-more {
   border: 0;
   background: transparent;
-  color: #c4d1c3;
+  color: var(--muted);
   padding: 5px;
   display: grid;
   place-items: center;
-  border-radius: 5px;
+  border-radius: 6px;
   flex: none;
   min-width: 28px;
   min-height: 28px;
 }
 .session-more {
   opacity: 0;
-  margin-right: 3px;
+  margin-right: 2px;
 }
 .project-row:hover .session-more,
 .session-row:hover .session-more,
@@ -152,13 +165,13 @@
 .session-row:focus-within .session-more {
   opacity: 1;
 }
-.project-toggle:hover,
-.session-more:hover {
-  background: #506d60;
+.project-toggle:hover:not(:disabled),
+.session-more:hover:not(:disabled) {
+  background: var(--surface-selected);
 }
 .project-sessions {
-  margin-left: 19px;
-  border-left: 1px solid #536b60;
+  margin-left: 16px;
+  border-left: 1px solid var(--border);
   padding-left: 5px;
 }
 .empty-session {
@@ -167,39 +180,43 @@
   gap: 7px;
   border: 0;
   background: transparent;
-  color: #bbcbbd;
+  color: var(--muted);
   font-size: 11px;
   padding: 8px;
 }
 .session-context-menu {
   position: fixed;
   z-index: 1200;
-  min-width: 260px;
+  min-width: min(244px, calc(100vw - 16px));
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow: auto;
-  padding: 7px;
+  padding: 5px;
   background: var(--surface);
-  color: #34433b;
+  color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 36px #17251f30;
+  border-radius: 10px;
+  box-shadow: var(--menu-shadow);
 }
 .session-context-menu > button {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
   border: 0;
   border-radius: 6px;
   background: transparent;
   text-align: left;
-  padding: 9px 10px;
+  min-height: 36px;
+  padding: 7px 10px;
   font-size: 13px;
 }
-.session-context-menu > button:hover,
+.session-context-menu > button:hover:not(:disabled),
+.session-context-menu > button:focus-visible:not(:disabled) {
+  background: var(--surface-hover);
+}
 .session-context-menu > button:focus-visible {
-  background: #f0f3ed;
+  outline-offset: -2px;
 }
 .session-context-menu > button > span {
   flex: 1;
@@ -215,19 +232,27 @@
   border-top: 1px solid var(--border);
   border-radius: 0 0 6px 6px;
   margin-top: 4px;
-  padding-top: 12px;
+  padding-top: 10px;
+}
+.session-context-menu > .danger:hover:not(:disabled),
+.session-context-menu > .danger:focus-visible:not(:disabled) {
+  background: #fbeef0;
 }
 .cache-state {
-  padding: 5px 9px;
-  color: #b4c7b8;
+  padding: 6px 10px;
+  color: var(--muted);
   font-size: 10px;
 }
 .cache-state button {
   background: none;
   border: 0;
-  color: #f0c9bf;
+  color: var(--secondary);
   padding: 2px 4px;
   font-size: inherit;
+  border-radius: 4px;
+}
+.cache-state button:hover:not(:disabled) {
+  background: var(--surface-hover);
 }
 .sidebar-collapsed .session-navigation,
 .sidebar-collapsed .cache-state {
@@ -257,6 +282,14 @@
     display: block;
   }
   .session-row .history-item {
+    min-height: 40px;
+  }
+  .project-toggle,
+  .session-more {
+    min-width: 32px;
+    min-height: 32px;
+  }
+  .session-context-menu > button {
     min-height: 40px;
   }
 }

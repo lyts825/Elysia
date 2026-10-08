@@ -1,25 +1,33 @@
 .plan-contract {
-  margin: 16px 0;
+  margin: 12px 16px 16px;
   padding: 12px 14px;
-  background: var(--canvas);
-  border: 1px solid var(--border, #e1e4dc);
-  border-radius: 10px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 .plan-contract summary,
 .plan-task-evidence summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.plan-contract summary:hover,
+.plan-task-evidence summary:hover {
+  color: var(--text);
 }
 .plan-contract .plan-objective {
   color: inherit;
-  margin-top: 14px;
+  margin-block: 12px;
+  font-size: 13px;
+  line-height: 1.7;
 }
 .plan-contract-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 20px;
-  font-size: 13px;
+  gap: 12px 16px;
+  font-size: 12px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .plan-contract-grid ul {
@@ -27,15 +35,24 @@
   padding-left: 18px;
   color: var(--muted);
 }
+.plan-contract-grid strong,
+.plan-task-evidence strong {
+  color: var(--secondary);
+  font-weight: 550;
+}
 .plan-task-evidence {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .plan-task-evidence p {
   margin: 7px 0;
 }
 @media (max-width: 600px) {
+  .plan-contract {
+    margin-inline: 12px;
+  }
   .plan-contract-grid {
     grid-template-columns: minmax(0, 1fr);
   }

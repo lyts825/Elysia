@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
-import { api } from './api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, ApiError } from './api';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type {
   PreviewFile,
@@ -8,7 +7,9 @@ import type {
   PreviewSnapshot,
 } from '../../../packages/contracts/src/preview';
 import { Icon } from './Icon';
-import { EmptyArtwork } from './Brand';
+import { textFileEncodings, type TextFileEncoding } from '../../../packages/contracts/src/files';
+import { MarkdownDocument } from './MarkdownDocument';
+import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { MotionContent, MotionTabs, usePresenceMotion } from './Motion';
 import './preview.css';
 
@@ -24,7 +25,7 @@ const labels: Record<string, string> = {
 };
 const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
   missing: '文件不存在',
-  'too-large': '超过 12 MiB 预览上限',
+  'too-large': '资源超过预览上限',
   unreadable: '文件无法读取',
   restricted: '路径不允许预览',
   'not-file': '路径不是文件',
@@ -60,7 +61,27 @@ export function PreviewPanel({
     agent = agents.find((a) => a.taskId === taskId);
   const [snapshot, setSnapshot] = useState<(PreviewSnapshot & { runId: string }) | null>(null);
   const [filesByTask, setFilesByTask] = useState<Record<string, string>>({});
-  const [content, setContent] = useState<(PreviewFile & { context: string }) | null>(null);
+  const [content, setContent] = useState<
+    | (PreviewFile & {
+        context: string;
+        selectionContext: string;
+        requestedOffset: number;
+        requestedEncoding: TextFileEncoding;
+      })
+    | null
+  >(null);
+  const [readPosition, setReadPosition] = useState<{
+    scope: string;
+    offset: number;
+    history: number[];
+    version?: string;
+    encoding: TextFileEncoding;
+  }>({ scope: '', offset: 0, history: [], encoding: 'auto' });
+  const [fileNotice, setFileNotice] = useState('');
+  const [pendingAnchor, setPendingAnchor] = useState<{ taskId: string; path: string; anchor: string } | null>(
+    null,
+  );
+  const [htmlPermission, setHtmlPermission] = useState('');
   const [view, setView] = useState('page'),
     [auto, setAuto] = useState(true),
     [refresh, setRefresh] = useState(0);
@@ -94,12 +115,52 @@ export function PreviewPanel({
   const selectedVersion = JSON.stringify(
     selectedEntry ? [selectedEntry.size, selectedEntry.modifiedAt, selectedEntry.change] : null,
   );
+  const readScope = JSON.stringify([context, selectedVersion]);
+  const position =
+    readPosition.scope === readScope
+      ? readPosition
+      : { scope: readScope, offset: 0, history: [], encoding: 'auto' as TextFileEncoding };
+  const readKey = JSON.stringify([readScope, position.offset, position.encoding]);
+  const pageLimit = /\.(md|markdown)$/i.test(selected) ? 64 * 1024 : 256 * 1024;
+  const moveTo = (
+    offset: number,
+    history = [...position.history, content?.page?.offset ?? position.offset],
+  ) => {
+    setReadPosition({
+      ...position,
+      offset,
+      history: history.slice(-128),
+      version: content?.page?.version || position.version,
+    });
+    setFileNotice('');
+  };
+  const chooseFile = useCallback(
+    (path: string, anchor = '') => {
+      setFilesByTask((old) => ({ ...old, [taskId]: path }));
+      setPendingAnchor(anchor ? { taskId, path, anchor } : null);
+      setHtmlPermission('');
+    },
+    [taskId],
+  );
+  const followLocalLink = useCallback(
+    (path: string) => {
+      const hash = path.indexOf('#');
+      const filePath = hash < 0 ? path : path.slice(0, hash);
+      if (filePath) {
+        setFilter('');
+        chooseFile(filePath, hash < 0 ? '' : path.slice(hash + 1));
+      }
+    },
+    [chooseFile],
+  );
+  useEffect(() => setHtmlPermission(''), [context]);
   useEffect(() => {
     setSnapshot(null);
     setContent(null);
     setSnapshotError('');
     setFileError('');
     setUpdated('');
+    setFileNotice('');
   }, [runId, taskId]);
   useEffect(() => {
     if (!taskId) return;
@@ -151,7 +212,13 @@ export function PreviewPanel({
     };
   }, [runId, taskId, auto, refresh]);
   useEffect(() => {
-    setContent((old) => (old?.context === context ? old : null));
+    setContent((old) =>
+      old?.selectionContext === context &&
+      old.requestedOffset === position.offset &&
+      old.requestedEncoding === position.encoding
+        ? old
+        : null,
+    );
     setFileError('');
     setFileRetryCount(0);
     setFileRetryPending(false);
@@ -190,17 +257,37 @@ export function PreviewPanel({
       setLoading(true);
       try {
         const result = await api<PreviewFile>(
-          `/runs/${runId}/tasks/${taskId}/preview/file?path=${encodeURIComponent(selected)}`,
+          `/runs/${runId}/tasks/${taskId}/preview/file?` +
+            new URLSearchParams({
+              path: selected,
+              offset: String(position.offset),
+              limit: String(pageLimit),
+              encoding: position.encoding,
+              ...(position.version ? { version: position.version } : {}),
+            }),
           undefined,
           undefined,
           controller.signal,
         );
         if (!disposed) {
-          setContent({ ...result, context });
+          setContent({
+            ...result,
+            context: readKey,
+            selectionContext: context,
+            requestedOffset: position.offset,
+            requestedEncoding: position.encoding,
+          });
           setFileError('');
         }
       } catch (e) {
         if (!disposed) {
+          if (e instanceof ApiError && e.code === 'FILE_CHANGED') {
+            setReadPosition({ ...position, offset: 0, history: [], version: undefined });
+            setContent(null);
+            setFileNotice('文件已更新，已回到开头重新读取。');
+            setRefresh((n) => n + 1);
+            return;
+          }
           failed = true;
           setFileError((e as Error).message);
         }
@@ -221,18 +308,35 @@ export function PreviewPanel({
       cancel();
       if (fileRetries.current === controls) fileRetries.current = null;
     };
-  }, [context, selectedVersion, refresh]);
+  }, [readKey, refresh]);
   useEffect(() => {
     if (auto) fileRetries.current?.resume();
     else fileRetries.current?.cancel();
   }, [auto]);
   const visible = current?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) || [];
+  const selectedIndex = visible.findIndex((file) => file.path === selected);
   const selectedFile =
-    selectedEntry && content?.context === context && content.path === selected ? content : null;
+    selectedEntry &&
+    content?.selectionContext === context &&
+    content.path === selected &&
+    content.requestedOffset === position.offset &&
+    content.requestedEncoding === position.encoding
+      ? content
+      : null;
   const resourceUrl =
-    current?.renderBase && selected
+    selectedFile?.resourceUrl ||
+    (current?.renderBase && selected
       ? current.renderBase + selected.split('/').map(encodeURIComponent).join('/')
-      : '';
+      : '');
+  const markdownBase = current?.renderBase
+    ? current.renderBase +
+      selected.split('/').slice(0, -1).map(encodeURIComponent).join('/') +
+      (selected.includes('/') ? '/' : '')
+    : null;
+  const htmlPermissionKey = JSON.stringify([context, selectedVersion, selectedFile?.page?.version]);
+  const htmlBytes = Math.max(selectedEntry?.size || 0, selectedFile?.page?.totalBytes || 0);
+  const largeHtmlBlocked =
+    selectedFile?.kind === 'html' && htmlBytes > 8 * 1024 * 1024 && htmlPermission !== htmlPermissionKey;
   const liveMessages = messages.filter((m) => m.sessionId === agent?.sessionId && m.role !== 'tool');
   const agentOperations = operations
     .filter((o) => o.taskId === taskId)
@@ -257,7 +361,7 @@ export function PreviewPanel({
           <span className="preview-glyph">
             <Icon name="panel" size={19} />
           </span>
-          <strong>工作预览</strong>
+          <strong>预览</strong>
           <span className="preview-label">{tasks.length} 个代理</span>
         </div>
         <div>
@@ -281,7 +385,7 @@ export function PreviewPanel({
         </div>
       </header>
       <div className="preview-agent-picker">
-        <label htmlFor="preview-agent">查看代理</label>
+        <label htmlFor="preview-agent">代理</label>
         <select id="preview-agent" value={taskId} onChange={(e) => selectTask(e.target.value)}>
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
@@ -294,19 +398,21 @@ export function PreviewPanel({
       </div>
       <div className="preview-agent-info">
         <span>{agent?.providerBinding.model || task?.spec.providerId}</span>
-        <span>深度 {task?.depth ?? 0}</span>
         <strong>{labels[task?.status || '']}</strong>
       </div>
       <MotionTabs className="preview-tabs" label="预览视图" value={view}>
         {[
-          ['page', '页面'],
-          ['diff', '更改'],
-          ['source', '源文件'],
-          ['activity', '代理动态'],
+          ['page', '文档'],
+          ['source', '源码'],
+          ['diff', '变更'],
+          ['activity', '动态'],
         ].map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setView(key)}
+            onClick={() => {
+              if (key === 'diff' && position.offset > 0) moveTo(0, []);
+              setView(key);
+            }}
             aria-pressed={view === key}
             className={view === key ? 'active' : ''}
           >
@@ -355,6 +461,11 @@ export function PreviewPanel({
             重试
           </button>
         </div>
+      )}
+      {fileNotice && (
+        <p className="preview-notice" role="status">
+          {fileNotice}
+        </p>
       )}
       {view === 'page' && selectedFile?.kind === 'html' && resourceIssueCount > 0 && (
         <div role="status" className="preview-error">
@@ -439,16 +550,19 @@ export function PreviewPanel({
       ) : (
         <>
           <div className="preview-file-bar">
-            <input
-              aria-label="筛选预览文件"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="搜索文件…"
-            />
+            <label className="preview-file-search">
+              <Icon name="search" size={14} />
+              <input
+                aria-label="筛选预览文件"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="搜索文件…"
+              />
+            </label>
             <select
               aria-label="预览文件"
               value={visible.some((f) => f.path === selected) ? selected : ''}
-              onChange={(e) => setFilesByTask((old) => ({ ...old, [taskId]: e.target.value }))}
+              onChange={(e) => chooseFile(e.target.value)}
             >
               <option value="" disabled>
                 {visible.length ? '选择文件' : '暂无文件'}
@@ -460,14 +574,86 @@ export function PreviewPanel({
                 </option>
               ))}
             </select>
+            <div className="preview-file-step">
+              <button
+                aria-label="上一个文件"
+                disabled={selectedIndex <= 0}
+                onClick={() => chooseFile(visible[selectedIndex - 1].path)}
+              >
+                <Icon name="chevron" size={13} />
+              </button>
+              <button
+                aria-label="下一个文件"
+                disabled={selectedIndex < 0 || selectedIndex >= visible.length - 1}
+                onClick={() => chooseFile(visible[selectedIndex + 1].path)}
+              >
+                <Icon name="chevron" size={13} />
+              </button>
+            </div>
           </div>
+          {selectedEntry && (
+            <div className="preview-file-meta">
+              <span title={selected}>
+                <Icon name="file" size={13} />
+                <code>{selected}</code>
+              </span>
+              <small>{formatFileBytes(selectedEntry.size)}</small>
+              {selectedFile?.text !== null && selectedFile?.encoding && (
+                <select
+                  aria-label="预览文本编码"
+                  value={position.encoding}
+                  disabled={loading}
+                  onChange={(event) => {
+                    setReadPosition({
+                      ...position,
+                      encoding: event.target.value as TextFileEncoding,
+                      offset: 0,
+                      history: [],
+                      version: undefined,
+                    });
+                    setFileNotice('');
+                  }}
+                >
+                  {textFileEncodings.map((name) => (
+                    <option key={name} value={name}>
+                      {name === 'auto'
+                        ? `自动 · ${selectedFile.encoding?.toUpperCase()}`
+                        : name.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
           {current?.truncated && (
             <p className="preview-limit">文件列表最多展示 1,500 项；部分目录或文件不可读取。</p>
           )}
           {selectedEntry?.renderTruncated && (
             <p className="preview-limit">页面引用的本地资源超过 1,500 项，部分资源更新需手动刷新。</p>
           )}
-          <MotionContent className="preview-canvas" motionKey={`${taskId}:${view}:${wide}`}>
+          {view !== 'diff' &&
+            selectedFile?.page?.paged &&
+            !(view === 'page' && selectedFile.kind === 'html' && !largeHtmlBlocked) && (
+              <FilePageControls
+                page={selectedFile.page}
+                loading={loading}
+                hasPrevious={position.offset > 0}
+                previous={() => moveTo(position.history.at(-1) ?? 0, position.history.slice(0, -1))}
+                next={() => selectedFile.page?.nextOffset !== null && moveTo(selectedFile.page!.nextOffset!)}
+                jump={moveTo}
+                restart={() => moveTo(0, [])}
+              />
+            )}
+          {selectedFile?.page?.paged && view === 'page' && selectedFile.kind === 'markdown' && (
+            <div className="preview-format-note">
+              仅渲染当前页片段。跨页代码块、表格或公式可能不完整。
+              <button onClick={() => setView('source')}>查看源码</button>
+            </div>
+          )}
+          <MotionContent
+            className="preview-canvas"
+            motionKey={`${taskId}:${view}:${wide}:${position.offset}:${position.encoding}`}
+          >
             {!current?.workspace ? (
               <PreviewEmpty
                 title="代理工作区尚未就绪"
@@ -479,7 +665,9 @@ export function PreviewPanel({
                 text="代理创建文件后会自动显示，也可以切换到其他代理查看进展。"
               />
             ) : loading && !selectedFile ? (
-              <div className="preview-loading">正在读取文件…</div>
+              <div className="preview-loading" role="status">
+                正在读取文件…
+              </div>
             ) : selectedFile ? (
               view === 'diff' ? (
                 <div className="preview-diff">
@@ -504,16 +692,22 @@ export function PreviewPanel({
                     </pre>
                   ) : (
                     <PreviewEmpty
-                      title="此文件没有文本差异"
+                      title={selectedFile.diffTruncated ? '大文件差异未完整生成' : '此文件没有文本差异'}
                       text={
-                        selectedFile.kind === 'image' || selectedFile.kind === 'binary'
-                          ? '二进制文件请通过页面视图检查。'
-                          : '文件与任务基线一致。'
+                        selectedFile.diffTruncated
+                          ? '可通过源码分页检查文件，或在项目目录中查看完整差异。'
+                          : selectedFile.kind === 'image' || selectedFile.kind === 'binary'
+                            ? '二进制文件请通过文档视图检查。'
+                            : '文件与任务基线一致。'
                       }
                     />
                   )}
                   {selectedFile.diffTruncated && (
-                    <p className="preview-limit">差异超过 1 MiB 或 12,000 行，已截断。</p>
+                    <p className="preview-limit">
+                      {selectedFile.diff
+                        ? '仅显示部分差异，最多 1 MiB 或 12,000 行。可通过源码分页继续查看文件。'
+                        : '大文件跳过自动生成完整差异，以保持预览可用。'}
+                    </p>
                   )}
                 </div>
               ) : view === 'source' ? (
@@ -522,11 +716,19 @@ export function PreviewPanel({
                 ) : (
                   <PreviewEmpty
                     title={selectedFile.deleted ? '文件已删除' : '二进制文件'}
-                    text="切换到更改或页面视图查看。"
+                    text="切换到变更或文档视图查看。"
                   />
                 )
               ) : selectedFile.deleted ? (
-                <PreviewEmpty title="文件已删除" text="切换到“更改”查看删除内容。" />
+                <PreviewEmpty title="文件已删除" text="切换到“变更”查看删除内容。" />
+              ) : selectedFile.kind === 'html' && largeHtmlBlocked ? (
+                <>
+                  <div className="preview-format-note">
+                    此 HTML 为 {formatFileBytes(htmlBytes)}，默认按片段显示源码。加载页面会读取整份文档。
+                    <button onClick={() => setHtmlPermission(htmlPermissionKey)}>加载页面</button>
+                  </div>
+                  <pre className="preview-source">{selectedFile.text}</pre>
+                </>
               ) : selectedFile.kind === 'html' ? (
                 <div className={'preview-page ' + viewport}>
                   {/(?:src|href)\s*=\s*["'][^"']+\.(?:tsx?|jsx)(?:\?[^"']*)?["']/i.test(
@@ -572,20 +774,29 @@ export function PreviewPanel({
                   />
                 </div>
               ) : selectedFile.kind === 'markdown' ? (
-                <article className="preview-markdown">
-                  <Markdown
-                    skipHtml
-                    components={{
-                      a: ({ children }) => <span className="preview-link">{children}</span>,
-                      img: () => <em>［图片请从文件列表打开］</em>,
-                    }}
-                  >
-                    {selectedFile.text || ''}
-                  </Markdown>
-                </article>
+                <MarkdownDocument
+                  className="preview-markdown"
+                  text={selectedFile.text || ''}
+                  sourcePath={selected}
+                  resourceBase={markdownBase}
+                  anchor={
+                    pendingAnchor?.taskId === taskId && pendingAnchor.path === selected
+                      ? pendingAnchor.anchor
+                      : undefined
+                  }
+                  onLocalLink={followLocalLink}
+                />
               ) : selectedFile.kind === 'image' ? (
                 <div className="preview-image">
-                  <img src={resourceUrl + '?v=' + selectedFile.hash} alt={selected} />
+                  <img
+                    src={
+                      resourceUrl +
+                      (resourceUrl.includes('?') ? '&' : '?') +
+                      'v=' +
+                      encodeURIComponent(selectedFile.hash || String(selectedEntry?.modifiedAt || ''))
+                    }
+                    alt={selected}
+                  />
                 </div>
               ) : (
                 <>
@@ -622,7 +833,7 @@ export function PreviewPanel({
 function PreviewEmpty({ title, text }: { title: string; text: string }) {
   return (
     <div className="preview-empty">
-      <EmptyArtwork kind="workspace" />
+      <Icon name="file" size={24} />
       <h3>{title}</h3>
       <p>{text}</p>
     </div>
