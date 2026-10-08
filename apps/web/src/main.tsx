@@ -47,6 +47,7 @@ import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
+import { useDrawerFocus, useViewportMatch } from './ResponsiveLayout';
 import './style.css';
 import './motion.css';
 type Detail = {
@@ -128,7 +129,7 @@ function App() {
     [tab, setTab] = useState('tasks'),
     [previewOpen, setPreviewOpen] = useState(false),
     [previewTaskId, setPreviewTaskId] = useState(''),
-    [modal, setModal] = useState(''),
+    [modal, setModalState] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [runSetup, setRunSetup] = useState<{ key: string; draft: RunSetupDraft } | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
@@ -213,7 +214,29 @@ function App() {
       reasoningEffort: task.reasoningEffort ?? fallback.reasoningEffort,
     };
   };
-  const sidebarCollapsed = cacheState.entries['collapsed:sidebar']?.value === true;
+  const narrowLayout = useViewportMatch('(max-width: 760px)');
+  const compactLayout = useViewportMatch('(max-width: 1180px)');
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
+  const setModal = (value: string) => {
+    setNavigationOpen(false);
+    setDetailsDrawerOpen(false);
+    setModalState(value);
+  };
+  const sidebarRef = useRef<HTMLElement>(null);
+  const detailsRef = useRef<HTMLElement>(null);
+  const sidebarCollapsed = !narrowLayout && cacheState.entries['collapsed:sidebar']?.value === true;
+  const navigationDrawerOpen = narrowLayout && navigationOpen;
+  const detailsVisible =
+    !!runId && !!detail && !previewOpen && (compactLayout ? detailsDrawerOpen : !detailsCollapsed);
+  const detailsOverlayOpen = compactLayout && detailsVisible;
+  useDrawerFocus(sidebarRef, navigationDrawerOpen, () => setNavigationOpen(false));
+  useDrawerFocus(detailsRef, detailsOverlayOpen, () => setDetailsDrawerOpen(false));
+  useEffect(() => {
+    setNavigationOpen(false);
+    setDetailsDrawerOpen(false);
+  }, [narrowLayout, compactLayout, runId]);
   const mainMotion = usePositionMotion<HTMLElement>();
   const activeRunId = useRef('');
   const detailRequest = useRef(0);
@@ -272,6 +295,7 @@ function App() {
   const navigate = useCallback(
     (next: NavigationState, explicit = false) => {
       if (explicit) {
+        setNavigationOpen(false);
         navigationEpoch.current++;
         navigationInitialized.current = true;
         savedNavigation.current = undefined;
@@ -525,6 +549,8 @@ function App() {
     switch (feedback?.action) {
       case 'artifacts':
         setPreviewOpen(false);
+        setDetailsCollapsed(false);
+        setDetailsDrawerOpen(true);
         setTab('artifacts');
         break;
       case 'plan':
@@ -706,13 +732,42 @@ function App() {
       </div>
     );
   return (
-    <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
-      <aside className="sidebar">
+    <div
+      className={
+        'app-shell' +
+        (sidebarCollapsed ? ' sidebar-collapsed' : '') +
+        (navigationDrawerOpen ? ' navigation-open' : '')
+      }
+    >
+      {navigationDrawerOpen && (
+        <div className="navigation-backdrop" onClick={() => setNavigationOpen(false)} aria-hidden="true" />
+      )}
+      <aside
+        className="sidebar"
+        id="session-navigation"
+        ref={sidebarRef}
+        role={navigationDrawerOpen ? 'dialog' : undefined}
+        aria-modal={navigationDrawerOpen || undefined}
+        aria-label="项目与会话导航"
+        inert={(narrowLayout && !navigationOpen) || detailsOverlayOpen}
+        tabIndex={navigationDrawerOpen ? -1 : undefined}
+      >
         <div className="brand">
           <BrandIcon />
           <span>
             Elysia<small>你的本机协作空间</small>
           </span>
+          {narrowLayout && (
+            <button
+              className="icon-button mobile-nav-close"
+              data-drawer-close
+              onClick={() => setNavigationOpen(false)}
+              aria-label="关闭会话导航"
+              title="关闭会话导航 · Esc"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          )}
         </div>
         <button
           className="new-task"
@@ -823,20 +878,28 @@ function App() {
           </div>
         </div>
       </aside>
-      <main className="main" ref={mainMotion.ref}>
-        <header className="topbar">
+      <main className="main" ref={mainMotion.ref} inert={navigationDrawerOpen}>
+        <header className="topbar" inert={detailsOverlayOpen}>
           <div className="breadcrumb">
             <button
               className="icon-button sidebar-toggle"
-              onClick={() => mainMotion.change(() => cache.set('collapsed:sidebar', !sidebarCollapsed))}
-              aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
-              aria-expanded={!sidebarCollapsed}
-              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+              onClick={() =>
+                narrowLayout
+                  ? setNavigationOpen(true)
+                  : mainMotion.change(() => cache.set('collapsed:sidebar', !sidebarCollapsed))
+              }
+              aria-label={narrowLayout ? '打开会话导航' : sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+              aria-expanded={narrowLayout ? navigationOpen : !sidebarCollapsed}
+              aria-controls="session-navigation"
+              title={narrowLayout ? '打开会话导航' : sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
             >
               <Icon name="panel" />
+              {narrowLayout && <span>会话</span>}
             </button>
             <Icon name="folder" size={16} />
-            <span>{project?.name || '独立对话'}</span>
+            <span className="breadcrumb-project" title={project?.name || '独立对话'}>
+              {project?.name || '独立对话'}
+            </span>
             <span className="slash">/</span>
             <strong title={detail?.run.objective}>
               {detail ? detail.run.title || detail.run.objective : '工作台'}
@@ -908,8 +971,8 @@ function App() {
           />
         ) : detail ? (
           <>
-            <div className="run-toolbar">
-              <div>
+            <div className="run-toolbar" inert={detailsOverlayOpen}>
+              <div className="run-status">
                 <Badge status={feedback?.displayStatus || detail.run.status} />
                 <span className="run-reason" title={feedback?.text}>
                   {feedback?.text}
@@ -921,6 +984,19 @@ function App() {
                 )}
               </div>
               <div className="run-controls">
+                <button
+                  className="quiet-button details-toggle"
+                  aria-expanded={detailsVisible}
+                  aria-controls="run-details"
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    if (compactLayout) setDetailsDrawerOpen(!detailsVisible);
+                    else setDetailsCollapsed(detailsVisible);
+                  }}
+                >
+                  <Icon name="panel" size={14} />
+                  {detailsVisible ? '收起详情' : isChat ? '模型与用量' : '任务详情'}
+                </button>
                 <button className="quiet-button" onClick={() => setModal('manage:runs')}>
                   <Icon name="history" size={14} />
                   管理对话
@@ -1024,7 +1100,7 @@ function App() {
               key={detail.run.id}
               className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
             >
-              <section className="conversation">
+              <section className="conversation" inert={detailsOverlayOpen}>
                 <ConversationScroll>
                   {!isChat && (
                     <div className="user-message">
@@ -1394,8 +1470,40 @@ function App() {
                   />
                 )}
               </Presence>
-              {!previewOpen && (
-                <aside className="details-panel">
+              {detailsOverlayOpen && (
+                <div
+                  className="details-backdrop"
+                  onClick={() => setDetailsDrawerOpen(false)}
+                  aria-hidden="true"
+                />
+              )}
+              {detailsVisible && (
+                <aside
+                  className={'details-panel' + (compactLayout ? ' details-drawer' : '')}
+                  id="run-details"
+                  ref={detailsRef}
+                  role={detailsOverlayOpen ? 'dialog' : undefined}
+                  aria-modal={detailsOverlayOpen || undefined}
+                  aria-label={isChat ? '模型与用量' : '任务详情'}
+                  tabIndex={detailsOverlayOpen ? -1 : undefined}
+                >
+                  <div className="details-heading">
+                    <div>
+                      <strong>{isChat ? '模型与用量' : '任务详情'}</strong>
+                      <small>{detail.run.title || detail.run.objective}</small>
+                    </div>
+                    <button
+                      className="icon-button"
+                      data-drawer-close
+                      aria-label="收起详情"
+                      title="收起详情"
+                      onClick={() =>
+                        compactLayout ? setDetailsDrawerOpen(false) : setDetailsCollapsed(true)
+                      }
+                    >
+                      <Icon name="close" size={17} />
+                    </button>
+                  </div>
                   <MotionTabs className="detail-tabs" label="任务详情" value={tab}>
                     {(isChat
                       ? [

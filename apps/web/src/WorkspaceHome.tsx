@@ -215,7 +215,9 @@ export function WorkspaceHome({
                 <Icon name="globe" size={17} />
               </div>
               <h3>{available.length ? '按任务选择合适模型' : '连接订阅或 API'}</h3>
-              <p>订阅连接提供账户可用模型目录。接受任务计划前，也可分别指定一级子代理的模型。</p>
+              <p>
+                订阅和 DeepSeek 连接提供当前账号的可用模型目录。接受计划前，也可分别指定一级子代理的型号。
+              </p>
               <button className="context-link" onClick={openSettings}>
                 模型与连接设置
                 <Icon name="arrow" size={15} />

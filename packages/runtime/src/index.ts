@@ -357,7 +357,13 @@ export class NativeExecutor implements ExecutorAdapter {
             manifest: { ...current.manifest, providerError: error.details },
           });
         }
-        this.kernel.settle(record.id, null, error instanceof Error ? error.message : String(error), rejected);
+        // A failed response can still include a complete, validated provider usage receipt.
+        this.kernel.settle(
+          record.id,
+          error instanceof ProviderError ? (error.usage ?? null) : null,
+          error instanceof Error ? error.message : String(error),
+          rejected,
+        );
         if (signal.aborted) throw error;
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
         const wait = Math.max(error.retryAfterMs, 1000 * 2 ** retry);

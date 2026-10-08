@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 14px 4px 0;
+  margin: 10px 4px 0;
   padding: 0 8px;
   border: 1px solid #647b70;
   border-radius: 8px;
@@ -33,7 +33,7 @@
   padding-bottom: 10px;
 }
 .session-heading {
-  padding: 16px 4px 6px;
+  padding: 12px 4px 5px;
   gap: 5px;
 }
 .session-heading .group-toggle {
@@ -42,6 +42,7 @@
   padding: 3px 4px;
   justify-content: flex-start;
   font-size: 12px;
+  min-height: 28px;
 }
 .session-heading .group-toggle small {
   color: #afc2b3;
@@ -124,6 +125,8 @@
   place-items: center;
   border-radius: 5px;
   flex: none;
+  min-width: 28px;
+  min-height: 28px;
 }
 .session-more {
   opacity: 0;
@@ -224,6 +227,22 @@
 @media (max-width: 760px) {
   .session-navigation,
   .cache-state {
-    display: none;
+    display: flex;
+  }
+  .cache-state {
+    display: block;
+  }
+  .session-more {
+    opacity: 1;
+  }
+  .session-heading {
+    display: flex;
+  }
+  .session-navigation .project-list,
+  .session-navigation .history-list {
+    display: block;
+  }
+  .session-row .history-item {
+    min-height: 40px;
   }
 }

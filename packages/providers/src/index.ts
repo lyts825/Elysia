@@ -9,6 +9,7 @@ import {
 import { type CompiledContext } from '../../context/src/index.js';
 export class ProviderError extends AppError {
   responseStarted = false;
+  usage: Usage | null = null;
   constructor(
     code: string,
     message: string,
@@ -92,12 +93,17 @@ export function normalizeUsage(
 export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncGenerator<any> {
   const reader = body.getReader(),
     decoder = new TextDecoder();
+  const cancel = () => {
+    void reader.cancel(signal.reason).catch(() => {});
+  };
+  signal.addEventListener('abort', cancel, { once: true });
   let pending = '';
   let bytes = 0;
   try {
     while (true) {
       signal.throwIfAborted();
       const { done, value } = await reader.read();
+      signal.throwIfAborted();
       if (done) {
         pending += decoder.decode();
         break;
@@ -114,7 +120,8 @@ export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSi
           .filter((l) => l.startsWith('data:'))
           .map((l) => l.slice(5).trimStart())
           .join('\n');
-        if (data && data !== '[DONE]') yield JSON.parse(data);
+        if (data === '[DONE]') return;
+        if (data) yield parseSseData(data);
       }
     }
     if (pending.trim()) {
@@ -123,12 +130,60 @@ export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSi
         .filter((l) => l.startsWith('data:'))
         .map((l) => l.slice(5).trimStart())
         .join('\n');
-      if (data && data !== '[DONE]') yield JSON.parse(data);
+      if (data && data !== '[DONE]') yield parseSseData(data);
     }
   } finally {
+    signal.removeEventListener('abort', cancel);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+function parseSseData(data: string): any {
+  try {
+    const event = JSON.parse(data);
+    if (event && typeof event === 'object' && !Array.isArray(event)) return event;
+  } catch {}
+  const error = new ProviderError('INVALID_SSE', '模型服务返回了无法解析的流数据', 502);
+  error.retryable = false;
+  throw error;
+}
+function officialDeepSeek(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): boolean {
+  const url = new URL(providerBaseUrl(provider));
+  return (
+    provider.kind === 'deepseek' &&
+    url.origin === 'https://api.deepseek.com' &&
+    ['/', '/v1'].includes(url.pathname)
+  );
+}
+function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
+  const effort = provider.reasoningEffort;
+  if (!effort) return {};
+  if (!officialDeepSeek(provider)) return { reasoning_effort: effort };
+  if (effort === 'none') return { thinking: { type: 'disabled' } };
+  return {
+    thinking: { type: 'enabled' },
+    reasoning_effort:
+      effort === 'minimal' || effort === 'low'
+        ? 'low'
+        : effort === 'max' || effort === 'ultra'
+          ? 'max'
+          : 'high',
+  };
+}
+function failureUsage(kind: string, raw: unknown, config: ProviderConfig, ttft: number | null): Usage | null {
+  try {
+    const usage = normalizeUsage(kind, raw, config, ttft);
+    return usage && usage.inputTotal !== null && usage.outputTotal !== null ? usage : null;
+  } catch {
+    return null;
+  }
+}
+export function providerBaseUrl(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): string {
+  const url = new URL(provider.baseUrl);
+  url.pathname = url.pathname
+    .replace(/\/+$/, '')
+    .replace(provider.kind === 'deepseek' ? /\/chat\/completions$/ : /\/responses$/, '');
+  return url.toString().replace(/\/$/, '');
 }
 function openaiInput(m: Message): unknown[] {
   if (m.role === 'tool') return [{ type: 'function_call_output', call_id: m.callId, output: m.text }];
@@ -181,11 +236,13 @@ export class NativeProvider implements ProviderAdapter {
         ...cache,
       };
     }
+    const requiredReasoningReplay = !!ctx.tools.length && officialDeepSeek(p);
     return {
       model: p.model,
       stream: true,
       stream_options: { include_usage: true },
       max_tokens: p.outputLimit,
+      ...deepseekThinking(p),
       messages: [
         { role: 'system', content: ctx.system },
         { role: 'user', content: ctx.task },
@@ -195,7 +252,11 @@ export class NativeProvider implements ProviderAdapter {
             : {
                 role: m.role,
                 content: m.text || null,
-                ...(m.reasoningContent !== undefined ? { reasoning_content: m.reasoningContent } : {}),
+                ...(m.role === 'assistant' &&
+                ctx.tools.length &&
+                (requiredReasoningReplay || m.reasoningContent !== undefined)
+                  ? { reasoning_content: m.reasoningContent ?? '' }
+                  : {}),
                 ...(m.calls?.length
                   ? {
                       tool_calls: m.calls.map((c) => ({
@@ -208,7 +269,7 @@ export class NativeProvider implements ProviderAdapter {
               },
         ),
       ],
-      tools: ctx.tools.map((t) => ({ type: 'function', function: t })),
+      ...(ctx.tools.length ? { tools: ctx.tools.map((t) => ({ type: 'function', function: t })) } : {}),
     };
   }
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
@@ -230,10 +291,12 @@ export class NativeProvider implements ProviderAdapter {
     signal = AbortSignal.any([
       signal,
       ...(credential ? [credential.signal] : []),
-      AbortSignal.timeout(120000),
+      AbortSignal.timeout(p.kind === 'deepseek' ? 600000 : 120000),
     ]);
     if (!key) throw new ProviderError('API_KEY_MISSING', `服务端未配置 ${p.apiKeyEnv}`, 401);
-    const url = p.baseUrl.replace(/\/$/, '') + (p.kind === 'openai' ? '/responses' : '/chat/completions');
+    const url = new URL(providerBaseUrl(p));
+    url.pathname =
+      url.pathname.replace(/\/$/, '') + (p.kind === 'openai' ? '/responses' : '/chat/completions');
     const started = Date.now();
     let ttft: number | null = null,
       response: Response;
@@ -251,14 +314,16 @@ export class NativeProvider implements ProviderAdapter {
     }
     if (!response.ok) {
       const retry = response.headers.get('retry-after');
-      const retryAfterMs = retry
+      const parsedRetry = retry
         ? /^\d+(\.\d+)?$/.test(retry)
           ? Number(retry) * 1000
           : Math.max(0, Date.parse(retry) - Date.now())
         : 0;
+      const retryAfterMs = Number.isFinite(parsedRetry) ? parsedRetry : 0;
       let body: any;
       try {
         body = JSON.parse((await response.text()).slice(0, 16000));
+        if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
       } catch {
         body = {};
       }
@@ -270,6 +335,7 @@ export class NativeProvider implements ProviderAdapter {
         response,
         retryAfterMs,
         credential?.onUsageLimit,
+        p.kind,
       );
     }
     if (!response.body) throw new ProviderError('EMPTY_STREAM', '模型服务未返回流', 502);
@@ -279,54 +345,83 @@ export class NativeProvider implements ProviderAdapter {
       native: any[] = [],
       completed = false;
     const calls = new Map<number, any>();
-    for await (const event of sseData(response.body, signal)) {
-      if (event.error || ['error', 'response.failed', 'response.incomplete'].includes(event.type))
-        throw providerFailure(
-          event.response?.error?.code ??
-            event.error?.code ??
-            event.code ??
-            event.response?.incomplete_details?.reason,
-          502,
-          true,
-          event,
-          response,
-          0,
-          credential?.onUsageLimit,
-        );
-      if (p.kind === 'openai') {
-        if (event.type === 'response.output_text.delta') {
-          if (ttft === null) ttft = Date.now() - started;
-          text += event.delta;
-          yield { type: 'delta', text: event.delta };
+    try {
+      for await (const event of sseData(response.body, signal)) {
+        if (p.kind === 'deepseek' ? event.usage : event.response?.usage)
+          rawUsage = p.kind === 'deepseek' ? event.usage : event.response.usage;
+        if (event.error || ['error', 'response.failed', 'response.incomplete'].includes(event.type))
+          throw providerFailure(
+            event.response?.error?.code ??
+              event.error?.code ??
+              event.code ??
+              event.response?.incomplete_details?.reason,
+            502,
+            true,
+            event,
+            response,
+            0,
+            credential?.onUsageLimit,
+            p.kind,
+          );
+        if (p.kind === 'openai') {
+          if (event.type === 'response.output_text.delta') {
+            if (ttft === null) ttft = Date.now() - started;
+            text += event.delta;
+            yield { type: 'delta', text: event.delta };
+          }
+          if (event.type === 'response.completed') {
+            completed = true;
+            native = event.response.output ?? [];
+            rawUsage = event.response.usage;
+          }
+        } else {
+          if (event.usage) rawUsage = event.usage;
+          const choice = event.choices?.[0];
+          if (!choice) continue;
+          if (
+            ttft === null &&
+            (choice.delta?.content || choice.delta?.reasoning_content || choice.delta?.tool_calls?.length)
+          )
+            ttft = Date.now() - started;
+          if (choice.delta?.content) {
+            if (ttft === null) ttft = Date.now() - started;
+            text += choice.delta.content;
+            yield { type: 'delta', text: choice.delta.content };
+          }
+          if (choice.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
+          for (const c of choice.delta?.tool_calls ?? []) {
+            if (!Number.isInteger(c.index) || c.index < 0 || (c.type && c.type !== 'function'))
+              throw new ProviderError('INVALID_TOOL_CALLS', '模型返回了无效的工具调用片段', 502);
+            const old = calls.get(c.index) ?? { id: '', name: '', arguments: '' };
+            if (c.id) old.id = c.id;
+            if (c.function?.name) old.name += c.function.name;
+            if (c.function?.arguments) old.arguments += c.function.arguments;
+            calls.set(c.index, old);
+          }
+          if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter')
+            throw new ProviderError('PROVIDER_INCOMPLETE', '模型输出被截断或过滤', 400);
+          if (choice.finish_reason === 'insufficient_system_resource' || choice.finish_reason === 'aborted')
+            throw new ProviderError('STREAM_INTERRUPTED', 'DeepSeek 推理被服务端中断，请重试', 503);
+          if (choice.finish_reason === 'stop' || choice.finish_reason === 'tool_calls') completed = true;
+          else if (choice.finish_reason) {
+            const error = new ProviderError('PROVIDER_INCOMPLETE', '模型返回了无法确认完成的结束原因', 502);
+            error.retryable = false;
+            throw error;
+          }
         }
-        if (event.type === 'response.completed') {
-          completed = true;
-          native = event.response.output ?? [];
-          rawUsage = event.response.usage;
-        }
-      } else {
-        if (event.usage) rawUsage = event.usage;
-        const choice = event.choices?.[0];
-        if (!choice) continue;
-        if (choice.delta?.content) {
-          if (ttft === null) ttft = Date.now() - started;
-          text += choice.delta.content;
-          yield { type: 'delta', text: choice.delta.content };
-        }
-        if (choice.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
-        for (const c of choice.delta?.tool_calls ?? []) {
-          const old = calls.get(c.index) ?? { id: '', name: '', arguments: '' };
-          if (c.id) old.id = c.id;
-          if (c.function?.name) old.name += c.function.name;
-          if (c.function?.arguments) old.arguments += c.function.arguments;
-          calls.set(c.index, old);
-        }
-        if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter')
-          throw new ProviderError('PROVIDER_INCOMPLETE', '模型输出被截断或过滤', 400);
-        if (choice.finish_reason) completed = true;
       }
+      if (!completed) throw new ProviderError('STREAM_INTERRUPTED', '流结束但没有完成事件，保留中断记录', 0);
+    } catch (cause) {
+      if (callerSignal.aborted) throw cause;
+      const error =
+        cause instanceof ProviderError
+          ? cause
+          : new ProviderError('PROVIDER_NETWORK', '模型流读取失败或超时，保留中断记录', 0);
+      // A successful HTTP stream may already be billed, even if no visible text arrived.
+      error.responseStarted = true;
+      error.usage = failureUsage(p.kind, rawUsage, p, ttft);
+      throw error;
     }
-    if (!completed) throw new ProviderError('STREAM_INTERRUPTED', '流结束但没有完成事件，保留中断记录', 0);
     const toolCalls: ToolCall[] =
       p.kind === 'openai'
         ? native
@@ -337,11 +432,23 @@ export class NativeProvider implements ProviderAdapter {
               arguments: x.arguments,
             }))
         : [...calls.entries()].sort(([a], [b]) => a - b).map(([, c]) => c);
-    if (
-      toolCalls.some((c) => !c.id || !c.name) ||
-      new Set(toolCalls.map((c) => c.id)).size !== toolCalls.length
-    )
-      throw new ProviderError('INVALID_TOOL_CALLS', '工具调用 ID 缺失或重复', 400);
+    try {
+      if (
+        toolCalls.some((c) => typeof c.id !== 'string' || !c.id || typeof c.name !== 'string' || !c.name) ||
+        new Set(toolCalls.map((c) => c.id)).size !== toolCalls.length
+      )
+        throw new Error('Invalid tool identity');
+      for (const call of toolCalls) {
+        if (typeof call.arguments !== 'string') throw new Error('Invalid tool arguments');
+        JSON.parse(call.arguments);
+      }
+    } catch {
+      const error = new ProviderError('INVALID_TOOL_CALLS', '工具调用 ID、名称或 JSON 参数无效', 400);
+      error.retryable = false;
+      error.responseStarted = true;
+      error.usage = failureUsage(p.kind, rawUsage, p, ttft);
+      throw error;
+    }
     yield {
       type: 'completed',
       text,
@@ -360,6 +467,7 @@ function providerFailure(
   response: Response,
   retry = 0,
   onUsageLimit?: () => void,
+  kind?: string,
 ) {
   const safeCode = typeof code === 'string' && /^[a-zA-Z0-9_]{1,100}$/.test(code) ? code : 'PROVIDER_HTTP';
   const usageLimit = safeCode === 'subscription_sharing_usage_limit_exceeded';
@@ -373,13 +481,32 @@ function providerFailure(
       'chatpass_v2_scope_not_authorized',
       'chatpass_v2_invalid_authorization_context',
     ].includes(safeCode);
+  const deepseekFailures: Record<number, [string, string]> = {
+    400: ['DEEPSEEK_INVALID_FORMAT', 'DeepSeek 请求格式无效，请检查模型和会话历史'],
+    401: ['DEEPSEEK_AUTH', 'DeepSeek 身份验证失败，请检查 API Key'],
+    402: ['DEEPSEEK_BALANCE', 'DeepSeek 账户余额不足，请充值后重试'],
+    422: ['DEEPSEEK_INVALID_PARAMETERS', 'DeepSeek 参数无效，请检查模型、推理强度和输出上限'],
+    429: ['DEEPSEEK_RATE_LIMIT', 'DeepSeek 请求受到限流，请稍后重试'],
+    500: ['DEEPSEEK_SERVER', 'DeepSeek 服务暂时异常，请稍后重试'],
+    503: ['DEEPSEEK_OVERLOADED', 'DeepSeek 服务繁忙，请稍后重试'],
+  };
+  const deepseekFailure =
+    kind === 'deepseek'
+      ? started
+        ? ['DEEPSEEK_STREAM_ERROR', 'DeepSeek 模型流返回错误，请稍后重试']
+        : (deepseekFailures[status] ?? [
+            'DEEPSEEK_HTTP',
+            `DeepSeek 服务返回 HTTP ${status}，请检查连接配置后重试`,
+          ])
+      : undefined;
   const error = new ProviderError(
-    usageLimit ? 'CHATGPT_USAGE_LIMIT' : safeCode,
-    usageLimit
-      ? 'ChatGPT 订阅额度已达限制，请在模型设置中管理用量后重新检查'
-      : started
-        ? `模型流返回错误（${safeCode}）`
-        : `模型服务返回 HTTP ${status}（${safeCode}）`,
+    deepseekFailure?.[0] ?? (usageLimit ? 'CHATGPT_USAGE_LIMIT' : safeCode),
+    deepseekFailure?.[1] ??
+      (usageLimit
+        ? 'ChatGPT 订阅额度已达限制，请在模型设置中管理用量后重新检查'
+        : started
+          ? `模型流返回错误（${safeCode}）`
+          : `模型服务返回 HTTP ${status}（${safeCode}）`),
     status,
     retry,
   );
@@ -388,8 +515,8 @@ function providerFailure(
   error.details = {
     status,
     httpStatus: response.status,
-    code: safeCode,
-    param: body.error?.param ?? body.response?.error?.param,
+    code: kind === 'deepseek' ? error.code : safeCode,
+    ...(kind !== 'deepseek' ? { param: body.error?.param ?? body.response?.error?.param } : {}),
     shape: Object.keys(body).slice(0, 20),
     requestId: response.headers.get('x-request-id') ?? response.headers.get('openai-request-id'),
   };

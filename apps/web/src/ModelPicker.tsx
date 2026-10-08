@@ -5,6 +5,7 @@ import {
   catalogIssue,
   initialEffort,
   initialTextModel,
+  officialDeepSeek,
   supportsText,
   type CatalogModel,
 } from './ModelCatalog';
@@ -56,6 +57,9 @@ export function ModelPicker({
   const id = useId();
   const selected = providers.find((p) => p.id === value.providerId);
   const subscription = ['chatgpt', 'codex'].includes(selected?.authMode || '');
+  const deepSeek = !subscription && selected?.kind === 'deepseek';
+  const canDisableThinking = !!selected && deepSeek && officialDeepSeek(selected);
+  const usesCatalog = subscription || deepSeek;
   const [models, setModels] = useState<CatalogModel[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
@@ -69,7 +73,7 @@ export function ModelPicker({
     setModels([]);
     setLoadedCatalog('');
     setError('');
-    if (!selected || !subscription || !verified) {
+    if (!selected || !usesCatalog || !verified) {
       setLoading(false);
       return;
     }
@@ -90,23 +94,27 @@ export function ModelPicker({
     return () => {
       active = false;
     };
-  }, [selected?.id, selected?.revision, subscription, verified, refresh]);
+  }, [selected?.id, selected?.revision, usesCatalog, verified, refresh]);
   const model = models.find((m) => m.id === value.model);
   const apiBindingMatches =
     !!selected && value.model === selected.model && value.reasoningEffort === selected.reasoningEffort;
   const valid =
     verified &&
-    (subscription ? catalogReady && !!model && supportsText(model) : apiBindingMatches) &&
-    (!subscription || !model?.efforts?.length || model.efforts.includes(value.reasoningEffort || ''));
+    ((deepSeek && apiBindingMatches) ||
+      ((usesCatalog ? catalogReady && !!model && supportsText(model) : apiBindingMatches) &&
+        (!usesCatalog ||
+          !model?.efforts?.length ||
+          model.efforts.includes(value.reasoningEffort || '') ||
+          (canDisableThinking && value.reasoningEffort === 'none'))));
   useEffect(() => {
     ready?.(valid);
   }, [valid, ready]);
   useEffect(() => {
-    if (disabled || subscription || !selected || apiBindingMatches) return;
+    if (disabled || usesCatalog || !selected || apiBindingMatches) return;
     change({ ...value, model: selected.model, reasoningEffort: selected.reasoningEffort });
   }, [
     disabled,
-    subscription,
+    usesCatalog,
     selected?.id,
     selected?.model,
     selected?.reasoningEffort,
@@ -117,7 +125,7 @@ export function ModelPicker({
     change,
   ]);
   useEffect(() => {
-    if (disabled || !subscription || !catalogReady) return;
+    if (disabled || !usesCatalog || !catalogReady) return;
     const current = models.find((m) => m.id === value.model);
     if (!value.model) {
       const next = initialTextModel(models, selected?.model);
@@ -129,6 +137,7 @@ export function ModelPicker({
       });
     } else if (
       current &&
+      !(deepSeek && apiBindingMatches) &&
       supportsText(current) &&
       current.efforts?.length &&
       value.reasoningEffort === undefined
@@ -138,7 +147,17 @@ export function ModelPicker({
         reasoningEffort: initialEffort(current),
       });
     }
-  }, [models, subscription, catalogReady, value.providerId, value.model, value.reasoningEffort, disabled]);
+  }, [
+    models,
+    usesCatalog,
+    catalogReady,
+    deepSeek,
+    apiBindingMatches,
+    value.providerId,
+    value.model,
+    value.reasoningEffort,
+    disabled,
+  ]);
   return (
     <div className="model-picker">
       <label htmlFor={id + '-provider'}>{label}</label>
@@ -157,7 +176,7 @@ export function ModelPicker({
           </option>
         ))}
       </select>
-      {subscription && verified && (
+      {usesCatalog && verified && (
         <>
           <div className="model-catalog-heading">
             <span>
@@ -174,7 +193,7 @@ export function ModelPicker({
               刷新目录
             </button>
           </div>
-          <label htmlFor={id + '-model'}>订阅模型</label>
+          <label htmlFor={id + '-model'}>{subscription ? '订阅模型' : 'DeepSeek 模型'}</label>
           <select
             id={id + '-model'}
             value={value.model || ''}
@@ -216,16 +235,20 @@ export function ModelPicker({
                   change({ ...value, reasoningEffort: e.target.value as ModelChoice['reasoningEffort'] })
                 }
               >
-                {!model.efforts.includes(value.reasoningEffort || '') && (
-                  <option value={value.reasoningEffort || ''} disabled>
-                    {value.reasoningEffort
-                      ? `${value.reasoningEffort}（已不可用，请重新选择）`
-                      : '请选择推理强度'}
-                  </option>
+                {!model.efforts.includes(value.reasoningEffort || '') &&
+                  !(canDisableThinking && value.reasoningEffort === 'none') && (
+                    <option value={value.reasoningEffort || ''} disabled>
+                      {value.reasoningEffort
+                        ? `${value.reasoningEffort}（已不可用，请重新选择）`
+                        : '请选择推理强度'}
+                    </option>
+                  )}
+                {canDisableThinking && !model.efforts.includes('none') && (
+                  <option value="none">关闭思考 · 更快回复</option>
                 )}
                 {model.efforts.map((effort) => (
                   <option key={effort} value={effort}>
-                    {effort}
+                    {effort === 'none' ? '关闭思考 · 更快回复' : effort}
                   </option>
                 ))}
               </select>
@@ -233,18 +256,19 @@ export function ModelPicker({
           )}
         </>
       )}
-      {subscription && verified && catalogReady && catalogIssue(models, value.model) && (
+      {usesCatalog && verified && catalogReady && catalogIssue(models, value.model) && (
         <p className="inline-warning" role="alert">
           {catalogIssue(models, value.model)}
         </p>
       )}
-      {subscription &&
+      {usesCatalog &&
         catalogReady &&
         model &&
         supportsText(model) &&
         !!model.efforts?.length &&
         value.reasoningEffort !== undefined &&
-        !model.efforts.includes(value.reasoningEffort || '') && (
+        !model.efforts.includes(value.reasoningEffort || '') &&
+        !(canDisableThinking && value.reasoningEffort === 'none') && (
           <p className="inline-warning" role="alert">
             所选推理强度不在当前目录中，请重新选择。
           </p>
@@ -253,6 +277,9 @@ export function ModelPicker({
         <p className="inline-warning" role="alert">
           {error}
         </p>
+      )}
+      {deepSeek && error && apiBindingMatches && (
+        <p className="field-help">目录暂不可用，继续使用已验证配置的型号和思考设置；切换型号前请刷新目录。</p>
       )}
       {!verified && <p className="field-help">先在模型设置中连接并验证该连接。</p>}
     </div>

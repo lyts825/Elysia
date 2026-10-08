@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { api, mutation } from './api';
 import { CodexSettings } from './CodexSettings';
@@ -7,7 +7,7 @@ import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { MotionContent } from './Motion';
 import './providers.css';
-import { supportsText, type CatalogModel } from './ModelCatalog';
+import { officialDeepSeek, supportsText, type CatalogModel } from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
 const presets = [
@@ -22,16 +22,22 @@ function preset(name: string): Provider {
     label: presets.find((p) => p[0] === name)?.[1] || '新配置',
     kind: name === 'deepseek' ? 'deepseek' : 'openai',
     authMode: name === 'codex' ? 'codex' : 'apiKey',
-    model: name === 'deepseek' ? 'deepseek-chat' : '',
+    model: name === 'deepseek' ? 'deepseek-flash' : '',
+    reasoningEffort: name === 'deepseek' ? 'high' : null,
     baseUrl: name === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1',
     apiKeyEnv: name === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'OPENAI_API_KEY',
     account: name === 'deepseek' ? 'deepseek-default' : 'openai-default',
-    contextLimit: name === 'codex' ? 128000 : 32000,
-    outputLimit: 4096,
+    contextLimit: name === 'deepseek' ? 1048576 : name === 'codex' ? 128000 : 32000,
+    outputLimit: name === 'deepseek' ? 8192 : 4096,
     concurrency: 2,
     rpm: 60,
     tpm: 200000,
-    cache: { mode: 'unknown', minTokens: null, ttl: null, parameters: {} },
+    cache: {
+      mode: name === 'deepseek' ? 'automatic' : 'unknown',
+      minTokens: null,
+      ttl: null,
+      parameters: {},
+    },
     prices: null,
     revision: 0,
     checkedRevision: null,
@@ -75,6 +81,7 @@ export function ProviderSettings({
     [advanced, setAdvanced] = useState('');
   const [pendingChoice, setPendingChoice] = useState<Provider>();
   const [confirmClose, setConfirmClose] = useState(false);
+  const actionPending = useRef(false);
   useEffect(() => {
     if (!config && providers.length) {
       const initial = providers.find((p) => p.authMode === 'codex') || providers[0];
@@ -88,16 +95,26 @@ export function ProviderSettings({
     if (!dirty) setConfirmClose(false);
   }, [dirty]);
   const subscription = !!config && ['codex', 'chatgpt'].includes(config.authMode || '');
+  const deepSeek = !!config && !subscription && officialDeepSeek(config);
+  const selectedModel = catalog.find((model) => model.id === config?.model);
+  const deepSeekEfforts = selectedModel?.efforts?.filter((effort) =>
+    ['low', 'high', 'max'].includes(effort),
+  ) || ['low', 'high', 'max'];
   const unsupportedApiModel =
     !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
   const change = (patch: Partial<ProviderConfig>) => setConfig((p) => p && { ...p, ...patch });
-  const choose = (next: Provider, force = false) => {
+  const choose = (next: Provider, force = false, completedAction = false) => {
+    if (actionPending.current && !completedAction) return;
     if (dirty && !force) {
       setPendingChoice(next);
       return;
     }
     setConfig(next);
-    setKeyMode(next.credentialId ? 'stored' : 'env');
+    setKeyMode(
+      next.credentialId || (officialDeepSeek(next) && !providers.some((p) => p.id === next.id))
+        ? 'stored'
+        : 'env',
+    );
     setApiKey('');
     setCatalog([]);
     setSubscriptionReady(false);
@@ -109,6 +126,8 @@ export function ProviderSettings({
     setAdvanced('');
   };
   const perform = async (fn: () => Promise<void>) => {
+    if (actionPending.current) return;
+    actionPending.current = true;
     setBusy(true);
     setError('');
     setNotice('');
@@ -117,6 +136,7 @@ export function ProviderSettings({
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   };
@@ -259,7 +279,7 @@ export function ProviderSettings({
             </section>
           )}
           {config && (
-            <>
+            <fieldset className="provider-fields" disabled={busy}>
               <div className="section-heading">
                 <div>
                   <h3>{config.label || '新配置'}</h3>
@@ -317,7 +337,7 @@ export function ProviderSettings({
                           'DELETE',
                         );
                         await updated();
-                        choose(providers.find((p) => p.id !== config.id) || preset('codex'), true);
+                        choose(providers.find((p) => p.id !== config.id) || preset('codex'), true, true);
                       })
                     }
                   >
@@ -387,12 +407,50 @@ export function ProviderSettings({
               )}
               {!subscription && (
                 <section className="connection-panel">
+                  {deepSeek && (
+                    <div className="deepseek-guide">
+                      <div>
+                        <span className="provider-badge">DeepSeek API</span>
+                        <h4>选择型号，保存并验证连接</h4>
+                        <p>使用 DeepSeek 平台的 API Key，可选快速或更强的模型。</p>
+                      </div>
+                      <div className="deepseek-model-presets">
+                        {[
+                          ['deepseek-flash', 'Flash', '日常对话与快速任务'],
+                          ['deepseek-v4-pro', 'Pro', '复杂推理与项目任务'],
+                        ].map(([id, name, hint]) => (
+                          <button
+                            type="button"
+                            key={id}
+                            aria-pressed={config.model === id}
+                            onClick={() => {
+                              setCatalog([]);
+                              change({ model: id, reasoningEffort: 'high' });
+                            }}
+                          >
+                            <strong>{name}</strong>
+                            <small>{hint}</small>
+                            <code>{id}</code>
+                          </button>
+                        ))}
+                      </div>
+                      {['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash'].includes(config.model) && (
+                        <p className="inline-warning" role="alert">
+                          当前配置使用旧型号「{config.model}
+                          」。请明确选择新型号，再保存和验证；已有任务保留原绑定。
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="form-columns">
                     <label>
                       API 协议
                       <select
                         value={config.kind}
-                        onChange={(e) => change({ kind: e.target.value as ProviderConfig['kind'] })}
+                        onChange={(e) => {
+                          setCatalog([]);
+                          change({ kind: e.target.value as ProviderConfig['kind'], reasoningEffort: null });
+                        }}
                       >
                         <option value="openai">OpenAI Responses</option>
                         <option value="deepseek">Chat Completions（DeepSeek 兼容）</option>
@@ -402,7 +460,10 @@ export function ProviderSettings({
                       Base URL
                       <input
                         value={config.baseUrl}
-                        onChange={(e) => change({ baseUrl: e.target.value.trim() })}
+                        onChange={(e) => {
+                          setCatalog([]);
+                          change({ baseUrl: e.target.value.trim() });
+                        }}
                         placeholder="https://api.example.com/v1"
                       />
                     </label>
@@ -452,7 +513,7 @@ export function ProviderSettings({
                       <input
                         list={'models-' + config.id}
                         value={config.model}
-                        onChange={(e) => change({ model: e.target.value })}
+                        onChange={(e) => change({ model: e.target.value.trim() })}
                         placeholder="填写模型 ID 或从目录选择"
                       />
                       <datalist id={'models-' + config.id}>
@@ -480,6 +541,68 @@ export function ProviderSettings({
                       读取模型目录
                     </button>
                   </div>
+                  {deepSeek && (
+                    <div className="form-columns deepseek-thinking">
+                      <label>
+                        思考模式
+                        <select
+                          value={config.reasoningEffort === 'none' ? 'disabled' : 'enabled'}
+                          onChange={(e) =>
+                            change({
+                              reasoningEffort:
+                                e.target.value === 'disabled'
+                                  ? 'none'
+                                  : (selectedModel?.defaultEffort as ProviderConfig['reasoningEffort']) ||
+                                    'high',
+                            })
+                          }
+                        >
+                          <option value="enabled">开启思考</option>
+                          <option value="disabled">关闭思考 · 更快回复</option>
+                        </select>
+                      </label>
+                      {config.reasoningEffort !== 'none' && (
+                        <label>
+                          推理强度
+                          <select
+                            value={config.reasoningEffort || 'high'}
+                            onChange={(e) =>
+                              change({ reasoningEffort: e.target.value as ProviderConfig['reasoningEffort'] })
+                            }
+                          >
+                            {config.reasoningEffort && !deepSeekEfforts.includes(config.reasoningEffort) && (
+                              <option value={config.reasoningEffort}>
+                                {config.reasoningEffort}（兼容旧设置）
+                              </option>
+                            )}
+                            {deepSeekEfforts.map((effort) => (
+                              <option key={effort} value={effort}>
+                                {effort === 'low'
+                                  ? '低 · 优先速度'
+                                  : effort === 'high'
+                                    ? '高 · 平衡速度与质量'
+                                    : '最高 · 适合复杂任务'}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <p className="field-help">连接验证使用短文本检查。正式任务使用这里选择的思考模式。</p>
+                    </div>
+                  )}
+                  {selectedModel && (
+                    <p className="model-capacity">
+                      {selectedModel.contextWindow
+                        ? `模型上下文 ${(selectedModel.contextWindow / 1024).toLocaleString()}K`
+                        : ''}
+                      {selectedModel.maxOutputTokens
+                        ? ` · 单次输出能力 ${(selectedModel.maxOutputTokens / 1024).toLocaleString()}K`
+                        : ''}
+                      {selectedModel.contextWindow || selectedModel.maxOutputTokens
+                        ? ' · 实际请求仍受下方预算限制'
+                        : ''}
+                    </p>
+                  )}
                   <p className="field-help">
                     先填写模型 ID 并保存连接，再读取服务商目录。目录接口不可用时可继续手动填写。
                   </p>
@@ -631,7 +754,7 @@ export function ProviderSettings({
                   验证实际调用
                 </button>
               </footer>
-            </>
+            </fieldset>
           )}
         </MotionContent>
       </div>

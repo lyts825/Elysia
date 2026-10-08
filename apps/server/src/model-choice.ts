@@ -16,18 +16,22 @@ export type AvailableModel = {
   hidden?: boolean;
   inputModalities?: string[];
   isDefault?: boolean;
+  contextWindow?: number;
+  maxOutputTokens?: number;
 };
+export type ApiModelCatalog = (provider: ProviderConfig) => Promise<AvailableModel[]>;
 
 /** Reads the current connection catalog; listing does not make an inference request. */
 export async function availableModels(
   subscription: CatalogServices['subscription'],
   codex: CatalogServices['codex'],
   provider: ProviderConfig,
+  apiCatalog?: ApiModelCatalog,
 ): Promise<AvailableModel[]> {
   invariant(!provider.archived, 'PROVIDER_ARCHIVED', '模型配置已归档');
   if (provider.authMode === 'codex') return codex.models(provider.subscriptionAccountId!);
   if (provider.authMode === 'chatgpt') return subscription.models(provider.subscriptionAccountId!);
-  return [{ id: provider.model, name: provider.model }];
+  return apiCatalog ? apiCatalog(provider) : [{ id: provider.model, name: provider.model }];
 }
 
 /** Freeze a per-agent choice while retaining the verified connection and shared account quota. */
@@ -36,6 +40,7 @@ export async function resolveModelChoice(
   subscription: CatalogServices['subscription'],
   codex: CatalogServices['codex'],
   raw: ModelChoice,
+  apiCatalog?: ApiModelCatalog,
 ): Promise<ProviderConfig> {
   const choice = ModelChoice.parse(raw);
   const provider = store.require<ProviderConfig>('providers', choice.providerId);
@@ -43,13 +48,52 @@ export async function resolveModelChoice(
   invariant(provider.checkedRevision === provider.revision, 'PROVIDER_UNCHECKED', '请先验证模型连接');
   const modelId = choice.model ?? provider.model;
   if (provider.authMode !== 'codex' && provider.authMode !== 'chatgpt') {
-    invariant(modelId === provider.model, 'MODEL_UNCHECKED', 'API 模型需使用已验证的模型配置');
+    // A normal send must remain available even when the discovery endpoint is offline.
+    if (
+      modelId === provider.model &&
+      (choice.reasoningEffort === undefined || choice.reasoningEffort === provider.reasoningEffort)
+    )
+      return { ...provider };
+    invariant(apiCatalog, 'MODEL_UNCHECKED', '显式切换 API 模型需要读取当前模型目录');
+    const models = await availableModels(subscription, codex, provider, apiCatalog);
+    const model = models.find((item) => item.id === modelId);
+    invariant(model, 'API_MODEL', '所选模型不在当前 API 目录中，请刷新模型目录；原配置不会自动切换');
     invariant(
-      choice.reasoningEffort === undefined || choice.reasoningEffort === provider.reasoningEffort,
-      'MODEL_UNCHECKED',
-      'API 思考强度需使用已验证的模型配置',
+      !model.inputModalities || model.inputModalities.includes('text'),
+      'API_MODEL',
+      '所选模型不支持文字对话',
     );
-    return { ...provider };
+    const effort =
+      choice.reasoningEffort !== undefined
+        ? choice.reasoningEffort
+        : modelId === provider.model
+          ? provider.reasoningEffort
+          : model.defaultEffort;
+    const parsedEffort = ModelChoice.shape.reasoningEffort.safeParse(effort);
+    invariant(
+      parsedEffort.success && (effort == null || model.efforts?.includes(effort)),
+      'API_EFFORT',
+      '此 API 模型未声明支持所选思考强度，请刷新模型目录',
+    );
+    const contextLimit = Math.min(provider.contextLimit, model.contextWindow ?? provider.contextLimit);
+    const outputLimit = Math.min(
+      provider.outputLimit,
+      model.maxOutputTokens ?? provider.outputLimit,
+      contextLimit - 1,
+    );
+    invariant(
+      contextLimit >= 4096 && outputLimit >= 256,
+      'API_MODEL_LIMIT',
+      '所选模型容量不足以运行当前任务，请另选模型配置',
+    );
+    return {
+      ...provider,
+      model: modelId,
+      reasoningEffort: parsedEffort.data,
+      contextLimit,
+      outputLimit,
+      prices: modelId === provider.model ? provider.prices : null,
+    };
   }
   const models = await availableModels(subscription, codex, provider);
   const model = models.find((item) => item.id === modelId);

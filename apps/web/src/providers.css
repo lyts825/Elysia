@@ -104,9 +104,86 @@
   min-width: 0;
 }
 .provider-editor .form-columns {
+  display: grid;
   margin-top: 14px;
   margin-bottom: 0;
   gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.provider-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.provider-fields:disabled input,
+.provider-fields:disabled select,
+.provider-fields:disabled textarea {
+  opacity: 0.65;
+}
+.deepseek-guide {
+  margin-bottom: 18px;
+}
+.deepseek-guide h4 {
+  font-size: 16px;
+  margin: 10px 0 4px;
+  color: #2e3935;
+}
+.deepseek-guide p {
+  color: var(--muted);
+  font-size: 12px;
+}
+.deepseek-model-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.deepseek-model-presets button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+.deepseek-model-presets button[aria-pressed='true'] {
+  border-color: #bf8c98;
+  background: var(--accent-pale);
+}
+.deepseek-model-presets button:hover {
+  border-color: #bf8c98;
+}
+.deepseek-model-presets strong {
+  font-size: 14px;
+}
+.deepseek-model-presets small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.deepseek-model-presets code {
+  font-size: 10px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.deepseek-thinking {
+  align-items: start;
+}
+.deepseek-thinking .field-help {
+  grid-column: 1 / -1;
+  margin-top: -10px;
+}
+.model-capacity {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 10px 0;
+}
+.provider-editor .provider-advanced .form-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .provider-tools {
   display: flex;
@@ -318,11 +395,95 @@
     max-height: 94vh;
   }
   .provider-workspace {
-    grid-template-columns: 170px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .provider-list {
-    padding: 16px 8px;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    max-height: 162px;
   }
+  .provider-list .section-heading {
+    flex: none;
+    min-width: 90px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+  }
+  .provider-list .provider-card {
+    flex: 0 0 180px;
+    margin: 0;
+    padding: 10px 12px;
+    gap: 3px;
+  }
+  .provider-list .provider-symbol {
+    width: 22px;
+    height: 22px;
+  }
+  .provider-list > .secondary {
+    flex: 0 0 150px;
+    white-space: normal;
+  }
+  .provider-editor .provider-advanced .form-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .provider-tools {
+    gap: 8px;
+  }
+  .provider-footer {
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .provider-footer button {
+    flex: 1;
+    justify-content: center;
+    min-height: 40px;
+  }
+  .provider-editor .form-columns {
+    gap: 12px;
+  }
+  .connection-panel {
+    padding: 14px;
+  }
+  .provider-editor .model-selection {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .provider-editor .model-selection label {
+    flex-basis: 100%;
+  }
+  .provider-editor .model-selection button {
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+}
+@media (max-width: 480px) {
+  .provider-editor .form-columns,
+  .provider-editor .provider-advanced .form-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .provider-editor .deepseek-model-presets {
+    gap: 6px;
+  }
+  .provider-editor .deepseek-model-presets button {
+    padding: 9px;
+  }
+  .provider-footer {
+    flex-wrap: wrap;
+  }
+  .provider-footer > span {
+    width: 100%;
+  }
+}
+@media (max-width: 760px) {
   .provider-card > span:nth-child(2),
   .provider-card > small {
     padding-left: 0;

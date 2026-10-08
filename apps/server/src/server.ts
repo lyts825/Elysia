@@ -28,7 +28,7 @@ import {
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
-import { NativeProvider } from '../../../packages/providers/src/index.js';
+import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
 import { desktopServices } from './desktop.js';
@@ -37,7 +37,8 @@ import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
 import { registerWorkbench } from './workbench.js';
-import { resolveModelChoice } from './model-choice.js';
+import { availableModels, resolveModelChoice } from './model-choice.js';
+import { apiModels, officialDeepSeek } from './api-model-catalog.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -62,12 +63,13 @@ export function defaultProviders(): ProviderConfig[] {
       id: 'deepseek',
       kind: 'deepseek',
       label: 'DeepSeek',
-      model: 'deepseek-chat',
+      model: 'deepseek-flash',
+      reasoningEffort: 'high',
       baseUrl: 'https://api.deepseek.com',
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       account: 'deepseek-default',
-      contextLimit: 32000,
-      outputLimit: 4096,
+      contextLimit: 1048576,
+      outputLimit: 8192,
       concurrency: 2,
       rpm: 60,
       tpm: 200000,
@@ -94,6 +96,7 @@ export function createServer(
   const subscription = options.subscription ?? new SubscriptionService(desktopServices());
   const codex = options.codex ?? new CodexSubscription(store.directory, desktopServices());
   const keys = options.keys ?? new ProviderKeys(desktopServices());
+  const apiCatalog = (provider: ProviderConfig) => apiModels(provider, keys);
   const providerAdapter = (provider: ProviderConfig) =>
     provider.authMode === 'codex'
       ? codex.adapter(provider)
@@ -439,6 +442,14 @@ export function createServer(
       'PROVIDER_ENDPOINT',
       '模型端点需要 HTTPS；本机测试可使用 loopback HTTP',
     );
+    config.baseUrl = providerBaseUrl(config);
+    if (config.kind === 'deepseek' && endpoint.hostname === 'api.deepseek.com') {
+      invariant(
+        ['', '/', '/v1'].includes(new URL(config.baseUrl).pathname),
+        'PROVIDER_ENDPOINT',
+        'DeepSeek Chat Completions 端点请使用 https://api.deepseek.com 或 /v1；不支持其他协议路径',
+      );
+    }
     // Validate command/revision before saving secrets. Command storage retains only a hash of the body.
     Command.parse(body);
     if (body.apiKey !== undefined) {
@@ -469,28 +480,7 @@ export function createServer(
   );
   app.get<{ Params: { id: string } }>('/api/providers/:id/models', async (request) => {
     const config = store.require<ProviderConfig>('providers', request.params.id);
-    if (config.authMode === 'codex') return codex.models(config.subscriptionAccountId!);
-    if (config.authMode === 'chatgpt') return subscription.models(config.subscriptionAccountId!);
-    const { token } = await keys.credential(config);
-    let response: Response;
-    try {
-      response = await fetch(config.baseUrl.replace(/\/$/, '') + '/models', {
-        headers: { Authorization: 'Bearer ' + token },
-        redirect: 'error',
-        signal: AbortSignal.timeout(20000),
-      });
-    } catch {
-      throw new AppError('MODEL_CATALOG', '无法读取模型目录，请检查端点与网络；也可手动填写模型 ID');
-    }
-    invariant(response.ok, 'MODEL_CATALOG', `模型目录返回 HTTP ${response.status}，也可手动填写模型 ID`);
-    const raw = await response.text();
-    invariant(raw.length <= 2 * 1024 * 1024, 'MODEL_CATALOG', '模型目录超过大小限制');
-    const data = JSON.parse(raw);
-    return z
-      .array(z.object({ id: z.string().min(1), name: z.string().optional() }))
-      .max(2000)
-      .parse(data.data)
-      .map((m) => ({ id: m.id, name: m.name || m.id }));
+    return availableModels(subscription, codex, config, apiCatalog);
   });
   const pendingChecks = new Map<string, Promise<unknown>>();
   app.post<{ Params: { id: string } }>('/api/providers/:id/check', async (request) => {
@@ -506,7 +496,9 @@ export function createServer(
     invariant(!provider.archived, 'PROVIDER_ARCHIVED', '该模型配置已删除');
     revision(body, provider);
     const perform = async () => {
-      const adapter = providerAdapter(provider);
+      const adapter = providerAdapter(
+        officialDeepSeek(provider) ? { ...provider, reasoningEffort: 'none' } : provider,
+      );
       const compiled: Record<string, unknown> = adapter.compile({
         system: 'Reply with OK. This is an explicit connectivity check.',
         task: 'OK',
@@ -570,7 +562,7 @@ export function createServer(
       return command(body, '/runs', () => {
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
       });
-    const provider = await resolveModelChoice(store, subscription, codex, body);
+    const provider = await resolveModelChoice(store, subscription, codex, body, apiCatalog);
     return command(body, '/runs', () => {
       invariant(
         body.kind === 'chat' ? !body.projectId : !!body.projectId,
@@ -702,7 +694,7 @@ export function createServer(
     const bindings = new Map<string, ProviderConfig>();
     for (const task of run.plan.tasks) {
       const choice = body.assignments.find((a) => a.key === task.key) ?? task;
-      bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice));
+      bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice, apiCatalog));
     }
     const result = command(body, request.url, () =>
       kernel.accept(request.params.id, body.version, body.expectedRevision, body.assignments, bindings),
@@ -746,11 +738,17 @@ export function createServer(
       revision(body, run);
       management.assertMutable(run.id, run.projectId);
       invariant(body.taskId && body.providerId, 'MODEL_SWITCH_CHOICE', '切换模型需要指定代理和模型配置');
-      binding = await resolveModelChoice(store, subscription, codex, {
-        providerId: body.providerId,
-        model: body.model,
-        reasoningEffort: body.reasoningEffort,
-      });
+      binding = await resolveModelChoice(
+        store,
+        subscription,
+        codex,
+        {
+          providerId: body.providerId,
+          model: body.model,
+          reasoningEffort: body.reasoningEffort,
+        },
+        apiCatalog,
+      );
     }
     const result = command(body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
