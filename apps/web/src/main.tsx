@@ -1968,44 +1968,124 @@ function ProjectModal({
     [spaceId, setSpaceId] = useState(initialSpaceId);
   const [folder, setFolder] = useState<any>(),
     [inspecting, setInspecting] = useState(false),
+    [choosing, setChoosing] = useState(false),
     [error, setError] = useState('');
+  const mounted = useRef(true),
+    readSequence = useRef(0),
+    inspection = useRef<{ sequence: number; controller: AbortController } | null>(null),
+    chooser = useRef<number | null>(null),
+    nameEdited = useRef(false),
+    creating = useRef(busy);
+  creating.current = busy;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      readSequence.current++;
+      inspection.current?.controller.abort();
+      inspection.current = null;
+      chooser.current = null;
+    };
+  }, []);
+  const cancelRead = () => {
+    readSequence.current++;
+    inspection.current?.controller.abort();
+    inspection.current = null;
+    chooser.current = null;
+    setInspecting(false);
+    setChoosing(false);
+    setError('');
+  };
+  const closeProject = () => {
+    if (creating.current) return;
+    cancelRead();
+    close();
+  };
   const existing = projects.find(
     (item) =>
       item.spaceId === spaceId && item.workspaceRoot.toLowerCase() === folder?.workspaceRoot?.toLowerCase(),
   );
   const inspect = async (directory: string) => {
+    if (creating.current || inspection.current || chooser.current !== null || !mounted.current) return;
+    const sequence = ++readSequence.current,
+      controller = new AbortController();
+    inspection.current = { sequence, controller };
+    const current = () => mounted.current && !controller.signal.aborted && readSequence.current === sequence;
     setInspecting(true);
     setError('');
     setFolder(undefined);
     try {
-      const info = await mutation('/projects/inspect', { workspaceRoot: directory });
+      const info = await api('/projects/inspect', { workspaceRoot: directory }, 'POST', controller.signal);
+      if (!current()) return;
       setRoot(info.workspaceRoot);
-      setName(info.name.slice(0, 80));
+      if (!nameEdited.current) setName(info.name.slice(0, 80));
       setBaseline('HEAD');
       setFolder(info);
     } catch (e) {
-      setError((e as Error).message);
+      if (current()) setError((e as Error).message);
     } finally {
-      setInspecting(false);
+      if (inspection.current?.sequence === sequence) {
+        inspection.current = null;
+        if (mounted.current) setInspecting(false);
+      }
+    }
+  };
+  const chooseFolder = async () => {
+    if (creating.current || inspection.current || chooser.current !== null || !window.elysia) return;
+    const sequence = ++readSequence.current;
+    chooser.current = sequence;
+    setChoosing(true);
+    setError('');
+    try {
+      const directory = await window.elysia.chooseDirectory();
+      if (!mounted.current || readSequence.current !== sequence || creating.current) return;
+      chooser.current = null;
+      setChoosing(false);
+      if (directory) {
+        setRoot(directory);
+        await inspect(directory);
+      }
+    } catch (e) {
+      if (mounted.current && readSequence.current === sequence) setError((e as Error).message);
+    } finally {
+      if (chooser.current === sequence) {
+        chooser.current = null;
+        if (mounted.current) setChoosing(false);
+      }
     }
   };
   return (
     <Modal
       title="新建项目"
       subtitle="选择资料目录与所属项目空间，再在项目下新建任务"
-      close={close}
-      busy={busy || inspecting}
+      close={closeProject}
+      busy={busy}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (
+            creating.current ||
+            inspecting ||
+            choosing ||
+            inspection.current ||
+            chooser.current !== null ||
+            !folder ||
+            !name.trim()
+          )
+            return;
           submit({ name, workspaceRoot: root, spaceId, ...(folder?.gitAvailable ? { baseline } : {}) });
         }}
       >
         <div className="form-body">
           <label>
             所属项目空间
-            <select aria-label="新项目所属空间" value={spaceId} onChange={(e) => setSpaceId(e.target.value)}>
+            <select
+              aria-label="新项目所属空间"
+              value={spaceId}
+              disabled={busy}
+              onChange={(e) => setSpaceId(e.target.value)}
+            >
               {spaces.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -2016,18 +2096,8 @@ function ProjectModal({
           <button
             type="button"
             className="folder-picker"
-            disabled={inspecting || !window.elysia}
-            onClick={async () => {
-              try {
-                const directory = await window.elysia?.chooseDirectory();
-                if (directory) {
-                  setRoot(directory);
-                  await inspect(directory);
-                }
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
+            disabled={busy || inspecting || choosing || !window.elysia}
+            onClick={() => void chooseFolder()}
           >
             <Icon name="folder" size={25} />
             <strong>选择本机文件夹</strong>
@@ -2042,8 +2112,9 @@ function ProjectModal({
               <input
                 required
                 value={root}
-                disabled={inspecting}
+                disabled={busy || choosing}
                 onChange={(e) => {
+                  cancelRead();
                   setRoot(e.target.value);
                   setFolder(undefined);
                 }}
@@ -2052,14 +2123,22 @@ function ProjectModal({
               <button
                 type="button"
                 className="secondary"
-                disabled={inspecting || !root.trim()}
+                disabled={busy || inspecting || choosing || !root.trim()}
                 onClick={() => void inspect(root)}
               >
                 读取目录
               </button>
             </div>
           </label>
-          {inspecting && <p role="status">正在读取文件夹…</p>}
+          {choosing && <p role="status">正在选择文件夹…</p>}
+          {inspecting && (
+            <p role="status">
+              正在读取文件夹…{' '}
+              <button type="button" className="text-button" disabled={busy} onClick={cancelRead}>
+                取消读取
+              </button>
+            </p>
+          )}
           {error && (
             <p className="inline-warning" role="alert">
               {error}
@@ -2098,23 +2177,32 @@ function ProjectModal({
             <input
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              disabled={busy}
+              onChange={(e) => {
+                nameEdited.current = true;
+                setName(e.target.value);
+              }}
               placeholder="例如：我的研究项目"
             />
           </label>
           {folder?.gitAvailable && (
             <label>
               Git 基线
-              <input required value={baseline} onChange={(e) => setBaseline(e.target.value)} />
+              <input
+                required
+                value={baseline}
+                disabled={busy}
+                onChange={(e) => setBaseline(e.target.value)}
+              />
               <span className="field-help">解析并保存具体 commit，不复制主目录的未提交改动。</span>
             </label>
           )}
         </div>
         <footer className="modal-footer">
-          <button type="button" className="secondary" disabled={busy || inspecting} onClick={close}>
+          <button type="button" className="secondary" disabled={busy} onClick={closeProject}>
             取消
           </button>
-          <button className="primary" disabled={busy || inspecting || !folder || !name.trim()}>
+          <button className="primary" disabled={busy || inspecting || choosing || !folder || !name.trim()}>
             {existing ? '打开已有项目' : '打开文件夹作为项目'}
             <Icon name="arrow" size={15} />
           </button>

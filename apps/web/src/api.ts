@@ -20,19 +20,26 @@ export function canRetryConnection(error: unknown) {
       (error.kind === 'http' && (error.status || 0) >= 500 && (error.status || 0) < 600))
   );
 }
-export async function api<T = any>(path: string, body?: unknown, method?: string): Promise<T> {
+export async function api<T = any>(
+  path: string,
+  body?: unknown,
+  method?: string,
+  signal?: AbortSignal,
+): Promise<T> {
   const request: RequestInit = {
     method: method || (body ? 'POST' : 'GET'),
     credentials: 'same-origin',
     headers: { ...(body ? { 'Content-Type': 'application/json', 'X-Elysia-Csrf': csrf } : {}) },
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   };
   let response: Response;
   let text: string;
   try {
     response = await fetch('/api' + path, request);
     text = await response.text();
-  } catch {
+  } catch (error) {
+    if (signal && (signal.aborted || (error instanceof Error && error.name === 'AbortError'))) throw error;
     throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
   }
   const failed = `本机请求失败（HTTP ${response.status}），请重试。`;
