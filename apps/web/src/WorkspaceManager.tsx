@@ -49,13 +49,13 @@ export function WorkspaceManager({
         setError(conflict);
         try {
           if ((await updated()) === false)
-            setError(conflict + '列表读取失败，请关闭此窗口，刷新工作台后重新操作。');
+            setError(conflict + '列表读取失败，请关闭此窗口，刷新会话列表后重新操作。');
         } catch (readError) {
           setError(
             conflict +
               '列表读取失败：' +
               (readError as Error).message +
-              ' 请关闭此窗口，刷新工作台后重新操作。',
+              ' 请关闭此窗口，刷新会话列表后重新操作。',
           );
         }
       } else setError((e as Error).message);

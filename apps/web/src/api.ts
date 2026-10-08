@@ -40,7 +40,7 @@ export async function api<T = any>(
     text = await response.text();
   } catch (error) {
     if (signal && (signal.aborted || (error instanceof Error && error.name === 'AbortError'))) throw error;
-    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
+    throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
   }
   const failed = `本机请求失败（HTTP ${response.status}），请重试。`;
   let result: any;
@@ -49,7 +49,7 @@ export async function api<T = any>(
   } catch {
     if (!response.ok) throw new ApiError(failed, 'http', response.status);
     if (response.status === 204) return undefined as T;
-    throw new ApiError('本机服务返回的数据无法读取，请重新打开工作台。', 'protocol', response.status);
+    throw new ApiError('本机服务返回的数据无法读取，请重新打开 Elysia。', 'protocol', response.status);
   }
   if (!response.ok) {
     const message = typeof result?.message === 'string' ? result.message.trim() : '';
@@ -68,7 +68,7 @@ export async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint
     response = await fetch('/api' + path, { method: 'GET', credentials: 'same-origin', signal });
   } catch (error) {
     if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
-    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
+    throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
   }
   try {
     if (response.ok) return new Uint8Array(await response.arrayBuffer());
@@ -92,7 +92,7 @@ export async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint
       error instanceof ApiError
     )
       throw error;
-    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
+    throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
   }
 }
 export const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>
@@ -125,7 +125,7 @@ export function initializeSession(options?: { retry?: boolean }) {
       }
     }
     if (typeof result?.csrf !== 'string' || !result.csrf.trim())
-      throw new ApiError('本机服务返回的会话无法读取，请重新打开工作台。', 'protocol', 200);
+      throw new ApiError('本机服务返回的会话无法读取，请重新打开 Elysia。', 'protocol', 200);
     csrf = result.csrf;
     bootstrapToken = null;
     sessionFailure = undefined;

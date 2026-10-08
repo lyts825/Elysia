@@ -707,7 +707,7 @@ function App() {
         target.kind === 'run'
           ? runs.find((run) => run.id === target.item.id)
           : projects.find((project) => project.id === target.item.id);
-      if (!current) throw new Error('记录已被删除，请刷新工作台。');
+      if (!current) throw new Error('记录已被删除，请刷新会话列表。');
       try {
         await mutation(
           `/${target.kind === 'run' ? 'runs' : 'projects'}/${current.id}`,
@@ -722,12 +722,12 @@ function App() {
         conflicted = true;
         let message = '记录已更新，本次操作未执行。请核对列表后重新操作。';
         try {
-          if ((await managed()) === false) message += '列表读取失败，请刷新工作台后重新操作。';
+          if ((await managed()) === false) message += '列表读取失败，请刷新会话列表后重新操作。';
         } catch (readError) {
           message +=
             '列表读取失败：' +
             (readError instanceof Error ? readError.message : String(readError)) +
-            ' 请刷新工作台后重新操作。';
+            ' 请刷新会话列表后重新操作。';
         }
         throw new Error(message);
       }
@@ -785,7 +785,7 @@ function App() {
       <div className="auth-screen">
         <BrandIcon />
         <h1>Elysia</h1>
-        <p>{readIssue?.message || '正在连接本机工作台…'}</p>
+        <p>{readIssue?.message || '正在连接 Elysia…'}</p>
         {readIssue?.retryable && (
           <button
             className="secondary"
@@ -801,10 +801,10 @@ function App() {
         {readIssue && (
           <div className="auth-help">
             {readIssue.retryable ? (
-              '确认本机工作台服务正在运行后，再重试连接。'
+              '确认本机服务正在运行后，再重试连接。'
             ) : (
               <>
-                请双击 <code>Start-Elysia.vbs</code> 重新打开独立工作台。
+                请双击 <code>Start-Elysia.vbs</code> 重新打开 Elysia。
                 <br />
                 重新启动服务可获取新的链接。
               </>
@@ -859,16 +859,6 @@ function App() {
         >
           <Icon name="plus" />
           <span>新建独立对话</span>
-        </button>
-        <button
-          className={'nav-item ' + (!runId ? 'selected' : '')}
-          onClick={newRun}
-          aria-current={!runId ? 'page' : undefined}
-          aria-label="工作台"
-          title="工作台"
-        >
-          <Icon name="grid" />
-          <span>工作台</span>
         </button>
         <div className="space-selector">
           <label htmlFor="sidebar-space">项目空间</label>
@@ -984,7 +974,7 @@ function App() {
             </span>
             <span className="slash">/</span>
             <strong title={detail?.run.objective}>
-              {detail ? detail.run.title || detail.run.objective : '工作台'}
+              {detail ? detail.run.title || detail.run.objective : project ? '新建任务' : '新建对话'}
             </strong>
           </div>
           <div className="topbar-right">
@@ -996,7 +986,7 @@ function App() {
               className="icon-button"
               onClick={() => void connect(true)}
               title="刷新"
-              aria-label="刷新工作台"
+              aria-label="刷新会话"
               disabled={retrying || busy}
               aria-busy={retrying}
             >
@@ -1016,7 +1006,7 @@ function App() {
           <div className="error-banner" role="alert">
             <span>
               {readIssue.message}
-              {readIssue.reopen && ' 请双击 Start-Elysia.vbs 重新打开工作台。'}
+              {readIssue.reopen && ' 请双击 Start-Elysia.vbs 重新打开 Elysia。'}
             </span>
             {readIssue.retryable && (
               <button

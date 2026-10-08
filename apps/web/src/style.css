@@ -205,10 +205,6 @@ a {
   font-size: 13px;
   text-align: left;
 }
-.nav-item.selected {
-  background: #46625a;
-  color: #fffaf0;
-}
 .nav-item:hover,
 .project-item:hover,
 .history-item:hover {
@@ -1089,21 +1085,38 @@ a {
   color: var(--secondary);
 }
 .reply-box {
-  margin: 0 clamp(16px, 2vw, 32px) 18px;
+  width: calc(100% - clamp(16px, 2vw, 32px) * 2);
+  max-width: 860px;
+  margin: 0 auto 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 3px 12px #25403208;
-  background: #fff;
+  border-radius: 14px;
+  background: var(--surface);
   flex: none;
   overflow: hidden;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+.reply-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #965d6b12;
 }
 .reply-box textarea {
+  display: block;
+  field-sizing: content;
   resize: none;
-  height: 68px;
+  min-height: 64px;
+  max-height: min(32vh, 240px);
   border: 0;
+  border-radius: 0;
   box-shadow: none;
-  padding: 16px;
-  font-size: 13px;
+  background: transparent;
+  padding: 14px 16px 8px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.reply-box textarea:focus {
+  box-shadow: none;
 }
 .reply-box textarea::placeholder {
   color: var(--muted);
@@ -1112,10 +1125,10 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 12px 10px;
+  padding: 6px 10px 10px;
   font-size: 11px;
   color: var(--muted);
-  gap: 12px;
+  gap: 8px;
 }
 .send-button {
   border: 0;
@@ -1957,7 +1970,8 @@ a {
     padding: 7px 8px;
   }
   .reply-box {
-    margin: 0 12px 12px;
+    width: calc(100% - 24px);
+    margin: 0 auto 12px;
   }
   .overlay {
     padding: 12px;

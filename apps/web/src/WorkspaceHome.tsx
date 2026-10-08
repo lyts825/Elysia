@@ -44,6 +44,7 @@ export function WorkspaceHome({
         </header>
         <section className="composer" aria-label={project ? '创建项目任务' : '创建独立对话'}>
           <textarea
+            rows={2}
             aria-label={project ? '任务目标' : '对话内容'}
             placeholder={project ? '描述你要完成的任务…' : '有什么想聊的？'}
             value={draft}
@@ -84,10 +85,10 @@ export function WorkspaceHome({
                 className="primary"
                 disabled={!draft.trim() || busy || !modelReady || !contextReady || !!project?.archived}
                 onClick={start}
-                title="继续 · Ctrl + Enter"
+                title={`${project ? '继续' : '发送'} · Ctrl + Enter`}
               >
-                继续
-                <Icon name="arrow" size={16} />
+                {project ? '继续' : '发送'}
+                <Icon name={project ? 'arrow' : 'send'} size={16} />
               </button>
             </div>
           </div>
