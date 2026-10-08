@@ -1,4 +1,11 @@
-export type PreviewEntry = { path: string; size: number; modifiedAt: number; change: 'A' | 'M' | 'D' | '' };
+export type PreviewEntry = {
+  path: string;
+  size: number;
+  modifiedAt: number;
+  change: 'A' | 'M' | 'D' | '';
+  renderRevision?: number;
+  renderTruncated?: boolean;
+};
 export type PreviewSnapshot = {
   taskId: string;
   workspace: string | null;

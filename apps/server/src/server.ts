@@ -196,9 +196,14 @@ export function createServer(
       );
   };
   app.get('/api/health', async () => ({ version: VERSION, status: 'ok' }));
-  app.get<{ Params: { runId: string; taskId: string } }>(
+  app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview',
-    async (request) => previews.snapshot(request.params.runId, request.params.taskId),
+    async (request) =>
+      previews.snapshot(
+        request.params.runId,
+        request.params.taskId,
+        z.string().min(1).max(1000).optional().parse(request.query.path),
+      ),
   );
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview/file',
@@ -210,7 +215,11 @@ export function createServer(
       ),
   );
   app.get<{ Params: { token: string; '*': string } }>('/preview/:token/*', async (request, reply) => {
-    const result = await previews.resource(request.params.token, request.params['*']);
+    const result = await previews.resource(
+      request.params.token,
+      request.params['*'],
+      ['iframe', 'document'].includes(String(request.headers['sec-fetch-dest'] || '')),
+    );
     const base = `http://${request.headers.host}/preview/${request.params.token}/`;
     reply
       .header('Cache-Control', 'no-store')

@@ -47,9 +47,9 @@ export function PreviewPanel({
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
   const taskId = task?.id || '',
     agent = agents.find((a) => a.taskId === taskId);
-  const [snapshot, setSnapshot] = useState<PreviewSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<(PreviewSnapshot & { runId: string }) | null>(null);
   const [filesByTask, setFilesByTask] = useState<Record<string, string>>({});
-  const [content, setContent] = useState<PreviewFile | null>(null);
+  const [content, setContent] = useState<(PreviewFile & { context: string }) | null>(null);
   const [view, setView] = useState('page'),
     [auto, setAuto] = useState(true),
     [refresh, setRefresh] = useState(0);
@@ -66,25 +66,52 @@ export function PreviewPanel({
   autoRef.current = auto;
   const fileRetries = useRef<{ cancel: () => void; resume: () => void } | null>(null);
   const selected = filesByTask[taskId] || '';
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const current = snapshot?.runId === runId && snapshot.taskId === taskId ? snapshot : null;
+  const selectedEntry = current?.files.find((file) => file.path === selected);
+  const context = JSON.stringify([
+    runId,
+    taskId,
+    selected,
+    current?.workspace,
+    current?.baseline,
+    current?.renderBase,
+  ]);
+  const selectedVersion = JSON.stringify(
+    selectedEntry ? [selectedEntry.size, selectedEntry.modifiedAt, selectedEntry.change] : null,
+  );
   useEffect(() => {
     setSnapshot(null);
     setContent(null);
     setSnapshotError('');
     setFileError('');
     setUpdated('');
-  }, [taskId]);
+  }, [runId, taskId]);
   useEffect(() => {
     if (!taskId) return;
+    const controller = new AbortController();
     let disposed = false,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const next = await api<PreviewSnapshot>(`/runs/${runId}/tasks/${taskId}/preview`);
+        const next = await api<PreviewSnapshot>(
+          `/runs/${runId}/tasks/${taskId}/preview${selectedRef.current ? '?path=' + encodeURIComponent(selectedRef.current) : ''}`,
+          undefined,
+          undefined,
+          controller.signal,
+        );
         if (disposed) return;
         setSnapshot((old) =>
-          old?.taskId === taskId && old.revision === next.revision && old.renderBase === next.renderBase
+          old?.runId === runId &&
+          old.taskId === taskId &&
+          old.revision === next.revision &&
+          old.renderBase === next.renderBase &&
+          old.workspace === next.workspace &&
+          old.baseline === next.baseline &&
+          old.truncated === next.truncated
             ? old
-            : next,
+            : { ...next, runId },
         );
         setFilesByTask((old) => {
           if (next.files.some((f) => f.path === old[taskId])) return old;
@@ -106,16 +133,21 @@ export function PreviewPanel({
     void poll();
     return () => {
       disposed = true;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [runId, taskId, auto, refresh]);
   useEffect(() => {
-    setContent(null);
+    setContent((old) => (old?.context === context ? old : null));
     setFileError('');
     setFileRetryCount(0);
     setFileRetryPending(false);
     setLoading(false);
-    if (!selected) return;
+    if (!selected || !current?.workspace || !selectedEntry) {
+      setContent(null);
+      return;
+    }
+    const controller = new AbortController();
     let disposed = false,
       attempts = 0,
       inFlight = false,
@@ -146,9 +178,12 @@ export function PreviewPanel({
       try {
         const result = await api<PreviewFile>(
           `/runs/${runId}/tasks/${taskId}/preview/file?path=${encodeURIComponent(selected)}`,
+          undefined,
+          undefined,
+          controller.signal,
         );
         if (!disposed) {
-          setContent(result);
+          setContent({ ...result, context });
           setFileError('');
         }
       } catch (e) {
@@ -169,17 +204,18 @@ export function PreviewPanel({
     void read();
     return () => {
       disposed = true;
+      controller.abort();
       cancel();
       if (fileRetries.current === controls) fileRetries.current = null;
     };
-  }, [runId, taskId, selected, snapshot?.revision, refresh]);
+  }, [context, selectedVersion, refresh]);
   useEffect(() => {
     if (auto) fileRetries.current?.resume();
     else fileRetries.current?.cancel();
   }, [auto]);
-  const current = snapshot?.taskId === taskId ? snapshot : null;
   const visible = current?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) || [];
-  const selectedFile = content?.path === selected ? content : null;
+  const selectedFile =
+    selectedEntry && content?.context === context && content.path === selected ? content : null;
   const resourceUrl =
     current?.renderBase && selected
       ? current.renderBase + selected.split('/').map(encodeURIComponent).join('/')
@@ -275,7 +311,9 @@ export function PreviewPanel({
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
           自动更新
         </label>
-        <span className="preview-timestamp">{updated ? `${updated} 已同步` : '正在连接…'}</span>
+        <span className="preview-timestamp">
+          {loading && selectedFile ? '正在更新当前文件…' : updated ? `${updated} 已同步` : '正在连接…'}
+        </span>
         <button onClick={() => setRefresh((n) => n + 1)} aria-label="刷新预览">
           <Icon name="refresh" size={16} />
         </button>
@@ -394,6 +432,9 @@ export function PreviewPanel({
           {current?.truncated && (
             <p className="preview-limit">文件列表最多展示 1,500 项；部分目录或文件不可读取。</p>
           )}
+          {selectedEntry?.renderTruncated && (
+            <p className="preview-limit">页面引用的本地资源超过 1,500 项，部分资源更新需手动刷新。</p>
+          )}
           <MotionContent className="preview-canvas" motionKey={`${taskId}:${view}:${wide}`}>
             {!current?.workspace ? (
               <PreviewEmpty
@@ -405,7 +446,7 @@ export function PreviewPanel({
                 title="等待第一个文件"
                 text="代理创建文件后会自动显示，也可以切换到其他代理查看进展。"
               />
-            ) : loading ? (
+            ) : loading && !selectedFile ? (
               <div className="preview-loading">正在读取文件…</div>
             ) : selectedFile ? (
               view === 'diff' ? (
@@ -486,7 +527,15 @@ export function PreviewPanel({
                     title={`${task?.spec.title} · ${selected}`}
                     sandbox="allow-scripts"
                     referrerPolicy="no-referrer"
-                    key={taskId + selected + current.revision + refresh}
+                    key={JSON.stringify([
+                      runId,
+                      taskId,
+                      selected,
+                      selectedFile.hash,
+                      selectedFile.renderUrl || resourceUrl,
+                      selectedEntry?.renderRevision || 0,
+                      refresh,
+                    ])}
                     src={selectedFile.renderUrl || resourceUrl}
                   />
                 </div>

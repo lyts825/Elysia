@@ -41,28 +41,97 @@ const within = (root: string, target: string) => {
     !path.isAbsolute(relative)
   );
 };
+type Capability = {
+  runId: string;
+  taskId: string;
+  scope: string;
+  page: string;
+  touched: number;
+  revision: number;
+  observation: number;
+  generation: number;
+  truncated: boolean;
+  resources: Map<string, { version: string; observation: number }>;
+};
+const capabilityKey = (taskId: string, scope: string, page: string) => JSON.stringify([taskId, scope, page]);
+const resourceVersion = (stat: { size: number; mtimeMs: number; ctimeMs: number }) =>
+  JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs]);
 
 export class PreviewService {
-  private capabilities = new Map<string, { runId: string; taskId: string; scope: string; touched: number }>();
+  private capabilities = new Map<string, Capability>();
   private tokens = new Map<string, string>();
   constructor(
     private store: Store,
     private gateway: ToolGateway,
   ) {}
-  private capability(runId: string, taskId: string, scope = '') {
-    const key = taskId + ':' + scope;
+  private capability(runId: string, taskId: string, scope = '', page = '') {
+    const key = capabilityKey(taskId, scope, page);
     for (const [token, value] of this.capabilities)
       if (Date.now() - value.touched > 30 * 60000) {
         this.capabilities.delete(token);
-        this.tokens.delete(value.taskId + ':' + value.scope);
+        this.tokens.delete(capabilityKey(value.taskId, value.scope, value.page));
       }
     let token = this.tokens.get(key);
     if (!token) {
       token = randomBytes(24).toString('hex');
       this.tokens.set(key, token);
     }
-    this.capabilities.set(token, { runId, taskId, scope, touched: Date.now() });
+    const previous = this.capabilities.get(token);
+    if (previous) previous.touched = Date.now();
+    else
+      this.capabilities.set(token, {
+        runId,
+        taskId,
+        scope,
+        page,
+        touched: Date.now(),
+        revision: 0,
+        observation: 0,
+        generation: 0,
+        truncated: false,
+        resources: new Map(),
+      });
     return token;
+  }
+  private observe(
+    capability: Capability,
+    name: string,
+    version: string,
+    observation: number,
+    invalidate = false,
+  ) {
+    if (observation < capability.generation) return;
+    const previous = capability.resources.get(name);
+    if (previous && previous.observation > observation) return;
+    if (!previous && capability.resources.size >= listLimit) {
+      capability.truncated = true;
+      return;
+    }
+    if (invalidate && previous && previous.version !== version) capability.revision++;
+    capability.resources.set(name, { version, observation });
+  }
+  private async renderState(task: Task, name: string, active: boolean) {
+    const scope = path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name);
+    const token = this.tokens.get(capabilityKey(task.id, scope, name));
+    const capability = token ? this.capabilities.get(token) : undefined;
+    if (!capability) return { renderRevision: 0 };
+    if (!active) return { renderRevision: capability.revision, renderTruncated: capability.truncated };
+    capability.touched = Date.now();
+    for (const resource of capability.resources.keys()) {
+      const observation = ++capability.observation;
+      let version: string;
+      try {
+        const stat = await fs.stat(await this.filename(task, resource));
+        version = stat.isFile() ? resourceVersion(stat) : 'unavailable:NOT_FILE';
+      } catch (error) {
+        version =
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? 'missing'
+            : 'unavailable:' + ((error as NodeJS.ErrnoException).code || 'UNKNOWN');
+      }
+      this.observe(capability, resource, version, observation, resource !== capability.page);
+    }
+    return { renderRevision: capability.revision, renderTruncated: capability.truncated };
   }
   private task(runId: string, taskId: string) {
     const run = this.store.require<Run>('runs', runId),
@@ -103,8 +172,9 @@ export class PreviewService {
     );
     return result;
   }
-  async snapshot(runId: string, taskId: string): Promise<PreviewSnapshot> {
+  async snapshot(runId: string, taskId: string, selected?: string): Promise<PreviewSnapshot> {
     const task = this.task(runId, taskId);
+    if (selected !== undefined) normalized(selected);
     if (!task.workspace)
       return {
         taskId,
@@ -202,6 +272,9 @@ export class PreviewService {
               size: stat.size,
               modifiedAt: stat.mtimeMs,
               change: changes.get(name) || '',
+              ...(/\.html?$/i.test(name)
+                ? await this.renderState(task, name, selected === undefined || selected === name)
+                : {}),
             });
         }
       } catch (error) {
@@ -299,11 +372,11 @@ export class PreviewService {
       deleted,
       renderUrl:
         kind === 'html' && !deleted
-          ? `/preview/${this.capability(runId, taskId, path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name))}/${encodeURIComponent(path.posix.basename(name))}`
+          ? `/preview/${this.capability(runId, taskId, path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name), name)}/${encodeURIComponent(path.posix.basename(name))}`
           : null,
     };
   }
-  async resource(token: string, input: string) {
+  async resource(token: string, input: string, document = false) {
     const capability = this.capabilities.get(token);
     invariant(
       capability && Date.now() - capability.touched < 30 * 60000,
@@ -312,13 +385,25 @@ export class PreviewService {
     );
     const task = this.task(capability.runId, capability.taskId);
     const relative = normalized(input || 'index.html');
-    const filename = await this.filename(
-        task,
-        capability.scope ? capability.scope + '/' + relative : relative,
-      ),
-      stat = await fs.stat(filename);
-    invariant(stat.isFile() && stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
-    let bytes = await fs.readFile(filename);
+    const name = capability.scope ? capability.scope + '/' + relative : relative;
+    const observation = ++capability.observation;
+    if (document && name === capability.page) {
+      capability.generation = observation;
+      capability.resources.clear();
+      capability.truncated = false;
+    }
+    let filename: string, bytes: Buffer;
+    try {
+      filename = await this.filename(task, name);
+      const stat = await fs.stat(filename);
+      invariant(stat.isFile() && stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
+      if (capability.page) this.observe(capability, name, resourceVersion(stat), observation);
+      bytes = await fs.readFile(filename);
+    } catch (error) {
+      if (capability.page && (error as NodeJS.ErrnoException).code === 'ENOENT')
+        this.observe(capability, name, 'missing', observation);
+      throw error;
+    }
     invariant(bytes.length <= assetLimit, 'PREVIEW_SIZE', '预览资源超过大小上限');
     const mediaType = fileMediaType(filename);
     const prefix = `/preview/${token}/`;
