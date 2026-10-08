@@ -31,7 +31,7 @@ export async function api<T = any>(path: string, body?: unknown, method?: string
 }
 export const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>
   api<T>(path, { commandId: crypto.randomUUID(), ...body }, method);
-let sessionPromise: Promise<void> | null = null;
+let sessionPromise: Promise<string | undefined> | null = null;
 export function initializeSession() {
   if (!sessionPromise)
     sessionPromise = (async () => {
@@ -40,6 +40,9 @@ export function initializeSession() {
       if (token) history.replaceState(null, '', location.pathname);
       const result = await api('/session', token ? { token } : undefined);
       csrf = result.csrf;
+      return typeof result.selectionScope === 'string' && result.selectionScope.trim()
+        ? result.selectionScope
+        : undefined;
     })();
   return sessionPromise;
 }

@@ -31,6 +31,14 @@ import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
+import {
+  initialNavigation,
+  navigationKey,
+  readNavigation,
+  resolveNavigation,
+  writeNavigation,
+  type NavigationState,
+} from './NavigationState';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
 import { TaskGraph } from './TaskGraph';
@@ -86,11 +94,8 @@ function App() {
     [busy, setBusy] = useState(false),
     [projects, setProjects] = useState<Project[]>([]),
     [spaces, setSpaces] = useState<ProjectSpace[]>([]),
-    [spaceId, setSpaceId] = useState('default'),
     [runs, setRuns] = useState<Run[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
-    [projectId, setProjectId] = useState(''),
-    [runId, setRunId] = useState(''),
     [detail, setDetail] = useState<Detail | null>(null),
     [tab, setTab] = useState('tasks'),
     [previewOpen, setPreviewOpen] = useState(false),
@@ -105,6 +110,8 @@ function App() {
     [draft, setDraft] = useState(''),
     [replies, setReplies] = useState<Record<string, string>>({}),
     [streaming, setStreaming] = useState<Record<string, string>>({});
+  const [selection, setSelection] = useState(initialNavigation);
+  const { spaceId, projectId, runId } = selection;
   const project = projects.find((p) => p.id === projectId);
   const projectRuns = runs.filter(
     (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
@@ -170,27 +177,54 @@ function App() {
   const runStream = useRef(new RunStream());
   const [connection, setConnection] = useState('connecting');
   const actionPending = useRef(false);
+  const navigation = useRef(initialNavigation);
+  const navigationEpoch = useRef(0);
+  const navigationStorageKey = useRef<string | undefined>(undefined);
+  const savedNavigation = useRef<NavigationState | undefined>(undefined);
+  const navigationInitialized = useRef(false);
+  const listRequest = useRef(0);
   const reply = replies[runId] || '';
+  const navigate = useCallback((next: NavigationState, explicit = false) => {
+    if (explicit) {
+      navigationEpoch.current++;
+      navigationInitialized.current = true;
+      savedNavigation.current = undefined;
+    }
+    if (navigation.current.runId !== next.runId) {
+      setDetail(null);
+      setPreviewOpen(false);
+    }
+    navigation.current = next;
+    activeRunId.current = next.runId;
+    setSelection(next);
+    if (navigationInitialized.current) writeNavigation(navigationStorageKey.current, next);
+  }, []);
   const refresh = useCallback(async () => {
+    const request = ++listRequest.current;
+    const epoch = navigationEpoch.current;
     const [p, r, v, s] = await Promise.all([
       api<Project[]>('/projects'),
       api<Run[]>('/runs'),
       api<Provider[]>('/providers'),
       api<ProjectSpace[]>('/spaces'),
     ]);
+    if (request !== listRequest.current) return;
     setProjects(p);
     setRuns(r);
     setProviders(v);
     setSpaces(s);
-    setSpaceId((old) =>
-      s.some((item) => item.id === old) ? old : s.find((item) => item.protected)?.id || s[0]?.id || 'default',
-    );
-    setProjectId((old) => (p.some((item) => item.id === old) ? old : ''));
-  }, []);
-  useEffect(() => {
-    const owner = projects.find((item) => item.id === projectId);
-    if (owner && spaces.some((item) => item.id === owner.spaceId)) setSpaceId(owner.spaceId);
-  }, [projects, spaces, projectId]);
+    if (epoch !== navigationEpoch.current) return;
+    const restoring = !navigationInitialized.current;
+    const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
+    navigationInitialized.current = true;
+    savedNavigation.current = undefined;
+    if (restoring && next.runId) {
+      const run = r.find((run) => run.id === next.runId)!;
+      setPreviewTaskId(run.rootTaskId);
+      setTab(run.kind === 'chat' ? 'agents' : 'tasks');
+    }
+    navigate(next);
+  }, [navigate]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
@@ -204,7 +238,9 @@ function App() {
   }, []);
   useEffect(() => {
     initializeSession()
-      .then(() => {
+      .then((scope) => {
+        navigationStorageKey.current = navigationKey(scope);
+        savedNavigation.current = readNavigation(navigationStorageKey.current);
         setReady(true);
         return refresh();
       })
@@ -308,18 +344,21 @@ function App() {
     });
   };
   const selectRun = (run: Run) => {
-    activeRunId.current = run.id;
     setPreviewTaskId(run.rootTaskId);
-    setRunId(run.id);
-    setProjectId(run.projectId || '');
     const owner = projects.find((p) => p.id === run.projectId);
-    if (owner) setSpaceId(owner.spaceId);
+    navigate(
+      {
+        spaceId: owner?.spaceId || navigation.current.spaceId,
+        projectId: run.projectId || '',
+        runId: run.id,
+      },
+      true,
+    );
     setPreviewOpen(false);
     setTab(run.kind === 'chat' ? 'agents' : 'tasks');
   };
   const newRun = () => {
-    activeRunId.current = '';
-    setRunId('');
+    navigate({ ...navigation.current, runId: '' }, true);
     setDetail(null);
     setPreviewOpen(false);
   };
@@ -366,18 +405,18 @@ function App() {
     }
   };
   const selectProject = (id: string) => {
-    setProjectId(id);
     const owner = projects.find((p) => p.id === id);
-    if (owner) setSpaceId(owner.spaceId);
-    newRun();
+    navigate({ spaceId: owner?.spaceId || navigation.current.spaceId, projectId: id, runId: '' }, true);
+    setDetail(null);
+    setPreviewOpen(false);
   };
   const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => {
     if (
       (deleted?.kind === 'run' && deleted.id === runId) ||
       (deleted?.kind === 'project' && deleted.id === projectId)
     ) {
-      newRun();
-      if (deleted.kind === 'project') setProjectId('');
+      if (deleted.kind === 'project') selectProject('');
+      else newRun();
     } else if (runId) await refreshDetail();
     await refresh();
     if (deleted?.kind === 'run')
@@ -460,9 +499,7 @@ function App() {
               id="sidebar-space"
               value={spaceId}
               onChange={(e) => {
-                setSpaceId(e.target.value);
-                setProjectId('');
-                newRun();
+                navigate({ spaceId: e.target.value, projectId: '', runId: '' }, true);
               }}
             >
               {spaces.map((s) => (
@@ -1380,8 +1417,7 @@ function App() {
                   submit={(body) =>
                     act(async () => {
                       const p = await mutation<Project>('/projects', body);
-                      selectProject(p.id);
-                      setSpaceId(p.spaceId);
+                      navigate({ spaceId: p.spaceId, projectId: p.id, runId: '' }, true);
                       setModal('');
                     })
                   }

@@ -107,7 +107,8 @@ export function createServer(
   executor.adapterFactory = (agent) => providerAdapter(agent.providerBinding);
   for (const config of defaultProviders())
     if (!store.get('providers', config.id)) store.put('providers', config);
-  const bootstrapToken = randomBytes(32).toString('hex'),
+  const selectionScope = randomBytes(16).toString('hex'),
+    bootstrapToken = randomBytes(32).toString('hex'),
     sessions = new Map<string, string>();
   let bootstrapUsed = false;
   let bootstrapExpires = Date.now() + 15 * 60000;
@@ -235,11 +236,12 @@ export function createServer(
       csrf = randomBytes(32).toString('hex');
     sessions.set(session, csrf);
     reply.header('Set-Cookie', `elysia_session=${session}; HttpOnly; SameSite=Strict; Path=/api`);
-    return { csrf, version: VERSION };
+    return { csrf, version: VERSION, selectionScope };
   });
   app.get('/api/session', async (request) => ({
     csrf: sessions.get(cookieSession(request.headers.cookie)!),
     version: VERSION,
+    selectionScope,
   }));
   app.get('/api/projects', async () => store.all<Project>('projects'));
   app.post('/api/projects/inspect', async (request) => {
