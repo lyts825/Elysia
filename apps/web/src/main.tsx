@@ -2427,13 +2427,18 @@ function ContractModal({
   return (
     <Modal
       title={'任务约定 · v' + contract.version}
-      subtitle="修改后在安全边界重新生成计划，原授权与预算继续生效"
+      subtitle={
+        disabled
+          ? '任务已结束或归档，约定仅供查看。'
+          : '修改后在安全边界重新生成计划，需再次确认；权限范围与累计预算保持。'
+      }
       busy={busy}
       close={close}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (busy || disabled) return;
           submit(value);
         }}
       >
@@ -2441,6 +2446,8 @@ function ContractModal({
           <label>
             目标
             <textarea
+              disabled={busy}
+              readOnly={disabled}
               value={value.objective}
               onChange={(e) => setValue((v) => ({ ...v, objective: e.target.value }))}
             />
@@ -2450,6 +2457,8 @@ function ContractModal({
               {label}（每行一项）
               <textarea
                 rows={2}
+                disabled={busy}
+                readOnly={disabled}
                 value={(value[key as keyof Contract] as string[]).join('\n')}
                 onChange={(e) => setValue((v) => ({ ...v, [key]: e.target.value.split('\n') }))}
               />
@@ -2464,7 +2473,7 @@ function ContractModal({
             关闭
           </button>
           <button className="primary" disabled={busy || disabled}>
-            保存并重新规划
+            {busy ? '正在保存约定…' : '保存并重新规划'}
           </button>
         </footer>
       </form>

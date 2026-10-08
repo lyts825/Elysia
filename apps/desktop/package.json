@@ -1,6 +1,6 @@
 {
   "name": "@elysia/desktop",
   "private": true,
-  "version": "0.6.15-preview.1",
+  "version": "0.6.16-preview.1",
   "main": "main.cjs"
 }
