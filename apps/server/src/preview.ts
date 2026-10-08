@@ -1,8 +1,13 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
-import type { PreviewEntry, PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview.js';
+import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
+import type {
+  PreviewEntry,
+  PreviewFile,
+  PreviewResourceIssue,
+  PreviewSnapshot,
+} from '../../../packages/contracts/src/preview.js';
 import { fileMediaType, isBinaryFile } from '../../../packages/contracts/src/files.js';
 import { Store, hash } from '../../../packages/storage/src/index.js';
 import { ToolGateway } from '../../../packages/tools/src/index.js';
@@ -51,11 +56,19 @@ type Capability = {
   observation: number;
   generation: number;
   truncated: boolean;
-  resources: Map<string, { version: string; observation: number }>;
+  resources: Map<
+    string,
+    {
+      version: string;
+      observation: number;
+      issue?: PreviewResourceIssue['reason'];
+      issueObservation?: number;
+    }
+  >;
 };
 const capabilityKey = (taskId: string, scope: string, page: string) => JSON.stringify([taskId, scope, page]);
-const resourceVersion = (stat: { size: number; mtimeMs: number; ctimeMs: number }) =>
-  JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs]);
+const resourceVersion = (stat: { size: number; mtimeMs: number; ctimeMs: number; isFile: () => boolean }) =>
+  stat.isFile() ? JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs]) : 'unavailable:NOT_FILE';
 
 export class PreviewService {
   private capabilities = new Map<string, Capability>();
@@ -99,39 +112,77 @@ export class PreviewService {
     version: string,
     observation: number,
     invalidate = false,
+    issue?: PreviewResourceIssue['reason'] | null,
   ) {
     if (observation < capability.generation) return;
     const previous = capability.resources.get(name);
-    if (previous && previous.observation > observation) return;
+    if (previous && previous.observation > observation) {
+      // A newer stat need not hide a completed read of the same observed file version.
+      if (
+        previous.version === version &&
+        issue !== undefined &&
+        observation >= (previous.issueObservation || 0)
+      ) {
+        previous.issue = issue || undefined;
+        previous.issueObservation = observation;
+      }
+      return;
+    }
     if (!previous && capability.resources.size >= listLimit) {
       capability.truncated = true;
       return;
     }
     if (invalidate && previous && previous.version !== version) capability.revision++;
-    capability.resources.set(name, { version, observation });
+    capability.resources.set(name, {
+      version,
+      observation,
+      issue: issue === undefined ? previous?.issue : issue || undefined,
+      issueObservation: issue === undefined ? previous?.issueObservation : observation,
+    });
+  }
+  private renderSummary(capability: Capability) {
+    const issues: PreviewResourceIssue[] = [];
+    for (const [name, resource] of capability.resources)
+      if (resource.issue) issues.push({ ...(name ? { path: name } : {}), reason: resource.issue });
+    issues.sort((a, b) => (a.path || '').localeCompare(b.path || ''));
+    return {
+      renderRevision: capability.revision,
+      renderTruncated: capability.truncated,
+      renderIssues: issues.slice(0, 10),
+      renderIssueCount: issues.length,
+    };
   }
   private async renderState(task: Task, name: string, active: boolean) {
     const scope = path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name);
     const token = this.tokens.get(capabilityKey(task.id, scope, name));
     const capability = token ? this.capabilities.get(token) : undefined;
     if (!capability) return { renderRevision: 0 };
-    if (!active) return { renderRevision: capability.revision, renderTruncated: capability.truncated };
+    if (!active) return this.renderSummary(capability);
     capability.touched = Date.now();
     for (const resource of capability.resources.keys()) {
+      // Invalid request paths share one safe diagnostic; they never enter filesystem observation.
+      if (!resource) continue;
       const observation = ++capability.observation;
       let version: string;
+      let issue: PreviewResourceIssue['reason'] | undefined;
       try {
         const stat = await fs.stat(await this.filename(task, resource));
-        version = stat.isFile() ? resourceVersion(stat) : 'unavailable:NOT_FILE';
+        version = resourceVersion(stat);
+        if (!stat.isFile()) issue = 'not-file';
+        else if (stat.size > assetLimit) issue = 'too-large';
       } catch (error) {
-        version =
-          (error as NodeJS.ErrnoException).code === 'ENOENT'
+        const code = (error as NodeJS.ErrnoException).code;
+        version = code === 'ENOENT' ? 'missing' : 'unavailable:' + (code || 'UNKNOWN');
+        issue =
+          code === 'ENOENT'
             ? 'missing'
-            : 'unavailable:' + ((error as NodeJS.ErrnoException).code || 'UNKNOWN');
+            : ['PREVIEW_LINK', 'PREVIEW_PATH'].includes(code || '')
+              ? 'restricted'
+              : 'unreadable';
       }
-      this.observe(capability, resource, version, observation, resource !== capability.page);
+      this.observe(capability, resource, version, observation, resource !== capability.page, issue);
     }
-    return { renderRevision: capability.revision, renderTruncated: capability.truncated };
+    return this.renderSummary(capability);
   }
   private task(runId: string, taskId: string) {
     const run = this.store.require<Run>('runs', runId),
@@ -384,27 +435,59 @@ export class PreviewService {
       '预览已过期，请刷新预览面板',
     );
     const task = this.task(capability.runId, capability.taskId);
-    const relative = normalized(input || 'index.html');
-    const name = capability.scope ? capability.scope + '/' + relative : relative;
     const observation = ++capability.observation;
-    if (document && name === capability.page) {
-      capability.generation = observation;
-      capability.resources.clear();
-      capability.truncated = false;
-    }
+    let name = '',
+      version = '';
     let filename: string, bytes: Buffer;
     try {
+      const relative = normalized(input || 'index.html');
+      name = capability.scope ? capability.scope + '/' + relative : relative;
+      if (document && name === capability.page) {
+        capability.generation = observation;
+        capability.resources.clear();
+        capability.truncated = false;
+      }
       filename = await this.filename(task, name);
       const stat = await fs.stat(filename);
-      invariant(stat.isFile() && stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
-      if (capability.page) this.observe(capability, name, resourceVersion(stat), observation);
+      version = resourceVersion(stat);
+      invariant(stat.isFile(), 'PREVIEW_NOT_FILE', '页面资源不是文件');
+      invariant(stat.size <= assetLimit, 'PREVIEW_SIZE', '预览资源上限为 12 MiB');
       bytes = await fs.readFile(filename);
+      invariant(bytes.length <= assetLimit, 'PREVIEW_SIZE', '预览资源超过大小上限');
+      if (capability.page) this.observe(capability, name, version, observation, false, null);
     } catch (error) {
-      if (capability.page && (error as NodeJS.ErrnoException).code === 'ENOENT')
-        this.observe(capability, name, 'missing', observation);
-      throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      const reason: PreviewResourceIssue['reason'] =
+        code === 'ENOENT'
+          ? 'missing'
+          : code === 'PREVIEW_SIZE'
+            ? 'too-large'
+            : code === 'PREVIEW_NOT_FILE'
+              ? 'not-file'
+              : ['PREVIEW_LINK', 'PREVIEW_PATH'].includes(code || '')
+                ? 'restricted'
+                : 'unreadable';
+      if (capability.page)
+        this.observe(
+          capability,
+          name,
+          version || (code === 'ENOENT' ? 'missing' : 'unavailable:' + (code || 'UNKNOWN')),
+          observation,
+          false,
+          reason,
+        );
+      if (code === 'ENOENT') throw new AppError('PREVIEW_MISSING', '页面资源不存在', false, null, 404);
+      if (code === 'PREVIEW_SIZE')
+        throw new AppError('PREVIEW_SIZE', '页面资源超过 12 MiB 预览上限', false, null, 413);
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'PREVIEW_READ',
+        '页面资源无法读取，请检查本地文件后刷新页面',
+        false,
+        null,
+        ['EACCES', 'EPERM'].includes(code || '') ? 403 : 500,
+      );
     }
-    invariant(bytes.length <= assetLimit, 'PREVIEW_SIZE', '预览资源超过大小上限');
     const mediaType = fileMediaType(filename);
     const prefix = `/preview/${token}/`;
     // Preserve the file on disk; scope root-relative static asset URLs to this page root.

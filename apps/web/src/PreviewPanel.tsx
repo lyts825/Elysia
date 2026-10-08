@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { api } from './api';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
-import type { PreviewFile, PreviewSnapshot } from '../../../packages/contracts/src/preview';
+import type {
+  PreviewFile,
+  PreviewResourceIssue,
+  PreviewSnapshot,
+} from '../../../packages/contracts/src/preview';
 import { Icon } from './Icon';
 import { EmptyArtwork } from './Brand';
 import { MotionContent, MotionTabs, usePresenceMotion } from './Motion';
@@ -17,6 +21,13 @@ const labels: Record<string, string> = {
   FAILED: '失败',
   CANCELLED: '已取消',
   DRAFT: '待开始',
+};
+const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
+  missing: '文件不存在',
+  'too-large': '超过 12 MiB 预览上限',
+  unreadable: '文件无法读取',
+  restricted: '路径不允许预览',
+  'not-file': '路径不是文件',
 };
 type Props = {
   runId: string;
@@ -70,6 +81,8 @@ export function PreviewPanel({
   selectedRef.current = selected;
   const current = snapshot?.runId === runId && snapshot.taskId === taskId ? snapshot : null;
   const selectedEntry = current?.files.find((file) => file.path === selected);
+  const resourceIssues = selectedEntry?.renderIssues?.slice(0, 10) || [];
+  const resourceIssueCount = selectedEntry?.renderIssueCount ?? selectedEntry?.renderIssues?.length ?? 0;
   const context = JSON.stringify([
     runId,
     taskId,
@@ -340,6 +353,25 @@ export function PreviewPanel({
           </span>
           <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
             重试
+          </button>
+        </div>
+      )}
+      {view === 'page' && selectedFile?.kind === 'html' && resourceIssueCount > 0 && (
+        <div role="status" className="preview-error">
+          <span>
+            页面资源加载不完整，部分内容可能无法显示或交互。
+            {resourceIssues.map((issue, index) => (
+              <small key={issue.path || index}>
+                {issue.path || '受限资源路径'}：{resourceReasons[issue.reason]}
+              </small>
+            ))}
+            {resourceIssueCount > resourceIssues.length && (
+              <small>另有 {resourceIssueCount - resourceIssues.length} 项资源未加载。</small>
+            )}
+            <small>修复本地文件后可刷新页面；开启自动更新时会检查文件变化。</small>
+          </span>
+          <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
+            刷新页面
           </button>
         </div>
       )}

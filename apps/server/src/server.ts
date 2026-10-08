@@ -215,20 +215,20 @@ export function createServer(
       ),
   );
   app.get<{ Params: { token: string; '*': string } }>('/preview/:token/*', async (request, reply) => {
-    const result = await previews.resource(
-      request.params.token,
-      request.params['*'],
-      ['iframe', 'document'].includes(String(request.headers['sec-fetch-dest'] || '')),
-    );
-    const base = `http://${request.headers.host}/preview/${request.params.token}/`;
+    const base = `http://${request.headers.host}/preview/${encodeURIComponent(request.params.token)}/`;
     reply
       .header('Cache-Control', 'no-store')
       .header('Access-Control-Allow-Origin', '*')
       .header(
         'Content-Security-Policy',
         `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' ${base}; style-src 'unsafe-inline' ${base}; img-src data: ${base}; font-src ${base}; media-src ${base}; connect-src ${base}; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri ${base}; frame-ancestors 'self'`,
-      )
-      .type(result.mediaType);
+      );
+    const result = await previews.resource(
+      request.params.token,
+      request.params['*'],
+      ['iframe', 'document'].includes(String(request.headers['sec-fetch-dest'] || '')),
+    );
+    reply.type(result.mediaType);
     return result.bytes;
   });
   app.post('/api/session', async (request, reply) => {

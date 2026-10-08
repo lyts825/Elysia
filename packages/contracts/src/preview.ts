@@ -1,3 +1,7 @@
+export type PreviewResourceIssue = {
+  path?: string;
+  reason: 'missing' | 'too-large' | 'unreadable' | 'restricted' | 'not-file';
+};
 export type PreviewEntry = {
   path: string;
   size: number;
@@ -5,6 +9,8 @@ export type PreviewEntry = {
   change: 'A' | 'M' | 'D' | '';
   renderRevision?: number;
   renderTruncated?: boolean;
+  renderIssues?: PreviewResourceIssue[];
+  renderIssueCount?: number;
 };
 export type PreviewSnapshot = {
   taskId: string;
