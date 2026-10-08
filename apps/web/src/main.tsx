@@ -158,9 +158,6 @@ function App() {
   const readIssue = readSource ? readIssues[readSource] : undefined;
   const project = projects.find((p) => p.id === projectId);
   const runSetupKey = JSON.stringify([projectId, project ? 'task' : 'chat', draft]);
-  const projectRuns = runs.filter(
-    (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
-  );
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
   const [feedbackTime, setFeedbackTime] = useState(Date.now);
@@ -956,17 +953,12 @@ function App() {
           <WorkspaceHome
             projects={projects}
             project={project}
-            runs={projectRuns}
             providers={providers}
             draft={draft}
             setDraft={setDraft}
             busy={busy}
-            selectRun={selectRun}
             selectProject={selectProject}
-            openProject={() => setModal('project')}
-            openFiles={() => setModal('project-files')}
             openSettings={() => setModal('settings')}
-            manage={() => setModal('manage:projects')}
             start={() => setModal('run')}
           />
         ) : detail ? (

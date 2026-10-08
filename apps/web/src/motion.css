@@ -17,57 +17,13 @@ button {
   transform: scale(0.97);
   transition-duration: var(--motion-press);
 }
-.suggestions button {
-  transition:
-    background-color var(--motion-fast),
-    border-color var(--motion-fast),
-    transform var(--motion-enter) var(--ease-enter);
-}
-@media (hover: hover) {
-  .suggestions button:hover {
-    transform: translateY(-2px);
-  }
-  .context-link:hover svg,
-  .recent-row:hover > svg {
-    transform: translateX(3px);
-  }
-}
-.suggestions button:active:not(:disabled) {
-  transform: translateY(0) scale(0.99);
-}
-.context-link svg,
-.recent-row > svg {
-  transition: transform var(--motion-enter) var(--ease-enter);
-}
 .home-heading,
 .composer,
-.suggestions,
-.recent-section,
-.home-context,
 .run-toolbar {
   animation: surface-arrive var(--motion-enter) var(--ease-enter) both;
 }
-.suggestions,
-.home-context {
-  animation-delay: 35ms;
-}
-.recent-section {
-  animation-delay: 65ms;
-}
 .empty-art {
   animation: artwork-arrive 320ms var(--ease-enter) both;
-}
-.garden-accent {
-  animation: garden-arrive 680ms var(--ease-enter) both;
-}
-@keyframes garden-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-  to {
-    transform: none;
-  }
 }
 .error-banner,
 .dialog-notice,
@@ -156,10 +112,7 @@ button {
     animation: none !important;
     transition: none !important;
   }
-  button:active:not(:disabled),
-  .suggestions button:hover,
-  .context-link:hover svg,
-  .recent-row:hover > svg {
+  button:active:not(:disabled) {
     transform: none !important;
   }
 }
