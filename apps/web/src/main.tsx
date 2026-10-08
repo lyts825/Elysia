@@ -129,6 +129,7 @@ function App() {
     [modal, setModal] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [draft, setDraft] = useState(''),
+    [runSetup, setRunSetup] = useState<{ key: string; draft: RunSetupDraft } | null>(null),
     [replies, setReplies] = useState<Record<string, string>>({}),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const [selection, setSelection] = useState(initialNavigation);
@@ -143,6 +144,7 @@ function App() {
           : undefined;
   const readIssue = readSource ? readIssues[readSource] : undefined;
   const project = projects.find((p) => p.id === projectId);
+  const runSetupKey = JSON.stringify([projectId, project ? 'task' : 'chat', draft]);
   const projectRuns = runs.filter(
     (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
   );
@@ -1623,7 +1625,11 @@ function App() {
                   kind={project ? 'task' : 'chat'}
                   projectName={project?.name}
                   providers={providers}
-                  close={() => setModal('')}
+                  initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
+                  close={() => {
+                    setRunSetup(null);
+                    setModal('');
+                  }}
                   busy={busy}
                   submit={(body) =>
                     act(async () => {
@@ -1635,23 +1641,32 @@ function App() {
                       });
                       selectRun(run);
                       setDraft('');
+                      setRunSetup(null);
                       setModal('');
                     })
                   }
-                  settings={() => setModal('settings')}
+                  settings={(configuration) => {
+                    if (actionPending.current) return;
+                    setRunSetup({ key: runSetupKey, draft: configuration });
+                    setModal('run-settings');
+                  }}
                 />
               )}
-              {modal === 'settings' && (
+              {(modal === 'settings' || modal === 'run-settings') && (
                 <React.Suspense
                   fallback={
-                    <Modal title="模型与连接" close={() => setModal('')}>
+                    <Modal title="模型与连接" close={() => setModal(modal === 'run-settings' ? 'run' : '')}>
                       <div className="form-body" role="status">
                         正在加载模型设置…
                       </div>
                     </Modal>
                   }
                 >
-                  <ProviderSettings providers={providers} close={() => setModal('')} updated={refresh} />
+                  <ProviderSettings
+                    providers={providers}
+                    close={() => setModal(modal === 'run-settings' ? 'run' : '')}
+                    updated={refresh}
+                  />
                 </React.Suspense>
               )}
               {modal.startsWith('model:') && detail && switchAgent && switchTask && (
@@ -2211,6 +2226,18 @@ function ProjectModal({
     </Modal>
   );
 }
+type RunSetupDraft = {
+  choice: ModelChoice;
+  write: boolean;
+  exec: boolean;
+  urls: string;
+  inputs: string;
+  writePaths: string;
+  maxRequests: number;
+  maxTokens: number;
+  concurrency: number;
+};
+
 function RunModal({
   providers,
   objective,
@@ -2220,6 +2247,7 @@ function RunModal({
   busy,
   submit,
   settings,
+  initial,
 }: {
   providers: Provider[];
   objective: string;
@@ -2228,18 +2256,19 @@ function RunModal({
   close: () => void;
   busy: boolean;
   submit: (body: any) => void;
-  settings: () => void;
+  settings: (draft: RunSetupDraft) => void;
+  initial?: RunSetupDraft;
 }) {
-  const [choice, setChoice] = useState<ModelChoice>(() => defaultChoice(providers)),
+  const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? defaultChoice(providers)),
     [modelReady, setModelReady] = useState(false),
-    [write, setWrite] = useState(true),
-    [exec, setExec] = useState(true),
-    [urls, setUrls] = useState(''),
-    [inputs, setInputs] = useState(''),
-    [writePaths, setWritePaths] = useState('.'),
-    [maxRequests, setMaxRequests] = useState(80),
-    [maxTokens, setMaxTokens] = useState(500000),
-    [concurrency, setConcurrency] = useState(4);
+    [write, setWrite] = useState(initial?.write ?? true),
+    [exec, setExec] = useState(initial?.exec ?? true),
+    [urls, setUrls] = useState(initial?.urls ?? ''),
+    [inputs, setInputs] = useState(initial?.inputs ?? ''),
+    [writePaths, setWritePaths] = useState(initial?.writePaths ?? '.'),
+    [maxRequests, setMaxRequests] = useState(initial?.maxRequests ?? 80),
+    [maxTokens, setMaxTokens] = useState(initial?.maxTokens ?? 500000),
+    [concurrency, setConcurrency] = useState(initial?.concurrency ?? 4);
   const selected = providers.find((p) => p.id === choice.providerId);
   const chat = kind === 'chat';
   const lines = (s: string) =>
@@ -2293,7 +2322,7 @@ function RunModal({
           {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
             <p className="field-help">
               正在使用 ChatGPT 订阅 ·{' '}
-              <button type="button" className="text-button" onClick={manageUsage}>
+              <button type="button" className="text-button" disabled={busy} onClick={manageUsage}>
                 管理用量
               </button>
             </p>
@@ -2301,7 +2330,24 @@ function RunModal({
           {(!selected?.keyConfigured || selected.checkedRevision !== selected.revision) && (
             <div className="inline-warning">
               请先连接并验证一个可用模型。
-              <button type="button" onClick={settings}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (busy) return;
+                  settings({
+                    choice,
+                    write,
+                    exec,
+                    urls,
+                    inputs,
+                    writePaths,
+                    maxRequests,
+                    maxTokens,
+                    concurrency,
+                  });
+                }}
+              >
                 前往模型设置
               </button>
             </div>
@@ -2312,6 +2358,7 @@ function RunModal({
                 补充资料路径（可选，每行一项）
                 <textarea
                   value={inputs}
+                  disabled={busy}
                   onChange={(e) => setInputs(e.target.value)}
                   placeholder="已可读取整个项目目录；可在此指定重点文件"
                   rows={2}
@@ -2320,27 +2367,43 @@ function RunModal({
               <div className="permission-card">
                 <h4>执行范围</h4>
                 <label className="check-label">
-                  <input type="checkbox" checked readOnly />
+                  <input type="checkbox" checked readOnly disabled={busy} />
                   项目内读取
                 </label>
                 <label className="check-label">
-                  <input type="checkbox" checked={write} onChange={(e) => setWrite(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={write}
+                    disabled={busy}
+                    onChange={(e) => setWrite(e.target.checked)}
+                  />
                   任务目录写入
                 </label>
                 {write && (
                   <label>
                     允许写入的相对目录
-                    <textarea rows={1} value={writePaths} onChange={(e) => setWritePaths(e.target.value)} />
+                    <textarea
+                      rows={1}
+                      value={writePaths}
+                      disabled={busy}
+                      onChange={(e) => setWritePaths(e.target.value)}
+                    />
                   </label>
                 )}
                 <label className="check-label">
-                  <input type="checkbox" checked={exec} onChange={(e) => setExec(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={exec}
+                    disabled={busy}
+                    onChange={(e) => setExec(e.target.checked)}
+                  />
                   命令执行（当前系统用户权限）
                 </label>
                 <label>
                   授权网页 URL（每行一项）
                   <textarea
                     value={urls}
+                    disabled={busy}
                     onChange={(e) => setUrls(e.target.value)}
                     rows={2}
                     placeholder="https://…"
@@ -2357,6 +2420,7 @@ function RunModal({
                 min={1}
                 max={80}
                 value={maxRequests}
+                disabled={busy}
                 onChange={(e) => setMaxRequests(Number(e.target.value))}
               />
             </label>
@@ -2366,6 +2430,7 @@ function RunModal({
                 type="number"
                 min={1000}
                 value={maxTokens}
+                disabled={busy}
                 onChange={(e) => setMaxTokens(Number(e.target.value))}
               />
             </label>
@@ -2377,6 +2442,7 @@ function RunModal({
                   min={1}
                   max={4}
                   value={concurrency}
+                  disabled={busy}
                   onChange={(e) => setConcurrency(Number(e.target.value))}
                 />
               </label>
@@ -2393,7 +2459,7 @@ function RunModal({
             返回
           </button>
           <button className="primary" disabled={busy || !modelReady || !objective.trim()}>
-            {chat ? '开始对话' : '生成约定与计划'}
+            {busy ? '正在创建…' : chat ? '开始对话' : '生成约定与计划'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>
