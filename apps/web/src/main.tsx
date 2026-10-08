@@ -531,7 +531,7 @@ function App() {
       if (deleted.kind === 'project') selectProject('');
       else newRun();
     } else if (runId) await refreshDetail();
-    await refresh();
+    const refreshed = await refresh();
     if (deleted?.kind === 'run')
       setAssignmentDrafts((old) =>
         Object.fromEntries(Object.entries(old).filter(([key]) => !key.startsWith(deleted.id + ':'))),
@@ -542,6 +542,7 @@ function App() {
         delete next[deleted.id];
         return next;
       });
+    return refreshed;
   };
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;

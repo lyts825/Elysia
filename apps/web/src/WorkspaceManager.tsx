@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
-import { mutation } from './api';
+import { ApiError, mutation } from './api';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 
@@ -18,7 +18,7 @@ export function WorkspaceManager({
   runs: Run[];
   initial?: string;
   close: () => void;
-  updated: (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => Promise<void>;
+  updated: (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => Promise<void | boolean>;
   selectRun: (run: Run) => void;
 }) {
   const [tab, setTab] = useState(initial),
@@ -33,15 +33,34 @@ export function WorkspaceManager({
       description: string;
       action: () => Promise<void>;
     } | null>(null);
+  const actionPending = useRef(false);
   const perform = async (action: () => Promise<void>) => {
+    if (actionPending.current) return;
+    actionPending.current = true;
     setBusy(true);
     setError('');
     try {
       await action();
       setConfirmation(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.kind === 'http' && e.status === 409 && e.code === 'REVISION_CONFLICT') {
+        setConfirmation(null);
+        const conflict = '记录已更新，本次操作未执行。请核对列表后重新操作。';
+        setError(conflict);
+        try {
+          if ((await updated()) === false)
+            setError(conflict + '列表读取失败，请关闭此窗口，刷新工作台后重新操作。');
+        } catch (readError) {
+          setError(
+            conflict +
+              '列表读取失败：' +
+              (readError as Error).message +
+              ' 请关闭此窗口，刷新工作台后重新操作。',
+          );
+        }
+      } else setError((e as Error).message);
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   };
