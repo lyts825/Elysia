@@ -2012,6 +2012,25 @@ a {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.project-file-encoding {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  margin-bottom: 15px;
+}
+.project-file-encoding label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.project-file-encoding select {
+  width: auto;
+  min-width: 160px;
+}
+.project-file-encoding .field-help {
+  margin: 0;
+}
 .project-file-list {
   display: grid;
   gap: 2px;

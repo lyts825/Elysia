@@ -32,7 +32,7 @@ import { NativeProvider } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
 import { desktopServices } from './desktop.js';
-import { inspectFolder, projectFiles, sameDirectory } from './projects.js';
+import { inspectFolder, projectFiles, projectTextEncodings, sameDirectory } from './projects.js';
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
@@ -263,10 +263,15 @@ export function createServer(
         null,
     };
   });
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { path?: string; encoding?: string } }>(
     '/api/projects/:id/files',
     async (request) =>
-      projectFiles(store, request.params.id, z.string().max(4096).default('.').parse(request.query.path)),
+      projectFiles(
+        store,
+        request.params.id,
+        z.string().max(4096).default('.').parse(request.query.path),
+        z.enum(projectTextEncodings).default('auto').parse(request.query.encoding),
+      ),
   );
   app.post('/api/projects', async (request) => {
     const body = z
