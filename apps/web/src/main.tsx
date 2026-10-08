@@ -27,7 +27,7 @@ import { BrandIcon, EmptyArtwork } from './Brand';
 import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceManager } from './WorkspaceManager';
-import { SessionSidebar } from './SessionSidebar';
+import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
 import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
@@ -588,6 +588,45 @@ function App() {
     }
     return refreshed;
   };
+  const updateSession = async (
+    target: SessionTarget,
+    changes: Record<string, unknown>,
+    remove?: boolean,
+  ): Promise<SessionUpdateResult> => {
+    let conflicted = false;
+    const succeeded = await act(async () => {
+      const current =
+        target.kind === 'run'
+          ? runs.find((run) => run.id === target.item.id)
+          : projects.find((project) => project.id === target.item.id);
+      if (!current) throw new Error('记录已被删除，请刷新工作台。');
+      try {
+        await mutation(
+          `/${target.kind === 'run' ? 'runs' : 'projects'}/${current.id}`,
+          { ...changes, expectedRevision: target.item.revision },
+          remove ? 'DELETE' : 'PATCH',
+        );
+      } catch (e) {
+        if (
+          !(e instanceof ApiError && e.kind === 'http' && e.status === 409 && e.code === 'REVISION_CONFLICT')
+        )
+          throw e;
+        conflicted = true;
+        let message = '记录已更新，本次操作未执行。请核对列表后重新操作。';
+        try {
+          if ((await managed()) === false) message += '列表读取失败，请刷新工作台后重新操作。';
+        } catch (readError) {
+          message +=
+            '列表读取失败：' +
+            (readError instanceof Error ? readError.message : String(readError)) +
+            ' 请刷新工作台后重新操作。';
+        }
+        throw new Error(message);
+      }
+      if (remove) await managed({ kind: target.kind, id: current.id });
+    });
+    return conflicted ? 'conflict' : succeeded;
+  };
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
   const runAction = (action: string, taskId?: string) =>
@@ -742,24 +781,7 @@ function App() {
             setModal('project-files');
           }}
           manage={(tab) => setModal(tab === 'new-project' ? 'project' : `manage:${tab}`)}
-          update={(target, changes, remove) =>
-            act(async () => {
-              const current =
-                target.kind === 'run'
-                  ? runs.find((run) => run.id === target.item.id)
-                  : projects.find((project) => project.id === target.item.id);
-              if (!current) throw new Error('记录已被删除，请刷新工作台。');
-              await mutation(
-                `/${target.kind === 'run' ? 'runs' : 'projects'}/${current.id}`,
-                {
-                  expectedRevision: current.revision,
-                  ...changes,
-                },
-                remove ? 'DELETE' : 'PATCH',
-              );
-              if (remove) await managed({ kind: target.kind, id: current.id });
-            })
-          }
+          update={updateSession}
         />
         <div className="sidebar-bottom">
           <button

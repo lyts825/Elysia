@@ -7,6 +7,8 @@ import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: Run };
+export type SessionTarget = Target;
+export type SessionUpdateResult = boolean | 'conflict';
 type Dialog = { target: Target; action: 'rename' | 'delete' | 'move'; value: string };
 type MenuAction = { label: string; icon: string; shortcut?: string; danger?: boolean; action: () => void };
 export function SessionSidebar({
@@ -42,13 +44,20 @@ export function SessionSidebar({
   create: (projectId: string, objective?: string) => void;
   files: (project: Project) => void;
   manage: (tab: string) => void;
-  update: (target: Target, changes: Record<string, unknown>, remove?: boolean) => Promise<boolean>;
+  update: (
+    target: Target,
+    changes: Record<string, unknown>,
+    remove?: boolean,
+  ) => Promise<SessionUpdateResult>;
 }) {
   const [search, setSearch] = useState('');
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number; trigger: HTMLElement } | null>(
     null,
   );
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const dialogRef = useRef<Dialog | null>(null);
+  const conflictDrafts = useRef(new Map<string, string>());
+  dialogRef.current = dialog;
   const [clipboardError, setClipboardError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const flag = (key: string) => entries[key]?.value === true;
@@ -80,17 +89,41 @@ export function SessionSidebar({
       y: event.type === 'contextmenu' ? event.clientY : rect.bottom,
     });
   };
+  const draftKey = (target: Target, action: Dialog['action']) => `${target.kind}:${target.item.id}:${action}`;
+  const closeDialog = () => {
+    if (dialogRef.current)
+      conflictDrafts.current.delete(draftKey(dialogRef.current.target, dialogRef.current.action));
+    dialogRef.current = null;
+    setDialog(null);
+  };
+  const changeDialogValue = (source: Dialog, value: string) => {
+    if (dialogRef.current !== source) return;
+    const next = { ...source, value };
+    dialogRef.current = next;
+    setDialog(next);
+  };
+  const canSubmitDialog =
+    dialog &&
+    !busy &&
+    (dialog.action === 'rename'
+      ? !!dialog.value.trim()
+      : dialog.action === 'move'
+        ? spaces.some((space) => space.id === dialog.value)
+        : true);
   const showDialog = (target: Target, action: Dialog['action']) => {
-    setDialog({
+    const next: Dialog = {
       target,
       action,
       value:
-        action === 'rename'
+        conflictDrafts.current.get(draftKey(target, action)) ??
+        (action === 'rename'
           ? title(target)
           : action === 'move' && target.kind === 'project'
             ? target.item.spaceId
-            : '',
-    });
+            : ''),
+    };
+    dialogRef.current = next;
+    setDialog(next);
   };
   const copy = async (value: string) => {
     try {
@@ -456,12 +489,14 @@ export function SessionSidebar({
                   ? '移动项目空间'
                   : `永久删除「${title(dialog.target)}」？`
             }
-            close={() => setDialog(null)}
+            close={closeDialog}
             busy={busy}
           >
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                const submitted = dialog;
+                if (!canSubmitDialog || dialogRef.current !== submitted) return;
                 void update(
                   dialog.target,
                   dialog.action === 'rename'
@@ -470,8 +505,14 @@ export function SessionSidebar({
                       ? { spaceId: dialog.value }
                       : {},
                   dialog.action === 'delete',
-                ).then((success) => {
-                  if (success) setDialog(null);
+                ).then((result) => {
+                  if (result === false || dialogRef.current !== submitted) return;
+                  const key = draftKey(submitted.target, submitted.action);
+                  if (result === 'conflict' && submitted.action !== 'delete')
+                    conflictDrafts.current.set(key, submitted.value);
+                  else conflictDrafts.current.delete(key);
+                  dialogRef.current = null;
+                  setDialog(null);
                 });
               }}
             >
@@ -489,7 +530,7 @@ export function SessionSidebar({
                       maxLength={dialog.target.kind === 'project' ? 80 : 160}
                       value={dialog.value}
                       disabled={busy}
-                      onChange={(e) => setDialog({ ...dialog, value: e.target.value })}
+                      onChange={(e) => changeDialogValue(dialog, e.target.value)}
                     />
                   </label>
                 )}
@@ -499,8 +540,13 @@ export function SessionSidebar({
                     <select
                       value={dialog.value}
                       disabled={busy}
-                      onChange={(e) => setDialog({ ...dialog, value: e.target.value })}
+                      onChange={(e) => changeDialogValue(dialog, e.target.value)}
                     >
+                      {!spaces.some((space) => space.id === dialog.value) && (
+                        <option value={dialog.value} disabled>
+                          原目标空间已不存在，请重新选择
+                        </option>
+                      )}
                       {spaces.map((space) => (
                         <option key={space.id} value={space.id}>
                           {space.name}
@@ -519,12 +565,12 @@ export function SessionSidebar({
                 )}
               </div>
               <footer>
-                <button type="button" className="secondary" disabled={busy} onClick={() => setDialog(null)}>
+                <button type="button" className="secondary" disabled={busy} onClick={closeDialog}>
                   {dialog.action === 'delete' ? '保留' : '取消'}
                 </button>
                 <button
                   className={'primary' + (dialog.action === 'delete' ? ' danger-confirm' : '')}
-                  disabled={busy || (dialog.action === 'rename' && !dialog.value.trim())}
+                  disabled={!canSubmitDialog}
                 >
                   {busy ? '正在保存…' : dialog.action === 'delete' ? '确认永久删除' : '保存'}
                 </button>
