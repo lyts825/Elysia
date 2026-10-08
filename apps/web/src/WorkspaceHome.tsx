@@ -1,26 +1,32 @@
 import type { Project } from '../../../packages/contracts/src/index';
 import type { SelectableProvider } from './ModelPicker';
+import type { ModelChoice } from './ModelPicker';
+import { ComposerModelPicker } from './ComposerModelPicker';
 import { Icon } from './Icon';
 import './home.css';
 
 export function WorkspaceHome({
-  projects,
   project,
   providers,
+  modelChoice,
+  changeModel,
+  modelReady,
+  setModelReady,
   draft,
   setDraft,
   busy,
-  selectProject,
   openSettings,
   start,
 }: {
-  projects: Project[];
   project?: Project;
   providers: SelectableProvider[];
+  modelChoice: ModelChoice;
+  changeModel: (choice: ModelChoice) => void;
+  modelReady: boolean;
+  setModelReady: (ready: boolean) => void;
   draft: string;
   setDraft: (value: string) => void;
   busy: boolean;
-  selectProject: (id: string) => void;
   openSettings: () => void;
   start: () => void;
 }) {
@@ -44,6 +50,7 @@ export function WorkspaceHome({
                 !e.nativeEvent.isComposing &&
                 draft.trim() &&
                 !busy &&
+                modelReady &&
                 !project?.archived
               ) {
                 e.preventDefault();
@@ -52,31 +59,21 @@ export function WorkspaceHome({
             }}
           />
           <div className="composer-bottom">
-            <label className="project-select">
-              <Icon name={project ? 'folder' : 'chat'} size={15} />
-              <select
-                aria-label="会话归属"
-                value={project?.id || ''}
-                disabled={busy}
-                onChange={(e) => selectProject(e.target.value)}
-              >
-                <option value="">独立对话</option>
-                {projects
-                  .filter((p) => !p.archived)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <ComposerModelPicker
+              providers={providers}
+              value={modelChoice}
+              change={changeModel}
+              ready={setModelReady}
+              disabled={busy}
+              settings={openSettings}
+            />
             <div className="composer-actions">
               <span className="composer-shortcut" aria-hidden="true">
                 Ctrl + Enter
               </span>
               <button
                 className="primary"
-                disabled={!draft.trim() || busy || !!project?.archived}
+                disabled={!draft.trim() || busy || !modelReady || !!project?.archived}
                 onClick={start}
                 title="继续 · Ctrl + Enter"
               >

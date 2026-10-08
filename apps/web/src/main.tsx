@@ -43,6 +43,7 @@ import {
 } from './NavigationState';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
+import { PlanAlignmentLoader } from './PlanAlignmentLoader';
 import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
@@ -147,6 +148,29 @@ function App() {
       ? (cacheState.entries[draftKey].value as string)
       : '';
   const setDraft = (value: string) => cache.set(draftKey, value);
+  const [homeModels, setHomeModels] = useState<Record<string, ModelChoice>>({});
+  const homeModel = homeModels[draftKey] || defaultChoice(providers);
+  const homeProvider = providers.find((provider) => provider.id === homeModel.providerId);
+  const homeModelKey = JSON.stringify([
+    draftKey,
+    homeModel.providerId,
+    homeModel.model,
+    homeModel.reasoningEffort,
+    homeProvider?.revision,
+    homeProvider?.checkedRevision,
+    homeProvider?.keyConfigured,
+  ]);
+  const [homeModelReady, setHomeModelReady] = useState({ key: '', valid: false });
+  const changeHomeModel = (choice: ModelChoice) =>
+    setHomeModels((previous) => ({ ...previous, [draftKey]: choice }));
+  const updateHomeModelReady = useCallback(
+    (valid: boolean) =>
+      setHomeModelReady((previous) =>
+        previous.key === homeModelKey && previous.valid === valid ? previous : { key: homeModelKey, valid },
+      ),
+    [homeModelKey],
+  );
+  const homeModelValid = homeModelReady.key === homeModelKey && homeModelReady.valid;
   const readSource: ReadSource | undefined =
     readIssues.detail?.runId === runId
       ? 'detail'
@@ -193,6 +217,9 @@ function App() {
     ? detail?.agents.find((agent) => agent.id === modal.slice(6))
     : undefined;
   const switchTask = detail?.tasks.find((task) => task.id === switchAgent?.taskId);
+  const rootAgent = detail?.agents.find((agent) => agent.taskId === detail.run.rootTaskId);
+  const rootModelReason =
+    detail && rootAgent ? modelSwitchReason(detail, archived, rootAgent.taskId) : '模型正在准备中。';
   const decisionDisabledReason = (operation: Operation) => {
     if (archived) return '请先恢复归档记录，再提交核验决定。';
     if (
@@ -503,6 +530,37 @@ function App() {
       setBusy(false);
     }
   }
+  const startConversation = () => {
+    if (busy || !homeModelValid || !draft.trim() || project?.archived) return;
+    if (project) {
+      setModal('run');
+      return;
+    }
+    const text = draft;
+    const key = draftKey;
+    const epoch = navigationEpoch.current;
+    void act(async () => {
+      const run = await mutation<Run>('/runs', {
+        ...homeModel,
+        objective: text,
+        kind: 'chat',
+        projectId: null,
+        inputs: [],
+        permissionProfile: { read: false, write: false, exec: false, urls: [], writePaths: [] },
+        budget: { maxRequests: 80, maxTokens: 500000, maxCost: null },
+        limits: {
+          maxDepth: 0,
+          maxAgents: 1,
+          concurrency: 1,
+          toolConcurrency: 4,
+          maxSteps: 20,
+          maxMinutes: 30,
+        },
+      });
+      if (navigationEpoch.current === epoch) selectRun(run);
+      if (cache.get(key) === text) cache.set(key, '');
+    });
+  };
   const sendReply = () => {
     if (!detail || busy || archived || !reply.trim() || ['DONE', 'CANCELLED'].includes(detail.run.status))
       return;
@@ -951,15 +1009,17 @@ function App() {
         )}
         {!runId ? (
           <WorkspaceHome
-            projects={projects}
             project={project}
             providers={providers}
+            modelChoice={homeModel}
+            changeModel={changeHomeModel}
+            modelReady={homeModelValid}
+            setModelReady={updateHomeModelReady}
             draft={draft}
             setDraft={setDraft}
             busy={busy}
-            selectProject={selectProject}
             openSettings={() => setModal('settings')}
-            start={() => setModal('run')}
+            start={startConversation}
           />
         ) : detail ? (
           <>
@@ -1242,116 +1302,38 @@ function App() {
                     </div>
                   ))}
                   {detail.run.plan && (
-                    <div className="plan-card" ref={planRef}>
-                      <div className="plan-card-head">
-                        <div>
-                          <span className="eyebrow">EXECUTION PLAN · V{detail.run.plan.version}</span>
-                          <h3>团队的执行计划</h3>
-                        </div>
-                        <span className="plan-count">{detail.run.plan.tasks.length} 个子任务</span>
-                      </div>
-                      <p>{detail.run.plan.summary}</p>
-                      {detail.run.plan.tasks.map((t, i) => {
-                        const currentTask =
-                          detail.run.acceptedPlanVersion === detail.run.plan!.version
-                            ? detail.tasks.find(
-                                (task) =>
-                                  task.parentTaskId === detail.run.rootTaskId &&
-                                  task.contractVersion === detail.run.plan!.contractVersion &&
-                                  task.spec.key === t.key &&
-                                  task.status !== 'CANCELLED',
-                              )
-                            : undefined;
-                        const binding = detail.agents.find(
-                          (agent) => agent.id === currentTask?.agentId,
-                        )?.providerBinding;
-                        const choice =
-                          detail.run.reason === 'plan'
-                            ? assignments[t.key] || proposedChoice(t)
-                            : binding
-                              ? {
-                                  providerId: binding.id,
-                                  model: binding.model,
-                                  reasoningEffort: binding.reasoningEffort,
-                                }
-                              : t;
-                        const provider = providers.find((p) => p.id === choice.providerId);
-                        return (
-                          <div className="plan-row" key={t.key}>
-                            <span className="step-number">{String(i + 1).padStart(2, '0')}</span>
-                            <div>
-                              <strong>{t.title}</strong>
-                              <p>{t.objective}</p>
-                              <small>
-                                {binding
-                                  ? '当前模型：' + binding.label
-                                  : provider?.label || choice.providerId}
-                                {choice.model ? ' · ' + choice.model : ''}
-                                {choice.reasoningEffort ? ' · ' + choice.reasoningEffort : ''}{' '}
-                                {t.dependsOn.length
-                                  ? '· 依赖 ' +
-                                    t.dependsOn
-                                      .map(
-                                        (key) =>
-                                          detail.run.plan!.tasks.find((task) => task.key === key)?.title ||
-                                          key,
-                                      )
-                                      .join('、')
-                                  : ''}
-                              </small>
-                              {detail.run.reason === 'plan' && (
-                                <ModelPicker
-                                  providers={providers}
-                                  label={`一级子代理 ${i + 1} · ${t.title}`}
-                                  value={assignments[t.key] || proposedChoice(t)}
-                                  disabled={busy || archived}
-                                  change={(choice) =>
-                                    setAssignmentDrafts((old) => ({
-                                      ...old,
-                                      [assignmentKey]: { ...old[assignmentKey], [t.key]: choice },
-                                    }))
-                                  }
-                                  ready={(valid) =>
-                                    setAssignmentReady((old) =>
-                                      old[t.key] === valid ? old : { ...old, [t.key]: valid },
-                                    )
-                                  }
-                                />
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div className="plan-footer">
-                        <span>
-                          <Icon name="lock" size={13} />
-                          {detail.run.authorized ? '执行范围已接受' : '接受这个版本后执行'}
-                        </span>
-                        {detail.run.reason === 'plan' && (
-                          <button
-                            className="primary"
-                            disabled={
-                              busy || archived || detail.run.plan.tasks.some((t) => !assignmentReady[t.key])
-                            }
-                            onClick={() =>
-                              void act(() =>
-                                mutation('/runs/' + runId + '/plan/accept', {
-                                  expectedRevision: detail.run.revision,
-                                  version: detail.run.plan!.version,
-                                  assignments: detail.run.plan!.tasks.map((task) => ({
-                                    key: task.key,
-                                    ...(assignments[task.key] || proposedChoice(task)),
-                                  })),
-                                }),
-                              )
-                            }
-                          >
-                            接受并开始
-                            <Icon name="play" size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    <PlanAlignmentLoader
+                      key={detail.run.id}
+                      anchorRef={planRef}
+                      detail={detail}
+                      providers={providers}
+                      assignments={assignments}
+                      assignmentReady={assignmentReady}
+                      proposedChoice={proposedChoice}
+                      busy={busy}
+                      archived={archived}
+                      changeAssignment={(key, choice) =>
+                        setAssignmentDrafts((old) => ({
+                          ...old,
+                          [assignmentKey]: { ...old[assignmentKey], [key]: choice },
+                        }))
+                      }
+                      readyAssignment={(key, valid) =>
+                        setAssignmentReady((old) => (old[key] === valid ? old : { ...old, [key]: valid }))
+                      }
+                      accept={() =>
+                        void act(() =>
+                          mutation('/runs/' + runId + '/plan/accept', {
+                            expectedRevision: detail.run.revision,
+                            version: detail.run.plan!.version,
+                            assignments: detail.run.plan!.tasks.map((task) => ({
+                              key: task.key,
+                              ...(assignments[task.key] || proposedChoice(task)),
+                            })),
+                          }),
+                        )
+                      }
+                    />
                   )}
                   {!isChat && detail.run.status === 'DONE' && (
                     <div className="delivery-card">
@@ -1421,15 +1403,29 @@ function App() {
                         </p>
                       )}
                     <div>
-                      <span>
-                        {busy
-                          ? '正在提交…'
-                          : archived
-                            ? '已归档，保留全部对话记录'
-                            : isChat
-                              ? 'Ctrl + Enter 发送 · 独立会话自动保存'
-                              : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
-                      </span>
+                      <div className="reply-model-controls">
+                        <button
+                          type="button"
+                          className="composer-model"
+                          aria-label={`切换${isChat ? '会话' : '总代理'}模型`}
+                          disabled={busy || !rootAgent || !!rootModelReason}
+                          title={rootModelReason || rootAgent?.providerBinding.label}
+                          onClick={() => rootAgent && setModal('model:' + rootAgent.id)}
+                        >
+                          <Icon name="spark" size={15} />
+                          <span>{rootAgent?.providerBinding.model || '模型准备中…'}</span>
+                          <Icon name="chevron" size={12} />
+                        </button>
+                        <span className="reply-hint">
+                          {busy
+                            ? '正在提交…'
+                            : archived
+                              ? '已归档，保留全部对话记录'
+                              : isChat
+                                ? 'Ctrl + Enter 发送 · 独立会话自动保存'
+                                : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
+                        </span>
+                      </div>
                       <button
                         className="send-button"
                         aria-label="发送补充需求"
@@ -1788,6 +1784,7 @@ function App() {
                   kind={project ? 'task' : 'chat'}
                   projectName={project?.name}
                   providers={providers}
+                  modelChoice={homeModel}
                   initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
                   close={() => {
                     setRunSetup(null);
@@ -2411,6 +2408,7 @@ function RunModal({
   submit,
   settings,
   initial,
+  modelChoice,
 }: {
   providers: Provider[];
   objective: string;
@@ -2421,8 +2419,9 @@ function RunModal({
   submit: (body: any) => void;
   settings: (draft: RunSetupDraft) => void;
   initial?: RunSetupDraft;
+  modelChoice: ModelChoice;
 }) {
-  const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? defaultChoice(providers)),
+  const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
     [modelReady, setModelReady] = useState(false),
     [write, setWrite] = useState(initial?.write ?? true),
     [exec, setExec] = useState(initial?.exec ?? true),

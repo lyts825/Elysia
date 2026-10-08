@@ -61,40 +61,74 @@
   gap: 16px;
   padding: 12px 16px 16px;
 }
-.project-select {
+.composer-model {
   display: flex;
   align-items: center;
   gap: 7px;
-  max-width: min(55%, 360px);
+  max-width: min(60%, 360px);
   min-width: 0;
   padding: 7px 9px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 7px;
-  background: var(--surface);
+  background: transparent;
   color: var(--secondary);
   font-size: 12px;
 }
-.project-select > svg {
+.composer-model > svg {
   flex: none;
 }
-.project-select select {
-  width: 100%;
+.composer-model > span {
   min-width: 0;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font-size: inherit;
-  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
-.project-select select:focus {
-  box-shadow: none;
+.composer-model > svg:last-child {
+  transform: rotate(90deg);
 }
-.project-select:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.composer-model:hover {
+  background: var(--canvas);
+}
+.composer-model-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: #2e3935;
+  overflow: auto;
+  box-shadow: 0 12px 36px #17251f24;
+}
+.composer-model-heading,
+.composer-model-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.composer-model-heading {
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.composer-model-footer {
+  margin-top: 16px;
+}
+.reply-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.reply-model-controls .composer-model {
+  flex: none;
+  max-width: min(60%, 300px);
+}
+.reply-model-controls .reply-hint {
+  font-size: 11px;
+  color: var(--muted);
 }
 .composer-actions {
   display: flex;
@@ -137,9 +171,15 @@
   .composer-shortcut {
     display: none;
   }
+  .reply-model-controls .reply-hint {
+    display: none;
+  }
 }
 @media (max-width: 420px) {
-  .project-select {
+  .composer-model {
     max-width: calc(100% - 98px);
+  }
+  .reply-model-controls .composer-model {
+    max-width: calc(100% - 12px);
   }
 }

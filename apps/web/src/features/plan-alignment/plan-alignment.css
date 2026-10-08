@@ -1,0 +1,42 @@
+.plan-contract {
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: var(--canvas);
+  border: 1px solid var(--border, #e1e4dc);
+  border-radius: 10px;
+}
+.plan-contract summary,
+.plan-task-evidence summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.plan-contract .plan-objective {
+  color: inherit;
+  margin-top: 14px;
+}
+.plan-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.plan-contract-grid ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.plan-task-evidence {
+  margin-top: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.plan-task-evidence p {
+  margin: 7px 0;
+}
+@media (max-width: 600px) {
+  .plan-contract-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

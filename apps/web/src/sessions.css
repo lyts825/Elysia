@@ -70,14 +70,28 @@
   border-radius: 8px;
   position: relative;
 }
-.project-row.selected,
 .session-row.selected {
   background: #46625a;
   color: #fffaf0;
 }
+.project-row.selected {
+  background: #38524a;
+}
 .project-row:hover,
 .session-row:hover {
   background: #38524a;
+}
+.session-row.selected:hover {
+  background: #4a675e;
+}
+.session-navigation .history-item:focus-visible,
+.session-navigation .project-item:focus-visible {
+  outline: 1px solid #edc9c2;
+  outline-offset: -3px;
+}
+.session-navigation .history-item:focus:not(:focus-visible),
+.session-navigation .project-item:focus:not(:focus-visible) {
+  outline: none;
 }
 .project-row .project-item,
 .session-row .history-item {

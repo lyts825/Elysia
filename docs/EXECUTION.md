@@ -1,10 +1,10 @@
 # Elysia 首版执行文档
 
-文档版本：0.8.2　日期：2026-10-08　最近本地隔离验收构建：v0.8.2-preview.1　本机待实机验收源码：v0.8.2-preview.1　稳定版目标：v0.8.2
+文档版本：0.9.0　日期：2026-10-08　最近本地隔离验收构建：v0.9.0-preview.1　本机待实机验收源码：v0.9.0-preview.1　稳定版目标：v0.9.0
 
 本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项、官方 Codex 订阅和提供商配置中心，沿用白花、灰绿、雾蓝与暖粉主题及既有交互动效。本机 ChatGPT 订阅及单代理资料产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。项目和任务不再分 Code / Work，文件修改与办公产物使用统一上下文、权限、预算内核及模型按需加载的技能。
 
-本轮目标为“v0.8.1-preview.1 → v0.8.2-preview.1”；范围为用户报告的 DeepSeek 模型目录读取失败，修复凭据来源选择、保存后的可用状态和目录响应体错误处理。schema v3、执行协议与正式依赖保持。主代理负责诊断、提供商保存状态、整合与版本，子代理分别负责目录读取和配置界面。验收要求为缺少凭据时明确引导且不发送请求、来源切换先保存、保存后真实状态一致、目录正常读取及失败重试、已验证绑定仍可用。用户此前明确停止实机、继续源码工作，本轮功能验收使用独立临时数据库、本机 HTTP 夹具和隐藏 offscreen Electron；诊断只读正式库提供商元数据及环境变量是否存在，不读取真实密钥，不重启或恢复正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
+本轮目标为“v0.8.2-preview.1 → v0.9.0-preview.1”；范围为输入区移除项目选择、实际模型选择与侧栏选中样式，以及用户明确限定的任务计划对齐模块化。提供商、其他工具和内核架构沿用，schema v3、执行协议与正式依赖保持。主代理负责前端计划模块、整合与版本，子代理负责模型入口UI、后端计划贡献点与DSH参考复核。验收要求为归属由侧栏决定且草稿保留，创建对话冻结所选模型，项目权限确认保留，普通聊天不加载计划实现，计划加载失败可重试、切换不挂载过期内容，提出/接受计划保持版本、依赖、权限、预算与幂等保护。用户此前明确停止实机、继续源码工作，本轮只使用独立临时数据库、假适配器、本机HTTP夹具和隐藏offscreen Electron，不读取真实密钥、不重启正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
 
 ## 一 首版范围
 
@@ -61,11 +61,12 @@ flowchart TB
 | context | Prompt 组合、资料选择、历史投影、压缩、请求清单；不执行工具 |
 | providers | 请求编译、流式解析、原生内容、缓存参数、使用量归一化 |
 | tools | 文件、命令、网页、产物与工作区；每次调用检查权限和参数 |
+| plan-alignment | tools中的内置计划贡献与web中的计划面板，首次规划/接受或展示计划时动态加载；只调用内核原有propose/accept，不授予权限、不持有状态库 |
 | storage | SQLite 迁移与事务、事件、资料和产物引用；原始大内容存文件 |
 | web | 展示、输入、操作请求；不持有厂商密钥，不自行推断完成状态 |
 | desktop | 独立窗口、单实例、Node 服务生命周期、端口握手、文件夹对话框和凭据加密；渲染器无 Node 权限，仅官方账号授权与用量设置可打开系统浏览器 |
 
-参考 DSH 的插件生命周期与事件投影、Pi 的消息转换与工具结果排序、Codex 的结构化执行事件。首版采用少量静态注册模块，统一提供初始化和释放接口；运行中的插件热更后置。相关依据见第十二节。
+参考 DSH 的插件生命周期与事件投影、Pi 的消息转换与工具结果排序、Codex 的结构化执行事件。其他模块沿用既有注册；任务计划对齐采用固定内置模块描述、首次使用动态import、共享pending、实例缓存、失败重试与释放接口。模块实现位于packages/tools/src/modules/plan-alignment.ts，宿主只传入propose/accept能力；动态加载在SQLite事务外完成，状态修改继续在内核原事务中执行，异步之后重新读取任务。服务关闭先等待在途任务结束，再释放模块。前端PlanAlignmentLoader使用固定同源构建入口，失败以新URL重试，卸载后过期响应不挂载；面板分包且普通聊天不请求。DSH官方为name/inject/apply/Config及ctx.effect可逆贡献，Elysia采用自己的契约借鉴生命周期，不依赖DSH运行时。运行中的插件热更后置。相关依据见第十二节。
 
 ## 三 技术栈与工程布局
 
@@ -909,9 +910,19 @@ maintenance 冻结 SHA256 为 290b15d42c206ce78e0a13327ce358258f02b2204c1946a7e8
 
 执行报告保存在.local-qa/blocked-cleanup-delivery-20261008/execution-report.json。主代理与独立只读复核均确认44个清单路径全部不存在，报告没有清单外目标，五份指定最终验收结果文件仍保留，Git无源码或正式资产删除。manifest.json保留执行前审核快照，实际完成状态以执行报告为准；清单、脚本和报告继续被Git忽略并保留用于审计。状态为已完成；未改正式程序、数据、密钥或运行中的服务，无新版本标签。
 
+### v0.9.0-preview.1 模型输入与按需计划对齐（隔离验收通过，真人实机待验收）
+
+2026-10-08，v0.8.2-preview.1 → v0.9.0-preview.1，以1fd56bc为基线，分支codex/initial-build。用户明确限定只模块化任务的计划对齐功能。输入区移除项目/独立对话归属下拉，项目上下文从侧栏确定；紧凑模型按钮复用现有目录、验证与切换流程，独立对话直接创建并冻结所选型号，项目任务继承型号且保留执行权限和预算确认。慢创建响应不抢回已切换的页面，新输入不被旧响应清空。侧栏项目背景与选中会话区分，焦点细环位于行内；草稿缓存协议保持。
+
+后端固定plan-alignment宿主在规划或接受计划时动态加载schema、工具定义和propose/accept贡献；加载singleflight、失败后可重试、关闭幂等释放，异步后重读任务防暂停竞态。仅向模块传递原内核入口，Kernel同步事务、预算/权限/版本/依赖/快照保护及command/tool幂等不变。前端计划面板为独立3.33kB实现chunk，普通聊天不请求；固定同源URL及模块契约检查，真实加载失败用新URL重试，加载期间切换不会挂载旧面板，局部渲染失败可重试。展开可核对任务约定和各子任务交付/验收，既有计划、一级模型分配与实际绑定沿用。未增加正式依赖、HTTP请求字段或持久schema，未引入外部插件安装、DSH运行时或热更。
+
+验证通过：后端10组模块专项、最终dist的9组模型/UI与6组计划模块流程、16组既有核心回归，类型检查、生产构建、格式及差异核对通过。UI覆盖1440/1024/390/320宽度、真实POST型号冻结、500ms慢创建/新输入/导航保护；计划UI覆盖真实chunk请求失败/按钮重试、加载期间切聊天、零子任务计划、版本接受及实际绑定。焦点样式用隐藏Electron的CDP伪类验证，不代替真人键盘实机。SQLite完整性ok，专项外网/真实凭据/模型调用0；计划接受的resume只计数不执行模型。既有主包超过500kB提示保留。
+
+最终材料为.local-qa/ui-model-entry-v090-DDx90b/result.json、plan-module-ui-v090-nfuWt8/result.json、plan-module-v083-Z1fnip/results.json和acceptance-6oXE5X/results.json，均被Git忽略。早期失败UI夹具ofUHg2、Xyo97Y及计划UI夹具sDDXr0的精确清理被自动批准审查以“blocked by policy”拒绝，仍保留ignored，未替换工具绕过；最终及仍用于对照的通过材料保留。11份包清单与contracts VERSION同步0.9.0-preview.1，文档同步0.9.0。本轮未重启正式窗口/服务、未读取真实密钥或发起真实供应商调用；真人实机与此前供应商/恢复缺口保留，未发布或推送。
+
 ## 十二 版本管理与参考依据
 
-工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.8.2，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
+工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.9.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
 
 交付前核对差异、链接和版本，删除本次产生且已无用途的临时文件；产物、用户文件和仍用于验收的本地材料保留。版本记录只写日期、范围、验证结论和对应标签，提交通过标签定位。
 
@@ -953,11 +964,14 @@ maintenance 冻结 SHA256 为 290b15d42c206ce78e0a13327ce358258f02b2204c1946a7e8
 | 2026-10-08 | 0.8.0 | 0.7.3-preview.1 → 0.8.0-preview.1：响应式会话导航、可收起详情、DeepSeek 配置/目录选型/思考参数、流结束与失败用量结算；schema3兼容 | 类型/构建/版本检查，9组布局、9组会话回归、5组配置UI、35组协议、8组目录、8组失败账本及3组正常执行回归通过；真实供应商/正式服务/数据未访问，真人实机待验收 | v0.8.0-preview.1 |
 | 2026-10-08 | 0.8.1 | 0.8.0-preview.1 → 0.8.1-preview.1：精简首页为输入/归属/继续，收敛重复入口并清理组件/样式；数据与执行协议兼容 | 类型/构建/差异/版本及6组最终dist隔离UI通过，覆盖4种窗口宽度、草稿/快捷键/入口可达性；无模型/执行/外网调用，正式服务未重载，真人实机待验收 | v0.8.1-preview.1 |
 | 2026-10-08 | 0.8.2 | 0.8.1-preview.1 → 0.8.2-preview.1：未配置API凭据引导、来源保存保护、实际keyConfigured、目录响应体与HTTP错误处理；schema3兼容 | 类型/构建/差异/版本、7组目录错误、断流复现、8组目录回归、6组凭据闭环、5组原UI与8组新UI通过；真实密钥/推理未访问，正式服务未重启，真实账号待验收 | v0.8.2-preview.1 |
+| 2026-10-08 | 0.9.0 | 0.8.2-preview.1 → 0.9.0-preview.1：模型输入、侧栏选中样式、前后端按需计划对齐模块；schema3与执行协议兼容 | 类型/构建/格式/差异、10组后端模块、9组模型UI、6组计划UI、16组核心回归通过；正式服务未重启，真人实机待验收 | v0.9.0-preview.1 |
 
 | 参考 | 采用的设计依据 |
 | --- | --- |
 | [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window/) / [Security](https://www.electronjs.org/docs/latest/tutorial/security/) | 独立窗口、contextIsolation、sandbox、禁用 Node 和外部导航 |
 | [DeepSeek Harness 架构](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/architecture.md) | 生命周期、事件记录与上下文投影；首版不耦合其完整插件树 |
+| [DSH 客户端模块](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/README.md) / [卸载流程](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/src/client/entry-lifecycle.ts) | 计划对齐借鉴按需加载、pending共享、过期保护及异步清理；Elysia使用自己的固定模块契约 |
+| [Vite 虚拟模块](https://vite.dev/guide/api-plugin.html#virtual-modules-convention) / [模块入口引用](https://rollupjs.org/plugin-development/#import-meta-rollup-file-url) | 生成计划面板同源chunk入口URL，真实import失败以新URL重试，避免ESM失败缓存 |
 | [Pi Agent](https://github.com/earendil-works/pi/blob/ae92585d3b3e5f1e4b123d14a34314d826d8d9f5/packages/agent/README.md) | 内部消息转换；并发完成事件与持久工具结果顺序分离 |
 | [Codex App Server](https://learn.chatgpt.com/docs/app-server) / [0.160.0 工具环境门控](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/tools/spec_plan.rs) | 官方登录、模型/额度、ephemeral turn、结构化输出；空环境与工具关闭；本机 CLI 0.160.0 协议生成和实际调用核对 |
 | [CC Switch 授权分离](https://github.com/farion1231/cc-switch/blob/a29a4f3868e9c6ffc2212957cfa66a718642e344/docs/guides/codex-official-auth-preservation-guide-zh.md) | 账号认证与提供商配置分离、保留官方登录；Elysia 仅使用官方运行时管理认证 |

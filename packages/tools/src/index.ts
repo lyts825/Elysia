@@ -8,8 +8,6 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import {
   AppError,
-  Contract,
-  Plan,
   TaskSpec,
   Evidence,
   invariant,
@@ -27,6 +25,7 @@ import { Kernel } from '../../kernel/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';
 import { loadSkill } from '../../context/src/skills.js';
 import { fileMediaType, isBinaryFile } from '../../contracts/src/files.js';
+import { PlanAlignmentHost, type PlanAlignmentLoader } from './module-host.js';
 const text = z.string().max(2 * 1024 * 1024);
 const schemas = {
   load_skill: z.object({ id: z.string().min(1).max(64) }),
@@ -53,7 +52,6 @@ const schemas = {
   diff: z.object({}),
   integrate_worktrees: z.object({ taskIds: z.array(z.string()).min(1).max(11) }),
   clarify: z.object({ questions: z.array(z.string().min(1)).min(1).max(6) }),
-  propose_plan: z.object({ contract: Contract, plan: Plan }),
   spawn_task: TaskSpec,
   join_tasks: z.object({ taskIds: z.array(z.string()).min(1).max(11) }),
   submit_result: z.object({
@@ -62,8 +60,9 @@ const schemas = {
     incomplete: z.array(z.string()),
   }),
 };
-type ToolName = keyof typeof schemas;
-const descriptions: Record<ToolName, string> = {
+type CoreToolName = keyof typeof schemas;
+type ToolName = CoreToolName | 'propose_plan';
+const descriptions: Record<CoreToolName, string> = {
   load_skill: '按目录中的 id 加载本地技能指令，由模型根据任务选择；不会扩大工具权限。',
   list: '浏览授权目录，返回来源。',
   read: '读取文件并记录不可变来源快照和哈希。',
@@ -78,7 +77,6 @@ const descriptions: Record<ToolName, string> = {
   integrate_worktrees:
     '把已完成子任务的独立 worktree 变更集成到自己的 worktree，返回差异；冲突时保留待解决工作区。',
   clarify: '一次汇总关键问题并等待用户。',
-  propose_plan: '总代理提出具体版本的约定和计划，等待接受。',
   spawn_task: '创建有界子任务，返回任务和 Agent ID。',
   join_tasks: '等待指定子任务，释放调用槽位；已完成则立即返回结果。',
   submit_result:
@@ -222,7 +220,32 @@ export interface SandboxBackend {
 }
 export class ToolGateway {
   processes = new Processes();
-  constructor(public kernel: Kernel) {}
+  readonly planAlignment: PlanAlignmentHost;
+  constructor(
+    public kernel: Kernel,
+    options: { planAlignmentLoader?: PlanAlignmentLoader } = {},
+  ) {
+    this.planAlignment = new PlanAlignmentHost(
+      { propose: kernel.propose.bind(kernel), accept: kernel.accept.bind(kernel) },
+      options.planAlignmentLoader,
+    );
+  }
+  async prepareDefinitions(task: Task, signal?: AbortSignal): Promise<ToolDefinition[]> {
+    signal?.throwIfAborted();
+    task = this.store.require<Task>('tasks', task.id);
+    if (
+      this.store.require<Run>('runs', task.runId).kind !== 'chat' &&
+      task.spec.role === 'coordinator' &&
+      task.phase === 'planning'
+    )
+      await this.planAlignment.load();
+    signal?.throwIfAborted();
+    return this.definitions(this.store.require<Task>('tasks', task.id));
+  }
+  async dispose() {
+    await this.processes.cancel();
+    await this.planAlignment.dispose();
+  }
   get store() {
     return this.kernel.store;
   }
@@ -266,6 +289,7 @@ export class ToolGateway {
       }
     }
   }
+  /** Synchronous view of active contributions; runtime callers prepare them first. */
   definitions(task: Task): ToolDefinition[] {
     if (this.store.require<Run>('runs', task.runId).kind === 'chat')
       return [
@@ -277,7 +301,8 @@ export class ToolGateway {
       ];
     const permission = this.kernel.permissions(task);
     let names: ToolName[] = ['clarify', 'load_skill'];
-    if (task.spec.role === 'coordinator' && task.phase === 'planning') names.push('propose_plan');
+    if (task.spec.role === 'coordinator' && task.phase === 'planning' && this.planAlignment.loaded)
+      names.push('propose_plan');
     if (permission.read) names.push('list', 'read', 'read_artifact', 'search');
     if (permission.urls.length) names.push('fetch_url');
     if (task.phase === 'executing') {
@@ -295,11 +320,15 @@ export class ToolGateway {
         if (permission.exec) names.push('exec');
       }
     }
-    return names.map((name) => ({
-      name,
-      description: descriptions[name],
-      parameters: z.toJSONSchema(schemas[name], { target: 'draft-7' }) as Record<string, unknown>,
-    }));
+    return names.map((name) =>
+      name === 'propose_plan'
+        ? this.planAlignment.loaded!.definition
+        : {
+            name,
+            description: descriptions[name],
+            parameters: z.toJSONSchema(schemas[name], { target: 'draft-7' }) as Record<string, unknown>,
+          },
+    );
   }
   async path(task: Task, input: string, write = false) {
     const permission = this.kernel.permissions(task),
@@ -385,6 +414,11 @@ export class ToolGateway {
   async call(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal): Promise<unknown> {
     task = this.store.require<Task>('tasks', task.id);
     const name = call.name as ToolName;
+    // Load outside SQLite transactions; re-read state after the asynchronous boundary.
+    if (name === 'propose_plan') {
+      await this.prepareDefinitions(task, signal);
+      task = this.store.require<Task>('tasks', task.id);
+    }
     invariant(
       this.definitions(task).some((t) => t.name === name),
       'TOOL_DENIED',
@@ -392,7 +426,8 @@ export class ToolGateway {
     );
     let args: any;
     try {
-      args = schemas[name].parse(JSON.parse(call.arguments));
+      const input = JSON.parse(call.arguments);
+      args = name === 'propose_plan' ? this.planAlignment.loaded!.parse(input) : schemas[name].parse(input);
     } catch (e) {
       throw new AppError('TOOL_ARGUMENTS', '工具参数无效：' + (e instanceof Error ? e.message : String(e)));
     }
@@ -461,7 +496,7 @@ export class ToolGateway {
             task.id,
           );
         } else if (name === 'propose_plan')
-          result = this.kernel.propose(this.store.require('tasks', task.id), args.contract, args.plan);
+          result = this.planAlignment.loaded!.propose(this.store.require('tasks', task.id), args);
         else if (name === 'spawn_task') result = this.kernel.spawn(task, args);
         else if (name === 'join_tasks') {
           const children = args.taskIds.map((key: string) => this.store.require<Task>('tasks', key));

@@ -691,13 +691,20 @@ export function createServer(
       'MODEL_ASSIGNMENTS',
       '模型分配需要唯一的计划一级任务 key',
     );
+    const planAlignment = await executor.gateway.planAlignment.load();
     const bindings = new Map<string, ProviderConfig>();
     for (const task of run.plan.tasks) {
       const choice = body.assignments.find((a) => a.key === task.key) ?? task;
       bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice, apiCatalog));
     }
     const result = command(body, request.url, () =>
-      kernel.accept(request.params.id, body.version, body.expectedRevision, body.assignments, bindings),
+      planAlignment.accept(
+        request.params.id,
+        body.version,
+        body.expectedRevision,
+        body.assignments,
+        bindings,
+      ),
     );
     executor.resume(request.params.id);
     return result;

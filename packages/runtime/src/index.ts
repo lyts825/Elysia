@@ -74,6 +74,7 @@ export class NativeExecutor implements ExecutorAdapter {
     for (const value of this.active.values()) value.controller.abort();
     await this.gateway.processes.cancel();
     await Promise.allSettled([...this.active.values()].map((v) => v.promise));
+    await this.gateway.dispose();
   }
   async tick() {
     if (this.ticking || this.stopped) return;
@@ -235,14 +236,18 @@ export class NativeExecutor implements ExecutorAdapter {
     await this.replayPending(task, attempt, signal);
     task = store.require('tasks', task.id);
     if (task.status !== 'RUNNING') return;
-    const run = store.require<Run>('runs', task.runId);
+    let run = store.require<Run>('runs', task.runId);
     if (attempt.steps >= run.limits.maxSteps) {
       this.waitAtLimit(task, 'STEP_LIMIT', '运行步骤达到上限');
       return;
     }
+    const definitions = await this.gateway.prepareDefinitions(task, signal);
+    task = store.require<Task>('tasks', task.id);
+    if (task.status !== 'RUNNING') return;
+    run = store.require<Run>('runs', task.runId);
     const agent = store.require<Agent>('agents', task.agentId),
       config = agent.providerBinding;
-    const context = compileContext(store, task, this.gateway.definitions(task)),
+    const context = compileContext(store, task, definitions),
       adapter = this.adapterFactory(agent),
       request = adapter.compile(context);
     const previous = store
