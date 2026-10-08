@@ -55,6 +55,39 @@ export async function api<T = any>(path: string, body?: unknown, method?: string
   }
   return result;
 }
+export async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+  let response: Response;
+  try {
+    response = await fetch('/api' + path, { method: 'GET', credentials: 'same-origin', signal });
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
+  }
+  try {
+    if (response.ok) return new Uint8Array(await response.arrayBuffer());
+    let result: any;
+    try {
+      result = JSON.parse(await response.text());
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+    }
+    const message = typeof result?.message === 'string' ? result.message.trim() : '';
+    throw new ApiError(
+      message ? `${message}（HTTP ${response.status}）` : `本机请求失败（HTTP ${response.status}），请重试。`,
+      'http',
+      response.status,
+      typeof result?.code === 'string' ? result.code : undefined,
+    );
+  } catch (error) {
+    if (
+      signal?.aborted ||
+      (error instanceof Error && error.name === 'AbortError') ||
+      error instanceof ApiError
+    )
+      throw error;
+    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
+  }
+}
 export const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>
   api<T>(path, { commandId: crypto.randomUUID(), ...body }, method);
 let sessionPromise: Promise<string | undefined> | null = null;

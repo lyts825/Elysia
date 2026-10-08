@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, mutation, initializeSession, ApiError, canRetryConnection } from './api';
+import { api, apiBytes, mutation, initializeSession, ApiError, canRetryConnection } from './api';
 import { PreviewPanel } from './PreviewPanel';
 import { ProjectFiles } from './ProjectFiles';
 import { manageUsage } from './desktop';
@@ -59,6 +59,13 @@ type Detail = {
   edges: { taskId: string; dependencyId: string }[];
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
+type ArtifactTarget = Pick<Artifact, 'id' | 'name' | 'runId'>;
+type ArtifactView = ArtifactTarget &
+  (
+    | { status: 'loading' }
+    | { status: 'error'; error: string }
+    | { status: 'ready'; text: string | null; bytes: number }
+  );
 type ReadSource = 'session' | 'lists' | 'detail';
 type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
 function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
@@ -120,12 +127,7 @@ function App() {
     [previewOpen, setPreviewOpen] = useState(false),
     [previewTaskId, setPreviewTaskId] = useState(''),
     [modal, setModal] = useState(''),
-    [artifactView, setArtifactView] = useState<{
-      name: string;
-      text: string | null;
-      bytes: number;
-      id: string;
-    } | null>(null),
+    [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [draft, setDraft] = useState(''),
     [replies, setReplies] = useState<Record<string, string>>({}),
     [streaming, setStreaming] = useState<Record<string, string>>({});
@@ -214,7 +216,21 @@ function App() {
   const sessionReady = useRef(false);
   const connectPending = useRef(false);
   const sessionRequest = useRef(0);
+  const artifactSequence = useRef(0);
+  const artifactRequest = useRef<{
+    id: string;
+    runId: string;
+    sequence: number;
+    controller: AbortController;
+  } | null>(null);
   const reply = replies[runId] || '';
+  const closeArtifact = useCallback(() => {
+    artifactSequence.current++;
+    artifactRequest.current?.controller.abort();
+    artifactRequest.current = null;
+    setArtifactView(null);
+  }, []);
+  useEffect(() => () => artifactRequest.current?.controller.abort(), []);
   const clearReadIssue = useCallback((source: ReadSource, request = Infinity) => {
     setReadIssues((old) => {
       if (!old[source] || old[source]!.request > request) return old;
@@ -223,27 +239,31 @@ function App() {
       return next;
     });
   }, []);
-  const navigate = useCallback((next: NavigationState, explicit = false) => {
-    if (explicit) {
-      navigationEpoch.current++;
-      navigationInitialized.current = true;
-      savedNavigation.current = undefined;
-    }
-    if (navigation.current.runId !== next.runId) {
-      setDetail(null);
-      setPreviewOpen(false);
-      setReadIssues((old) => {
-        if (!old.detail) return old;
-        const next = { ...old };
-        delete next.detail;
-        return next;
-      });
-    }
-    navigation.current = next;
-    activeRunId.current = next.runId;
-    setSelection(next);
-    if (navigationInitialized.current) writeNavigation(navigationStorageKey.current, next);
-  }, []);
+  const navigate = useCallback(
+    (next: NavigationState, explicit = false) => {
+      if (explicit) {
+        navigationEpoch.current++;
+        navigationInitialized.current = true;
+        savedNavigation.current = undefined;
+      }
+      if (navigation.current.runId !== next.runId) {
+        closeArtifact();
+        setDetail(null);
+        setPreviewOpen(false);
+        setReadIssues((old) => {
+          if (!old.detail) return old;
+          const next = { ...old };
+          delete next.detail;
+          return next;
+        });
+      }
+      navigation.current = next;
+      activeRunId.current = next.runId;
+      setSelection(next);
+      if (navigationInitialized.current) writeNavigation(navigationStorageKey.current, next);
+    },
+    [closeArtifact],
+  );
   const refresh = useCallback(async () => {
     const request = ++listRequest.current;
     const epoch = navigationEpoch.current;
@@ -527,18 +547,44 @@ function App() {
     act(() =>
       mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
     );
-  async function openArtifact(a: Artifact) {
-    await act(async () => {
-      const response = await fetch('/api/artifacts/' + a.id);
-      if (!response.ok) throw new Error('无法读取产物');
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      setArtifactView({
-        name: a.name,
-        text: isBinaryFile(a.name, bytes) ? null : new TextDecoder().decode(bytes),
-        bytes: bytes.length,
-        id: a.id,
-      });
-    });
+  async function openArtifact(a: ArtifactTarget) {
+    if (a.runId !== activeRunId.current) return;
+    if (artifactRequest.current?.id === a.id && artifactRequest.current.runId === a.runId) return;
+    artifactRequest.current?.controller.abort();
+    const target = { id: a.id, name: a.name, runId: a.runId };
+    const request = {
+      id: target.id,
+      runId: target.runId,
+      sequence: ++artifactSequence.current,
+      controller: new AbortController(),
+    };
+    artifactRequest.current = request;
+    const current = () =>
+      !request.controller.signal.aborted &&
+      activeRunId.current === target.runId &&
+      artifactSequence.current === request.sequence &&
+      artifactRequest.current?.id === target.id &&
+      artifactRequest.current.runId === target.runId;
+    setArtifactView({ ...target, status: 'loading' });
+    try {
+      const bytes = await apiBytes('/artifacts/' + target.id, request.controller.signal);
+      if (current())
+        setArtifactView({
+          ...target,
+          status: 'ready',
+          text: isBinaryFile(target.name, bytes) ? null : new TextDecoder().decode(bytes),
+          bytes: bytes.length,
+        });
+    } catch (error) {
+      if (current())
+        setArtifactView({
+          ...target,
+          status: 'error',
+          error: error instanceof Error ? error.message : '无法读取产物，请重试。',
+        });
+    } finally {
+      if (artifactRequest.current === request) artifactRequest.current = null;
+    }
   }
   if (!ready)
     return (
@@ -1750,11 +1796,18 @@ function App() {
           <Modal
             title={artifactView.name}
             subtitle="已登记产物 · 内容哈希由服务端核对"
-            close={() => setArtifactView(null)}
+            close={closeArtifact}
             wide
           >
             <div className="artifact-preview">
-              {artifactView.text === null ? (
+              {artifactView.status === 'loading' ? (
+                <p role="status">正在读取产物内容…</p>
+              ) : artifactView.status === 'error' ? (
+                <div className="inline-warning" role="alert">
+                  <p>读取产物失败：{artifactView.error}</p>
+                  <button onClick={() => void openArtifact(artifactView)}>重试</button>
+                </div>
+              ) : artifactView.text === null ? (
                 <p>
                   已登记附件（{Math.max(1, Math.ceil(artifactView.bytes / 1024))}{' '}
                   KiB），下载后使用对应应用打开。
@@ -1764,11 +1817,13 @@ function App() {
               )}
             </div>
             <footer className="modal-footer">
-              <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
-                下载产物
-              </a>
-              <button className="primary" onClick={() => setArtifactView(null)}>
-                完成
+              {artifactView.status === 'ready' && (
+                <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
+                  下载产物
+                </a>
+              )}
+              <button className="primary" onClick={closeArtifact}>
+                {artifactView.status === 'ready' ? '完成' : '关闭'}
               </button>
             </footer>
           </Modal>
