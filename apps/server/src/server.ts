@@ -13,6 +13,7 @@ import {
   Permissions,
   ProviderConfig,
   ModelChoice,
+  ContextPolicy,
   VERSION,
   invariant,
   type Run,
@@ -24,6 +25,7 @@ import {
   type Artifact,
   type RequestRecord,
   type Attempt,
+  type ContextSnapshot,
 } from '../../../packages/contracts/src/index.js';
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
@@ -199,6 +201,14 @@ export function createServer(
         409,
       );
   };
+  const contextBoundaries = (snapshot: ContextSnapshot): ContextSnapshot => ({
+    ...snapshot,
+    agents: snapshot.agents.map((context) =>
+      executorHasActive(executor, snapshot.runId, context.taskId)
+        ? { ...context, safeToConfigure: false, configureReason: '请先暂停代理并等待当前请求和操作结束' }
+        : context,
+    ),
+  });
   app.get('/api/health', async () => ({ version: VERSION, status: 'ok' }));
   registerWorkbench(app, store);
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
@@ -539,6 +549,7 @@ export function createServer(
         providerId: ModelChoice.shape.providerId,
         model: ModelChoice.shape.model,
         reasoningEffort: ModelChoice.shape.reasoningEffort,
+        contextPolicy: ContextPolicy.optional(),
         permissionProfile: Permissions.default({
           read: true,
           write: false,
@@ -587,7 +598,50 @@ export function createServer(
         budget: body.budget,
         assumptions: [],
       });
-      return kernel.createRun(project, body.objective, provider, contract, body.limits, body.kind);
+      return kernel.createRun(
+        project,
+        body.objective,
+        provider,
+        contract,
+        body.limits,
+        body.kind,
+        body.contextPolicy,
+      );
+    });
+  });
+  app.get<{ Params: { id: string } }>('/api/runs/:id/context', async (request) =>
+    contextBoundaries(kernel.contextSnapshot(request.params.id)),
+  );
+  app.post<{ Params: { id: string } }>('/api/runs/:id/context', async (request) => {
+    const body = z
+      .object({
+        commandId: z.string().uuid(),
+        expectedRevision: z.number().int().nonnegative(),
+        agentId: z.string().min(1),
+        expectedAgentRevision: z.number().int().nonnegative(),
+        policy: ContextPolicy,
+      })
+      .parse(request.body);
+    return command(body, request.url, () => {
+      const run = store.require<Run>('runs', request.params.id);
+      const agent = store.require<Agent>('agents', body.agentId);
+      management.assertMutable(run.id, run.projectId);
+      revision(body, run);
+      invariant(agent.runId === run.id, 'CONTEXT_SCOPE', '上下文配置不属于当前对话');
+      invariant(
+        !executorHasActive(executor, run.id, agent.taskId),
+        'CONTEXT_BOUNDARY',
+        '请先暂停代理并等待当前请求和操作结束',
+      );
+      return contextBoundaries(
+        kernel.setContextPolicy(
+          run.id,
+          agent.id,
+          body.expectedRevision,
+          body.expectedAgentRevision,
+          body.policy,
+        ),
+      );
     });
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id', async (request) => {
@@ -596,6 +650,7 @@ export function createServer(
       run,
       tasks: store.all<Task>('tasks', run.id),
       agents: store.all<Agent>('agents', run.id),
+      contexts: contextBoundaries(kernel.contextSnapshot(run.id)).agents,
       messages: store.all<Message>('messages', run.id),
       artifacts: store.all<Artifact>('artifacts', run.id),
       snapshots: store.all('snapshots', run.id),
@@ -666,7 +721,7 @@ export function createServer(
         expectedRevision: z.number().int(),
         version: z.number().int(),
         assignments: z
-          .array(ModelChoice.extend({ key: z.string().min(1) }))
+          .array(ModelChoice.extend({ key: z.string().min(1), contextPolicy: ContextPolicy.optional() }))
           .max(11)
           .default([]),
       })

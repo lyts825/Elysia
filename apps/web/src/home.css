@@ -61,6 +61,17 @@
   gap: 16px;
   padding: 12px 16px 16px;
 }
+.composer-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.composer-options .composer-model {
+  max-width: 100%;
+}
 .composer-model {
   display: flex;
   align-items: center;
@@ -121,6 +132,8 @@
   gap: 12px;
   flex: 1;
   min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 12px;
 }
 .reply-model-controls .composer-model {
   flex: none;

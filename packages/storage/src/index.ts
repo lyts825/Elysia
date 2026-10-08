@@ -353,10 +353,23 @@ export class Store {
       .run(runId, seq, e.eventId, type, taskId, attemptId, '{}', e.occurredAt, compress(payload));
     return e;
   }
-  events(runId: string, after = 0): Event[] {
+  events(runId: string, after = 0, filter: { taskId?: string; type?: string; limit?: number } = {}): Event[] {
+    const conditions = ['run_id=?', 'seq>?'];
+    const bindings: (string | number)[] = [runId, after];
+    if (filter.taskId !== undefined) {
+      conditions.push('task_id=?');
+      bindings.push(filter.taskId);
+    }
+    if (filter.type !== undefined) {
+      conditions.push('type=?');
+      bindings.push(filter.type);
+    }
+    const limit = filter.limit ?? 1000;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
+      throw new AppError('EVENT_RANGE', '事件读取范围无效');
     return this.db
-      .prepare('SELECT * FROM events WHERE run_id=? AND seq>? ORDER BY seq LIMIT 1000')
-      .all(runId, after)
+      .prepare(`SELECT * FROM events WHERE ${conditions.join(' AND ')} ORDER BY seq LIMIT ?`)
+      .all(...bindings, limit)
       .map((r: any) => ({
         runId: r.run_id,
         seq: r.seq,

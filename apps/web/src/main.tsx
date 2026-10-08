@@ -4,7 +4,7 @@ import { api, apiBytes, mutation, initializeSession, ApiError, canRetryConnectio
 import { PreviewPanel } from './PreviewPanel';
 import { ProjectFiles } from './ProjectFiles';
 import { manageUsage } from './desktop';
-import { VERSION } from '../../../packages/contracts/src/index';
+import { VERSION, minimumContextWindowTokens } from '../../../packages/contracts/src/index';
 import { isBinaryFile } from '../../../packages/contracts/src/files';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
@@ -21,6 +21,8 @@ import type {
   Operation,
   Contract,
   ProviderConfig,
+  ContextPolicy,
+  ContextProjection,
 } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
 import { BrandIcon, EmptyArtwork } from './Brand';
@@ -44,6 +46,14 @@ import {
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
 import { PlanAlignmentLoader } from './PlanAlignmentLoader';
+import {
+  ContextMeter,
+  ContextOverview,
+  ContextWindowModal,
+  NewContextWindowModal,
+  contextPolicyLabel,
+} from './ContextWindow';
+import { ContextPolicyEditor, validContextPolicy } from './ContextPolicyEditor';
 import { TaskGraph } from './TaskGraph';
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
@@ -61,6 +71,7 @@ type Detail = {
   operations: Operation[];
   events: any[];
   edges: { taskId: string; dependencyId: string }[];
+  contexts: ContextProjection[];
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
 type ArtifactTarget = Pick<Artifact, 'id' | 'name' | 'runId'>;
@@ -171,6 +182,13 @@ function App() {
     [homeModelKey],
   );
   const homeModelValid = homeModelReady.key === homeModelKey && homeModelReady.valid;
+  const [homeContexts, setHomeContexts] = useState<Record<string, ContextPolicy>>({});
+  const homeContext = homeContexts[draftKey] || { mode: 'managed' as const };
+  const homeContextValid = validContextPolicy(
+    homeContext,
+    homeProvider ? minimumContextWindowTokens(homeProvider) : 4096,
+    homeProvider?.contextLimit || 4096,
+  );
   const readSource: ReadSource | undefined =
     readIssues.detail?.runId === runId
       ? 'detail'
@@ -206,7 +224,9 @@ function App() {
   const planRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
-  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, ModelChoice>>>({});
+  const [assignmentDrafts, setAssignmentDrafts] = useState<
+    Record<string, Record<string, ModelChoice & { contextPolicy?: ContextPolicy }>>
+  >({});
   const assignmentKey = detail?.run.plan ? `${detail.run.id}:${detail.run.plan.version}` : '';
   const assignments = assignmentDrafts[assignmentKey] || {};
   const [assignmentReady, setAssignmentReady] = useState<Record<string, boolean>>({});
@@ -218,6 +238,10 @@ function App() {
     : undefined;
   const switchTask = detail?.tasks.find((task) => task.id === switchAgent?.taskId);
   const rootAgent = detail?.agents.find((agent) => agent.taskId === detail.run.rootTaskId);
+  const rootContext = detail?.contexts?.find((item) => item.agentId === rootAgent?.id);
+  const contextAgent = modal.startsWith('context:')
+    ? detail?.contexts?.find((item) => item.agentId === modal.slice(8))
+    : undefined;
   const rootModelReason =
     detail && rootAgent ? modelSwitchReason(detail, archived, rootAgent.taskId) : '模型正在准备中。';
   const decisionDisabledReason = (operation: Operation) => {
@@ -230,7 +254,7 @@ function App() {
     if (operation.status !== 'UNCERTAIN') return '该操作已完成核验，无需重复提交。';
     return '';
   };
-  const proposedChoice = (task: Task['spec']): ModelChoice => {
+  const proposedChoice = (task: Task['spec']): ModelChoice & { contextPolicy?: ContextPolicy } => {
     const fallback = defaultChoice(providers, task.providerId);
     return {
       ...fallback,
@@ -484,6 +508,8 @@ function App() {
       'decision.required',
       'artifact.created',
       'usage.updated',
+      'context.updated',
+      'context.policy.updated',
       'error',
     ];
     for (const event of events)
@@ -531,7 +557,7 @@ function App() {
     }
   }
   const startConversation = () => {
-    if (busy || !homeModelValid || !draft.trim() || project?.archived) return;
+    if (busy || !homeModelValid || !homeContextValid || !draft.trim() || project?.archived) return;
     if (project) {
       setModal('run');
       return;
@@ -542,6 +568,7 @@ function App() {
     void act(async () => {
       const run = await mutation<Run>('/runs', {
         ...homeModel,
+        contextPolicy: homeContext,
         objective: text,
         kind: 'chat',
         projectId: null,
@@ -1015,6 +1042,18 @@ function App() {
             changeModel={changeHomeModel}
             modelReady={homeModelValid}
             setModelReady={updateHomeModelReady}
+            contextReady={homeContextValid}
+            contextControl={
+              <button
+                type="button"
+                className="context-meter"
+                disabled={busy}
+                onClick={() => setModal('new-context')}
+                title={contextPolicyLabel(homeContext)}
+              >
+                窗口 {homeContext.mode === 'manual' ? '手动' : '托管'}
+              </button>
+            }
             draft={draft}
             setDraft={setDraft}
             busy={busy}
@@ -1416,6 +1455,12 @@ function App() {
                           <span>{rootAgent?.providerBinding.model || '模型准备中…'}</span>
                           <Icon name="chevron" size={12} />
                         </button>
+                        <ContextMeter
+                          projection={rootContext}
+                          showStreaming
+                          disabled={!rootContext || busy}
+                          open={() => rootContext && setModal('context:' + rootContext.agentId)}
+                        />
                         <span className="reply-hint">
                           {busy
                             ? '正在提交…'
@@ -1631,6 +1676,11 @@ function App() {
                                     : ''}
                                 </p>
                                 <small>独立会话 {a.sessionId.slice(0, 8)}</small>
+                                <ContextMeter
+                                  projection={detail.contexts?.find((item) => item.agentId === a.id)}
+                                  disabled={busy || !detail.contexts?.some((item) => item.agentId === a.id)}
+                                  open={() => setModal('context:' + a.id)}
+                                />
                                 <button
                                   className="agent-preview-button"
                                   disabled={busy || !!switchReason}
@@ -1728,7 +1778,13 @@ function App() {
                         )}
                       </>
                     )}
-                    {tab === 'usage' && <UsagePanel detail={detail} totalTokens={totalTokens} />}
+                    {tab === 'usage' && (
+                      <UsagePanel
+                        detail={detail}
+                        totalTokens={totalTokens}
+                        configureContext={(projection) => setModal('context:' + projection.agentId)}
+                      />
+                    )}
                   </MotionContent>
                   <div className="panel-bottom">
                     <Icon name="history" size={13} />
@@ -1785,6 +1841,7 @@ function App() {
                   projectName={project?.name}
                   providers={providers}
                   modelChoice={homeModel}
+                  contextPolicy={homeContext}
                   initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
                   close={() => {
                     setRunSetup(null);
@@ -1847,6 +1904,42 @@ function App() {
                         switchMode,
                         taskId: switchTask.id,
                         expectedRevision: detail.run.revision,
+                      });
+                      setModal('');
+                    })
+                  }
+                />
+              )}
+              {modal === 'new-context' && (
+                <NewContextWindowModal
+                  key={draftKey}
+                  policy={homeContext}
+                  provider={homeProvider}
+                  busy={busy}
+                  close={() => setModal('')}
+                  submit={(policy) => {
+                    setHomeContexts((old) => ({ ...old, [draftKey]: policy }));
+                    setModal('');
+                  }}
+                />
+              )}
+              {modal.startsWith('context:') && detail && contextAgent && (
+                <ContextWindowModal
+                  key={detail.run.id + ':' + contextAgent.agentId}
+                  projection={contextAgent}
+                  title={
+                    detail.tasks.find((task) => task.id === contextAgent.taskId)?.spec.title || '当前会话'
+                  }
+                  runRevision={detail.run.revision}
+                  busy={busy}
+                  close={() => setModal('')}
+                  submit={(policy, expectedAgentRevision, expectedRevision) =>
+                    void act(async () => {
+                      await mutation('/runs/' + detail.run.id + '/context', {
+                        agentId: contextAgent.agentId,
+                        expectedAgentRevision,
+                        expectedRevision,
+                        policy,
                       });
                       setModal('');
                     })
@@ -2024,13 +2117,28 @@ function Empty({
     </div>
   );
 }
-function UsagePanel({ detail, totalTokens }: { detail: Detail; totalTokens: number }) {
+function UsagePanel({
+  detail,
+  totalTokens,
+  configureContext,
+}: {
+  detail: Detail;
+  totalTokens: number;
+  configureContext: (projection: ContextProjection) => void;
+}) {
   const settled = detail.requests.filter((r) => r.status === 'SETTLED'),
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);
   const costs = settled.reduce((sum, r) => sum + (r.usage?.cost || 0), 0);
   return (
     <>
+      <ContextOverview
+        contexts={detail.contexts || []}
+        titleFor={(projection) =>
+          detail.tasks.find((task) => task.id === projection.taskId)?.spec.title || '当前代理'
+        }
+        configure={configureContext}
+      />
       <div className="panel-heading">
         <h3>调用与预算</h3>
         <span>按 requestId 去重</span>
@@ -2388,6 +2496,7 @@ function ProjectModal({
 }
 type RunSetupDraft = {
   choice: ModelChoice;
+  contextPolicy: ContextPolicy;
   write: boolean;
   exec: boolean;
   urls: string;
@@ -2409,6 +2518,7 @@ function RunModal({
   settings,
   initial,
   modelChoice,
+  contextPolicy,
 }: {
   providers: Provider[];
   objective: string;
@@ -2420,9 +2530,11 @@ function RunModal({
   settings: (draft: RunSetupDraft) => void;
   initial?: RunSetupDraft;
   modelChoice: ModelChoice;
+  contextPolicy: ContextPolicy;
 }) {
   const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
     [modelReady, setModelReady] = useState(false),
+    [context, setContext] = useState<ContextPolicy>(() => initial?.contextPolicy ?? contextPolicy),
     [write, setWrite] = useState(initial?.write ?? true),
     [exec, setExec] = useState(initial?.exec ?? true),
     [urls, setUrls] = useState(initial?.urls ?? ''),
@@ -2432,6 +2544,11 @@ function RunModal({
     [maxTokens, setMaxTokens] = useState(initial?.maxTokens ?? 500000),
     [concurrency, setConcurrency] = useState(initial?.concurrency ?? 4);
   const selected = providers.find((p) => p.id === choice.providerId);
+  const contextValid = validContextPolicy(
+    context,
+    selected ? minimumContextWindowTokens(selected) : 4096,
+    selected?.contextLimit || 4096,
+  );
   const chat = kind === 'chat';
   const lines = (s: string) =>
     s
@@ -2448,9 +2565,10 @@ function RunModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || !modelReady || !objective.trim()) return;
+          if (busy || !modelReady || !contextValid || !objective.trim()) return;
           submit({
             ...choice,
+            contextPolicy: context,
             inputs: lines(inputs),
             permissionProfile: chat
               ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
@@ -2481,6 +2599,16 @@ function RunModal({
             disabled={busy}
             label={chat ? '会话模型连接' : '总代理连接'}
           />
+          <details className="context-compact-setup">
+            <summary>上下文窗口 · {context.mode === 'manual' ? '手动分配' : '托管'}</summary>
+            <ContextPolicyEditor
+              value={context}
+              change={setContext}
+              minimumWindowTokens={selected ? minimumContextWindowTokens(selected) : 4096}
+              providerLimit={selected?.contextLimit || 4096}
+              disabled={busy || !selected}
+            />
+          </details>
           {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
             <p className="field-help">
               正在使用 ChatGPT 订阅 ·{' '}
@@ -2499,6 +2627,7 @@ function RunModal({
                   if (busy) return;
                   settings({
                     choice,
+                    contextPolicy: context,
                     write,
                     exec,
                     urls,
@@ -2620,7 +2749,7 @@ function RunModal({
           <button type="button" className="secondary" disabled={busy} onClick={close}>
             返回
           </button>
-          <button className="primary" disabled={busy || !modelReady || !objective.trim()}>
+          <button className="primary" disabled={busy || !modelReady || !contextValid || !objective.trim()}>
             {busy ? '正在创建…' : chat ? '开始对话' : '生成约定与计划'}
             <Icon name="arrow" size={15} />
           </button>

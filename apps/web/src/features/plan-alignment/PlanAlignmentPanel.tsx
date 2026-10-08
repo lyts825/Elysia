@@ -1,5 +1,13 @@
 import { Icon } from '../../Icon';
 import { ModelPicker } from '../../ModelPicker';
+import {
+  minimumContextWindowTokens,
+  effectiveContextWindowTokens,
+  type ContextPolicy,
+  type TaskSpec,
+} from '../../../../../packages/contracts/src/index';
+import { ContextPolicyEditor, validContextPolicy } from '../../ContextPolicyEditor';
+import { contextPolicyLabel } from '../../ContextWindow';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './types';
 
 export const manifest = {
@@ -26,6 +34,29 @@ export function PlanAlignmentPanel({
   if (!plan || run.kind === 'chat') return null;
   const ended = ['DONE', 'CANCELLED'].includes(run.status);
   const pending = run.reason === 'plan' && !ended && run.acceptedPlanVersion !== plan.version;
+  const parent = detail.agents.find((agent) => agent.taskId === run.rootTaskId);
+  const pendingPolicy = (task: TaskSpec): ContextPolicy => {
+    const choice = assignments[task.key] || proposedChoice(task);
+    if (choice.contextPolicy) return choice.contextPolicy;
+    const provider = providers.find((item) => item.id === choice.providerId);
+    const inherited = Math.min(
+      parent ? effectiveContextWindowTokens(parent) : provider?.contextLimit || 4096,
+      provider?.contextLimit || 4096,
+    );
+    return {
+      mode: parent?.contextPolicy?.mode ?? 'managed',
+      windowTokens: task.contextWindowTokens ?? inherited,
+    };
+  };
+  const invalidContext = plan.tasks.some((task) => {
+    const choice = assignments[task.key] || proposedChoice(task);
+    const provider = providers.find((item) => item.id === choice.providerId);
+    return !validContextPolicy(
+      pendingPolicy(task),
+      provider ? minimumContextWindowTokens(provider) : 4096,
+      provider?.contextLimit || 4096,
+    );
+  });
   return (
     <div className="plan-card" data-module={manifest.id}>
       <div className="plan-card-head">
@@ -75,13 +106,17 @@ export function PlanAlignmentPanel({
                   item.status !== 'CANCELLED',
               )
             : undefined;
-        const binding = detail.agents.find((agent) => agent.id === currentTask?.agentId)?.providerBinding;
+        const agent = detail.agents.find((item) => item.id === currentTask?.agentId);
+        const binding = agent?.providerBinding;
         const choice = pending
           ? assignments[task.key] || proposedChoice(task)
           : binding
             ? { providerId: binding.id, model: binding.model, reasoningEffort: binding.reasoningEffort }
             : task;
         const provider = providers.find((item) => item.id === choice.providerId);
+        const policy = pending
+          ? pendingPolicy(task)
+          : agent?.contextPolicy || { mode: 'managed' as const, windowTokens: task.contextWindowTokens };
         return (
           <div className="plan-row" key={task.key}>
             <span className="step-number">{String(index + 1).padStart(2, '0')}</span>
@@ -92,6 +127,7 @@ export function PlanAlignmentPanel({
                 {binding ? '当前模型：' + binding.label : provider?.label || choice.providerId}
                 {choice.model ? ' · ' + choice.model : ''}
                 {choice.reasoningEffort ? ' · ' + choice.reasoningEffort : ''}
+                {' · 窗口 ' + contextPolicyLabel(policy, true)}
                 {task.dependsOn.length
                   ? ' · 依赖 ' +
                     task.dependsOn
@@ -105,14 +141,39 @@ export function PlanAlignmentPanel({
                 <p>验收：{task.acceptanceCriteria.join('；')}</p>
               </details>
               {pending && (
-                <ModelPicker
-                  providers={providers}
-                  label={`一级子代理 ${index + 1} · ${task.title}`}
-                  value={assignments[task.key] || proposedChoice(task)}
-                  disabled={busy || archived}
-                  change={(choice) => changeAssignment(task.key, choice)}
-                  ready={(valid) => readyAssignment(task.key, valid)}
-                />
+                <>
+                  <ModelPicker
+                    providers={providers}
+                    label={`一级子代理 ${index + 1} · ${task.title}`}
+                    value={assignments[task.key] || proposedChoice(task)}
+                    disabled={busy || archived}
+                    change={(choice) =>
+                      changeAssignment(task.key, {
+                        ...proposedChoice(task),
+                        ...assignments[task.key],
+                        ...choice,
+                      })
+                    }
+                    ready={(valid) => readyAssignment(task.key, valid)}
+                  />
+                  <details className="context-compact-setup">
+                    <summary>上下文窗口 · {policy.mode === 'manual' ? '手动分配' : '上级托管'}</summary>
+                    <ContextPolicyEditor
+                      value={policy}
+                      change={(contextPolicy) =>
+                        changeAssignment(task.key, {
+                          ...proposedChoice(task),
+                          ...assignments[task.key],
+                          contextPolicy,
+                        })
+                      }
+                      minimumWindowTokens={provider ? minimumContextWindowTokens(provider) : 4096}
+                      providerLimit={provider?.contextLimit || 4096}
+                      disabled={busy || archived}
+                      child
+                    />
+                  </details>
+                </>
               )}
             </div>
           </div>
@@ -132,7 +193,9 @@ export function PlanAlignmentPanel({
         {pending && (
           <button
             className="primary"
-            disabled={busy || archived || plan.tasks.some((task) => !assignmentReady[task.key])}
+            disabled={
+              busy || archived || invalidContext || plan.tasks.some((task) => !assignmentReady[task.key])
+            }
             onClick={accept}
           >
             接受并开始 <Icon name="play" size={14} />

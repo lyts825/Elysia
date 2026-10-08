@@ -1,10 +1,10 @@
 # Elysia 首版执行文档
 
-文档版本：0.9.0　日期：2026-10-08　最近本地隔离验收构建：v0.9.0-preview.1　本机待实机验收源码：v0.9.0-preview.1　稳定版目标：v0.9.0
+文档版本：0.10.0　日期：2026-10-09　最近本地隔离验收构建：v0.10.0-preview.1　本机待实机验收源码：v0.10.0-preview.1　稳定版目标：v0.10.0
 
 本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项、官方 Codex 订阅和提供商配置中心，沿用白花、灰绿、雾蓝与暖粉主题及既有交互动效。本机 ChatGPT 订阅及单代理资料产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。项目和任务不再分 Code / Work，文件修改与办公产物使用统一上下文、权限、预算内核及模型按需加载的技能。
 
-本轮目标为“v0.8.2-preview.1 → v0.9.0-preview.1”；范围为输入区移除项目选择、实际模型选择与侧栏选中样式，以及用户明确限定的任务计划对齐模块化。提供商、其他工具和内核架构沿用，schema v3、执行协议与正式依赖保持。主代理负责前端计划模块、整合与版本，子代理负责模型入口UI、后端计划贡献点与DSH参考复核。验收要求为归属由侧栏决定且草稿保留，创建对话冻结所选模型，项目权限确认保留，普通聊天不加载计划实现，计划加载失败可重试、切换不挂载过期内容，提出/接受计划保持版本、依赖、权限、预算与幂等保护。用户此前明确停止实机、继续源码工作，本轮只使用独立临时数据库、假适配器、本机HTTP夹具和隐藏offscreen Electron，不读取真实密钥、不重启正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
+本轮目标为“v0.9.0-preview.1 → v0.10.0-preview.1”；P0为各代理实时上下文指标、用户手动窗口和直属上级模型托管分配，P1为开源方案比较及可回查原文的分层压缩。schema v3、提供商及正式依赖保持。主代理负责压缩、运行时指标、整合及版本，子代理分别负责前端窗口、分配内核/API和开源研究/独立验证。验收要求为实时估算与供应商实际用量分开、未知值不伪造，容量受冻结模型上限与安全检查点保护，手动容量不被模型改写，托管分配不能跨代理或扩大预算，压缩不破坏工具配对、不修改原始消息，原文按当前代理范围可回查。用户此前明确停止实机、继续源码工作，本轮只使用独立临时数据库、假适配器、本机HTTP夹具和隐藏offscreen Electron，不读取真实密钥、不重启正式服务。此前真人实机与正式库恢复缺口保留，完整供应商验收仍待完成。本文是施工与验收的单一依据。
 
 ## 一 首版范围
 
@@ -179,7 +179,13 @@ H   本实例按规则追加的消息与工具结果
 
 上述是逻辑顺序，适配器负责实际的 system、developer、tools、messages 布局。模型不支持的角色或工具特性必须有明确映射或拒绝原因。工具按任务阶段、角色、用户授权和可用 Git 基线提供；load_skill 只读取受控技能指令，规划和只读任务也能加载，不会开放写入或命令权限。
 
-上下文预算按具体模型配置：预留输出和工具结果空间，输入到达有效上限的 75% 时准备压缩，这是首版阈值。保留平台规则、有效约束、当前任务、未解决问题、产物引用和最近完整交互；已结束阶段生成版本化摘要。摘要不能替代尚未闭合的工具调用和结果，压缩前保存检查点及原始内容引用。
+每个Agent可配置contextPolicy（manual/managed及windowTokens）。旧Agent未配置时兼容为managed/冻结模型容量。windowTokens是单代理单请求总容量，各代理独立，不从上级扣除一个共享容量池；输入额度为窗口减outputLimit和2048安全余量，Codex额外16384运行预留计入输入。手动容量仅用户修改；托管子代理通过TaskSpec.contextWindowTokens或直属上级allocate_context指定，未指定时继承上级容量并受自身模型上限夹取，总代理无上级时沿用模型容量。用户接受计划可逐代理覆盖模式和窗口；已存在代理仅在安全检查点调整，拒绝运行/验证中、未结算/待核验请求或操作、未闭合工具调用、归档和完成记录。配置采用Run与Agent双revision及commandId幂等，父模型分配采用子Task revision；策略revision避免旧指标在改回旧配置后复活。手动窗口不适合新模型时拒绝切换，托管按新模型容量调整，不改变累计预算或授权。
+
+compileContext生成ContextRuntimeMetrics，运行时将compiled、streaming、settled或blocked投影持久写入request manifest及context.updated事件。流式最多每500ms更新一次，最终结算强制刷新；超限时在预算预留和适配器调用前记录blocked。GET/POST /api/runs/:id/context及详情contexts用于查看和配置，界面输入区、代理卡片及用量页显示窗口/输入占比/剩余空间/生成量/实际用量。输入和生成均为保守UTF-8字节估算（Codex双倍编码预留），不是模型tokenizer结果；生成只计可见文本，不含隐藏思考。供应商实际输入输出仅来自有效usage，缺失保持null。输出预留不再与实时生成重复加到输入占比。
+
+压缩算法为tiered-recoverable-v1，本地两阶段确定性抽取，不调用额外模型。估算输入超过输入额度75%触发，目标60%，这是项目默认值而非开源论文性能结论。先裁剪最近四组完整交互之前的工具文本：超过8192 Unicode码点时保留4096头部、1024尾部及原文引用。仍有压力时按完整工具调用/结果组边界提取旧历史；全部旧用户文本保留，重复文本仅按完全一致去重，保留调用ID/名称、结果状态、错误、路径、哈希及产物引用，其他文本按512/192/0档头尾摘录递减。最多评估八个旧边界与三档摘录；候选必须严格减少估算且通过工具配对检查。固定规则、约定、已加载技能及最近四组完整交互不进入摘要，原始消息/native内容不改写。历史摘录使用user角色并明确为历史资料，不提升为新指令或授权。原始对象及摘要引用按schema3存储；recall_context仅允许当前代理自身记录中的引用，可query定位或offset/textOffset分页读取，拒绝其他代理和任意对象。
+
+该算法适合目前Node本地多代理架构：优先压缩冗长工具输出、保留协议边界、无额外服务依赖且可回查。它会省略中间语义，原文可恢复不等于摘要无损；若固定内容、用户原文或近期交互仍超过窗口则明确阻止请求，需要扩大窗口或减少资料。压缩会改变历史缓存前缀，不能承诺缓存命中率提升。LLMLingua/LLMLingua-2具备学习式Token重要性压缩，但需要压缩模型及Python/torch/transformers依赖；Pi或LangChain的模型摘要会增加调用成本。本轮采用DSH的先裁剪后压缩与原文留存原则，借鉴Pi完整交互边界，未集成其SDK，也未实施LLMLingua模型。参考链接见第十二节；任务质量、跨语言Token误差与真实供应商性能仍待后续验收。
 
 子代理使用定向交接包：任务与验收项、相关约束、只读快照、可访问产物、预算和权限。公共记忆仅在验收后更新；资料更新创建新快照并在检查点核对影响。厂商原生推理块、签名和续接标识按适配器规则保存和重放，跨模型仅交接公开结论、证据、产物与待办。
 
@@ -920,9 +926,19 @@ maintenance 冻结 SHA256 为 290b15d42c206ce78e0a13327ce358258f02b2204c1946a7e8
 
 最终材料为.local-qa/ui-model-entry-v090-DDx90b/result.json、plan-module-ui-v090-nfuWt8/result.json、plan-module-v083-Z1fnip/results.json和acceptance-6oXE5X/results.json，均被Git忽略。早期失败UI夹具ofUHg2、Xyo97Y及计划UI夹具sDDXr0的精确清理被自动批准审查以“blocked by policy”拒绝，仍保留ignored，未替换工具绕过；最终及仍用于对照的通过材料保留。11份包清单与contracts VERSION同步0.9.0-preview.1，文档同步0.9.0。本轮未重启正式窗口/服务、未读取真实密钥或发起真实供应商调用；真人实机与此前供应商/恢复缺口保留，未发布或推送。
 
+### v0.10.0-preview.1 上下文窗口与分层压缩（隔离验收通过，真人实机待验收）
+
+2026-10-09，v0.9.0-preview.1 → v0.10.0-preview.1，以5c28fd6为基线，分支codex/initial-build。新增各代理ContextPolicy、ContextRuntimeMetrics及窗口投影：输入区实时仪表、生成文本估算、窗口详情和用量总览，创建与计划中可手动分配，托管子代理由直属上级模型通过计划/委派/allocate_context分配。窗口独立，不是共享总池，也不增加调用预算。配置仍受冻结容量、输出/运行/安全预留、安全检查点、版本和幂等保护。未知指标显示“—”，输入、生成估算与供应商usage结算值分别展示；指标每500ms节流、最终结算刷新，blocked发生在请求预留前。计划未编辑时不发送隐式策略覆盖，并正确显示父手动窗口继承；选择较小模型后显式建议超窗禁止接受。
+
+compiler v3使用tiered-recoverable-v1，替代逐消息900字符截断。先裁剪旧工具大输出，再按完整调用/结果边界抽取历史记忆，保留全部用户原文、状态/错误/来源/产物引用、固定规则及最近四组完整交互。压缩仅接受严格减少估算的候选，未达到目标不伪报成功，超容量阻止模型请求。原始消息/native不修改，摘要为明确标注的历史user资料，不授予新权限。recall_context仅允许同代理登记的原文引用，支持正文/公开工具参数查询及6000码点分页，不向工具回放私有native或reasoning。新增Store.events按task/type过滤及分页，避免最早1000条事件限制漏掉晚期blocked-only引用；原调用默认读取边界保持。schema3及依赖不变，旧Agent按托管/模型容量兼容，旧摘要记录保留。
+
+类型、正式server/web构建、局部格式、差异和11份清单/contracts VERSION一致性通过。必要验证共60组：分配/API 11组、假流Runtime 4组、独立压缩/回查17组、最终dist界面8组及新增界面边界4组、现有核心回归16组。覆盖窗口上下限、manual锁、直属范围、安全检查点、CAS/幂等、估算与usage区分、工具配对、长用户修正全文、原文SHA/存储不变、公开参数超过三页恢复、2000+事件的late引用及代理隔离。原文/事件分页修复后核心回归再次通过。1440/390/320截图及控件边界通过；UI用量为合成数据，API持久化走独立SQLite/Fastify夹具，不替代真实供应商计量。
+
+证据在.local-qa/context-allocation-v0100-u5Efwt/results.json、context-runtime-v0100-Vtej8r/results.json、context-compression-v010-8Q1tkh/results.json、context-ui-v0100-Ac4aQt/result.json、context-boundary-ui-v0100-PHrlQO/result.json及acceptance-xxA0EW/results.json，均被Git忽略。保留仍用于对照的通过材料，未产生废弃正式文件或新清理拒绝；此前0.9三处被拒清理的ignored夹具保持原记录。本轮未启动或重载正式窗口/服务、未读取真实密钥、未发起真实模型调用。正式源码与文档提交由v0.10.0-preview.1本地标签定位，未推送或发布；真实模型的任务质量、Tokenizer误差与性能、此前真人实机与正式库恢复缺口保留。
+
 ## 十二 版本管理与参考依据
 
-工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.9.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
+工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐，`v0.10.0-preview.1`标签定位上下文窗口及分层压缩的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.10.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
 
 交付前核对差异、链接和版本，删除本次产生且已无用途的临时文件；产物、用户文件和仍用于验收的本地材料保留。版本记录只写日期、范围、验证结论和对应标签，提交通过标签定位。
 
@@ -965,12 +981,16 @@ maintenance 冻结 SHA256 为 290b15d42c206ce78e0a13327ce358258f02b2204c1946a7e8
 | 2026-10-08 | 0.8.1 | 0.8.0-preview.1 → 0.8.1-preview.1：精简首页为输入/归属/继续，收敛重复入口并清理组件/样式；数据与执行协议兼容 | 类型/构建/差异/版本及6组最终dist隔离UI通过，覆盖4种窗口宽度、草稿/快捷键/入口可达性；无模型/执行/外网调用，正式服务未重载，真人实机待验收 | v0.8.1-preview.1 |
 | 2026-10-08 | 0.8.2 | 0.8.1-preview.1 → 0.8.2-preview.1：未配置API凭据引导、来源保存保护、实际keyConfigured、目录响应体与HTTP错误处理；schema3兼容 | 类型/构建/差异/版本、7组目录错误、断流复现、8组目录回归、6组凭据闭环、5组原UI与8组新UI通过；真实密钥/推理未访问，正式服务未重启，真实账号待验收 | v0.8.2-preview.1 |
 | 2026-10-08 | 0.9.0 | 0.8.2-preview.1 → 0.9.0-preview.1：模型输入、侧栏选中样式、前后端按需计划对齐模块；schema3与执行协议兼容 | 类型/构建/格式/差异、10组后端模块、9组模型UI、6组计划UI、16组核心回归通过；正式服务未重启，真人实机待验收 | v0.9.0-preview.1 |
+| 2026-10-09 | 0.10.0 | 0.9.0-preview.1 → 0.10.0-preview.1：实时上下文指标、手动/直属父模型托管窗口、分层压缩和原文/公开工具参数回查；schema3兼容 | 类型/构建/格式/差异/版本及60组隔离验证通过；正式服务未重载，真实模型质量和性能待验收 | v0.10.0-preview.1 |
 
 | 参考 | 采用的设计依据 |
 | --- | --- |
 | [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window/) / [Security](https://www.electronjs.org/docs/latest/tutorial/security/) | 独立窗口、contextIsolation、sandbox、禁用 Node 和外部导航 |
 | [DeepSeek Harness 架构](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/architecture.md) | 生命周期、事件记录与上下文投影；首版不耦合其完整插件树 |
 | [DSH 客户端模块](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/README.md) / [卸载流程](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/src/client/entry-lifecycle.ts) | 计划对齐借鉴按需加载、pending共享、过期保护及异步清理；Elysia使用自己的固定模块契约 |
+| [DSH 工具结果裁剪](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction-tool-result-pruner/README.md) / [压缩契约](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction/README.md) | 2026-10-09核对，参考先裁剪工具大输出、原文留存、完整调用边界与历史资料角色；8192/4096/1024码点借鉴其默认值，75%/60%为Elysia默认值 |
+| [LLMLingua](https://arxiv.org/abs/2310.05736) / [LLMLingua-2](https://arxiv.org/abs/2403.12968) / [依赖](https://github.com/microsoft/LLMLingua/blob/main/setup.py) | 比较学习式Token重要性压缩；需要额外压缩模型和Python依赖，本轮不集成，不引用论文比例作为本项目性能结论 |
+| [Pi Compaction](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/compaction.md) / [LangChain Summarization](https://docs.langchain.com/oss/javascript/langchain/short-term-memory#summarize-messages) | 比较模型摘要与结构化记忆；本轮采用完整交互边界和本地抽取，不增加摘要模型调用 |
 | [Vite 虚拟模块](https://vite.dev/guide/api-plugin.html#virtual-modules-convention) / [模块入口引用](https://rollupjs.org/plugin-development/#import-meta-rollup-file-url) | 生成计划面板同源chunk入口URL，真实import失败以新URL重试，避免ESM失败缓存 |
 | [Pi Agent](https://github.com/earendil-works/pi/blob/ae92585d3b3e5f1e4b123d14a34314d826d8d9f5/packages/agent/README.md) | 内部消息转换；并发完成事件与持久工具结果顺序分离 |
 | [Codex App Server](https://learn.chatgpt.com/docs/app-server) / [0.160.0 工具环境门控](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/tools/spec_plan.rs) | 官方登录、模型/额度、ephemeral turn、结构化输出；空环境与工具关闭；本机 CLI 0.160.0 协议生成和实际调用核对 |

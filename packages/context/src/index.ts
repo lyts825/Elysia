@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   AppError,
+  ContextRuntimeMetrics,
+  CONTEXT_SAFETY_TOKENS,
+  effectiveContextWindowTokens,
   type Task,
   type Run,
   type Agent,
@@ -15,6 +18,8 @@ import {
 import { Store, hash, stable } from '../../storage/src/index.js';
 import { isBinaryFile } from '../../contracts/src/files.js';
 import { listSkills, loadSkill, SKILL_CATALOG_VERSION, type LoadedSkill } from './skills.js';
+import { compactHistory, COMPACTION_ALGORITHM } from './compaction.js';
+export { compactHistory, headTail, COMPACTION_ALGORITHM } from './compaction.js';
 export { listSkills, loadSkill, SKILL_CATALOG_VERSION } from './skills.js';
 export type { SkillSummary, LoadedSkill } from './skills.js';
 export interface ToolDefinition {
@@ -50,6 +55,8 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const run = store.require<Run>('runs', task.runId),
     agent = store.require<Agent>('agents', task.agentId),
     provider = agent.providerBinding;
+  const policy = agent.contextPolicy ?? { mode: 'managed' as const };
+  const windowTokens = effectiveContextWindowTokens(agent);
   const prompt = (name: string) =>
     readFileSync(path.join(process.cwd(), 'prompts', name + '.md'), 'utf8')
       .replace(/\r\n/g, '\n')
@@ -129,6 +136,14 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     workspace: task.workspace,
     projectDirectory: run.projectId ? store.require<Project>('projects', run.projectId).workspaceRoot : null,
     baseline: task.baseline,
+    contextWindow: {
+      policy,
+      windowTokens,
+      providerLimit: provider.contextLimit,
+      outputReserveTokens: provider.outputLimit,
+      allocationRule:
+        '每个代理独立窗口。托管子代理由直接上级分配；手动窗口只由用户改变。窗口不是累计Token预算。',
+    },
     accessibleArtifacts: store
       .all<Artifact>('artifacts', run.id)
       .filter((a) => a.verified || a.taskId === task.id)
@@ -137,49 +152,104 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
       .all<Task>('tasks', run.id)
       .filter((t) => t.parentTaskId === task.id)
       .filter((t) => t.contractVersion === run.contract.version)
-      .map((t) => ({ id: t.id, key: t.spec.key, status: t.status, required: t.spec.required })),
+      .map((t) => {
+        const child = store.require<Agent>('agents', t.agentId);
+        return {
+          id: t.id,
+          key: t.spec.key,
+          revision: t.revision,
+          agentId: t.agentId,
+          status: t.status,
+          required: t.spec.required,
+          contextPolicy: child.contextPolicy ?? { mode: 'managed' },
+          contextWindowTokens: effectiveContextWindowTokens(child),
+          contextProviderLimit: child.providerBinding.contextLimit,
+        };
+      }),
   });
   let history = store.all<Message>('messages', run.id).filter((m) => m.sessionId === agent.sessionId);
   validatePairs(history);
   const originalHash = hash(stable(history));
-  let summaryRef: string | null = null;
+  const factor = provider.authMode === 'codex' ? 2 : 1;
+  const runtimeReserveTokens = provider.authMode === 'codex' ? 16384 : 0;
+  const fixedTokens = Buffer.byteLength(system + taskText + stable(tools), 'utf8') * factor;
+  // Conservative byte-based estimate: never label it as a provider tokenizer measurement.
   const estimate = (items: Message[]) =>
-    (provider.authMode === 'codex' ? 16384 : 0) +
-    Buffer.byteLength(system + taskText + stable(tools) + stable(items), 'utf8') *
-      (provider.authMode === 'codex' ? 2 : 1); // Codex 包含运行时指令与 JSON 转义，使用保守额外预留。
-  const effective = provider.contextLimit - provider.outputLimit - 2048;
-  if (estimate(history) > effective * 0.75 && history.length > 8) {
-    let cut = history.length - 8;
-    while (cut > 0 && history[cut].role === 'tool') cut--;
-    const older = history.slice(0, cut);
-    if (older.length) {
-      const summary = older.map((m) => ({
-        role: m.role,
-        text: m.text.slice(0, 900),
-        calls: m.calls?.map((c) => ({ id: c.id, name: c.name })),
-        callId: m.callId,
-      }));
-      const originalRef = store.object(stable(older));
-      const object = store.object(stable({ version: 1, originalRef, summary }));
-      summaryRef = object.objectRef;
-      history = [
-        {
-          id: 'summary',
-          revision: 0,
-          runId: run.id,
-          sessionId: agent.sessionId,
-          ordinal: 0,
-          role: 'user',
-          text: '已结束阶段的版本化摘要（原始资料引用 ' + originalRef.objectRef + '）：' + stable(summary),
-        },
-        ...history.slice(cut),
-      ];
-      validatePairs(history);
-    }
+    runtimeReserveTokens + fixedTokens + Buffer.byteLength(stable(items), 'utf8') * factor;
+  const effective = Math.max(0, windowTokens - provider.outputLimit - CONTEXT_SAFETY_TOKENS);
+  const source = stable({
+    algorithm: COMPACTION_ALGORITHM,
+    runId: run.id,
+    taskId: task.id,
+    agentId: agent.id,
+    sessionId: agent.sessionId,
+    messages: history,
+  });
+  const reference = 'sqlite:' + hash(source);
+  const compressed = compactHistory(history, {
+    inputBudget: effective,
+    estimate,
+    originalRef: reference,
+    validate: validatePairs,
+  });
+  let summaryRef: string | null = null;
+  if (compressed.originalRef) {
+    store.object(source);
+    if (compressed.memory)
+      summaryRef = store.object(
+        stable({
+          version: 2,
+          algorithm: COMPACTION_ALGORITHM,
+          originalRef: reference,
+          memory: compressed.memory,
+        }),
+      ).objectRef;
   }
-  const estimatedTokens = estimate(history);
-  if (estimatedTokens > effective)
-    throw new AppError('CONTEXT_LIMIT', '上下文超过有效上限，请缩小资料或显式更换模型');
+  history = compressed.history;
+  const estimatedTokens = compressed.afterTokens;
+  const blocked = estimatedTokens > effective;
+  const metrics: ContextRuntimeMetrics = {
+    agentId: agent.id,
+    taskId: task.id,
+    sessionId: agent.sessionId,
+    agentRevision: agent.revision,
+    policy,
+    windowTokens,
+    providerLimit: provider.contextLimit,
+    outputReserveTokens: provider.outputLimit,
+    safetyReserveTokens: CONTEXT_SAFETY_TOKENS,
+    runtimeReserveTokens,
+    inputBudgetTokens: effective,
+    minimumWindowTokens: Math.max(
+      4096,
+      fixedTokens + runtimeReserveTokens + provider.outputLimit + CONTEXT_SAFETY_TOKENS + 1024,
+    ),
+    fixedTokens,
+    historyTokens: Math.max(0, estimatedTokens - fixedTokens - runtimeReserveTokens),
+    estimatedInputTokens: estimatedTokens,
+    streamingOutputTokens: 0,
+    observedInputTokens: null,
+    observedOutputTokens: null,
+    compression: {
+      status: blocked ? 'blocked' : compressed.afterTokens < compressed.beforeTokens ? 'completed' : 'idle',
+      algorithm: COMPACTION_ALGORITHM,
+      beforeTokens: compressed.beforeTokens,
+      afterTokens: compressed.afterTokens,
+      summarizedMessages: compressed.summarizedMessages,
+      prunedToolMessages: compressed.prunedToolMessages,
+      summaryRef,
+      originalRef: compressed.originalRef,
+    },
+    updatedAt: new Date().toISOString(),
+    phase: blocked ? 'blocked' : 'compiled',
+  };
+  if (blocked)
+    throw new AppError(
+      'CONTEXT_LIMIT',
+      '上下文超过已分配窗口；请增大窗口或缩小不可裁剪的资料，原始历史已保留。',
+      false,
+      { contextMetrics: metrics },
+    );
   const segmentHashes = {
     P0: hash(p0 + stable(tools)),
     P1: hash(p0 + stable(tools) + p1),
@@ -192,8 +262,8 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     history,
     estimatedTokens,
     manifest: {
-      compilerVersion: '2',
-      promptVersion: '2',
+      compilerVersion: '3',
+      promptVersion: '3',
       skillCatalogVersion: SKILL_CATALOG_VERSION,
       skillCatalogHash: hash(stable(skillCatalog)),
       loadedSkillHashes: loadedSkills.map(({ id, version, hash }) => ({ id, version, hash })),
@@ -211,11 +281,105 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
       segmentHashes,
       historyHash: originalHash,
       summaryRef,
+      contextWindow: metrics,
       cacheParameters: provider.cache.parameters,
       estimatedTokens,
       localSnapshotReuse: snapshots.length,
       sessionContinuation: history.length > 0,
     },
+  };
+}
+/** Read only compression sources referenced by this agent's requests/events, never an arbitrary object. */
+export function recallContext(
+  store: Store,
+  task: Task,
+  input: {
+    reference: string;
+    offset?: number;
+    limit?: number;
+    query?: string;
+    textOffset?: number;
+    part?: 'text' | 'calls';
+  },
+) {
+  const agent = store.require<Agent>('agents', task.agentId);
+  const references = new Set<string>();
+  for (const record of store.all<any>('requests', task.runId).filter((item) => item.taskId === task.id)) {
+    const metrics = record.manifest?.contextWindow;
+    if (metrics?.agentId === agent.id && metrics.compression?.originalRef)
+      references.add(metrics.compression.originalRef);
+  }
+  let eventCursor = 0;
+  while (!references.has(input.reference)) {
+    const events = store.events(task.runId, eventCursor, { taskId: task.id, type: 'context.updated' });
+    if (!events.length) break;
+    for (const event of events) {
+      const metrics = event.payload as Partial<ContextRuntimeMetrics>;
+      if (metrics?.agentId === agent.id && metrics.taskId === task.id && metrics.compression?.originalRef)
+        references.add(metrics.compression.originalRef);
+    }
+    eventCursor = events.at(-1)!.seq;
+  }
+  if (!references.has(input.reference))
+    throw new AppError('CONTEXT_REFERENCE_DENIED', '只能回查当前代理的上下文原文引用');
+  const captured = JSON.parse(store.readObject(input.reference).toString('utf8'));
+  if (
+    captured.runId !== task.runId ||
+    captured.taskId !== task.id ||
+    captured.agentId !== agent.id ||
+    !Array.isArray(captured.messages)
+  )
+    throw new AppError('CONTEXT_REFERENCE_DENIED', '上下文原文归属不匹配');
+  const offset = input.offset ?? 0;
+  const limit = input.limit ?? 5;
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 10 ||
+    (input.part !== undefined && input.part !== 'text' && input.part !== 'calls') ||
+    (input.textOffset !== undefined && (!Number.isInteger(input.textOffset) || input.textOffset < 0))
+  )
+    throw new AppError('CONTEXT_RECALL_RANGE', '上下文回查范围无效');
+  const matches = captured.messages
+    .map((message: Message, index: number) => ({ message, index }))
+    .filter(
+      ({ message }: { message: Message }) =>
+        !input.query ||
+        message.text.includes(input.query) ||
+        stable(message.calls ?? []).includes(input.query),
+    );
+  const selected = matches.slice(offset, offset + limit);
+  return {
+    reference: input.reference,
+    trust: 'historical-data',
+    total: matches.length,
+    offset,
+    nextOffset: offset + selected.length < matches.length ? offset + selected.length : null,
+    messages: selected.map(({ message, index }: { message: Message; index: number }) => {
+      const part = input.part ?? (input.query && !message.text.includes(input.query) ? 'calls' : 'text');
+      const content = part === 'calls' ? stable(message.calls ?? []) : message.text;
+      const points = Array.from(content);
+      const matchOffset = input.query
+        ? Array.from(content.slice(0, Math.max(0, content.indexOf(input.query)))).length
+        : 0;
+      const textOffset = input.textOffset ?? Math.max(0, matchOffset - 512);
+      const nextTextOffset = textOffset + 6000 < points.length ? textOffset + 6000 : null;
+      return {
+        index,
+        id: message.id,
+        role: message.role,
+        callId: message.callId,
+        calls: message.calls?.map(({ id, name }) => ({ id, name })),
+        part,
+        textOffset,
+        totalChars: points.length,
+        nextTextOffset,
+        text: points.slice(textOffset, textOffset + 6000).join(''),
+        truncated: textOffset > 0 || nextTextOffset !== null,
+      };
+    }),
   };
 }
 export function requestDifference(

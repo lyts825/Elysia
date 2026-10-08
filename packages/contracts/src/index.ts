@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.9.0-preview.1';
+export const VERSION = '0.10.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -48,6 +48,101 @@ export const Contract = z.object({
   assumptions: z.array(z.string()),
 });
 export type Contract = z.infer<typeof Contract>;
+export const ContextPolicy = z
+  .object({
+    mode: z.enum(['manual', 'managed']),
+    windowTokens: z.number().int().min(4096).optional(),
+  })
+  .refine((policy) => policy.mode !== 'manual' || policy.windowTokens !== undefined, {
+    message: '手动模式必须指定上下文窗口大小',
+    path: ['windowTokens'],
+  });
+export type ContextPolicy = z.infer<typeof ContextPolicy>;
+export const CONTEXT_SAFETY_TOKENS = 2048;
+export const CONTEXT_MIN_INPUT_TOKENS = 1024;
+/** Total window includes output and transport overhead, and is scoped to one model instance. */
+export function minimumContextWindowTokens(provider: { outputLimit: number; authMode?: string }) {
+  return Math.max(
+    4096,
+    provider.outputLimit +
+      CONTEXT_SAFETY_TOKENS +
+      (provider.authMode === 'codex' ? 16384 : 0) +
+      CONTEXT_MIN_INPUT_TOKENS,
+  );
+}
+export function effectiveContextWindowTokens(agent: {
+  contextPolicy?: ContextPolicy;
+  providerBinding: { contextLimit: number };
+}) {
+  return Math.min(
+    agent.contextPolicy?.windowTokens ?? agent.providerBinding.contextLimit,
+    agent.providerBinding.contextLimit,
+  );
+}
+export const ContextRuntimeMetrics = z.object({
+  agentId: z.string(),
+  taskId: z.string(),
+  sessionId: z.string(),
+  agentRevision: z.number().int().nonnegative(),
+  policy: ContextPolicy,
+  windowTokens: z.number().int().positive(),
+  providerLimit: z.number().int().positive(),
+  outputReserveTokens: z.number().int().nonnegative(),
+  safetyReserveTokens: z.literal(2048),
+  runtimeReserveTokens: z.number().int().nonnegative(),
+  inputBudgetTokens: z.number().int().nonnegative(),
+  minimumWindowTokens: z.number().int().positive(),
+  fixedTokens: z.number().int().nonnegative(),
+  historyTokens: z.number().int().nonnegative(),
+  estimatedInputTokens: z.number().int().nonnegative(),
+  streamingOutputTokens: z.number().int().nonnegative(),
+  observedInputTokens: z.number().nonnegative().nullable(),
+  observedOutputTokens: z.number().nonnegative().nullable(),
+  compression: z.object({
+    status: z.enum(['idle', 'completed', 'blocked']),
+    algorithm: z.literal('tiered-recoverable-v1'),
+    beforeTokens: z.number().int().nonnegative(),
+    afterTokens: z.number().int().nonnegative(),
+    summarizedMessages: z.number().int().nonnegative(),
+    prunedToolMessages: z.number().int().nonnegative(),
+    summaryRef: z.string().nullable(),
+    originalRef: z.string().nullable(),
+  }),
+  updatedAt: z.string(),
+  phase: z.enum(['compiled', 'streaming', 'settled', 'blocked']),
+});
+export type ContextRuntimeMetrics = z.infer<typeof ContextRuntimeMetrics>;
+export interface ContextProjection {
+  agentId: string;
+  taskId: string;
+  agentRevision: number;
+  parentAgentId: string | null;
+  policy: ContextPolicy;
+  windowTokens: number;
+  providerLimit: number;
+  outputReserveTokens: number;
+  safetyReserveTokens: number;
+  runtimeReserveTokens: number;
+  inputBudgetTokens: number;
+  minimumWindowTokens: number;
+  estimatedInputTokens: number | null;
+  streamingOutputTokens: number;
+  observedInputTokens: number | null;
+  observedOutputTokens: number | null;
+  remainingInputTokens: number | null;
+  usageRatio: number | null;
+  compression: ContextRuntimeMetrics['compression'] | null;
+  metrics: ContextRuntimeMetrics | null;
+  updatedAt: string | null;
+  safeToConfigure: boolean;
+  configureReason: string | null;
+  assignedByAgentId: string | null;
+}
+export interface ContextSnapshot {
+  runId: string;
+  runRevision: number;
+  agents: ContextProjection[];
+}
 export const TaskSpec = z.object({
   key: z.string().min(1),
   title: z.string().min(1),
@@ -64,6 +159,7 @@ export const TaskSpec = z.object({
   acceptanceCriteria: z.array(z.string()).min(1),
   required: z.boolean().default(true),
   budget: Budget.optional(),
+  contextWindowTokens: z.number().int().min(4096).optional(),
 });
 export type TaskSpec = z.infer<typeof TaskSpec>;
 export const Plan = z.object({
@@ -203,6 +299,9 @@ export interface Agent extends Entity {
   sessionId: string;
   status: Status;
   profileVersion: string;
+  contextPolicy?: ContextPolicy;
+  contextAssignedByAgentId?: string;
+  contextPolicyRevision?: number;
 }
 export interface Attempt extends Entity {
   runId: string;

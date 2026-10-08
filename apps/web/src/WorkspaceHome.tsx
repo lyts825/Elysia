@@ -1,4 +1,5 @@
 import type { Project } from '../../../packages/contracts/src/index';
+import type { ReactNode } from 'react';
 import type { SelectableProvider } from './ModelPicker';
 import type { ModelChoice } from './ModelPicker';
 import { ComposerModelPicker } from './ComposerModelPicker';
@@ -12,6 +13,8 @@ export function WorkspaceHome({
   changeModel,
   modelReady,
   setModelReady,
+  contextControl,
+  contextReady,
   draft,
   setDraft,
   busy,
@@ -24,6 +27,8 @@ export function WorkspaceHome({
   changeModel: (choice: ModelChoice) => void;
   modelReady: boolean;
   setModelReady: (ready: boolean) => void;
+  contextControl: ReactNode;
+  contextReady: boolean;
   draft: string;
   setDraft: (value: string) => void;
   busy: boolean;
@@ -51,6 +56,7 @@ export function WorkspaceHome({
                 draft.trim() &&
                 !busy &&
                 modelReady &&
+                contextReady &&
                 !project?.archived
               ) {
                 e.preventDefault();
@@ -59,21 +65,24 @@ export function WorkspaceHome({
             }}
           />
           <div className="composer-bottom">
-            <ComposerModelPicker
-              providers={providers}
-              value={modelChoice}
-              change={changeModel}
-              ready={setModelReady}
-              disabled={busy}
-              settings={openSettings}
-            />
+            <div className="composer-options">
+              <ComposerModelPicker
+                providers={providers}
+                value={modelChoice}
+                change={changeModel}
+                ready={setModelReady}
+                disabled={busy}
+                settings={openSettings}
+              />
+              {contextControl}
+            </div>
             <div className="composer-actions">
               <span className="composer-shortcut" aria-hidden="true">
                 Ctrl + Enter
               </span>
               <button
                 className="primary"
-                disabled={!draft.trim() || busy || !modelReady || !!project?.archived}
+                disabled={!draft.trim() || busy || !modelReady || !contextReady || !!project?.archived}
                 onClick={start}
                 title="继续 · Ctrl + Enter"
               >
@@ -83,6 +92,11 @@ export function WorkspaceHome({
             </div>
           </div>
         </section>
+        {!contextReady && (
+          <p className="home-connection" role="status">
+            当前窗口分配超出所选模型的范围，请调整上下文窗口。
+          </p>
+        )}
         {!connected && (
           <div className="home-connection" role="status">
             <span>先连接一个模型，即可开始。</span>

@@ -1,5 +1,6 @@
 import {
   AppError,
+  ContextRuntimeMetrics,
   type Agent,
   type Task,
   type Run,
@@ -184,6 +185,7 @@ export class NativeExecutor implements ExecutorAdapter {
       'clarify',
       'propose_plan',
       'spawn_task',
+      'allocate_context',
       'join_tasks',
       'submit_result',
       'integrate_worktrees',
@@ -213,6 +215,20 @@ export class NativeExecutor implements ExecutorAdapter {
       resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
     const calls = history.flatMap((m) => m.calls ?? []).filter((c) => !resolved.has(c.id));
     if (calls.length) await this.executeCalls(task, attempt, calls, signal);
+  }
+  private publishContext(task: Task, attempt: Attempt, metrics: ContextRuntimeMetrics, recordId?: string) {
+    const current = { ...metrics, updatedAt: new Date().toISOString() };
+    this.kernel.store.tx(() => {
+      if (recordId) {
+        const record = this.kernel.store.require<RequestRecord>('requests', recordId);
+        this.kernel.store.put('requests', {
+          ...record,
+          manifest: { ...record.manifest, contextWindow: current },
+        });
+      }
+      this.kernel.event(task.runId, 'context.updated', current, task.id, attempt.id);
+    });
+    return current;
   }
   async step(task: Task, signal: AbortSignal) {
     const cooldown = task.rateLimit;
@@ -247,8 +263,25 @@ export class NativeExecutor implements ExecutorAdapter {
     run = store.require<Run>('runs', task.runId);
     const agent = store.require<Agent>('agents', task.agentId),
       config = agent.providerBinding;
-    const context = compileContext(store, task, definitions),
-      adapter = this.adapterFactory(agent),
+    let context: ReturnType<typeof compileContext>;
+    try {
+      context = compileContext(store, task, definitions);
+    } catch (error) {
+      const metrics =
+        error instanceof AppError
+          ? ContextRuntimeMetrics.safeParse(
+              (error.details as { contextMetrics?: unknown } | undefined)?.contextMetrics,
+            )
+          : null;
+      if (metrics?.success) this.publishContext(task, attempt, metrics.data);
+      throw error;
+    }
+    let metrics = this.publishContext(
+      task,
+      attempt,
+      ContextRuntimeMetrics.parse(context.manifest.contextWindow),
+    );
+    const adapter = this.adapterFactory(agent),
       request = adapter.compile(context);
     const previous = store
       .all<RequestRecord>('requests', run.id)
@@ -328,6 +361,15 @@ export class NativeExecutor implements ExecutorAdapter {
         manifest: { ...context.manifest, partialText: '', partialStreamRef: null },
       });
       let partial = '';
+      let lastContextUpdate = 0;
+      metrics = {
+        ...metrics,
+        phase: 'compiled',
+        streamingOutputTokens: 0,
+        observedInputTokens: null,
+        observedOutputTokens: null,
+      };
+      if (retry > firstRetry) metrics = this.publishContext(task, attempt, metrics, record.id);
       try {
         for await (const event of adapter.stream(request, signal)) {
           if (event.type === 'delta') {
@@ -335,6 +377,21 @@ export class NativeExecutor implements ExecutorAdapter {
             const current = store.require<RequestRecord>('requests', record.id);
             store.put('requests', { ...current, manifest: { ...current.manifest, partialText: partial } });
             this.onDelta(run.id, task.id, event.text, record.id, partial.length - event.text.length);
+            // Throttle persisted snapshots; text bytes are estimates, not tokenizer receipts.
+            if (Date.now() - lastContextUpdate >= 500) {
+              metrics = this.publishContext(
+                task,
+                attempt,
+                {
+                  ...metrics,
+                  phase: 'streaming',
+                  streamingOutputTokens:
+                    Buffer.byteLength(partial, 'utf8') * (config.authMode === 'codex' ? 2 : 1),
+                },
+                record.id,
+              );
+              lastContextUpdate = Date.now();
+            }
           } else complete = event;
         }
         if (!complete) throw new ProviderError('STREAM_INTERRUPTED', '模型未产生完成响应', 0);
@@ -352,7 +409,11 @@ export class NativeExecutor implements ExecutorAdapter {
           );
           store.put('requests', {
             ...store.require<RequestRecord>('requests', record.id),
-            manifest: { ...context.manifest, partialText: null, interruptedRef: object.objectRef },
+            manifest: {
+              ...store.require<RequestRecord>('requests', record.id).manifest,
+              partialText: null,
+              interruptedRef: object.objectRef,
+            },
           });
         }
         if (error instanceof ProviderError && error.details) {
@@ -368,6 +429,19 @@ export class NativeExecutor implements ExecutorAdapter {
           error instanceof ProviderError ? (error.usage ?? null) : null,
           error instanceof Error ? error.message : String(error),
           rejected,
+        );
+        const usage = error instanceof ProviderError ? error.usage : null;
+        metrics = this.publishContext(
+          task,
+          attempt,
+          {
+            ...metrics,
+            phase: 'settled',
+            streamingOutputTokens: Buffer.byteLength(partial, 'utf8') * (config.authMode === 'codex' ? 2 : 1),
+            observedInputTokens: usage?.inputTotal ?? null,
+            observedOutputTokens: usage?.outputTotal ?? null,
+          },
+          record.id,
         );
         if (signal.aborted) throw error;
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
@@ -388,6 +462,19 @@ export class NativeExecutor implements ExecutorAdapter {
     const completed = complete;
     store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
+      metrics = this.publishContext(
+        task,
+        attempt,
+        {
+          ...metrics,
+          phase: 'settled',
+          streamingOutputTokens:
+            Buffer.byteLength(completed.text, 'utf8') * (config.authMode === 'codex' ? 2 : 1),
+          observedInputTokens: completed.usage?.inputTotal ?? null,
+          observedOutputTokens: completed.usage?.outputTotal ?? null,
+        },
+        successfulRequestId!,
+      );
       this.kernel.appendMessage(task, 'assistant', completed.text, {
         requestId: successfulRequestId!,
         calls: completed.calls,

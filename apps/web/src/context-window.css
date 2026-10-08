@@ -1,0 +1,131 @@
+.context-policy-editor {
+  display: grid;
+  gap: 6px;
+}
+.context-policy-editor > label {
+  font-size: 12px;
+  color: var(--secondary);
+}
+.context-policy-editor .field-help,
+.context-policy-editor .inline-warning {
+  margin: 3px 0;
+}
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: var(--secondary);
+  background: transparent;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.context-meter:hover {
+  background: var(--canvas);
+}
+.context-stream-output {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.context-meter-ring {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--context-fill, 0%), var(--border) 0);
+  position: relative;
+  flex: none;
+}
+.context-meter-ring::after {
+  position: absolute;
+  content: '';
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.context-meter[data-pressure='high'] .context-meter-ring {
+  background: conic-gradient(var(--danger) var(--context-fill, 0%), var(--border) 0);
+}
+.context-overview {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.context-agent-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+}
+.context-agent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.context-agent-head strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.context-agent-row small,
+.context-breakdown dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.context-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+}
+.context-breakdown div {
+  min-width: 0;
+}
+.context-breakdown dd {
+  margin: 3px 0 0;
+  color: #2e3935;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.context-progress {
+  height: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--border);
+}
+.context-progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+}
+.context-progress[data-pressure='high'] i {
+  background: var(--danger);
+}
+.context-current {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.context-status-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.context-compact-setup {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.context-compact-setup > summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.context-compact-setup[open] > summary {
+  margin-bottom: 12px;
+}

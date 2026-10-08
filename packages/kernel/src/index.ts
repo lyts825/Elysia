@@ -4,6 +4,11 @@ import {
   Contract,
   Plan,
   TaskSpec,
+  ContextPolicy,
+  ContextRuntimeMetrics,
+  minimumContextWindowTokens,
+  effectiveContextWindowTokens,
+  CONTEXT_SAFETY_TOKENS,
   invariant,
   type Run,
   type Task,
@@ -18,9 +23,11 @@ import {
   type Usage,
   type Permissions,
   type ModelChoice,
+  type ContextProjection,
+  type ContextSnapshot,
 } from '../../contracts/src/index.js';
 import { Store, id, now, stable } from '../../storage/src/index.js';
-export type PlanModelAssignment = ModelChoice & { key: string };
+export type PlanModelAssignment = ModelChoice & { key: string; contextPolicy?: ContextPolicy };
 export class Kernel {
   constructor(public store: Store) {}
   event(runId: string, type: string, payload: unknown, taskId?: string, attemptId?: string) {
@@ -58,6 +65,240 @@ export class Kernel {
       return next;
     });
   }
+  contextMetrics(agent: Agent): ContextRuntimeMetrics | null {
+    const seq = this.store.db
+      .prepare('SELECT seq FROM events WHERE run_id=? AND task_id=? AND type=? ORDER BY seq DESC LIMIT 1')
+      .get(agent.runId, agent.taskId, 'context.updated') as { seq: number } | undefined;
+    const event = seq ? this.store.events(agent.runId, seq.seq - 1, { limit: 1 })[0] : undefined;
+    const candidates = [
+      event?.payload,
+      ...this.store
+        .all<RequestRecord>('requests', agent.runId)
+        .filter((request) => request.taskId === agent.taskId)
+        .map((request) => request.manifest.contextWindow),
+    ];
+    const policy = agent.contextPolicy ?? { mode: 'managed' as const };
+    return (
+      candidates
+        .map((candidate) => ContextRuntimeMetrics.safeParse(candidate))
+        .filter((parsed) => parsed.success)
+        .map((parsed) => parsed.data!)
+        .filter(
+          (metrics) =>
+            metrics.agentId === agent.id &&
+            metrics.taskId === agent.taskId &&
+            metrics.sessionId === agent.sessionId &&
+            metrics.agentRevision >= (agent.contextPolicyRevision ?? 0) &&
+            stable(metrics.policy) === stable(policy) &&
+            metrics.windowTokens === effectiveContextWindowTokens(agent) &&
+            metrics.providerLimit === agent.providerBinding.contextLimit,
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
+    );
+  }
+  contextConfigureReason(run: Run, task: Task): string | null {
+    if (run.archived || (run.projectId && this.store.require<Project>('projects', run.projectId).archived))
+      return '请先恢复归档的对话或项目';
+    if (['DONE', 'CANCELLED'].includes(run.status) || ['DONE', 'CANCELLED'].includes(task.status))
+      return '任务已结束，上下文配置仅供查看';
+    if (['RUNNING', 'VERIFYING'].includes(task.status)) return '请先暂停代理并等待当前请求和操作结束';
+    const requests = this.store.all<RequestRecord>('requests', run.id).filter((r) => r.taskId === task.id);
+    const operations = this.store
+      .all<Operation>('tool_operations', run.id)
+      .filter((o) => o.taskId === task.id);
+    if (requests.some((r) => r.status === 'RESERVED') || operations.some((o) => o.status === 'INTENT'))
+      return '该代理仍在执行，请等待当前请求和操作结束';
+    if (requests.some((r) => r.status === 'UNKNOWN') || operations.some((o) => o.status === 'UNCERTAIN'))
+      return '请先核验该代理的请求用量或操作结果';
+    const history = this.history(task);
+    const resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
+    if (history.some((m) => m.calls?.some((call) => !resolved.has(call.id))))
+      return '该代理的工具结果尚未完整返回，请先完成或核验当前操作';
+    return null;
+  }
+  contextSnapshot(runId: string): ContextSnapshot {
+    const run = this.store.require<Run>('runs', runId);
+    const agents: ContextProjection[] = this.store.all<Agent>('agents', runId).map((agent) => {
+      const task = this.store.require<Task>('tasks', agent.taskId);
+      const metrics = this.contextMetrics(agent);
+      const provider = agent.providerBinding;
+      const windowTokens = effectiveContextWindowTokens(agent);
+      const inputBudgetTokens = Math.max(0, windowTokens - provider.outputLimit - CONTEXT_SAFETY_TOKENS);
+      const estimatedInputTokens = metrics?.estimatedInputTokens ?? null;
+      const configureReason = this.contextConfigureReason(run, task);
+      return {
+        agentId: agent.id,
+        taskId: task.id,
+        agentRevision: agent.revision,
+        parentAgentId: agent.parentAgentId,
+        policy: agent.contextPolicy ?? { mode: 'managed' },
+        windowTokens,
+        providerLimit: provider.contextLimit,
+        outputReserveTokens: provider.outputLimit,
+        safetyReserveTokens: CONTEXT_SAFETY_TOKENS,
+        runtimeReserveTokens: provider.authMode === 'codex' ? 16384 : 0,
+        inputBudgetTokens,
+        minimumWindowTokens: Math.max(
+          minimumContextWindowTokens(provider),
+          metrics?.minimumWindowTokens ?? 0,
+        ),
+        estimatedInputTokens,
+        streamingOutputTokens: metrics?.streamingOutputTokens ?? 0,
+        observedInputTokens: metrics?.observedInputTokens ?? null,
+        observedOutputTokens: metrics?.observedOutputTokens ?? null,
+        remainingInputTokens:
+          estimatedInputTokens === null ? null : Math.max(0, inputBudgetTokens - estimatedInputTokens),
+        usageRatio:
+          estimatedInputTokens === null || inputBudgetTokens <= 0
+            ? null
+            : estimatedInputTokens / inputBudgetTokens,
+        compression: metrics?.compression ?? null,
+        metrics,
+        updatedAt: metrics?.updatedAt ?? null,
+        safeToConfigure: configureReason === null,
+        configureReason,
+        assignedByAgentId: agent.contextAssignedByAgentId ?? null,
+      };
+    });
+    return { runId, runRevision: run.revision, agents };
+  }
+  validateContextPolicy(provider: ProviderConfig, raw: unknown, minimum = 0): ContextPolicy {
+    const policy = ContextPolicy.parse(raw);
+    const window = policy.windowTokens ?? provider.contextLimit;
+    invariant(
+      window <= provider.contextLimit,
+      'CONTEXT_WINDOW_LIMIT',
+      '上下文窗口不能超过所选模型的冻结上限',
+    );
+    invariant(
+      window >= Math.max(minimumContextWindowTokens(provider), minimum),
+      'CONTEXT_WINDOW_SMALL',
+      `上下文窗口不足以保留固定指令、输出和安全预留，至少需要 ${Math.max(minimumContextWindowTokens(provider), minimum)} tokens`,
+    );
+    return policy;
+  }
+  childContextPolicy(parent: Task, provider: ProviderConfig, requested?: number, override?: ContextPolicy) {
+    const parentAgent = this.store.require<Agent>('agents', parent.agentId);
+    const inherited = Math.min(effectiveContextWindowTokens(parentAgent), provider.contextLimit);
+    if (override)
+      return this.validateContextPolicy(
+        provider,
+        override.mode === 'managed' && override.windowTokens === undefined
+          ? { ...override, windowTokens: requested ?? inherited }
+          : override,
+      );
+    const mode = parentAgent.contextPolicy?.mode ?? 'managed';
+    invariant(
+      mode !== 'manual' || requested === undefined || requested === inherited,
+      'CONTEXT_MANUAL_LOCKED',
+      '上级采用手动窗口，模型不能改写子代理继承的手动窗口；请由用户在计划分配或上下文设置中调整',
+    );
+    return this.validateContextPolicy(provider, { mode, windowTokens: requested ?? inherited });
+  }
+  setContextPolicy(
+    runId: string,
+    agentId: string,
+    expectedRunRevision: number,
+    expectedAgentRevision: number,
+    raw: unknown,
+  ) {
+    return this.store.tx(() => {
+      const run = this.store.require<Run>('runs', runId);
+      const agent = this.store.require<Agent>('agents', agentId);
+      invariant(
+        run.revision === expectedRunRevision && agent.revision === expectedAgentRevision,
+        'REVISION_CONFLICT',
+        '记录已更新，请刷新后重试',
+      );
+      invariant(agent.runId === run.id, 'CONTEXT_SCOPE', '上下文配置不属于当前对话');
+      const task = this.store.require<Task>('tasks', agent.taskId);
+      const reason = this.contextConfigureReason(run, task);
+      invariant(reason === null, 'CONTEXT_BOUNDARY', reason ?? '上下文窗口只能在安全检查点调整');
+      const policy = this.validateContextPolicy(
+        agent.providerBinding,
+        raw,
+        this.contextMetrics(agent)?.minimumWindowTokens,
+      );
+      this.store.put(
+        'agents',
+        {
+          ...agent,
+          contextPolicy: policy,
+          contextAssignedByAgentId: undefined,
+          contextPolicyRevision: agent.revision + 1,
+        },
+        agent.revision,
+      );
+      this.updateTask(task, task.status);
+      this.updateRun(run, {});
+      this.event(
+        run.id,
+        'context.policy.updated',
+        { agentId, taskId: task.id, policy, source: 'user' },
+        task.id,
+      );
+      return this.contextSnapshot(run.id);
+    });
+  }
+  allocateContext(parent: Task, taskId: string, expectedRevision: number, windowTokens: number) {
+    return this.store.tx(() => {
+      parent = this.store.require<Task>('tasks', parent.id);
+      this.permissions(parent);
+      invariant(
+        parent.status === 'RUNNING' && parent.phase === 'executing' && parent.spec.role !== 'reviewer',
+        'CONTEXT_ALLOCATION_DENIED',
+        '当前代理不能为子代理分配上下文',
+      );
+      const task = this.store.require<Task>('tasks', taskId);
+      const agent = this.store.require<Agent>('agents', task.agentId);
+      const run = this.store.require<Run>('runs', parent.runId);
+      invariant(
+        task.runId === parent.runId &&
+          task.parentTaskId === parent.id &&
+          agent.parentAgentId === parent.agentId,
+        'CONTEXT_SCOPE',
+        '只能为当前代理的直属子代理分配上下文',
+      );
+      invariant(task.revision === expectedRevision, 'REVISION_CONFLICT', '子任务已更新，请刷新上下文后重试');
+      invariant(
+        (agent.contextPolicy?.mode ?? 'managed') === 'managed',
+        'CONTEXT_MANUAL_LOCKED',
+        '手动窗口只能由用户调整',
+      );
+      const reason = this.contextConfigureReason(run, task);
+      invariant(reason === null, 'CONTEXT_BOUNDARY', reason ?? '请等待子代理到达安全检查点');
+      const policy = this.validateContextPolicy(
+        agent.providerBinding,
+        { mode: 'managed', windowTokens },
+        this.contextMetrics(agent)?.minimumWindowTokens,
+      );
+      this.store.put(
+        'agents',
+        {
+          ...agent,
+          contextPolicy: policy,
+          contextAssignedByAgentId: parent.agentId,
+          contextPolicyRevision: agent.revision + 1,
+        },
+        agent.revision,
+      );
+      const updatedTask = this.updateTask(task, task.status);
+      this.updateRun(run, {});
+      this.event(
+        run.id,
+        'context.policy.updated',
+        { agentId: agent.id, taskId: task.id, policy, source: 'parent_agent', parentAgentId: parent.agentId },
+        task.id,
+      );
+      return {
+        agentId: agent.id,
+        taskId: task.id,
+        taskRevision: updatedTask.revision,
+        policy,
+        windowTokens: policy.windowTokens,
+      };
+    });
+  }
   createRun(
     project: Project | null,
     objective: string,
@@ -65,6 +306,7 @@ export class Kernel {
     contract: Contract,
     limits: Run['limits'],
     kind: Run['kind'] = 'task',
+    contextPolicy: ContextPolicy = { mode: 'managed' },
   ) {
     return this.store.tx(() => {
       invariant(
@@ -74,6 +316,7 @@ export class Kernel {
       );
       invariant(!project?.archived, 'PROJECT_ARCHIVED', '项目已归档，请先恢复项目');
       this.binding(provider.id, provider);
+      contextPolicy = this.validateContextPolicy(provider, contextPolicy);
       invariant(
         provider.checkedRevision === provider.revision,
         'PROVIDER_UNCHECKED',
@@ -123,6 +366,8 @@ export class Kernel {
         sessionId: id(),
         status: 'READY',
         profileVersion: '1',
+        contextPolicy,
+        contextPolicyRevision: 1,
       });
       this.store.put<Task>('tasks', {
         contractVersion: contract.version,
@@ -265,6 +510,7 @@ export class Kernel {
           `模型 ${binding.label} 未验证`,
         );
         if (child.budget) this.checkBudgetSubset(child.budget, contract.budget);
+        this.childContextPolicy(task, binding, child.contextWindowTokens);
       }
       for (const snapshotId of plan.snapshotIds)
         invariant(
@@ -298,7 +544,7 @@ export class Kernel {
       '子任务预算不得扩大祖先预算',
     );
   }
-  spawn(parent: Task, raw: unknown, bindingOverride?: ProviderConfig) {
+  spawn(parent: Task, raw: unknown, bindingOverride?: ProviderConfig, contextPolicyOverride?: ContextPolicy) {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
       const run = this.store.require<Run>('runs', parent.runId);
@@ -321,6 +567,12 @@ export class Kernel {
         '任务 key 已存在',
       );
       const binding = this.binding(spec.providerId, bindingOverride);
+      const contextPolicy = this.childContextPolicy(
+        parent,
+        binding,
+        spec.contextWindowTokens,
+        contextPolicyOverride,
+      );
       invariant(!spec.model || spec.model === binding.model, 'MODEL_BINDING', '任务模型与冻结配置不匹配');
       invariant(
         spec.reasoningEffort === undefined || spec.reasoningEffort === binding.reasoningEffort,
@@ -368,6 +620,9 @@ export class Kernel {
         sessionId: id(),
         status: 'READY',
         profileVersion: '1',
+        contextPolicy,
+        contextAssignedByAgentId: contextPolicy.mode === 'managed' ? parent.agentId : undefined,
+        contextPolicyRevision: 1,
       });
       for (const dep of deps) this.store.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dep);
       this.checkGraph(this.graph(run.id));
@@ -394,6 +649,8 @@ export class Kernel {
         '请先恢复归档项目再接受计划',
       );
       const keys = new Set(run.plan!.tasks.map((task) => task.key));
+      const rootTask = this.store.require<Task>('tasks', run.rootTaskId);
+      const contextPolicies = new Map<string, ContextPolicy>();
       const choices = new Map<string, PlanModelAssignment>();
       for (const choice of assignments) {
         invariant(keys.has(choice.key), 'PLAN_MODEL_SCOPE', '模型分配必须对应当前计划的一级子任务');
@@ -417,6 +674,10 @@ export class Kernel {
           requestedEffort === undefined || requestedEffort === binding.reasoningEffort,
           'MODEL_BINDING',
           '所选思考强度尚未校验目录',
+        );
+        contextPolicies.set(
+          spec.key,
+          this.childContextPolicy(rootTask, binding, spec.contextWindowTokens, choice?.contextPolicy),
         );
         return { ...spec, providerId, model: binding.model, reasoningEffort: binding.reasoningEffort };
       });
@@ -449,6 +710,7 @@ export class Kernel {
           root,
           { ...spec, dependsOn: spec.dependsOn.map((key) => created.get(key)) },
           bindings.get(spec.key),
+          contextPolicies.get(spec.key),
         );
         created.set(spec.key, child.taskId);
       }
@@ -748,6 +1010,19 @@ export class Kernel {
         invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
       const binding = this.binding(provider.id, provider),
         agent = this.store.require<Agent>('agents', task.agentId);
+      const currentPolicy = agent.contextPolicy ?? { mode: 'managed' as const };
+      const contextPolicy = this.validateContextPolicy(
+        binding,
+        currentPolicy.mode === 'managed' && currentPolicy.windowTokens !== undefined
+          ? {
+              ...currentPolicy,
+              windowTokens: Math.max(
+                minimumContextWindowTokens(binding),
+                Math.min(currentPolicy.windowTokens, binding.contextLimit),
+              ),
+            }
+          : currentPolicy,
+      );
       for (const attempt of this.store
         .all<Attempt>('attempts', run.id)
         .filter((a) => a.taskId === task.id && ['ACTIVE', 'WAITING'].includes(a.status)))
@@ -757,6 +1032,8 @@ export class Kernel {
         providerId: binding.id,
         providerBinding: binding,
         sessionId: id(),
+        contextPolicy,
+        contextPolicyRevision: agent.revision + 1,
       });
       const waitReason = run.kind === 'chat' && task.waitReason !== 'paused' ? 'user' : 'paused';
       const next = this.updateTask(
