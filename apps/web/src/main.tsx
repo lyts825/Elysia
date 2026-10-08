@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, mutation, initializeSession } from './api';
+import { api, mutation, initializeSession, ApiError, canRetryConnection } from './api';
 import { PreviewPanel } from './PreviewPanel';
 import { ProjectFiles } from './ProjectFiles';
 import { manageUsage } from './desktop';
@@ -59,6 +59,23 @@ type Detail = {
   edges: { taskId: string; dependencyId: string }[];
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
+type ReadSource = 'session' | 'lists' | 'detail';
+type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
+function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
+  return {
+    message: error instanceof Error ? error.message : '无法读取本机服务，请重试。',
+    retryable: canRetryConnection(error),
+    reopen:
+      error instanceof ApiError &&
+      (error.status === 401 ||
+        error.status === 403 ||
+        ['SESSION_REQUIRED', 'BOOTSTRAP_EXPIRED', 'HOST_DENIED', 'ORIGIN_DENIED', 'ORIGIN_REQUIRED'].includes(
+          error.code || '',
+        )),
+    request,
+    runId,
+  };
+}
 const statuses: Record<string, string> = {
   DRAFT: '待开始',
   READY: '就绪',
@@ -91,6 +108,8 @@ function Badge({ status }: { status: string }) {
 function App() {
   const [ready, setReady] = useState(false),
     [error, setError] = useState(''),
+    [readIssues, setReadIssues] = useState<Partial<Record<ReadSource, ReadIssue>>>({}),
+    [retrying, setRetrying] = useState(false),
     [busy, setBusy] = useState(false),
     [projects, setProjects] = useState<Project[]>([]),
     [spaces, setSpaces] = useState<ProjectSpace[]>([]),
@@ -112,6 +131,15 @@ function App() {
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const [selection, setSelection] = useState(initialNavigation);
   const { spaceId, projectId, runId } = selection;
+  const readSource: ReadSource | undefined =
+    readIssues.detail?.runId === runId
+      ? 'detail'
+      : readIssues.lists
+        ? 'lists'
+        : readIssues.session
+          ? 'session'
+          : undefined;
+  const readIssue = readSource ? readIssues[readSource] : undefined;
   const project = projects.find((p) => p.id === projectId);
   const projectRuns = runs.filter(
     (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
@@ -183,7 +211,18 @@ function App() {
   const savedNavigation = useRef<NavigationState | undefined>(undefined);
   const navigationInitialized = useRef(false);
   const listRequest = useRef(0);
+  const sessionReady = useRef(false);
+  const connectPending = useRef(false);
+  const sessionRequest = useRef(0);
   const reply = replies[runId] || '';
+  const clearReadIssue = useCallback((source: ReadSource, request = Infinity) => {
+    setReadIssues((old) => {
+      if (!old[source] || old[source]!.request > request) return old;
+      const next = { ...old };
+      delete next[source];
+      return next;
+    });
+  }, []);
   const navigate = useCallback((next: NavigationState, explicit = false) => {
     if (explicit) {
       navigationEpoch.current++;
@@ -193,6 +232,12 @@ function App() {
     if (navigation.current.runId !== next.runId) {
       setDetail(null);
       setPreviewOpen(false);
+      setReadIssues((old) => {
+        if (!old.detail) return old;
+        const next = { ...old };
+        delete next.detail;
+        return next;
+      });
     }
     navigation.current = next;
     activeRunId.current = next.runId;
@@ -202,13 +247,21 @@ function App() {
   const refresh = useCallback(async () => {
     const request = ++listRequest.current;
     const epoch = navigationEpoch.current;
-    const [p, r, v, s] = await Promise.all([
-      api<Project[]>('/projects'),
-      api<Run[]>('/runs'),
-      api<Provider[]>('/providers'),
-      api<ProjectSpace[]>('/spaces'),
-    ]);
+    let p: Project[], r: Run[], v: Provider[], s: ProjectSpace[];
+    try {
+      [p, r, v, s] = await Promise.all([
+        api<Project[]>('/projects'),
+        api<Run[]>('/runs'),
+        api<Provider[]>('/providers'),
+        api<ProjectSpace[]>('/spaces'),
+      ]);
+    } catch (error) {
+      if (request === listRequest.current)
+        setReadIssues((old) => ({ ...old, lists: readIssueFor(error, request) }));
+      return false;
+    }
     if (request !== listRequest.current) return;
+    clearReadIssue('lists', request);
     setProjects(p);
     setRuns(r);
     setProviders(v);
@@ -224,28 +277,66 @@ function App() {
       setTab(run.kind === 'chat' ? 'agents' : 'tasks');
     }
     navigate(next);
-  }, [navigate]);
+    return true;
+  }, [navigate, clearReadIssue]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
     const request = ++detailRequest.current;
-    const result = await api<Detail>('/runs/' + wanted);
+    let result: Detail;
+    try {
+      result = await api<Detail>('/runs/' + wanted);
+    } catch (error) {
+      if (activeRunId.current === wanted && detailRequest.current === request)
+        setReadIssues((old) => ({ ...old, detail: readIssueFor(error, request, wanted) }));
+      return false;
+    }
     if (activeRunId.current === wanted && detailRequest.current === request) {
+      clearReadIssue('detail', request);
       runStream.current.sync(result.requests);
       setStreaming(runStream.current.texts());
       setDetail((old) => (old?.run.id === wanted && old.run.revision > result.run.revision ? old : result));
     }
-  }, []);
+    return true;
+  }, [clearReadIssue]);
+  const connect = useCallback(
+    async (retry = false, source?: ReadSource, target?: string) => {
+      if (connectPending.current || actionPending.current) return;
+      connectPending.current = true;
+      setRetrying(true);
+      const refreshCurrentDetail = sessionReady.current && !source;
+      try {
+        if (!sessionReady.current) {
+          const request = ++sessionRequest.current;
+          let scope: string | undefined;
+          try {
+            scope = await initializeSession({ retry });
+          } catch (error) {
+            setReadIssues((old) => ({ ...old, session: readIssueFor(error, request) }));
+            return;
+          }
+          clearReadIssue('session', request);
+          navigationStorageKey.current = navigationKey(scope);
+          savedNavigation.current = readNavigation(navigationStorageKey.current);
+          sessionReady.current = true;
+          setReady(true);
+        }
+        if (source === 'detail') {
+          if (target === activeRunId.current) await refreshDetail();
+        } else {
+          await refresh();
+          if (retry && refreshCurrentDetail) await refreshDetail();
+        }
+      } finally {
+        connectPending.current = false;
+        setRetrying(false);
+      }
+    },
+    [clearReadIssue, refresh, refreshDetail],
+  );
   useEffect(() => {
-    initializeSession()
-      .then((scope) => {
-        navigationStorageKey.current = navigationKey(scope);
-        savedNavigation.current = readNavigation(navigationStorageKey.current);
-        setReady(true);
-        return refresh();
-      })
-      .catch((e) => setError(e.message));
-  }, [refresh]);
+    void connect();
+  }, [connect]);
   useEffect(() => {
     if (!ready) return;
     const timer = setInterval(() => void refresh().catch(() => {}), 5000);
@@ -257,7 +348,7 @@ function App() {
     setStreaming({});
     setConnection('connecting');
     if (!ready || !runId) return;
-    void refreshDetail().catch((e) => setError(e.message));
+    void refreshDetail();
     const source = new EventSource('/api/runs/' + runId + '/events');
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -454,12 +545,30 @@ function App() {
       <div className="auth-screen">
         <BrandIcon />
         <h1>Elysia</h1>
-        <p>{error || '正在连接本机工作台…'}</p>
-        {error && (
+        <p>{readIssue?.message || '正在连接本机工作台…'}</p>
+        {readIssue?.retryable && (
+          <button
+            className="secondary"
+            aria-label="重试连接"
+            disabled={retrying}
+            aria-busy={retrying}
+            onClick={() => void connect(true, readSource, readIssue.runId)}
+          >
+            <Icon name="refresh" size={16} />
+            {retrying ? '正在重试…' : '重试连接'}
+          </button>
+        )}
+        {readIssue && (
           <div className="auth-help">
-            请双击 <code>Start-Elysia.vbs</code> 重新打开独立工作台。
-            <br />
-            重新启动服务可获取新的链接。
+            {readIssue.retryable ? (
+              '确认本机工作台服务正在运行后，再重试连接。'
+            ) : (
+              <>
+                请双击 <code>Start-Elysia.vbs</code> 重新打开独立工作台。
+                <br />
+                重新启动服务可获取新的链接。
+              </>
+            )}
           </div>
         )}
       </div>
@@ -629,10 +738,11 @@ function App() {
             </span>
             <button
               className="icon-button"
-              onClick={() => void act(refresh)}
+              onClick={() => void connect(true)}
               title="刷新"
               aria-label="刷新工作台"
-              disabled={busy}
+              disabled={retrying || busy}
+              aria-busy={retrying}
             >
               <Icon name="refresh" size={16} />
             </button>
@@ -642,6 +752,28 @@ function App() {
           <div className="error-banner" role="alert">
             <span>{error}</span>
             <button onClick={() => setError('')} aria-label="关闭错误">
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+        )}
+        {readIssue && (
+          <div className="error-banner" role="alert">
+            <span>
+              {readIssue.message}
+              {readIssue.reopen && ' 请双击 Start-Elysia.vbs 重新打开工作台。'}
+            </span>
+            {readIssue.retryable && (
+              <button
+                aria-label="重试连接"
+                disabled={retrying || busy}
+                aria-busy={retrying}
+                onClick={() => void connect(true, readSource, readIssue.runId)}
+              >
+                <Icon name="refresh" size={16} />
+                {retrying ? '正在重试…' : '重试连接'}
+              </button>
+            )}
+            <button onClick={() => readSource && clearReadIssue(readSource)} aria-label="关闭连接错误">
               <Icon name="close" size={16} />
             </button>
           </div>
@@ -1403,7 +1535,7 @@ function App() {
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      <ModalErrorContext.Provider value={error}>
+      <ModalErrorContext.Provider value={error || readIssue?.message || ''}>
         <Presence>
           {modal ? (
             <React.Fragment key={modal}>

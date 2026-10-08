@@ -1,4 +1,25 @@
 let csrf = '';
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly kind: 'network' | 'http' | 'protocol',
+    public readonly status?: number,
+    public readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+export function canRetryConnection(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    !['SESSION_REQUIRED', 'BOOTSTRAP_EXPIRED', 'HOST_DENIED', 'ORIGIN_DENIED', 'ORIGIN_REQUIRED'].includes(
+      error.code || '',
+    ) &&
+    (error.kind === 'network' ||
+      (error.kind === 'http' && (error.status || 0) >= 500 && (error.status || 0) < 600))
+  );
+}
 export async function api<T = any>(path: string, body?: unknown, method?: string): Promise<T> {
   const request: RequestInit = {
     method: method || (body ? 'POST' : 'GET'),
@@ -12,37 +33,70 @@ export async function api<T = any>(path: string, body?: unknown, method?: string
     response = await fetch('/api' + path, request);
     text = await response.text();
   } catch {
-    throw new Error('无法连接本机服务，请确认工作台已启动后重试。');
+    throw new ApiError('无法连接本机服务，请确认工作台已启动后重试。', 'network');
   }
   const failed = `本机请求失败（HTTP ${response.status}），请重试。`;
   let result: any;
   try {
     result = JSON.parse(text);
   } catch {
-    if (!response.ok) throw new Error(failed);
+    if (!response.ok) throw new ApiError(failed, 'http', response.status);
     if (response.status === 204) return undefined as T;
-    throw new Error('本机服务返回的数据无法读取，请刷新工作台后重试。');
+    throw new ApiError('本机服务返回的数据无法读取，请重新打开工作台。', 'protocol', response.status);
   }
   if (!response.ok) {
     const message = typeof result?.message === 'string' ? result.message.trim() : '';
-    throw new Error(message ? `${message}（HTTP ${response.status}）` : failed);
+    throw new ApiError(
+      message ? `${message}（HTTP ${response.status}）` : failed,
+      'http',
+      response.status,
+      typeof result?.code === 'string' ? result.code : undefined,
+    );
   }
   return result;
 }
 export const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>
   api<T>(path, { commandId: crypto.randomUUID(), ...body }, method);
 let sessionPromise: Promise<string | undefined> | null = null;
-export function initializeSession() {
-  if (!sessionPromise)
-    sessionPromise = (async () => {
+let sessionFailure: unknown;
+let bootstrapToken: string | null = null;
+let bootstrapRead = false;
+export function initializeSession(options?: { retry?: boolean }) {
+  if (sessionPromise) return sessionPromise;
+  if (sessionFailure && (!options?.retry || !canRetryConnection(sessionFailure)))
+    return Promise.reject(sessionFailure);
+  const retry = !!sessionFailure;
+  sessionPromise = (async () => {
+    if (!bootstrapRead) {
+      bootstrapRead = true;
       const params = new URLSearchParams(location.hash.slice(1));
-      const token = params.get('bootstrap');
-      if (token) history.replaceState(null, '', location.pathname);
-      const result = await api('/session', token ? { token } : undefined);
-      csrf = result.csrf;
-      return typeof result.selectionScope === 'string' && result.selectionScope.trim()
-        ? result.selectionScope
-        : undefined;
-    })();
+      bootstrapToken = params.get('bootstrap');
+      if (bootstrapToken) history.replaceState(null, '', location.pathname + location.search);
+    }
+    let result: any;
+    if (!retry) result = await api('/session', bootstrapToken ? { token: bootstrapToken } : undefined);
+    else {
+      try {
+        result = await api('/session');
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== 'SESSION_REQUIRED' || !bootstrapToken) throw error;
+        // Only an explicit retry may reuse the in-memory token, once, after checking the cookie.
+        result = await api('/session', { token: bootstrapToken });
+      }
+    }
+    if (typeof result?.csrf !== 'string' || !result.csrf.trim())
+      throw new ApiError('本机服务返回的会话无法读取，请重新打开工作台。', 'protocol', 200);
+    csrf = result.csrf;
+    bootstrapToken = null;
+    sessionFailure = undefined;
+    return typeof result.selectionScope === 'string' && result.selectionScope.trim()
+      ? result.selectionScope
+      : undefined;
+  })().catch((error) => {
+    sessionPromise = null;
+    sessionFailure = error;
+    if (!canRetryConnection(error)) bootstrapToken = null;
+    throw error;
+  });
   return sessionPromise;
 }
