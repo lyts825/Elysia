@@ -322,6 +322,15 @@ export function createServer(
       });
     });
   });
+  const providerView = async (provider: ProviderConfig) => ({
+    ...provider,
+    keyConfigured:
+      provider.authMode === 'codex'
+        ? codex.configured(provider.subscriptionAccountId)
+        : provider.authMode === 'chatgpt'
+          ? subscription.configured(provider.subscriptionAccountId)
+          : await keys.configured(provider),
+  });
   app.get('/api/providers', async () => {
     await subscription.status().catch(() => {});
     const providers = store.all<ProviderConfig>('providers').filter((p) => !p.archived);
@@ -329,17 +338,7 @@ export function createServer(
       providers.filter((p) => p.authMode === 'codex').map((p) => codex.source(p.subscriptionAccountId!)),
     );
     await Promise.all([...sources].map((s) => codex.status(s)));
-    return Promise.all(
-      providers.map(async (p) => ({
-        ...p,
-        keyConfigured:
-          p.authMode === 'codex'
-            ? codex.configured(p.subscriptionAccountId)
-            : p.authMode === 'chatgpt'
-              ? subscription.configured(p.subscriptionAccountId)
-              : await keys.configured(p),
-      })),
-    );
+    return Promise.all(providers.map(providerView));
   });
   app.get('/api/codex/status', (request) => {
     const query = z
@@ -399,7 +398,7 @@ export function createServer(
     const body = request.body as any;
     const parsedCommand = Command.parse(body);
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(parsedCommand.commandId))
-      return command(body, request.url, () => ({}));
+      return providerView(command<ProviderConfig>(body, request.url, () => ({}) as ProviderConfig));
     const config = ProviderConfig.parse({ ...body, id: request.params.id });
     config.archived = false;
     const existing = store.get<ProviderConfig>('providers', config.id);
@@ -460,7 +459,7 @@ export function createServer(
       );
       config.credentialId = await keys.save(z.string().trim().min(1).max(8192).parse(body.apiKey));
     }
-    return command(body, request.url, () => {
+    const saved = command(body, request.url, () => {
       const old = store.get<ProviderConfig>('providers', config.id);
       if (old) revision(body, old);
       return store.put(
@@ -469,6 +468,7 @@ export function createServer(
         old?.revision ?? 0,
       );
     });
+    return providerView(saved);
   });
   app.delete<{ Params: { id: string } }>('/api/providers/:id', (request) =>
     command(request.body, request.url, (body) => {

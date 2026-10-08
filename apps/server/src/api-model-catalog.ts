@@ -58,6 +58,108 @@ export function parseApiModels(data: unknown, provider: ProviderConfig): Availab
   });
 }
 
+const catalogByteLimit = 2 * 1024 * 1024;
+
+async function catalogText(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string> {
+  invariant(body, 'MODEL_CATALOG', '模型目录响应为空，请检查 API 端点');
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const cancel = () => void reader.cancel().catch(() => {});
+  signal.addEventListener('abort', cancel, { once: true });
+  let bytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { value, done } = await reader.read();
+      signal.throwIfAborted();
+      if (done) return text + decoder.decode();
+      bytes += value.byteLength;
+      invariant(bytes <= catalogByteLimit, 'MODEL_CATALOG', '模型目录超过 2 MiB 大小限制，请检查 API 端点');
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+function catalogHttpFailure(status: number): AppError {
+  const advice =
+    status === 401
+      ? 'API Key 验证失败，请重新保存正确的密钥，并确认所选环境变量'
+      : status === 403
+        ? '服务拒绝访问，请检查 API Key 权限及网络访问限制'
+        : status === 404
+          ? '找不到模型目录，请检查基础 API 端点；DeepSeek 官方端点使用 https://api.deepseek.com 或 /v1'
+          : status === 429
+            ? '读取请求受到限流，请稍后重新读取'
+            : status >= 500
+              ? '模型服务暂时异常，请稍后重新读取'
+              : '请检查 API 端点与账号配置';
+  return new AppError(
+    'MODEL_CATALOG',
+    `模型目录返回 HTTP ${status}：${advice}`,
+    status === 429 || status >= 500,
+    {
+      stage: 'response',
+      status,
+    },
+  );
+}
+
+function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'connect' | 'body'): AppError {
+  const codes = new Set([
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_BODY_TIMEOUT',
+    'UND_ERR_SOCKET',
+    'CERT_HAS_EXPIRED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  ]);
+  let networkCode: string | undefined;
+  let cause = error as { code?: unknown; cause?: unknown } | null;
+  for (let depth = 0; cause && typeof cause === 'object' && depth < 4; depth++) {
+    if (typeof cause.code === 'string' && codes.has(cause.code)) {
+      networkCode = cause.code;
+      break;
+    }
+    cause = cause.cause as typeof cause;
+  }
+  const timeout =
+    signal.reason?.name === 'TimeoutError' || networkCode?.includes('TIMEOUT') || networkCode === 'ETIMEDOUT';
+  const dns = networkCode === 'ENOTFOUND' || networkCode === 'EAI_AGAIN';
+  const certificate = networkCode && /CERT|SELF_SIGNED|ISSUER/.test(networkCode);
+  const cancelled = signal.aborted && !timeout;
+  const advice = timeout
+    ? '读取模型目录超时，请检查网络或代理后重试'
+    : cancelled
+      ? '模型目录读取已取消，请重新读取'
+      : dns
+        ? '无法解析模型服务地址，请检查 API 端点、DNS 和代理设置'
+        : certificate
+          ? '模型服务证书验证失败，请检查系统时间、证书和代理设置'
+          : networkCode === 'ECONNREFUSED'
+            ? '模型服务连接被拒绝，请检查 API 端点、代理和服务状态'
+            : stage === 'body'
+              ? '模型目录下载中断，请检查网络或代理后重试'
+              : '无法连接模型服务，请检查 API 端点、网络或代理后重试';
+  return new AppError('MODEL_CATALOG', advice, !cancelled, {
+    stage,
+    ...(networkCode ? { networkCode } : {}),
+  });
+}
+
 /** Listing uses the verified credential without spending inference tokens. */
 export async function apiModels(
   provider: ProviderConfig,
@@ -65,19 +167,25 @@ export async function apiModels(
 ): Promise<AvailableModel[]> {
   invariant(!provider.archived, 'PROVIDER_ARCHIVED', '模型配置已归档');
   const { token, signal } = await keys.credential(provider);
-  let response: Response;
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
+  let stage: 'connect' | 'body' = 'connect';
+  let raw: string;
   try {
-    response = await fetch(providerBaseUrl(provider) + '/models', {
+    const response = await fetch(providerBaseUrl(provider) + '/models', {
       headers: { Authorization: 'Bearer ' + token },
       redirect: 'error',
-      signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
+      signal: requestSignal,
     });
-  } catch {
-    throw new AppError('MODEL_CATALOG', '无法读取模型目录，请检查端点与网络；也可手动填写模型 ID');
+    stage = 'body';
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      throw catalogHttpFailure(response.status);
+    }
+    raw = await catalogText(response.body, requestSignal);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw catalogNetworkFailure(error, requestSignal, stage);
   }
-  invariant(response.ok, 'MODEL_CATALOG', `模型目录返回 HTTP ${response.status}，也可手动填写模型 ID`);
-  const raw = await response.text();
-  invariant(raw.length <= 2 * 1024 * 1024, 'MODEL_CATALOG', '模型目录超过大小限制');
   let data: unknown;
   try {
     data = JSON.parse(raw);

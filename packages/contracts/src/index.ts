@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.8.1-preview.1';
+export const VERSION = '0.8.2-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',

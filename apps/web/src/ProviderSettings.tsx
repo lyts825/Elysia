@@ -10,6 +10,8 @@ import './providers.css';
 import { officialDeepSeek, supportsText, type CatalogModel } from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
+const credentialMode = (provider?: Provider) =>
+  provider?.credentialId || !provider?.keyConfigured ? 'stored' : 'env';
 const presets = [
   ['codex', 'ChatGPT 订阅', '复用 Codex 登录'],
   ['openai', 'OpenAI API', 'Responses API'],
@@ -74,7 +76,8 @@ export function ProviderSettings({
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [apiKey, setApiKey] = useState(''),
-    [keyMode, setKeyMode] = useState(config?.credentialId ? 'stored' : 'env');
+    [keyMode, setKeyMode] = useState(credentialMode(config)),
+    [savedKeyMode, setSavedKeyMode] = useState(credentialMode(config));
   const [catalog, setCatalog] = useState<CatalogModel[]>([]),
     [subscriptionReady, setSubscriptionReady] = useState(false),
     [deleting, setDeleting] = useState(false),
@@ -86,15 +89,36 @@ export function ProviderSettings({
     if (!config && providers.length) {
       const initial = providers.find((p) => p.authMode === 'codex') || providers[0];
       setConfig(initial);
-      setKeyMode(initial.credentialId ? 'stored' : 'env');
+      setKeyMode(credentialMode(initial));
+      setSavedKeyMode(credentialMode(initial));
     }
   }, [providers, config]);
+  const subscription = !!config && ['codex', 'chatgpt'].includes(config.authMode || '');
   const saved = providers.find((p) => p.id === config?.id),
-    dirty = !!config && (editable(config) !== editable(saved) || !!apiKey);
+    dirty =
+      !!config &&
+      (editable(config) !== editable(saved) || !!apiKey || (!subscription && keyMode !== savedKeyMode));
   useEffect(() => {
     if (!dirty) setConfirmClose(false);
   }, [dirty]);
-  const subscription = !!config && ['codex', 'chatgpt'].includes(config.authMode || '');
+  const credentialReady =
+    !!saved?.keyConfigured && (keyMode === 'stored' ? !!saved.credentialId : !saved.credentialId);
+  const credentialHelp =
+    !subscription && config
+      ? keyMode === 'stored'
+        ? apiKey.trim()
+          ? 'API Key 尚未保存，请先保存配置，再读取目录或验证。'
+          : !config.credentialId
+            ? '请输入 API Key 并保存配置，再读取目录或验证。'
+            : !config.keyConfigured
+              ? '已保存的密钥不可用，请重新输入 API Key 并保存配置。'
+              : ''
+        : !saved || saved.credentialId || saved.apiKeyEnv !== config.apiKeyEnv
+          ? '请先保存环境变量来源，再读取目录或验证。'
+          : !saved.keyConfigured
+            ? `当前服务未检测到环境变量「${config.apiKeyEnv}」。请设置后重启应用，或改用本机加密保存 API Key。`
+            : ''
+      : '';
   const deepSeek = !!config && !subscription && officialDeepSeek(config);
   const selectedModel = catalog.find((model) => model.id === config?.model);
   const deepSeekEfforts = selectedModel?.efforts?.filter((effort) =>
@@ -102,7 +126,7 @@ export function ProviderSettings({
   ) || ['low', 'high', 'max'];
   const unsupportedApiModel =
     !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
-  const change = (patch: Partial<ProviderConfig>) => setConfig((p) => p && { ...p, ...patch });
+  const change = (patch: Partial<Provider>) => setConfig((p) => p && { ...p, ...patch });
   const choose = (next: Provider, force = false, completedAction = false) => {
     if (actionPending.current && !completedAction) return;
     if (dirty && !force) {
@@ -110,11 +134,8 @@ export function ProviderSettings({
       return;
     }
     setConfig(next);
-    setKeyMode(
-      next.credentialId || (officialDeepSeek(next) && !providers.some((p) => p.id === next.id))
-        ? 'stored'
-        : 'env',
-    );
+    setKeyMode(credentialMode(next));
+    setSavedKeyMode(credentialMode(next));
     setApiKey('');
     setCatalog([]);
     setSubscriptionReady(false);
@@ -145,17 +166,20 @@ export function ProviderSettings({
       if (!config) return;
       if (unsupportedApiModel) throw new Error('所选型号不支持文字对话，请选择文字型号后再保存。');
       if (subscription && !subscriptionReady) throw new Error('请选择当前目录中支持文字对话的型号后再保存。');
-      if (!subscription && keyMode === 'stored' && !config.credentialId && !apiKey.trim())
-        throw new Error('请输入 API Key，或改用环境变量');
+      if (
+        !subscription &&
+        keyMode === 'stored' &&
+        (!config.credentialId || !config.keyConfigured) &&
+        !apiKey.trim()
+      )
+        throw new Error(credentialHelp || '请输入 API Key，或改用环境变量');
       const value = await mutation<Provider>(
         '/providers/' + config.id,
         { ...config, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}), expectedRevision: config.revision },
         'PUT',
       );
-      setConfig({
-        ...value,
-        keyConfigured: subscription || keyMode === 'stored' ? true : !!saved?.keyConfigured,
-      });
+      setConfig(value);
+      setSavedKeyMode(keyMode);
       setApiKey('');
       await updated();
       setNotice('配置已保存，下一步验证实际调用。');
@@ -163,6 +187,8 @@ export function ProviderSettings({
   const verify = () =>
     perform(async () => {
       if (!config) return;
+      if (!subscription && (!credentialReady || dirty))
+        throw new Error(credentialHelp || '请先保存当前凭据来源，再验证实际调用。');
       if (unsupportedApiModel) throw new Error('所选型号不支持文字对话，请选择文字型号后再验证。');
       if (subscription && !subscriptionReady) throw new Error('请选择当前目录中支持文字对话的型号后再验证。');
       const result = await mutation('/providers/' + config.id + '/check', {
@@ -374,7 +400,7 @@ export function ProviderSettings({
                             }
                           : {}),
                       });
-                      setKeyMode('env');
+                      setKeyMode('stored');
                     }}
                   >
                     <option value="codex">ChatGPT 订阅（推荐）</option>
@@ -476,6 +502,8 @@ export function ProviderSettings({
                         setKeyMode(e.target.value);
                         setApiKey('');
                         if (e.target.value === 'env') change({ credentialId: null });
+                        else if (saved?.credentialId)
+                          change({ credentialId: saved.credentialId, keyConfigured: saved.keyConfigured });
                       }}
                     >
                       <option value="stored">在本机加密保存 API Key</option>
@@ -507,6 +535,11 @@ export function ProviderSettings({
                       />
                     </label>
                   )}
+                  {credentialHelp && (
+                    <p className="inline-warning" role="status">
+                      {credentialHelp}
+                    </p>
+                  )}
                   <div className="model-selection">
                     <label>
                       模型 ID
@@ -527,9 +560,11 @@ export function ProviderSettings({
                     </label>
                     <button
                       className="secondary"
-                      disabled={busy || !saved || dirty}
+                      disabled={busy || !saved || dirty || !credentialReady}
                       onClick={() =>
                         void perform(async () => {
+                          if (!credentialReady || dirty)
+                            throw new Error(credentialHelp || '请先保存当前凭据来源，再读取模型目录。');
                           const values = await api<CatalogModel[]>('/providers/' + config.id + '/models');
                           setCatalog(values);
                           setNotice(
@@ -745,7 +780,8 @@ export function ProviderSettings({
                     busy ||
                     dirty ||
                     !saved ||
-                    !saved.keyConfigured ||
+                    (!subscription && !credentialReady) ||
+                    (subscription && !saved.keyConfigured) ||
                     (subscription && !subscriptionReady) ||
                     unsupportedApiModel
                   }
