@@ -982,7 +982,7 @@ export class Kernel {
         // Wait for the current response before applying a new turn to its context.
         if (root.status === 'RUNNING' || root.status === 'VERIFYING') return;
         for (const message of incoming) {
-          this.appendMessage(root, 'user', message.text);
+          this.appendMessage(root, 'user', message.text, { sourceInboxId: message.id });
           this.store.put('inbox', { ...message, status: 'APPLIED' });
         }
         this.updateTask(root, 'READY', { waitReason: undefined, waitingFor: [], rateLimit: undefined });
@@ -993,7 +993,7 @@ export class Kernel {
         for (const t of this.store
           .all<Task>('tasks', runId)
           .filter((t) => !['DONE', 'CANCELLED'].includes(t.status)))
-          this.appendMessage(t, 'user', m.text);
+          this.appendMessage(t, 'user', m.text, { sourceInboxId: m.id });
         this.store.put('inbox', { ...m, status: 'APPLIED' });
       }
       const root = this.store.require<Task>('tasks', run.rootTaskId);

@@ -30,6 +30,7 @@ import { WorkspaceManager } from './WorkspaceManager';
 import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
+import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
 import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
 import { TaskGraph } from './TaskGraph';
@@ -776,7 +777,7 @@ function App() {
                       </span>
                     </div>
                   )}
-                  {detail.messages
+                  {conversationMessages(detail.messages)
                     .filter((m) => m.role !== 'tool')
                     .map((m) => {
                       if (m.purpose === 'model_handoff')
@@ -806,7 +807,7 @@ function App() {
                           <div className="message-body">
                             <div className="message-label">
                               {m.role === 'user'
-                                ? isChat
+                                ? isChat || isInboxUserMessage(m)
                                   ? '你'
                                   : '用户 / 交接'
                                 : task?.spec.role === 'coordinator'

@@ -1,6 +1,6 @@
 {
   "name": "@elysia/contracts",
-  "version": "0.6.8-preview.1",
+  "version": "0.6.9-preview.1",
   "private": true,
   "type": "module"
 }
