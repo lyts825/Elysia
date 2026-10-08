@@ -1,7 +1,57 @@
 import { Store, acquireLock, dataDirectory, now, stable } from '../../../packages/storage/src/index.js';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, renameSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  mkdtempSync,
+  cpSync,
+  renameSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { backup, DatabaseSync } from 'node:sqlite';
+
+async function snapshotDatabase(source: string, target: string, expectedVersion?: number) {
+  // Snapshot the logical database, including committed WAL pages, without changing its source.
+  const database = new DatabaseSync(source, { readOnly: true });
+  try {
+    await backup(database, target);
+  } finally {
+    database.close();
+  }
+  const snapshot = new DatabaseSync(target);
+  try {
+    const mode = snapshot.prepare('PRAGMA journal_mode=DELETE').get() as any;
+    if (mode.journal_mode !== 'delete') throw new Error('无法生成独立备份数据库');
+  } finally {
+    snapshot.close();
+  }
+  // Validate the closed, standalone file that will actually be copied into place.
+  const validation = new DatabaseSync(target, { readOnly: true });
+  try {
+    const version = Number((validation.prepare('PRAGMA user_version').get() as any).user_version);
+    if (![1, 2, 3].includes(version)) throw new Error('备份 schema 不相容');
+    if (expectedVersion !== undefined && version !== expectedVersion)
+      throw new Error('备份版本与元数据不一致');
+    const integrity = validation.prepare('PRAGMA integrity_check').all() as any[];
+    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok')
+      throw new Error('备份数据库完整性检查失败');
+    return version;
+  } finally {
+    validation.close();
+  }
+}
+
+function removeStage(stage: string, directory: string) {
+  if (
+    path.dirname(path.resolve(stage)) !== path.resolve(directory) ||
+    !path.basename(stage).startsWith('.maintenance-')
+  )
+    throw new Error('维护暂存路径越界');
+  rmSync(stage, { recursive: true, force: true });
+}
 const action = process.argv[2],
   directory = dataDirectory();
 if (action === 'stop') {
@@ -33,20 +83,19 @@ if (action === 'stop') {
       )
         throw new Error('数据目录内的备份只能放在 backups 子目录，避免递归复制源对象和日志');
       if (existsSync(target) && readdirSync(target).length) throw new Error('备份目标不是空目录');
-      // A pre-upgrade backup must preserve the old schema rather than migrate its source first.
-      const database = new DatabaseSync(path.join(directory, 'state.db'));
       let schemaVersion: number;
+      const stage = mkdtempSync(path.join(directory, '.maintenance-'));
       try {
-        schemaVersion = Number((database.prepare('PRAGMA user_version').get() as any).user_version);
-        if (![1, 2, 3].includes(schemaVersion)) throw new Error('备份 schema 不相容');
-        if ((database.prepare('PRAGMA integrity_check').get() as any).integrity_check !== 'ok')
-          throw new Error('备份源数据库完整性检查失败');
-        database.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        // Preserve the pre-upgrade schema; do not open the source through Store.
+        schemaVersion = await snapshotDatabase(
+          path.join(directory, 'state.db'),
+          path.join(stage, 'state.db'),
+        );
+        mkdirSync(target, { recursive: true });
+        cpSync(path.join(stage, 'state.db'), path.join(target, 'state.db'));
       } finally {
-        database.close();
+        removeStage(stage, directory);
       }
-      mkdirSync(target, { recursive: true });
-      cpSync(path.join(directory, 'state.db'), path.join(target, 'state.db'));
       cpSync(path.join(directory, 'objects'), path.join(target, 'objects'), { recursive: true });
       const includes = ['state.db', 'objects'];
       if (existsSync(path.join(directory, 'logs'))) {
@@ -73,41 +122,45 @@ if (action === 'stop') {
         throw new Error('restore 需要有效备份路径');
       const metadata = JSON.parse(readFileSync(path.join(source, 'backup.json'), 'utf8'));
       if (![1, 2, 3].includes(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
-      const backupDatabase = new DatabaseSync(path.join(source, 'state.db'), { readOnly: true });
+      const stage = mkdtempSync(path.join(directory, '.maintenance-'));
       try {
-        const actualVersion = Number(
-          (backupDatabase.prepare('PRAGMA user_version').get() as any).user_version,
+        await snapshotDatabase(
+          path.join(source, 'state.db'),
+          path.join(stage, 'state.db'),
+          metadata.schemaVersion,
         );
-        if (
-          actualVersion !== metadata.schemaVersion ||
-          (backupDatabase.prepare('PRAGMA integrity_check').get() as any).integrity_check !== 'ok'
-        )
-          throw new Error('备份版本或数据库完整性检查失败');
+        cpSync(path.join(source, 'objects'), path.join(stage, 'objects'), { recursive: true });
+        if (existsSync(path.join(source, 'logs')))
+          cpSync(path.join(source, 'logs'), path.join(stage, 'logs'), { recursive: true });
+        const archive = path.join(directory, 'backups', 'before-restore-' + now().replace(/[:.]/g, '-'));
+        mkdirSync(archive, { recursive: true });
+        for (const name of ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs']) {
+          const from = path.resolve(directory, name),
+            to = path.resolve(archive, name);
+          if (
+            !from.startsWith(path.resolve(directory) + path.sep) ||
+            !to.startsWith(path.resolve(archive) + path.sep)
+          )
+            throw new Error('恢复归档路径越界');
+          if (existsSync(from)) renameSync(from, to);
+        }
+        cpSync(path.join(stage, 'state.db'), path.join(directory, 'state.db'));
+        cpSync(path.join(stage, 'objects'), path.join(directory, 'objects'), { recursive: true });
+        if (existsSync(path.join(stage, 'logs')))
+          cpSync(path.join(stage, 'logs'), path.join(directory, 'logs'), { recursive: true });
+        const store = new Store(directory);
+        let integrity: any[];
+        try {
+          integrity = store.db.prepare('PRAGMA integrity_check').all() as any[];
+        } finally {
+          store.close();
+        }
+        if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok')
+          throw new Error('恢复数据库完整性检查失败；原数据保留在 ' + archive);
+        console.log('恢复完成；替换前数据保留：' + archive);
       } finally {
-        backupDatabase.close();
+        removeStage(stage, directory);
       }
-      const archive = path.join(directory, 'backups', 'before-restore-' + now().replace(/[:.]/g, '-'));
-      mkdirSync(archive, { recursive: true });
-      for (const name of ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs']) {
-        const from = path.resolve(directory, name),
-          to = path.resolve(archive, name);
-        if (
-          !from.startsWith(path.resolve(directory) + path.sep) ||
-          !to.startsWith(path.resolve(archive) + path.sep)
-        )
-          throw new Error('恢复归档路径越界');
-        if (existsSync(from)) renameSync(from, to);
-      }
-      cpSync(path.join(source, 'state.db'), path.join(directory, 'state.db'));
-      cpSync(path.join(source, 'objects'), path.join(directory, 'objects'), { recursive: true });
-      if (existsSync(path.join(source, 'logs')))
-        cpSync(path.join(source, 'logs'), path.join(directory, 'logs'), { recursive: true });
-      const store = new Store(directory);
-      const integrity = store.db.prepare('PRAGMA integrity_check').get() as any;
-      store.close();
-      if (integrity.integrity_check !== 'ok')
-        throw new Error('恢复数据库完整性检查失败；原数据保留在 ' + archive);
-      console.log('恢复完成；替换前数据保留：' + archive);
     } else throw new Error('未知维护操作');
   } finally {
     release();
