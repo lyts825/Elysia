@@ -1,0 +1,229 @@
+.session-navigation {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 4px 0;
+  padding: 0 8px;
+  border: 1px solid #647b70;
+  border-radius: 8px;
+  color: #c4d1c3;
+}
+.session-search input {
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: #fffaf0;
+  font-size: 12px;
+  box-shadow: none;
+}
+.session-search input::placeholder {
+  color: #b4c7b8;
+}
+.session-tree {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  padding-bottom: 10px;
+}
+.session-heading {
+  padding: 16px 4px 6px;
+  gap: 5px;
+}
+.session-heading .group-toggle {
+  display: flex;
+  gap: 7px;
+  padding: 3px 4px;
+  justify-content: flex-start;
+  font-size: 12px;
+}
+.session-heading .group-toggle small {
+  color: #afc2b3;
+  margin-left: 3px;
+}
+.group-toggle[aria-expanded='true'] > svg,
+.project-toggle[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+.heading-actions {
+  display: flex;
+}
+.session-navigation .project-list {
+  overflow: visible;
+  max-height: none;
+}
+.session-navigation .history-list {
+  overflow: visible;
+  min-height: 0;
+}
+.project-row,
+.session-row {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  position: relative;
+}
+.project-row.selected,
+.session-row.selected {
+  background: #46625a;
+  color: #fffaf0;
+}
+.project-row:hover,
+.session-row:hover {
+  background: #38524a;
+}
+.project-row .project-item,
+.session-row .history-item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  background: transparent;
+  padding: 8px 5px;
+}
+.project-row .project-item > span,
+.session-row .history-item > span:nth-child(2) {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-row .history-item {
+  gap: 8px;
+  padding-left: 9px;
+  min-height: 36px;
+}
+.session-row .history-item > small {
+  flex: none;
+  font-size: 10px;
+  color: #e2c3ba;
+}
+.session-row.unread .history-item > span:nth-child(2) {
+  color: #fffaf0;
+  font-weight: 650;
+}
+.unread-dot {
+  border-radius: 50%;
+  width: 6px;
+  height: 6px;
+  background: #e8b7bf;
+  flex: none;
+}
+.project-toggle,
+.session-more {
+  border: 0;
+  background: transparent;
+  color: #c4d1c3;
+  padding: 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  flex: none;
+}
+.session-more {
+  opacity: 0;
+  margin-right: 3px;
+}
+.project-row:hover .session-more,
+.session-row:hover .session-more,
+.project-row:focus-within .session-more,
+.session-row:focus-within .session-more {
+  opacity: 1;
+}
+.project-toggle:hover,
+.session-more:hover {
+  background: #506d60;
+}
+.project-sessions {
+  margin-left: 19px;
+  border-left: 1px solid #536b60;
+  padding-left: 5px;
+}
+.empty-session {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: #bbcbbd;
+  font-size: 11px;
+  padding: 8px;
+}
+.session-context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 260px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 7px;
+  background: var(--surface);
+  color: #34433b;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px #17251f30;
+}
+.session-context-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+.session-context-menu > button:hover,
+.session-context-menu > button:focus-visible {
+  background: #f0f3ed;
+}
+.session-context-menu > button > span {
+  flex: 1;
+}
+.session-context-menu kbd {
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  margin-left: 14px;
+}
+.session-context-menu > .danger {
+  color: var(--danger);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.cache-state {
+  padding: 5px 9px;
+  color: #b4c7b8;
+  font-size: 10px;
+}
+.cache-state button {
+  background: none;
+  border: 0;
+  color: #f0c9bf;
+  padding: 2px 4px;
+  font-size: inherit;
+}
+.sidebar-collapsed .session-navigation,
+.sidebar-collapsed .cache-state {
+  display: none;
+}
+@media (hover: none) {
+  .session-more {
+    opacity: 1;
+  }
+}
+@media (max-width: 760px) {
+  .session-navigation,
+  .cache-state {
+    display: none;
+  }
+}

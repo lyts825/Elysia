@@ -27,6 +27,8 @@ import { BrandIcon, EmptyArtwork } from './Brand';
 import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceManager } from './WorkspaceManager';
+import { SessionSidebar } from './SessionSidebar';
+import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
@@ -128,12 +130,22 @@ function App() {
     [previewTaskId, setPreviewTaskId] = useState(''),
     [modal, setModal] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
-    [draft, setDraft] = useState(''),
     [runSetup, setRunSetup] = useState<{ key: string; draft: RunSetupDraft } | null>(null),
-    [replies, setReplies] = useState<Record<string, string>>({}),
     [streaming, setStreaming] = useState<Record<string, string>>({});
+  const [cacheState, setCacheState] = useState<{
+    entries: Record<string, CacheEntry>;
+    status: 'loading' | 'saved' | 'saving' | 'error';
+    error: string;
+  }>({ entries: {}, status: 'loading', error: '' });
+  const [cache] = useState(() => new WorkbenchCache(setCacheState));
   const [selection, setSelection] = useState(initialNavigation);
   const { spaceId, projectId, runId } = selection;
+  const draftKey = newDraftKey(projectId);
+  const draft =
+    typeof cacheState.entries[draftKey]?.value === 'string'
+      ? (cacheState.entries[draftKey].value as string)
+      : '';
+  const setDraft = (value: string) => cache.set(draftKey, value);
   const readSource: ReadSource | undefined =
     readIssues.detail?.runId === runId
       ? 'detail'
@@ -148,7 +160,6 @@ function App() {
   const projectRuns = runs.filter(
     (r) => !r.archived && (projectId ? r.projectId === projectId : r.kind === 'chat'),
   );
-  const spaceProjects = projects.filter((p) => p.spaceId === spaceId && !p.archived);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
   const [feedbackTime, setFeedbackTime] = useState(Date.now);
@@ -202,7 +213,7 @@ function App() {
       reasoningEffort: task.reasoningEffort ?? fallback.reasoningEffort,
     };
   };
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const sidebarCollapsed = cacheState.entries['collapsed:sidebar']?.value === true;
   const mainMotion = usePositionMotion<HTMLElement>();
   const activeRunId = useRef('');
   const detailRequest = useRef(0);
@@ -225,7 +236,24 @@ function App() {
     sequence: number;
     controller: AbortController;
   } | null>(null);
-  const reply = replies[runId] || '';
+  const replyKey = `draft:run:${runId}`;
+  const reply =
+    typeof cacheState.entries[replyKey]?.value === 'string'
+      ? (cacheState.entries[replyKey].value as string)
+      : '';
+  useEffect(() => {
+    const flush = () => void cache.flush();
+    const hidden = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', hidden);
+      cache.stop();
+    };
+  }, [cache]);
   const closeArtifact = useCallback(() => {
     artifactSequence.current++;
     artifactRequest.current?.controller.abort();
@@ -288,6 +316,7 @@ function App() {
     setRuns(r);
     setProviders(v);
     setSpaces(s);
+    cache.prune(new Set(p.map((project) => project.id)), new Set(r.map((run) => run.id)));
     if (epoch !== navigationEpoch.current) return;
     const restoring = !navigationInitialized.current;
     const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
@@ -300,7 +329,7 @@ function App() {
     }
     navigate(next);
     return true;
-  }, [navigate, clearReadIssue]);
+  }, [navigate, clearReadIssue, cache]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
@@ -338,6 +367,12 @@ function App() {
             return;
           }
           clearReadIssue('session', request);
+          try {
+            await cache.load();
+          } catch (error) {
+            setReadIssues((old) => ({ ...old, session: readIssueFor(error, request) }));
+            return;
+          }
           navigationStorageKey.current = navigationKey(scope);
           savedNavigation.current = readNavigation(navigationStorageKey.current);
           sessionReady.current = true;
@@ -354,7 +389,7 @@ function App() {
         setRetrying(false);
       }
     },
-    [clearReadIssue, refresh, refreshDetail],
+    [clearReadIssue, refresh, refreshDetail, cache],
   );
   useEffect(() => {
     void connect();
@@ -430,7 +465,7 @@ function App() {
   }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
   async function act(fn: () => Promise<unknown>) {
-    if (actionPending.current) return;
+    if (actionPending.current) return false;
     actionPending.current = true;
     setBusy(true);
     setError('');
@@ -438,8 +473,10 @@ function App() {
       await fn();
       await refresh();
       await refreshDetail();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       actionPending.current = false;
       setBusy(false);
@@ -453,10 +490,13 @@ function App() {
     const revision = detail.run.revision;
     void act(async () => {
       await mutation('/runs/' + target + '/messages', { expectedRevision: revision, text });
-      setReplies((old) => (old[target] === text ? { ...old, [target]: '' } : old));
+      if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
     });
   };
   const selectRun = (run: Run) => {
+    if (cache.get(`unread:run:${run.id}`) === true) cache.set(`unread:run:${run.id}`, false);
+    if (run.projectId && cache.get(`collapsed:project:${run.projectId}`) === true)
+      cache.set(`collapsed:project:${run.projectId}`, false);
     setPreviewTaskId(run.rootTaskId);
     const owner = projects.find((p) => p.id === run.projectId);
     navigate(
@@ -537,11 +577,15 @@ function App() {
         Object.fromEntries(Object.entries(old).filter(([key]) => !key.startsWith(deleted.id + ':'))),
       );
     if (deleted?.kind === 'run')
-      setReplies((old) => {
-        const next = { ...old };
-        delete next[deleted.id];
-        return next;
-      });
+      cache.remove([`draft:run:${deleted.id}`, `pinned:run:${deleted.id}`, `unread:run:${deleted.id}`]);
+    if (deleted?.kind === 'project') {
+      const children = runs.filter((run) => run.projectId === deleted.id);
+      cache.remove([
+        newDraftKey(deleted.id),
+        `collapsed:project:${deleted.id}`,
+        ...children.flatMap((run) => [`draft:run:${run.id}`, `pinned:run:${run.id}`, `unread:run:${run.id}`]),
+      ]);
+    }
     return refreshed;
   };
   const totalTokens =
@@ -676,66 +720,47 @@ function App() {
             </button>
           </div>
         </div>
-        <div className="side-heading">
-          项目
-          <button aria-label="添加项目" onClick={() => setModal('project')}>
-            <Icon name="plus" size={15} />
-          </button>
-        </div>
-        <nav className="project-list" aria-label="项目">
-          {spaceProjects.map((p) => (
-            <button
-              className={'project-item ' + (p.id === projectId ? 'selected' : '')}
-              key={p.id}
-              title={p.name}
-              aria-current={p.id === projectId ? 'true' : undefined}
-              onClick={() => {
-                selectProject(p.id);
-              }}
-            >
-              <Icon name="folder" size={16} />
-              <span>{p.name}</span>
-              <small>{p.baseline ? 'Git' : '目录'}</small>
-            </button>
-          ))}
-          {!spaceProjects.length && (
-            <button className="empty-project" onClick={() => setModal('project')}>
-              打开本机文件夹 <Icon name="plus" size={14} />
-            </button>
-          )}
-        </nav>
-        <div className="side-heading history-heading">
-          {projectId ? '项目任务' : '独立对话'}
-          <span>{projectRuns.length}</span>
-        </div>
-        <div className="history-list">
-          {projectRuns.map((r) => (
-            <button
-              key={r.id}
-              title={
-                (r.title || r.objective) +
-                ' · ' +
-                (r.kind === 'chat' ? '独立对话' : project?.name || '项目任务')
-              }
-              aria-current={r.id === runId ? 'page' : undefined}
-              className={'history-item ' + (r.id === runId ? 'selected' : '')}
-              onClick={() => selectRun(r)}
-            >
-              <span className={'status-dot ' + r.status.toLowerCase()} />
-              <span>
-                {r.title || r.objective}
-                <small>{r.kind === 'chat' ? '独立对话' : project?.name}</small>
-              </span>
-            </button>
-          ))}
-          {!projectRuns.length && (
-            <p className="sidebar-muted">
-              还没有{projectId ? '项目任务' : '独立对话'}。
-              <br />
-              从一个目标开始协作。
-            </p>
-          )}
-        </div>
+        <SessionSidebar
+          projects={projects}
+          spaces={spaces}
+          runs={runs}
+          spaceId={spaceId}
+          projectId={projectId}
+          runId={runId}
+          entries={cacheState.entries}
+          busy={busy}
+          error={error}
+          setValue={(key, value) => cache.set(key, value)}
+          selectProject={selectProject}
+          selectRun={selectRun}
+          create={(id, objective) => {
+            selectProject(id);
+            if (objective !== undefined) cache.set(newDraftKey(id), objective);
+          }}
+          files={(target) => {
+            selectProject(target.id);
+            setModal('project-files');
+          }}
+          manage={(tab) => setModal(tab === 'new-project' ? 'project' : `manage:${tab}`)}
+          update={(target, changes, remove) =>
+            act(async () => {
+              const current =
+                target.kind === 'run'
+                  ? runs.find((run) => run.id === target.item.id)
+                  : projects.find((project) => project.id === target.item.id);
+              if (!current) throw new Error('记录已被删除，请刷新工作台。');
+              await mutation(
+                `/${target.kind === 'run' ? 'runs' : 'projects'}/${current.id}`,
+                {
+                  expectedRevision: current.revision,
+                  ...changes,
+                },
+                remove ? 'DELETE' : 'PATCH',
+              );
+              if (remove) await managed({ kind: target.kind, id: current.id });
+            })
+          }
+        />
         <div className="sidebar-bottom">
           <button
             className="nav-item"
@@ -755,6 +780,21 @@ function App() {
             <Icon name="settings" />
             <span>模型与设置</span>
           </button>
+          <div
+            className="cache-state"
+            role="status"
+            title={cacheState.error || '输入内容按项目和会话自动保存在本机'}
+          >
+            {cacheState.status === 'error' ? (
+              <>
+                保存失败 · 草稿已保留 <button onClick={() => void cache.retry()}>重试保存</button>
+              </>
+            ) : cacheState.status === 'saving' ? (
+              '正在保存草稿与偏好…'
+            ) : (
+              '草稿与偏好已保存'
+            )}
+          </div>
           <div className="local-indicator">
             <i />
             本机连接<span>v{VERSION}</span>
@@ -766,7 +806,7 @@ function App() {
           <div className="breadcrumb">
             <button
               className="icon-button sidebar-toggle"
-              onClick={() => mainMotion.change(() => setSidebarCollapsed((collapsed) => !collapsed))}
+              onClick={() => mainMotion.change(() => cache.set('collapsed:sidebar', !sidebarCollapsed))}
               aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={!sidebarCollapsed}
               title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
@@ -1270,7 +1310,7 @@ function App() {
                       ref={replyRef}
                       aria-label="回复或补充需求"
                       value={reply}
-                      onChange={(e) => setReplies((old) => ({ ...old, [runId]: e.target.value }))}
+                      onChange={(e) => cache.set(replyKey, e.target.value)}
                       onKeyDown={(e) => {
                         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing) {
                           e.preventDefault();

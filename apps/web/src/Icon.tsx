@@ -13,6 +13,41 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
     expand: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6" />,
     collapse: <path d="M3 8h5V3m13 5h-5V3M8 21v-5H3m13 5v-5h5" />,
     plus: <path d="M12 5v14M5 12h14" />,
+    chevron: <path d="m9 5 7 7-7 7" />,
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="10" cy="10" r="6" />
+        <path d="m15 15 6 6" />
+      </>
+    ),
+    edit: <path d="m15 4 5 5M4 20l5-1L21 7l-4-4L5 15Z" />,
+    pin: <path d="m15 3 6 6-5 1-3 5-4-4 5-3ZM10 14l-7 7" />,
+    eye: (
+      <>
+        <path d="M2 12C5 3 19 3 22 12C19 21 5 21 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
+    copy: (
+      <>
+        <rect x="8" y="8" width="13" height="13" rx="2" />
+        <path d="M16 8V3H3v13h5" />
+      </>
+    ),
+    archive: (
+      <>
+        <rect x="3" y="3" width="18" height="5" rx="1" />
+        <path d="M5 8v13h14V8M9 12h6" />
+      </>
+    ),
+    trash: <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />,
     grid: (
       <>
         <rect x="3" y="3" width="7" height="7" rx="1" />
