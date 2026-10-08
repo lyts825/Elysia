@@ -36,6 +36,7 @@ import { inspectFolder, projectFiles, projectTextEncodings, sameDirectory } from
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
+import { registerWorkbench } from './workbench.js';
 import { resolveModelChoice } from './model-choice.js';
 export function defaultProviders(): ProviderConfig[] {
   return [
@@ -196,6 +197,7 @@ export function createServer(
       );
   };
   app.get('/api/health', async () => ({ version: VERSION, status: 'ok' }));
+  registerWorkbench(app, store);
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview',
     async (request) =>
