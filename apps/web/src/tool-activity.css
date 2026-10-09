@@ -42,23 +42,29 @@
   font-size: 12px;
   font-weight: 600;
 }
-.tool-activity-name small {
-  color: var(--muted);
-  font-family: Consolas, monospace;
-  font-size: 10px;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-.tool-activity-heading > code {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  line-height: 1.55;
+.tool-activity-overview {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
   font-size: 11px;
-  color: var(--secondary);
+  line-height: 1.55;
+}
+.tool-activity-overview > code {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.tool-activity-overview > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-activity-overview > code:only-child {
+  max-width: 100%;
 }
 .tool-activity-status {
   display: inline-flex;
@@ -92,7 +98,7 @@
 .tool-activity-error-summary {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   overflow: hidden;
   overflow-wrap: anywhere;
   font-size: 11px;
@@ -153,6 +159,30 @@
 .tool-activity-error pre {
   color: var(--danger);
 }
+.tool-activity-body > .tool-activity-preview {
+  margin-top: 10px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  max-height: 5.1em;
+  overflow: hidden;
+}
+.tool-activity-details {
+  margin-top: 10px;
+}
+.tool-activity-details > summary {
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.tool-activity-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 .message-body .tool-activity-note,
 .tool-activity .tool-activity-note {
   margin: 10px 0 0;
@@ -164,9 +194,6 @@
   .tool-activity > summary {
     gap: 6px;
     padding: 9px;
-  }
-  .tool-activity-name small {
-    display: none;
   }
   .tool-activity-body dl > div {
     grid-template-columns: minmax(0, 1fr);

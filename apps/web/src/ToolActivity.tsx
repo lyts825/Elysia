@@ -121,6 +121,64 @@ function command(args: Record<string, unknown>): string {
     : [];
   return [program, ...parameters].join(' ');
 }
+function size(bytes: unknown): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
+  return bytes < 1024
+    ? `${bytes} B`
+    : bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function resultSummary(name: string, outcome: unknown): string {
+  const result = record(outcome);
+  if (!result) return '已返回结果';
+  const suffix = result?.truncated === true ? '（结果已截断）' : '';
+  if (name === 'list' && Array.isArray(result?.entries))
+    return result.entries.length ? `列出 ${result.entries.length} 项` : '目录为空';
+  if (name === 'search' && Array.isArray(result?.matches))
+    return `${result.matches.length ? `找到 ${result.matches.length} 处匹配` : '未找到匹配'}${suffix}`;
+  if (name === 'read' || name === 'read_artifact')
+    return `已读取${result?.binary === true ? '二进制文件' : '文件'}${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}${suffix}`;
+  if (name === 'write' || name === 'apply_patch')
+    return `${name === 'write' ? '已写入文件' : '已修改文件'}${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}`;
+  if (name === 'exec')
+    return `${result?.timedOut === true ? '命令超时' : result?.exitCode === 0 ? '命令执行完成' : typeof result?.exitCode === 'number' ? `退出码 ${result.exitCode}` : '已返回命令结果'}${suffix}`;
+  const summaries: Record<string, string> = {
+    load_skill: '技能已加载',
+    fetch_url: `已读取网页${suffix}`,
+    artifact: '产物已登记',
+    diff: '差异已生成',
+    integrate_worktrees: '更改已集成',
+    clarify: '问题已提出',
+    propose_plan: '计划已提交',
+    spawn_task: '子任务已创建',
+    submit_result: '验收结果已提交',
+  };
+  return summaries[name] || '已返回结果';
+}
+function resultPreview(name: string, outcome: unknown): string {
+  const result = record(outcome);
+  if (name === 'list' && Array.isArray(result?.entries)) {
+    const entries = result.entries;
+    const names = entries.slice(0, 5).flatMap((entry) => {
+      const item = record(entry);
+      return typeof item?.name === 'string' ? [item.name + (item.directory === true ? '/' : '')] : [];
+    });
+    if (entries.length > 5) names.push(`…另有 ${entries.length - 5} 项`);
+    return names.join('\n');
+  }
+  const text =
+    name === 'exec'
+      ? result?.stdout
+      : name === 'read' || name === 'read_artifact' || name === 'fetch_url'
+        ? result?.content
+        : typeof outcome === 'string'
+          ? outcome
+          : '';
+  if (typeof text !== 'string' || !text.trim()) return '';
+  const preview = text.trim().split(/\r?\n/).slice(0, 3).join('\n').slice(0, 240);
+  return preview + (text.trim().length > preview.length ? '\n…' : '');
+}
 
 export function ToolActivity({
   call,
@@ -213,6 +271,9 @@ export function ToolActivity({
   const fields = Object.entries(args).filter(
     ([key]) => !internalFields.has(key) || (call.name === 'load_skill' && key === 'id'),
   );
+  const briefResult =
+    !error && tone === 'done' && outcome !== undefined ? resultSummary(call.name, outcome) : '';
+  const preview = !error && tone === 'done' ? resultPreview(call.name, outcome) : '';
   return (
     <details className={`tool-activity ${tone}`}>
       <summary>
@@ -223,14 +284,16 @@ export function ToolActivity({
           />
         </span>
         <span className="tool-activity-heading">
-          <span className="tool-activity-name">
-            {toolNames[call.name] || call.name}
-            {toolNames[call.name] && <small>{call.name}</small>}
-          </span>
-          {target && <code title={target}>{target}</code>}
+          <span className="tool-activity-name">{toolNames[call.name] || call.name}</span>
+          {(target || briefResult) && (
+            <span className="tool-activity-overview">
+              {target && <code title={target}>{target === '.' ? '当前目录' : target}</code>}
+              {briefResult && <span>{briefResult}</span>}
+            </span>
+          )}
           {error && (
             <span className="tool-activity-error-summary" title={error}>
-              {error}
+              {error.trim().split(/\r?\n/)[0]}
             </span>
           )}
         </span>
@@ -243,56 +306,52 @@ export function ToolActivity({
         </span>
       </summary>
       <div className="tool-activity-body">
-        <section>
-          <h4>输入参数</h4>
-          {fields.length ? (
-            <dl>
-              {fields.map(([key, value]) => (
-                <div key={key}>
-                  <dt>{fieldNames[key] || key}</dt>
-                  <dd>
-                    <pre>{format(value)}</pre>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          ) : typeof parsed === 'string' ? (
-            <pre>{parsed}</pre>
-          ) : (
-            <p className="tool-activity-note">没有额外参数。</p>
-          )}
-        </section>
-        {error && (
-          <section className="tool-activity-error">
-            <h4>错误原因</h4>
-            <pre>{error}</pre>
-          </section>
-        )}
-        {outcome !== undefined && (
-          <section>
-            <h4>执行结果</h4>
-            <pre>{format(outcome)}</pre>
-          </section>
-        )}
+        {preview && <pre className="tool-activity-preview">{preview}</pre>}
         {operation?.status === 'UNCERTAIN' && (
-          <p className="tool-activity-note">
-            操作结果尚未确定。请在“产物”中的待核验操作里检查证据并提交决定。
-          </p>
+          <p className="tool-activity-note">结果待核验，请在产物中检查证据。</p>
         )}
         {!operation && !toolResponse && (
-          <p className="tool-activity-note">
-            {stopped ? '任务已停止，此操作没有执行结果记录。' : '等待开始执行。'}
-          </p>
+          <p className="tool-activity-note">{stopped ? '任务已停止，操作未执行。' : '等待执行。'}</p>
         )}
         {operation?.status === 'INTENT' && (
           <p className="tool-activity-note">
-            {stopped
-              ? '操作已开始，但尚无结果记录。'
-              : taskStatus === 'WAITING'
-                ? '任务正在等待，操作尚无结果记录。'
-                : '操作正在执行，结果会自动更新。'}
+            {stopped ? '操作已中断，暂无结果。' : taskStatus === 'WAITING' ? '等待继续。' : '正在执行…'}
           </p>
         )}
+        <details className="tool-activity-details">
+          <summary>查看详情</summary>
+          <section>
+            <h4>输入参数</h4>
+            {fields.length ? (
+              <dl>
+                {fields.map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{fieldNames[key] || key}</dt>
+                    <dd>
+                      <pre>{format(value)}</pre>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : typeof parsed === 'string' ? (
+              <pre>{parsed}</pre>
+            ) : (
+              <p className="tool-activity-note">没有额外参数。</p>
+            )}
+          </section>
+          {error && (
+            <section className="tool-activity-error">
+              <h4>错误原因</h4>
+              <pre>{error}</pre>
+            </section>
+          )}
+          {outcome !== undefined && (
+            <section>
+              <h4>执行结果</h4>
+              <pre>{format(outcome)}</pre>
+            </section>
+          )}
+        </details>
       </div>
     </details>
   );
