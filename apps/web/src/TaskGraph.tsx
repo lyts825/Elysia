@@ -12,7 +12,17 @@ const statusLabels: Record<Task['status'], string> = {
   CANCELLED: '已取消',
 };
 export type TaskGraphDetail = {
-  run: Pick<Run, 'plan' | 'authorized' | 'acceptedPlanVersion' | 'status' | 'archived' | 'reason'>;
+  run: Pick<
+    Run,
+    | 'plan'
+    | 'planMode'
+    | 'execution'
+    | 'authorized'
+    | 'acceptedPlanVersion'
+    | 'status'
+    | 'archived'
+    | 'reason'
+  >;
   tasks: Pick<Task, 'id' | 'parentTaskId' | 'spec' | 'status' | 'phase'>[];
   edges: { taskId: string; dependencyId: string }[];
 };
@@ -50,7 +60,14 @@ export function TaskGraph({ detail, archived = false }: { detail: TaskGraphDetai
     return rank;
   };
   for (const task of tasks) rankOf(task);
-  const rootLabel = root?.phase === 'planning' ? '总代理 · 需求与计划' : '总代理 · 集成与验收';
+  const rootLabel =
+    detail.run.execution?.kind === 'docker-agent'
+      ? 'Agent 终端 · 执行与验收'
+      : root?.phase === 'planning'
+        ? '总代理 · 需求与计划'
+        : detail.run.planMode === false
+          ? '总代理 · 执行与验收'
+          : '总代理 · 集成与验收';
   return (
     <div className="task-graph">
       <div className="graph-root" title={root ? `${rootLabel} · ${statusLabels[root.status]}` : rootLabel}>
@@ -81,7 +98,9 @@ export function TaskGraph({ detail, archived = false }: { detail: TaskGraphDetai
                       ['READY', 'RUNNING'].includes(root.status)
                       ? '正在制定计划，子任务尚未创建。'
                       : '尚未创建子任务。'
-                    : '单 Agent 执行'}
+                    : detail.run.execution?.kind === 'docker-agent'
+                      ? '内部调度由 Agent 终端管理'
+                      : '单 Agent 执行'}
             </div>
           )
         : [...new Set(tasks.map((task) => ranks.get(task.id) || 0))]

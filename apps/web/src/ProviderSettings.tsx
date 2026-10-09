@@ -7,7 +7,13 @@ import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { MotionContent } from './Motion';
 import './providers.css';
-import { officialDeepSeek, supportsText, type CatalogModel } from './ModelCatalog';
+import {
+  officialDeepSeek,
+  deepSeekModelReplacement,
+  retiredDeepSeekModelIssue,
+  supportsText,
+  type CatalogModel,
+} from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
 const credentialMode = (provider?: Provider) =>
@@ -120,6 +126,8 @@ export function ProviderSettings({
             : ''
       : '';
   const deepSeek = !!config && !subscription && officialDeepSeek(config);
+  const retiredModelIssue = config ? retiredDeepSeekModelIssue(config) : '';
+  const modelReplacement = config ? deepSeekModelReplacement(config) : undefined;
   const selectedModel = catalog.find((model) => model.id === config?.model);
   const deepSeekEfforts = selectedModel?.efforts?.filter((effort) =>
     ['low', 'high', 'max'].includes(effort),
@@ -460,10 +468,23 @@ export function ProviderSettings({
                           </button>
                         ))}
                       </div>
-                      {['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash'].includes(config.model) && (
+                      {retiredModelIssue && modelReplacement && (
                         <p className="inline-warning" role="alert">
-                          当前配置使用旧型号「{config.model}
-                          」。请明确选择新型号，再保存和验证；已有任务保留原绑定。
+                          {retiredModelIssue}
+                          <button
+                            type="button"
+                            className="text-button"
+                            onClick={() => {
+                              setCatalog([]);
+                              change(modelReplacement);
+                              setError('');
+                              setNotice(
+                                '已切换表单型号并保留原思考模式，请保存配置后重新验证。已有任务保留原绑定。',
+                              );
+                            }}
+                          >
+                            切换到 Flash 并保留思考设置
+                          </button>
                         </p>
                       )}
                     </div>
@@ -768,6 +789,7 @@ export function ProviderSettings({
                     !config.model.trim() ||
                     (subscription && !config.subscriptionAccountId) ||
                     (subscription && !subscriptionReady) ||
+                    !!retiredModelIssue ||
                     unsupportedApiModel
                   }
                   onClick={() => void save()}
@@ -781,6 +803,7 @@ export function ProviderSettings({
                     dirty ||
                     !saved ||
                     (!subscription && !credentialReady) ||
+                    !!retiredModelIssue ||
                     (subscription && !saved.keyConfigured) ||
                     (subscription && !subscriptionReady) ||
                     unsupportedApiModel

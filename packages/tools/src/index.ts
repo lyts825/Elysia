@@ -253,6 +253,7 @@ export class ToolGateway {
     task = this.store.require<Task>('tasks', task.id);
     if (
       this.store.require<Run>('runs', task.runId).kind !== 'chat' &&
+      this.store.require<Run>('runs', task.runId).planMode !== false &&
       task.spec.role === 'coordinator' &&
       task.phase === 'planning'
     )
@@ -317,7 +318,12 @@ export class ToolGateway {
       }));
     const permission = this.kernel.permissions(task);
     let names: ToolName[] = ['clarify', 'load_skill', 'recall_context'];
-    if (task.spec.role === 'coordinator' && task.phase === 'planning' && this.planAlignment.loaded)
+    if (
+      this.store.require<Run>('runs', task.runId).planMode !== false &&
+      task.spec.role === 'coordinator' &&
+      task.phase === 'planning' &&
+      this.planAlignment.loaded
+    )
       names.push('propose_plan');
     if (permission.read) names.push('list', 'read', 'read_artifact', 'search');
     if (permission.urls.length) names.push('fetch_url');
@@ -803,7 +809,7 @@ export class ToolGateway {
     const diff = await this.processes.run(
       task.id,
       'git',
-      ['diff', '--cached', task.baseline!, '--binary'],
+      ['diff', '--cached', '--no-ext-diff', '--no-textconv', task.baseline!, '--binary'],
       task.workspace!,
       10000,
       200000,

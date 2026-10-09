@@ -30,6 +30,7 @@ try {
   server = createServer(store, { port: preferredPort });
   server.kernel.recover();
   await server.executor.gateway.recoverOperations();
+  await server.terminal.recover();
   const port = await listenLocal(server.app, preferredPort);
   let origin = `http://127.0.0.1:${port}`;
   if (dev) {

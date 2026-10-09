@@ -12,6 +12,7 @@ export function modelTaskCanContinue(task: Task) {
   );
 }
 export function modelSwitchReason(detail: SwitchDetail, archived: boolean, taskId: string) {
+  if (detail.run.execution?.kind === 'docker-agent') return '终端配置在创建时冻结，调整 Agent 请新建任务。';
   const task = detail.tasks.find((item) => item.id === taskId);
   if (archived) return '请先恢复归档的会话或项目，再切换模型。';
   if (

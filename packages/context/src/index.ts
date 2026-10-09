@@ -130,6 +130,13 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const taskText = stable({
     contract: run.contract,
     plan: run.plan,
+    planMode: run.planMode !== false,
+    authorizationMode:
+      run.kind === 'chat'
+        ? '独立聊天，不提供项目执行权限'
+        : run.planMode === false
+          ? '用户创建任务时已授权合同中的范围；直接执行，不能扩大权限、范围或累计预算'
+          : '先提出计划，用户接受当前计划后才能执行',
     task: task.spec,
     lastResult: task.result,
     phase: task.phase,

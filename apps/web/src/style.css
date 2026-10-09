@@ -2290,3 +2290,27 @@ a {
   color: var(--danger);
   overflow-wrap: anywhere;
 }
+.terminal-setup {
+  display: grid;
+  gap: 14px;
+}
+.terminal-setup details > label {
+  margin-top: 12px;
+}
+.terminal-setup code {
+  overflow-wrap: anywhere;
+}
+.terminal-activity {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.terminal-activity pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}

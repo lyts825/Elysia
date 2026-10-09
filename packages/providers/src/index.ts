@@ -7,6 +7,8 @@ import {
   type Usage,
 } from '../../contracts/src/index.js';
 import { type CompiledContext } from '../../context/src/index.js';
+import { officialDeepSeek, retiredDeepSeekModelIssue } from './deepseek.js';
+export { officialDeepSeek, deepSeekModelReplacement, retiredDeepSeekModelIssue } from './deepseek.js';
 export class ProviderError extends AppError {
   responseStarted = false;
   usage: Usage | null = null;
@@ -147,14 +149,6 @@ function parseSseData(data: string): any {
   error.retryable = false;
   throw error;
 }
-function officialDeepSeek(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): boolean {
-  const url = new URL(providerBaseUrl(provider));
-  return (
-    provider.kind === 'deepseek' &&
-    url.origin === 'https://api.deepseek.com' &&
-    ['/', '/v1'].includes(url.pathname)
-  );
-}
 function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
   const effort = provider.reasoningEffort;
   if (!effort) return {};
@@ -201,6 +195,8 @@ export class NativeProvider implements ProviderAdapter {
   ) {}
   compile(ctx: CompiledContext) {
     const p = this.config;
+    const retiredModel = retiredDeepSeekModelIssue(p);
+    if (retiredModel) throw new ProviderError('DEEPSEEK_MODEL_RETIRED', retiredModel, 400);
     if (p.authMode === 'codex')
       throw new ProviderError('SUBSCRIPTION_TRANSPORT', 'Codex 订阅需要官方运行时适配器', 400);
     if (p.kind === 'openai') {
@@ -274,6 +270,11 @@ export class NativeProvider implements ProviderAdapter {
   }
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
     const p = this.config;
+    const retiredModel = retiredDeepSeekModelIssue({
+      ...p,
+      model: typeof request.model === 'string' ? request.model : p.model,
+    });
+    if (retiredModel) throw new ProviderError('DEEPSEEK_MODEL_RETIRED', retiredModel, 400);
     if (p.authMode === 'codex')
       throw new ProviderError('SUBSCRIPTION_TRANSPORT', 'Codex 订阅需要官方运行时适配器', 400);
     if (

@@ -2,6 +2,7 @@ import { invariant, ModelChoice, type ProviderConfig } from '../../../packages/c
 import type { Store } from '../../../packages/storage/src/index.js';
 import type { CodexSubscription } from './codex-subscription.js';
 import type { SubscriptionService } from './subscription.js';
+import { retiredDeepSeekModelIssue } from '../../../packages/providers/src/deepseek.js';
 
 type CatalogServices = {
   subscription: Pick<SubscriptionService, 'models'>;
@@ -48,6 +49,8 @@ export async function resolveModelChoice(
   invariant(provider.checkedRevision === provider.revision, 'PROVIDER_UNCHECKED', '请先验证模型连接');
   const modelId = choice.model ?? provider.model;
   if (provider.authMode !== 'codex' && provider.authMode !== 'chatgpt') {
+    const retiredModel = retiredDeepSeekModelIssue({ ...provider, model: modelId });
+    invariant(!retiredModel, 'DEEPSEEK_MODEL_RETIRED', retiredModel);
     // A normal send must remain available even when the discovery endpoint is offline.
     if (
       modelId === provider.model &&

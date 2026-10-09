@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.12.0-preview.1';
+export const VERSION = '0.13.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -251,6 +251,32 @@ export const ModelChoice = z.object({
     .optional(),
 });
 export type ModelChoice = z.infer<typeof ModelChoice>;
+export const AgentTerminalProfile = z.object({
+  id: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+  agent: z.enum(['codex', 'claude', 'dsh', 'custom']),
+  image: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
+  command: z.array(z.string().min(1).max(2000)).min(1).max(40),
+  protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'text']),
+  environment: z
+    .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
+    .max(12)
+    .default([]),
+  timeoutMs: z.number().int().min(1000).max(1800000).default(1800000),
+  outputLimit: z.number().int().min(1000).max(200000).default(100000),
+  network: z.enum(['none', 'bridge']).default('bridge'),
+});
+export type AgentTerminalProfile = z.infer<typeof AgentTerminalProfile>;
+export const ExecutionBinding = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('native') }),
+  z.object({ kind: z.literal('docker-agent'), profile: AgentTerminalProfile }),
+]);
+export type ExecutionBinding = z.infer<typeof ExecutionBinding>;
 export interface Run extends Entity {
   projectId: string | null;
   kind: 'task' | 'chat';
@@ -259,6 +285,10 @@ export interface Run extends Entity {
   objective: string;
   contract: Contract;
   plan: Plan | null;
+  /** Missing on older records means plan mode is enabled. */
+  planMode?: boolean;
+  /** Frozen when the task is created; absent records use the native API runner. */
+  execution?: ExecutionBinding;
   status: Status;
   coordinatorAgentId: string;
   rootTaskId: string;

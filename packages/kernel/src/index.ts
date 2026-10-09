@@ -307,21 +307,39 @@ export class Kernel {
     limits: Run['limits'],
     kind: Run['kind'] = 'task',
     contextPolicy: ContextPolicy = { mode: 'managed' },
+    planMode = true,
+    execution: NonNullable<Run['execution']> = { kind: 'native' },
   ) {
     return this.store.tx(() => {
+      const terminal = execution.kind === 'docker-agent';
       invariant(
         kind === 'chat' ? project === null : !!project,
         'RUN_OWNERSHIP',
         '独立聊天不绑定项目，任务必须属于项目',
       );
       invariant(!project?.archived, 'PROJECT_ARCHIVED', '项目已归档，请先恢复项目');
-      this.binding(provider.id, provider);
-      contextPolicy = this.validateContextPolicy(provider, contextPolicy);
-      invariant(
-        provider.checkedRevision === provider.revision,
-        'PROVIDER_UNCHECKED',
-        '请先在设置页验证模型连通性',
-      );
+      if (terminal)
+        invariant(
+          kind === 'task' &&
+            !planMode &&
+            contract.permissionProfile.read &&
+            contract.permissionProfile.write &&
+            contract.permissionProfile.exec &&
+            contract.permissionProfile.writePaths.length === 1 &&
+            contract.permissionProfile.writePaths[0] === '.' &&
+            contract.budget.maxCost === null,
+          'TERMINAL_EXECUTION_SCOPE',
+          'Agent 终端需要项目任务、关闭计划模式及完整任务目录的读取/写入/执行授权；API 费用上限不适用',
+        );
+      else {
+        this.binding(provider.id, provider);
+        contextPolicy = this.validateContextPolicy(provider, contextPolicy);
+        invariant(
+          provider.checkedRevision === provider.revision,
+          'PROVIDER_UNCHECKED',
+          '请先在设置页验证模型连通性',
+        );
+      }
       const runId = id(),
         taskId = id(),
         agentId = id();
@@ -330,6 +348,8 @@ export class Kernel {
         revision: 0,
         projectId: project?.id ?? null,
         kind,
+        planMode: kind === 'task' && planMode,
+        execution,
         title: objective.slice(0, 60),
         archived: false,
         objective,
@@ -339,9 +359,9 @@ export class Kernel {
         coordinatorAgentId: agentId,
         rootTaskId: taskId,
         limits,
-        authorized: false,
+        authorized: kind === 'task' && !planMode,
         acceptedPlanVersion: null,
-        startedAt: kind === 'chat' ? Date.now() : null,
+        startedAt: kind === 'chat' || !planMode ? Date.now() : null,
         createdAt: now(),
       });
       const spec = TaskSpec.parse({
@@ -378,7 +398,7 @@ export class Kernel {
         agentId,
         spec,
         status: 'READY',
-        phase: 'planning',
+        phase: kind === 'task' && !planMode ? 'executing' : 'planning',
         depth: 0,
         workspace: null,
         baseline: project?.baseline ?? null,
@@ -410,9 +430,9 @@ export class Kernel {
     if (task.phase === 'planning' || task.spec.role === 'reviewer')
       return { ...run.contract.permissionProfile, write: false, exec: false };
     invariant(
-      run.authorized && run.acceptedPlanVersion === run.plan?.version,
+      run.authorized && (run.planMode === false || run.acceptedPlanVersion === run.plan?.version),
       'NOT_AUTHORIZED',
-      '尚未接受当前计划',
+      run.planMode === false ? '尚未授权当前任务' : '尚未接受当前计划',
     );
     return run.contract.permissionProfile;
   }
@@ -473,6 +493,7 @@ export class Kernel {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
       invariant(run.kind !== 'chat', 'PLAN_DENIED', '独立聊天不需要任务计划');
+      invariant(run.planMode !== false, 'PLAN_DENIED', '当前任务已关闭计划模式');
       invariant(task.id === run.rootTaskId, 'ROLE_DENIED', '只有总代理可以提出计划');
       invariant(task.phase === 'planning', 'PHASE_DENIED', '计划只能在需求检查点提出');
       const contract = Contract.parse(rawContract),
@@ -548,6 +569,11 @@ export class Kernel {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
       const run = this.store.require<Run>('runs', parent.runId);
+      invariant(
+        run.execution?.kind !== 'docker-agent',
+        'TERMINAL_DELEGATION',
+        'Agent 终端由所选 CLI 调度，不能创建原生模型子代理',
+      );
       this.permissions(parent);
       invariant(
         parent.phase === 'executing' && parent.spec.role !== 'reviewer',
@@ -639,6 +665,7 @@ export class Kernel {
   ) {
     return this.store.tx(() => {
       let run = this.store.require<Run>('runs', runId);
+      invariant(run.planMode !== false, 'PLAN_DENIED', '当前任务已关闭计划模式');
       invariant(run.revision === expectedRevision, 'REVISION_CONFLICT', '记录已更新，请刷新');
       invariant(run.plan?.version === version, 'PLAN_VERSION', '计划版本不匹配');
       invariant(run.status === 'WAITING' && run.reason === 'plan', 'INVALID_STATE', '当前未等待计划接受');
@@ -982,12 +1009,19 @@ export class Kernel {
     );
     const restartable =
       task.status === 'FAILED' ||
-      ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit'].includes(task.waitReason ?? '');
+      ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit', 'terminal_unavailable'].includes(
+        task.waitReason ?? '',
+      );
     return { run, task, history, restartable };
   }
   resumeTask(runId: string, taskId: string) {
     return this.store.tx(() => {
       const { run, task, restartable } = this.taskControlBoundary(runId, taskId);
+      invariant(
+        !['terminal_review', 'terminal_verification'].includes(task.waitReason ?? ''),
+        'TERMINAL_DECISION_REQUIRED',
+        '请先完成 Agent 终端交付验收或中断结果人工核验，不能重新执行',
+      );
       invariant(restartable, 'TASK_RESUME_DECISION', '请先处理当前计划、问题、子任务或核验');
       invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
       this.updateTask(task, 'READY', { waitReason: undefined, waitingFor: [] });
@@ -1001,6 +1035,11 @@ export class Kernel {
   switchModel(runId: string, taskId: string, provider: ProviderConfig, mode: 'apply' | 'resume') {
     return this.store.tx(() => {
       const { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
+      invariant(
+        run.execution?.kind !== 'docker-agent',
+        'TERMINAL_MODEL_SWITCH',
+        'Agent 终端使用冻结的 CLI 配置，不能切换为原生模型',
+      );
       invariant(
         mode === 'apply' || restartable,
         'MODEL_SWITCH_DECISION',
@@ -1190,14 +1229,39 @@ export class Kernel {
         if (!taskId || taskId === run.rootTaskId)
           this.updateRun(this.store.require('runs', runId), { status: 'WAITING', reason: 'paused' });
       } else {
+        if (run.execution?.kind === 'docker-agent') {
+          invariant(
+            !tasks.some((task) =>
+              ['terminal_review', 'terminal_verification'].includes(task.waitReason ?? ''),
+            ),
+            'TERMINAL_DECISION_REQUIRED',
+            '请先完成 Agent 终端交付验收或中断结果人工核验，不能重新执行',
+          );
+          const taskIds = new Set(tasks.map((task) => task.id));
+          invariant(
+            !this.store
+              .all<Operation>('tool_operations', run.id)
+              .some(
+                (operation) =>
+                  taskIds.has(operation.taskId) && ['INTENT', 'UNCERTAIN'].includes(operation.status),
+              ),
+            'TERMINAL_VERIFICATION_REQUIRED',
+            'Agent 终端仍有未确定操作，请先核验结果，不能重新执行',
+          );
+        }
         invariant(run.authorized || root.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
         for (const t of tasks.filter(
           (t) =>
             t.status === 'FAILED' ||
             (t.status === 'WAITING' &&
-              ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit'].includes(
-                t.waitReason ?? '',
-              )),
+              [
+                'paused',
+                'interrupted',
+                'limit',
+                'rate_limit',
+                'subscription_limit',
+                'terminal_unavailable',
+              ].includes(t.waitReason ?? '')),
         )) {
           if (t.status === 'FAILED' && run.kind !== 'chat') {
             const agent = this.store.require<Agent>('agents', t.agentId);
@@ -1274,7 +1338,24 @@ export class Kernel {
         this.store.put('inbox', { ...m, status: 'APPLIED' });
       }
       const root = this.store.require<Task>('tasks', run.rootTaskId);
-      if (run.authorized || run.plan) {
+      if (run.planMode === false) {
+        // Feedback stays within the original authorization. Preserve child work and
+        // cumulative limits; only a pending user question is answered by this inbox.
+        const spec = {
+          ...root.spec,
+          objective: run.contract.objective,
+          deliverables: run.contract.deliverables,
+          acceptanceCriteria: run.contract.acceptanceCriteria,
+        };
+        if (stable(spec) !== stable(root.spec)) this.updateTask(root, root.status, { spec });
+        const answered = this.descendants(root).filter(
+          (task) => task.status === 'WAITING' && task.waitReason === 'user',
+        );
+        for (const task of answered)
+          this.updateTask(task, 'READY', { waitReason: undefined, waitingFor: [] });
+        this.updateRun(run, answered.length ? { status: 'READY', reason: undefined } : {});
+        return;
+      } else if (run.authorized || run.plan) {
         for (const t of this.descendants(root).filter(
           (t) => t.id !== root.id && !['DONE', 'CANCELLED'].includes(t.status),
         ))

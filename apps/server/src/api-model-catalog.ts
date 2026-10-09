@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppError, invariant, type ProviderConfig } from '../../../packages/contracts/src/index.js';
 import { providerBaseUrl } from '../../../packages/providers/src/index.js';
+import { officialDeepSeek } from '../../../packages/providers/src/deepseek.js';
 import type { AvailableModel } from './model-choice.js';
 import type { ProviderKeys } from './provider-keys.js';
 
@@ -23,14 +24,7 @@ const ModelCatalog = z
   )
   .max(2000);
 
-export function officialDeepSeek(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>) {
-  const endpoint = new URL(providerBaseUrl(provider));
-  return (
-    provider.kind === 'deepseek' &&
-    endpoint.origin === 'https://api.deepseek.com' &&
-    ['', '/', '/v1'].includes(endpoint.pathname)
-  );
-}
+export { officialDeepSeek } from '../../../packages/providers/src/deepseek.js';
 
 /** Preserve advertised capabilities; only the official API promises a non-thinking mode. */
 export function parseApiModels(data: unknown, provider: ProviderConfig): AvailableModel[] {
@@ -171,7 +165,9 @@ export async function apiModels(
   let stage: 'connect' | 'body' = 'connect';
   let raw: string;
   try {
-    const response = await fetch(providerBaseUrl(provider) + '/models', {
+    const endpoint = new URL(providerBaseUrl(provider));
+    endpoint.pathname = endpoint.pathname.replace(/\/$/, '') + '/models';
+    const response = await fetch(endpoint, {
       headers: { Authorization: 'Bearer ' + token },
       redirect: 'error',
       signal: requestSignal,

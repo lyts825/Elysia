@@ -211,7 +211,9 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     : run.status === 'FAILED'
       ? 'retry'
       : run.status === 'WAITING' &&
-          ['paused', 'interrupted', 'rate_limit', 'subscription_limit'].includes(run.reason || '')
+          ['paused', 'interrupted', 'rate_limit', 'subscription_limit', 'terminal_unavailable'].includes(
+            run.reason || '',
+          )
         ? run.reason === 'rate_limit' && rootTimed
           ? 'pause'
           : 'resume'
@@ -248,6 +250,12 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
   }
   if (run.status === 'WAITING') {
     switch (run.reason) {
+      case 'terminal_review':
+        return { text: '终端已结束，请审阅日志和差异后验收', action: 'artifacts' };
+      case 'terminal_unavailable':
+        return { text: 'Docker、镜像或终端环境未就绪，修复后可继续', control };
+      case 'terminal_verification':
+        return { text: '终端执行已中断，请检查日志与文件后填写核验说明；不会自动重跑', action: 'artifacts' };
       case 'plan':
         return { text: '等待接受计划，请核对分工、型号与验收项', action: 'plan' };
       case 'user':

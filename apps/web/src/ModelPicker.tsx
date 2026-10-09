@@ -6,6 +6,7 @@ import {
   initialEffort,
   initialTextModel,
   officialDeepSeek,
+  retiredDeepSeekModelIssue,
   supportsText,
   type CatalogModel,
 } from './ModelCatalog';
@@ -98,7 +99,15 @@ export function ModelPicker({
   const model = models.find((m) => m.id === value.model);
   const apiBindingMatches =
     !!selected && value.model === selected.model && value.reasoningEffort === selected.reasoningEffort;
+  const retiredModelIssue = selected
+    ? retiredDeepSeekModelIssue({
+        ...selected,
+        model: value.model ?? selected.model,
+        reasoningEffort: value.reasoningEffort,
+      })
+    : '';
   const valid =
+    !retiredModelIssue &&
     verified &&
     ((deepSeek && apiBindingMatches) ||
       ((usesCatalog ? catalogReady && !!model && supportsText(model) : apiBindingMatches) &&
@@ -176,6 +185,11 @@ export function ModelPicker({
           </option>
         ))}
       </select>
+      {retiredModelIssue && (
+        <p className="inline-warning" role="alert">
+          {retiredModelIssue}
+        </p>
+      )}
       {usesCatalog && verified && (
         <>
           <div className="model-catalog-heading">

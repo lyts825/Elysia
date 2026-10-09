@@ -14,6 +14,8 @@ import {
   ProviderConfig,
   ModelChoice,
   ContextPolicy,
+  ExecutionBinding,
+  AgentTerminalProfile,
   VERSION,
   invariant,
   type Run,
@@ -30,6 +32,8 @@ import {
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
+import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
+import { terminalBinding } from './terminal-binding.js';
 import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
@@ -131,11 +135,16 @@ export function createServer(
     subscription?: SubscriptionService;
     codex?: CodexSubscription;
     keys?: ProviderKeys;
+    terminal?: ConstructorParameters<typeof DockerAgentService>[2];
   },
 ) {
   const app = Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
   const kernel = new Kernel(store),
     executor = new NativeExecutor(kernel);
+  const terminal = new DockerAgentService(kernel, executor.gateway, options.terminal);
+  executor.terminalRunner = (task, signal) => terminal.run(task, signal);
+  executor.terminalInterrupt = (runId, taskId) => terminal.interrupt(runId, taskId);
+  executor.terminalDispose = () => terminal.dispose();
   const subscription = options.subscription ?? new SubscriptionService(desktopServices());
   const codex = options.codex ?? new CodexSubscription(store.directory, desktopServices());
   const keys = options.keys ?? new ProviderKeys(desktopServices());
@@ -651,6 +660,68 @@ export function createServer(
     return promise;
   });
   app.get('/api/runs', async () => store.all<Run>('runs').reverse());
+  app.post('/api/terminal/check', async (request) => {
+    const body = z.object({ profile: AgentTerminalProfile.optional() }).parse(request.body);
+    return terminal.check(body.profile);
+  });
+  const assertTerminalMutable = (runId: string) => {
+    const run = store.require<Run>('runs', runId);
+    management.assertMutable(run.id, run.projectId);
+    invariant(
+      !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+      'ARCHIVED',
+      '请先恢复归档的对话或项目',
+    );
+    return run;
+  };
+  app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/accept', async (request) => {
+    const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).parse(request.body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, request.url, () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    const run = store.require<Run>('runs', request.params.id);
+    revision(body, run);
+    management.assertMutable(run.id, run.projectId);
+    invariant(
+      !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
+      'ARCHIVED',
+      '请先恢复归档的对话或项目',
+    );
+    invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后再验收');
+    const commit = await terminal.prepareAcceptance(run.id, body.expectedRevision);
+    return command(body, request.url, () => {
+      assertTerminalMutable(run.id);
+      return commit();
+    });
+  });
+  app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/verify', async (request) => {
+    const body = Command.extend({
+      expectedRevision: z.number().int().nonnegative(),
+      operationId: z.string().uuid(),
+      outcome: z.enum(['confirmed', 'not_applied']),
+      note: z.string().trim().min(1).max(4000),
+    }).parse(request.body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, request.url, () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    const run = store.require<Run>('runs', request.params.id);
+    revision(body, run);
+    assertTerminalMutable(run.id);
+    invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后再核验');
+    const commit = await terminal.prepareVerification(
+      run.id,
+      body.expectedRevision,
+      body.operationId,
+      body.outcome,
+      body.note,
+    );
+    return command(body, request.url, () => {
+      assertTerminalMutable(run.id);
+      return commit();
+    });
+  });
   app.post('/api/runs', async (request) => {
     const body = z
       .object({
@@ -658,10 +729,12 @@ export function createServer(
         projectId: z.string().nullable().optional(),
         kind: z.enum(['task', 'chat']).default('task'),
         objective: z.string().min(1).max(20000),
-        providerId: ModelChoice.shape.providerId,
+        providerId: ModelChoice.shape.providerId.optional(),
         model: ModelChoice.shape.model,
         reasoningEffort: ModelChoice.shape.reasoningEffort,
         contextPolicy: ContextPolicy.optional(),
+        planMode: z.boolean().default(true),
+        execution: ExecutionBinding.default({ kind: 'native' }),
         permissionProfile: Permissions.default({
           read: true,
           write: false,
@@ -685,7 +758,10 @@ export function createServer(
       return command(body, '/runs', () => {
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
       });
-    const provider = await resolveModelChoice(store, subscription, codex, body, apiCatalog);
+    const provider =
+      body.execution.kind === 'docker-agent'
+        ? terminalBinding(body.execution.profile)
+        : await resolveModelChoice(store, subscription, codex, ModelChoice.parse(body), apiCatalog);
     return command(body, '/runs', () => {
       invariant(
         body.kind === 'chat' ? !body.projectId : !!body.projectId,
@@ -718,6 +794,8 @@ export function createServer(
         body.limits,
         body.kind,
         body.contextPolicy,
+        body.planMode,
+        body.execution,
       );
     });
   });
@@ -740,6 +818,11 @@ export function createServer(
       management.assertMutable(run.id, run.projectId);
       revision(body, run);
       invariant(agent.runId === run.id, 'CONTEXT_SCOPE', '上下文配置不属于当前对话');
+      invariant(
+        run.execution?.kind !== 'docker-agent',
+        'TERMINAL_CONTEXT_FROZEN',
+        '外部 Agent 管理上下文，调整配置请新建任务',
+      );
       invariant(
         !executorHasActive(executor, run.id, agent.taskId),
         'CONTEXT_BOUNDARY',
@@ -812,6 +895,11 @@ export function createServer(
       );
       invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
       if (body.contract) {
+        invariant(
+          run.execution?.kind !== 'docker-agent',
+          'TERMINAL_CONTRACT_FROZEN',
+          '终端任务约定已冻结，请新建任务调整交付要求',
+        );
         invariant(
           stable(body.contract.permissionProfile) === stable(run.contract.permissionProfile) &&
             stable(body.contract.budget) === stable(run.contract.budget) &&
@@ -997,6 +1085,11 @@ export function createServer(
       invariant(body.operationId || body.requestId, 'DECISION_TARGET', '需要具体操作或请求引用');
       if (body.operationId) {
         const op = store.require<Operation>('tool_operations', body.operationId);
+        invariant(
+          op.name !== 'terminal_agent',
+          'TERMINAL_VERIFICATION_ROUTE',
+          '请使用终端专用核验入口处理容器与文件副作用',
+        );
         const task = store.require<Task>('tasks', op.taskId);
         invariant(
           op.runId === run.id && op.status === 'UNCERTAIN',
@@ -1147,6 +1240,7 @@ export function createServer(
     app,
     kernel,
     executor,
+    terminal,
     bootstrapToken,
     origins,
     allowFrontendOrigin: (origin: string) => {

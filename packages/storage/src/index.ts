@@ -298,6 +298,7 @@ export class Store {
     if (table === 'tasks' && entity.spec) delete entity.spec.mode;
     if (table === 'runs') {
       entity.kind ??= 'task';
+      entity.planMode ??= entity.kind !== 'chat';
       entity.title ??= entity.objective;
       entity.archived ??= false;
       if (entity.contract) delete entity.contract.mode;

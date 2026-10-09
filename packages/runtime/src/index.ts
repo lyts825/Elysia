@@ -41,6 +41,9 @@ export class NativeExecutor implements ExecutorAdapter {
   onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
     () => {};
   adapterFactory: (agent: Agent) => ProviderAdapter = (agent) => new NativeProvider(agent.providerBinding);
+  terminalRunner?: (task: Task, signal: AbortSignal) => Promise<void>;
+  terminalInterrupt?: (runId: string, taskId?: string) => Promise<void>;
+  terminalDispose?: () => Promise<void>;
   constructor(public kernel: Kernel) {
     this.gateway = new ToolGateway(kernel);
   }
@@ -60,10 +63,17 @@ export class NativeExecutor implements ExecutorAdapter {
       ([key, value]) => value.runId === runId && (!tasks || tasks.has(key)),
     );
     for (const [, value] of active) value.controller.abort();
-    await this.gateway.processes.cancel(
-      tasks ?? new Set(this.kernel.store.all<Task>('tasks', runId).map((t) => t.id)),
-    );
-    await Promise.allSettled(active.map(([, value]) => value.promise));
+    const stopped = await Promise.allSettled([
+      Promise.resolve().then(() => this.terminalInterrupt?.(runId, taskId)),
+      Promise.resolve().then(() =>
+        this.gateway.processes.cancel(
+          tasks ?? new Set(this.kernel.store.all<Task>('tasks', runId).map((t) => t.id)),
+        ),
+      ),
+      Promise.allSettled(active.map(([, value]) => value.promise)),
+    ]);
+    const error = stopped.find((result) => result.status === 'rejected');
+    if (error?.status === 'rejected') throw error.reason;
   }
   async dispose() {
     this.stopped = true;
@@ -73,9 +83,14 @@ export class NativeExecutor implements ExecutorAdapter {
       .filter((r) => ['READY', 'RUNNING'].includes(r.status)))
       this.kernel.action(run.id, 'pause');
     for (const value of this.active.values()) value.controller.abort();
-    await this.gateway.processes.cancel();
-    await Promise.allSettled([...this.active.values()].map((v) => v.promise));
-    await this.gateway.dispose();
+    const stopped = await Promise.allSettled([
+      Promise.resolve().then(() => this.terminalDispose?.()),
+      Promise.resolve().then(() => this.gateway.processes.cancel()),
+      Promise.allSettled([...this.active.values()].map((v) => v.promise)),
+    ]);
+    const disposed = await Promise.allSettled([Promise.resolve().then(() => this.gateway.dispose())]);
+    const error = [...stopped, ...disposed].find((result) => result.status === 'rejected');
+    if (error?.status === 'rejected') throw error.reason;
   }
   async tick() {
     if (this.ticking || this.stopped) return;
@@ -231,6 +246,10 @@ export class NativeExecutor implements ExecutorAdapter {
     return current;
   }
   async step(task: Task, signal: AbortSignal) {
+    if (this.kernel.store.require<Run>('runs', task.runId).execution?.kind === 'docker-agent') {
+      if (!this.terminalRunner) throw new AppError('TERMINAL_UNAVAILABLE', 'Agent 终端执行服务尚未连接');
+      return this.terminalRunner(task, signal);
+    }
     const cooldown = task.rateLimit;
     const store = this.kernel.store;
     const resumeAt = this.rateLimitResumeAt(task);
@@ -510,7 +529,9 @@ export class NativeExecutor implements ExecutorAdapter {
       this.kernel.appendMessage(
         task,
         'user',
-        '请使用本阶段的工具：planning 需 clarify 或 propose_plan；executing 需提供产物证据并 submit_result。普通文本不改变完成状态。',
+        store.require<Task>('tasks', task.id).phase === 'planning'
+          ? '请使用 planning 阶段的工具：关键需求缺口用 clarify，需求明确后用 propose_plan。普通文本不改变完成状态。'
+          : '请在已授权范围执行；有关键需求缺口可用 clarify，完成后提供产物证据并 submit_result。普通文本不改变完成状态。',
       );
     }
     task = store.require('tasks', task.id);

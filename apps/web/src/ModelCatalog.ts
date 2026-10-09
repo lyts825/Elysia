@@ -12,17 +12,11 @@ export type CatalogModel = {
   maxOutputTokens?: number;
 };
 
-export function officialDeepSeek(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): boolean {
-  try {
-    const url = new URL(provider.baseUrl);
-    const path = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
-    return (
-      provider.kind === 'deepseek' && url.origin === 'https://api.deepseek.com' && ['', '/v1'].includes(path)
-    );
-  } catch {
-    return false;
-  }
-}
+export {
+  officialDeepSeek,
+  deepSeekModelReplacement,
+  retiredDeepSeekModelIssue,
+} from '../../../packages/providers/src/deepseek';
 
 export function supportsText(model: CatalogModel): boolean {
   return !Array.isArray(model.inputModalities) || model.inputModalities.includes('text');

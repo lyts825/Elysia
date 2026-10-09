@@ -1,0 +1,3 @@
+# This image installs published Agent packages; no project files or secrets are needed.
+**
+!packages/runtime/docker-agent.Dockerfile

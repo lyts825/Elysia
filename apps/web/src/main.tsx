@@ -8,7 +8,13 @@ import { PreviewDock } from './PreviewDock';
 import { ProjectFiles } from './ProjectFiles';
 import { MarkdownDocument } from './MarkdownDocument';
 import { manageUsage } from './desktop';
-import { VERSION, minimumContextWindowTokens } from '../../../packages/contracts/src/index';
+import {
+  VERSION,
+  minimumContextWindowTokens,
+  AgentTerminalProfile,
+} from '../../../packages/contracts/src/index';
+import { TerminalSetup, terminalPreset } from './TerminalSetup';
+import { TerminalRecovery } from './TerminalRecovery';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -495,6 +501,12 @@ function App() {
       'usage.updated',
       'context.updated',
       'context.policy.updated',
+      'terminal.started',
+      'terminal.output',
+      'terminal.completed',
+      'terminal.failed',
+      'terminal.unavailable',
+      'terminal.accepted',
       'error',
     ];
     for (const event of events)
@@ -542,7 +554,8 @@ function App() {
     }
   }
   const startConversation = () => {
-    if (busy || !homeModelValid || !homeContextValid || !draft.trim() || project?.archived) return;
+    if (busy || (!project && (!homeModelValid || !homeContextValid)) || !draft.trim() || project?.archived)
+      return;
     if (project) {
       setModal('run');
       return;
@@ -982,9 +995,9 @@ function App() {
             providers={providers}
             modelChoice={homeModel}
             changeModel={changeHomeModel}
-            modelReady={homeModelValid}
+            modelReady={!!project || homeModelValid}
             setModelReady={updateHomeModelReady}
-            contextReady={homeContextValid}
+            contextReady={!!project || homeContextValid}
             contextControl={
               <button
                 type="button"
@@ -1162,7 +1175,11 @@ function App() {
                         授权：读取{detail.run.contract.permissionProfile.write ? ' · 指定目录写入' : ''}
                         {detail.run.contract.permissionProfile.exec ? ' · 命令执行' : ''} ·{' '}
                         {detail.run.contract.permissionProfile.urls.length} 个网页来源。
-                        {!detail.run.acceptedPlanVersion && '计划接受后开始执行。'}
+                        {detail.run.planMode === false
+                          ? '在创建时授权范围内执行。'
+                          : !detail.run.acceptedPlanVersion && '计划接受后开始执行。'}
+                        {detail.run.execution?.kind === 'docker-agent' &&
+                          ` Docker · ${detail.run.execution.profile.label}`}
                       </span>
                     </div>
                   )}
@@ -1317,6 +1334,95 @@ function App() {
                       }
                     />
                   )}
+                  {detail.run.execution?.kind === 'docker-agent' &&
+                    detail.run.reason === 'terminal_review' && (
+                      <div className="delivery-card">
+                        <Icon name="terminal" size={24} />
+                        <div>
+                          <h3>Agent 终端已结束，等待验收</h3>
+                          <p>在右侧查看终端记录和文件差异，确认交付符合约定后验收。</p>
+                          <button
+                            type="button"
+                            className="text-button"
+                            onClick={() => {
+                              const operation = detail.operations
+                                .filter((item) => item.name === 'terminal_agent')
+                                .at(-1);
+                              const transcriptId = (operation?.result as any)?.transcriptArtifactId;
+                              const artifact =
+                                detail.artifacts.find((item) => item.id === transcriptId) ??
+                                detail.artifacts[0];
+                              if (artifact) openArtifact(artifact);
+                              else setPreviewOpen(true);
+                            }}
+                          >
+                            查看日志与差异
+                          </button>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={busy || archived}
+                            onClick={() =>
+                              void act(() =>
+                                mutation('/runs/' + detail.run.id + '/terminal/accept', {
+                                  expectedRevision: detail.run.revision,
+                                }),
+                              )
+                            }
+                          >
+                            确认交付并验收
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  {detail.run.execution?.kind === 'docker-agent' && (
+                    <div className="terminal-activity">
+                      <h4>Docker 终端 · {detail.run.execution.profile.label}</h4>
+                      {detail.events.some((event) => event.type === 'terminal.output') && (
+                        <pre role="log" aria-label="终端公开输出">
+                          {detail.events
+                            .filter((event) => event.type === 'terminal.output')
+                            .map((event) => String(event.payload?.text ?? ''))
+                            .join('')
+                            .slice(-16000)}
+                        </pre>
+                      )}
+                      {!!detail.tasks.find((task) => task.id === detail.run.rootTaskId)?.result && (
+                        <p className="field-help">
+                          {String(
+                            (detail.tasks.find((task) => task.id === detail.run.rootTaskId)?.result as any)
+                              ?.terminal?.message ?? '',
+                          )}
+                        </p>
+                      )}
+                      <p className="field-help">
+                        完整记录保存为产物，可在右侧预览。中断时保留工作目录，通过核验入口决定验收或暂停后手动恢复。
+                      </p>
+                    </div>
+                  )}
+                  {detail.run.execution?.kind === 'docker-agent' &&
+                    detail.run.reason === 'terminal_verification' &&
+                    detail.operations
+                      .filter(
+                        (operation) =>
+                          operation.name === 'terminal_agent' && operation.status === 'UNCERTAIN',
+                      )
+                      .map((operation) => (
+                        <TerminalRecovery
+                          key={operation.id}
+                          disabled={busy || archived}
+                          submit={(outcome, note) =>
+                            void act(() =>
+                              mutation('/runs/' + detail.run.id + '/terminal/verify', {
+                                expectedRevision: detail.run.revision,
+                                operationId: operation.id,
+                                outcome,
+                                note,
+                              }),
+                            )
+                          }
+                        />
+                      ))}
                   {!isChat && detail.run.status === 'DONE' && (
                     <div className="delivery-card">
                       <Icon name="check" size={24} />
@@ -1381,7 +1487,11 @@ function App() {
                       !['DONE', 'CANCELLED'].includes(detail.run.status) &&
                       (detail.run.authorized || detail.run.plan) && (
                         <p className="field-help" style={{ padding: '0 16px 10px' }}>
-                          发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。
+                          {detail.run.execution?.kind === 'docker-agent'
+                            ? '终端执行中收到的补充需求会保存到记录。完成或中断后请先审阅结果；继续调度可新建任务。'
+                            : detail.run.planMode === false
+                              ? '补充消息会在安全边界送入当前任务；权限和累计预算保持。'
+                              : '发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。'}
                         </p>
                       )}
                     <div>
@@ -1390,20 +1500,31 @@ function App() {
                           type="button"
                           className="composer-model"
                           aria-label={`切换${isChat ? '会话' : '总代理'}模型`}
-                          disabled={busy || !rootAgent || !!rootModelReason}
+                          disabled={
+                            busy ||
+                            !rootAgent ||
+                            !!rootModelReason ||
+                            detail.run.execution?.kind === 'docker-agent'
+                          }
                           title={rootModelReason || rootAgent?.providerBinding.label}
                           onClick={() => rootAgent && setModal('model:' + rootAgent.id)}
                         >
                           <Icon name="spark" size={15} />
-                          <span>{rootAgent?.providerBinding.model || '模型准备中…'}</span>
+                          <span>
+                            {detail.run.execution?.kind === 'docker-agent'
+                              ? detail.run.execution.profile.agent.toUpperCase()
+                              : rootAgent?.providerBinding.model || '模型准备中…'}
+                          </span>
                           <Icon name="chevron" size={12} />
                         </button>
-                        <ContextMeter
-                          projection={rootContext}
-                          showStreaming
-                          disabled={!rootContext || busy}
-                          open={() => rootContext && setModal('context:' + rootContext.agentId)}
-                        />
+                        {detail.run.execution?.kind !== 'docker-agent' && (
+                          <ContextMeter
+                            projection={rootContext}
+                            showStreaming
+                            disabled={!rootContext || busy}
+                            open={() => rootContext && setModal('context:' + rootContext.agentId)}
+                          />
+                        )}
                         <span className="reply-hint">
                           {busy
                             ? '正在提交…'
@@ -1411,7 +1532,9 @@ function App() {
                               ? '已归档，保留全部对话记录'
                               : isChat
                                 ? 'Ctrl + Enter 发送 · 独立会话自动保存'
-                                : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
+                                : detail.run.execution?.kind === 'docker-agent'
+                                  ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
+                                  : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
                         </span>
                       </div>
                       <button
@@ -1682,7 +1805,9 @@ function App() {
                           {isChat
                             ? '独立会话不绑定项目；后续回复使用当前会话模型。'
                             : '每个实例独立保存会话、工具操作和工作目录。'}
-                          账号共享并发与速率额度。
+                          {detail.run.execution?.kind === 'docker-agent'
+                            ? 'Docker 终端使用冻结的配置和独立容器。'
+                            : '账号共享并发与速率额度。'}
                         </div>
                       </>
                     )}
@@ -1908,15 +2033,23 @@ function App() {
               {modal === 'contract' && detail && (
                 <ContractModal
                   contract={detail.run.contract}
+                  planMode={detail.run.planMode !== false}
                   close={() => setModal('')}
                   busy={busy}
-                  disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                  disabled={
+                    archived ||
+                    ['DONE', 'CANCELLED'].includes(detail.run.status) ||
+                    detail.run.execution?.kind === 'docker-agent'
+                  }
                   submit={(contract) =>
                     act(async () => {
                       await mutation('/runs/' + runId + '/messages', {
                         expectedRevision: detail.run.revision,
                         contract,
-                        text: '我已修改任务约定，请根据约定重新提出计划。',
+                        text:
+                          detail.run.planMode === false
+                            ? '我已修改任务约定，请按更新后的交付和验收项继续。'
+                            : '我已修改任务约定，请根据约定重新提出计划。',
                       });
                       setModal('');
                     })
@@ -2047,6 +2180,19 @@ function UsagePanel({
   totalTokens: number;
   configureContext: (projection: ContextProjection) => void;
 }) {
+  if (detail.run.execution?.kind === 'docker-agent')
+    return (
+      <div className="terminal-activity">
+        <h3>Docker Agent 执行</h3>
+        <p>
+          {detail.run.execution.profile.label} · {detail.run.execution.profile.image}
+        </p>
+        <p className="field-help">
+          外部 Agent 管理模型请求与用量，Elysia 未观测其 Token 与费用。请结合终端日志及服务商用量复核。
+        </p>
+        <p className="field-help">最长 {detail.run.limits.maxMinutes} 分钟 · 容器 2 CPU / 2 GiB 内存</p>
+      </div>
+    );
   const settled = detail.requests.filter((r) => r.status === 'SETTLED'),
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);
@@ -2416,6 +2562,9 @@ function ProjectModal({
   );
 }
 type RunSetupDraft = {
+  planMode: boolean;
+  executionKind: 'native' | 'docker-agent';
+  terminalProfile: AgentTerminalProfile;
   choice: ModelChoice;
   contextPolicy: ContextPolicy;
   write: boolean;
@@ -2454,6 +2603,13 @@ function RunModal({
   contextPolicy: ContextPolicy;
 }) {
   const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
+    [planMode, setPlanMode] = useState(initial?.planMode ?? true),
+    [executionKind, setExecutionKind] = useState<'native' | 'docker-agent'>(
+      initial?.executionKind ?? 'native',
+    ),
+    [terminalProfile, setTerminalProfile] = useState<AgentTerminalProfile>(
+      () => initial?.terminalProfile ?? terminalPreset(),
+    ),
     [modelReady, setModelReady] = useState(false),
     [context, setContext] = useState<ContextPolicy>(() => initial?.contextPolicy ?? contextPolicy),
     [write, setWrite] = useState(initial?.write ?? true),
@@ -2471,6 +2627,10 @@ function RunModal({
     selected?.contextLimit || 4096,
   );
   const chat = kind === 'chat';
+  const terminal = !chat && executionKind === 'docker-agent';
+  const setupReady = terminal
+    ? AgentTerminalProfile.safeParse(terminalProfile).success
+    : modelReady && contextValid;
   const lines = (s: string) =>
     s
       .split('\n')
@@ -2486,14 +2646,17 @@ function RunModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || !modelReady || !contextValid || !objective.trim()) return;
+          if (busy || !setupReady || !objective.trim()) return;
           submit({
-            ...choice,
-            contextPolicy: context,
+            ...(terminal ? {} : { ...choice, contextPolicy: context }),
+            planMode: terminal ? false : planMode,
+            execution: terminal ? { kind: 'docker-agent', profile: terminalProfile } : { kind: 'native' },
             inputs: lines(inputs),
             permissionProfile: chat
               ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
-              : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
+              : terminal
+                ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
+                : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
             budget: { maxRequests, maxTokens, maxCost: null },
             limits: {
               maxDepth: chat ? 0 : 2,
@@ -2501,7 +2664,7 @@ function RunModal({
               concurrency: chat ? 1 : concurrency,
               toolConcurrency: 4,
               maxSteps: 20,
-              maxMinutes: 30,
+              maxMinutes: terminal ? Math.ceil(terminalProfile.timeoutMs / 60000) : 30,
             },
           });
         }}
@@ -2510,61 +2673,103 @@ function RunModal({
           <p className="field-help">
             {chat
               ? '选择会话模型后开始聊天。独立对话可使用技能说明；处理项目文件和生成附件时，在项目下新建任务。'
-              : '模型会根据目标自动选择办公技能。接受计划前可分别分配一级子代理的模型。'}
+              : '选择执行通道和授权范围。API 模式支持 Elysia 多代理；终端模式由外部 Agent 在 Docker 内调度。'}
           </p>
-          <ModelPicker
-            providers={providers}
-            value={choice}
-            change={setChoice}
-            ready={setModelReady}
-            disabled={busy}
-            label={chat ? '会话模型连接' : '总代理连接'}
-          />
-          <details className="context-compact-setup">
-            <summary>上下文窗口 · {context.mode === 'manual' ? '手动分配' : '托管'}</summary>
-            <ContextPolicyEditor
-              value={context}
-              change={setContext}
-              minimumWindowTokens={selected ? minimumContextWindowTokens(selected) : 4096}
-              providerLimit={selected?.contextLimit || 4096}
-              disabled={busy || !selected}
-            />
-          </details>
-          {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
-            <p className="field-help">
-              正在使用 ChatGPT 订阅 ·{' '}
-              <button type="button" className="text-button" disabled={busy} onClick={manageUsage}>
-                管理用量
-              </button>
-            </p>
-          )}
-          {(!selected?.keyConfigured || selected.checkedRevision !== selected.revision) && (
-            <div className="inline-warning">
-              请先连接并验证一个可用模型。
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  if (busy) return;
-                  settings({
-                    choice,
-                    contextPolicy: context,
-                    write,
-                    exec,
-                    urls,
-                    inputs,
-                    writePaths,
-                    maxRequests,
-                    maxTokens,
-                    concurrency,
-                  });
-                }}
-              >
-                前往模型设置
-              </button>
-            </div>
-          )}
           {!chat && (
+            <>
+              <label>
+                执行通道
+                <select
+                  value={executionKind}
+                  disabled={busy}
+                  onChange={(e) => setExecutionKind(e.target.value as 'native' | 'docker-agent')}
+                >
+                  <option value="native">原生 API · Elysia 调度</option>
+                  <option value="docker-agent">Agent 终端 · Docker 调度</option>
+                </select>
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="计划模式"
+                  checked={!terminal && planMode}
+                  disabled={busy || terminal}
+                  onChange={(e) => setPlanMode(e.target.checked)}
+                />
+                计划模式
+              </label>
+              <p className="field-help">
+                {terminal
+                  ? 'Docker 终端当前直接执行，结束后等待你验收。'
+                  : planMode
+                    ? '先生成计划，确认具体版本后执行。'
+                    : '创建任务即授权在下方权限和预算内执行，仍需提供验收证据。'}
+              </p>
+            </>
+          )}
+          {terminal ? (
+            <TerminalSetup value={terminalProfile} change={setTerminalProfile} disabled={busy} />
+          ) : (
+            <>
+              <ModelPicker
+                providers={providers}
+                value={choice}
+                change={setChoice}
+                ready={setModelReady}
+                disabled={busy}
+                label={chat ? '会话模型连接' : '总代理连接'}
+              />
+              <details className="context-compact-setup">
+                <summary>上下文窗口 · {context.mode === 'manual' ? '手动分配' : '托管'}</summary>
+                <ContextPolicyEditor
+                  value={context}
+                  change={setContext}
+                  minimumWindowTokens={selected ? minimumContextWindowTokens(selected) : 4096}
+                  providerLimit={selected?.contextLimit || 4096}
+                  disabled={busy || !selected}
+                />
+              </details>
+              {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
+                <p className="field-help">
+                  正在使用 ChatGPT 订阅 ·{' '}
+                  <button type="button" className="text-button" disabled={busy} onClick={manageUsage}>
+                    管理用量
+                  </button>
+                </p>
+              )}
+              {(!selected?.keyConfigured || selected.checkedRevision !== selected.revision) && (
+                <div className="inline-warning">
+                  请先连接并验证一个可用模型。
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (busy) return;
+                      settings({
+                        planMode,
+                        executionKind,
+                        terminalProfile,
+                        choice,
+                        contextPolicy: context,
+                        write,
+                        exec,
+                        urls,
+                        inputs,
+                        writePaths,
+                        maxRequests,
+                        maxTokens,
+                        concurrency,
+                      });
+                    }}
+                  >
+                    前往模型设置
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {!chat && !terminal && (
             <>
               <label>
                 补充资料路径（可选，每行一项）
@@ -2624,54 +2829,66 @@ function RunModal({
               </div>
             </>
           )}
-          <div className="form-columns">
-            <label>
-              模型请求上限
-              <input
-                type="number"
-                min={1}
-                max={80}
-                value={maxRequests}
-                disabled={busy}
-                onChange={(e) => setMaxRequests(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Token 上限
-              <input
-                type="number"
-                min={1000}
-                value={maxTokens}
-                disabled={busy}
-                onChange={(e) => setMaxTokens(Number(e.target.value))}
-              />
-            </label>
-            {!chat && (
+          {!terminal && (
+            <div className="form-columns">
               <label>
-                并发实例
+                模型请求上限
                 <input
                   type="number"
                   min={1}
-                  max={4}
-                  value={concurrency}
+                  max={80}
+                  value={maxRequests}
                   disabled={busy}
-                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                  onChange={(e) => setMaxRequests(Number(e.target.value))}
                 />
               </label>
-            )}
-          </div>
+              <label>
+                Token 上限
+                <input
+                  type="number"
+                  min={1000}
+                  value={maxTokens}
+                  disabled={busy}
+                  onChange={(e) => setMaxTokens(Number(e.target.value))}
+                />
+              </label>
+              {!chat && (
+                <label>
+                  并发实例
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={concurrency}
+                    disabled={busy}
+                    onChange={(e) => setConcurrency(Number(e.target.value))}
+                  />
+                </label>
+              )}
+            </div>
+          )}
           <p className="field-help">
             {chat
               ? '普通回复后等待你继续。调用与 Token 按会话预算累计。'
-              : '先生成约定和计划，你接受具体版本后再执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。'}
+              : terminal
+                ? '只映射独立任务目录；不会修改项目主目录或自动发布。'
+                : `${planMode ? '接受计划后' : '创建后'}执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。`}
           </p>
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" disabled={busy} onClick={close}>
             返回
           </button>
-          <button className="primary" disabled={busy || !modelReady || !contextValid || !objective.trim()}>
-            {busy ? '正在创建…' : chat ? '开始对话' : '生成约定与计划'}
+          <button className="primary" disabled={busy || !setupReady || !objective.trim()}>
+            {busy
+              ? '正在创建…'
+              : chat
+                ? '开始对话'
+                : terminal
+                  ? '创建 Docker 任务'
+                  : planMode
+                    ? '生成约定与计划'
+                    : '开始执行'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>
@@ -2681,12 +2898,14 @@ function RunModal({
 }
 function ContractModal({
   contract,
+  planMode,
   close,
   submit,
   busy,
   disabled,
 }: {
   contract: Contract;
+  planMode: boolean;
   close: () => void;
   submit: (c: Contract) => void;
   busy: boolean;
@@ -2707,8 +2926,10 @@ function ContractModal({
       title={'任务约定 · v' + contract.version}
       subtitle={
         disabled
-          ? '任务已结束或归档，约定仅供查看。'
-          : '修改后在安全边界重新生成计划，需再次确认；权限范围与累计预算保持。'
+          ? '当前约定仅供查看；继续调整可新建任务。'
+          : planMode
+            ? '修改后在安全边界重新生成计划，需再次确认；权限范围与累计预算保持。'
+            : '在安全边界应用新的交付与验收项；权限范围与累计预算保持。'
       }
       busy={busy}
       close={close}
@@ -2751,7 +2972,7 @@ function ContractModal({
             关闭
           </button>
           <button className="primary" disabled={busy || disabled}>
-            {busy ? '正在保存约定…' : '保存并重新规划'}
+            {busy ? '正在保存约定…' : planMode ? '保存并重新规划' : '保存约定并继续'}
           </button>
         </footer>
       </form>
