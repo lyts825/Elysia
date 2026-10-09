@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AgentTerminalProfile } from '../../../packages/contracts/src/index';
 import { api } from './api';
 
@@ -63,9 +63,13 @@ export function TerminalSetup({
     [issue, setIssue] = useState(''),
     [checking, setChecking] = useState(false),
     [status, setStatus] = useState('');
+  const currentProfile = useRef('');
+  currentProfile.current = JSON.stringify(value);
   function patch(next: Partial<AgentTerminalProfile>) {
     setStatus('');
-    change({ ...value, ...next });
+    const profile = { ...value, ...next };
+    currentProfile.current = JSON.stringify(profile);
+    change(profile);
   }
   const validProfile = AgentTerminalProfile.safeParse(value).success;
   return (
@@ -82,7 +86,9 @@ export function TerminalSetup({
             disabled={disabled}
             onChange={(e) => {
               const next = terminalPreset(e.target.value as AgentTerminalProfile['agent']);
-              change({ ...next, image: value.image });
+              const profile = { ...next, id: value.id, image: value.image };
+              currentProfile.current = JSON.stringify(profile);
+              change(profile);
               setArgv(JSON.stringify(next.command));
               setIssue('');
               setStatus('');
@@ -189,13 +195,15 @@ export function TerminalSetup({
         className="secondary"
         disabled={disabled || checking || !AgentTerminalProfile.safeParse(value).success}
         onClick={async () => {
+          const checkedProfile = JSON.stringify(value);
           setChecking(true);
           setStatus('');
           try {
             const result = await api<{ message: string }>('/terminal/check', { profile: value });
-            setStatus(result.message);
+            if (currentProfile.current === checkedProfile) setStatus(result.message);
           } catch (error) {
-            setStatus(error instanceof Error ? error.message : '检查失败');
+            if (currentProfile.current === checkedProfile)
+              setStatus(error instanceof Error ? error.message : '检查失败');
           } finally {
             setChecking(false);
           }

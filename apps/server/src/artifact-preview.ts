@@ -150,7 +150,10 @@ export class ArtifactPreviewService {
   private closed = false;
   private snapshots = new Set<CompressedSnapshot>();
   private lifetime = new AbortController();
-  constructor(private store: Store) {}
+  constructor(
+    private store: Store,
+    private prefix = '',
+  ) {}
   private compressedObject(artifact: Artifact) {
     return (
       artifact.objectRef.startsWith('sqlite:') ||
@@ -341,7 +344,7 @@ export class ArtifactPreviewService {
         diffTruncated: false,
         deleted: false,
         renderUrl: null,
-        resourceUrl: `/api/artifacts/${artifact.id}`,
+        resourceUrl: `${this.prefix}/api/artifacts/${encodeURIComponent(artifact.id)}`,
         resourceBase: null,
         page: ['image', 'binary'].includes(kind) ? null : (result?.page ?? null),
         encoding: result?.encoding ?? null,

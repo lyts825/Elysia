@@ -41,7 +41,9 @@ export function markdownLocalPath(href: string, sourcePath = ''): string | null 
 
 function localImageUrl(src: string, sourcePath: string, resourceBase?: string | null) {
   if (!resourceBase || !markdownLocalPath(src, sourcePath)) return null;
-  const scope = /^(\/preview\/[^/]+\/|\/api\/projects\/[^/]+\/resources\/)/.exec(resourceBase)?.[1];
+  const scope = /^(?:\/terminal)?(\/preview\/[^/]+\/|\/api\/projects\/[^/]+\/resources\/)/.exec(
+    resourceBase,
+  )?.[0];
   if (!scope) return null;
   const path = markdownLocalPath(src, sourcePath)!.split('#')[0];
   return scope + path.split('/').map(encodeURIComponent).join('/');

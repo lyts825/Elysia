@@ -411,7 +411,7 @@ export class Store {
       if (typeof value.runId === 'string') refs.add(value.runId);
       if (typeof value.id === 'string' && typeof value.rootTaskId === 'string') refs.add(value.id);
       if (typeof value.route === 'string') {
-        const match = /^\/api\/runs\/([^/?]+)/.exec(value.route);
+        const match = /^(?:\/terminal)?\/api\/runs\/([^/?]+)/.exec(value.route);
         if (match) refs.add(decodeURIComponent(match[1]));
       }
       for (const nested of Object.values(value)) visit(nested);

@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { Modal } from './Modal';
 import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
+import { localSurface } from './api';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: Run };
 export type SessionTarget = Target;
@@ -61,13 +62,18 @@ export function SessionSidebar({
   const [clipboardError, setClipboardError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const flag = (key: string) => entries[key]?.value === true;
+  const terminal = localSurface === 'terminal';
+  const readOnlyRun = (run: Run) => !terminal && run.execution?.kind === 'docker-agent';
   const title = (target: Target) =>
     target.kind === 'project' ? target.item.name : target.item.title || target.item.objective;
   const query = search.trim().toLocaleLowerCase();
   const matches = (run: Run) => `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
   const activeProjects = projects.filter((p) => !p.archived && p.spaceId === spaceId);
   const visibleRuns = runs.filter(
-    (r) => !r.archived && (r.kind === 'chat' || activeProjects.some((p) => p.id === r.projectId)),
+    (r) =>
+      !r.archived &&
+      (!terminal || r.kind === 'task') &&
+      (r.kind === 'chat' || activeProjects.some((p) => p.id === r.projectId)),
   );
   const ordered = (list: Run[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pinned = ordered(visibleRuns.filter((r) => flag(`pinned:run:${r.id}`) && matches(r)));
@@ -160,7 +166,7 @@ export function SessionSidebar({
     } else {
       const project = target.item;
       common.push(
-        { label: '新建项目对话', icon: 'plus', action: () => create(project.id) },
+        { label: terminal ? '新建终端任务' : '新建项目对话', icon: 'plus', action: () => create(project.id) },
         {
           label: flag(`collapsed:project:${project.id}`) ? '展开项目' : '收起项目',
           icon: 'chevron',
@@ -180,7 +186,9 @@ export function SessionSidebar({
       },
       { label: '永久删除', icon: 'trash', danger: true, action: () => showDialog(target, 'delete') },
     );
-    return common;
+    return target.kind === 'run' && readOnlyRun(target.item)
+      ? common.filter((action) => !['重命名', '归档', '恢复归档', '永久删除'].includes(action.label))
+      : common;
   };
   useLayoutEffect(() => {
     if (!menu || !menuRef.current) return;
@@ -228,13 +236,25 @@ export function SessionSidebar({
       if (!target) return;
       const key = event.key.toLowerCase();
       let action: (() => void) | undefined;
-      if (event.ctrlKey && event.altKey && !event.shiftKey && key === 'r')
+      if (
+        event.ctrlKey &&
+        event.altKey &&
+        !event.shiftKey &&
+        key === 'r' &&
+        (target.kind !== 'run' || !readOnlyRun(target.item))
+      )
         action = () => showDialog(target, 'rename');
       if (event.ctrlKey && event.altKey && !event.shiftKey && key === 'p' && target.kind === 'run')
         action = () => setValue(`pinned:run:${target.item.id}`, !flag(`pinned:run:${target.item.id}`));
       if (event.ctrlKey && event.shiftKey && !event.altKey && key === 'u' && target.kind === 'run')
         action = () => setValue(`unread:run:${target.item.id}`, !flag(`unread:run:${target.item.id}`));
-      if (event.ctrlKey && event.shiftKey && !event.altKey && key === 'a')
+      if (
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        key === 'a' &&
+        (target.kind !== 'run' || !readOnlyRun(target.item))
+      )
         action = () => void update(target, { archived: !target.item.archived });
       if (action) {
         event.preventDefault();
@@ -275,6 +295,7 @@ export function SessionSidebar({
       >
         <span className={'status-dot ' + run.status.toLowerCase()} />
         <span>{run.title || run.objective}</span>
+        {readOnlyRun(run) && <small>旧终端 · 只读</small>}
         {flag(`pinned:run:${run.id}`) && <Icon name="pin" size={12} />}
         {typeof entries[`draft:run:${run.id}`]?.value === 'string' &&
           entries[`draft:run:${run.id}`].value && <small>草稿</small>}
@@ -393,7 +414,7 @@ export function SessionSidebar({
                           {!children.length && (
                             <button className="empty-session" onClick={() => create(project.id)}>
                               <Icon name="plus" size={13} />
-                              新建项目对话
+                              {terminal ? '新建终端任务' : '新建项目对话'}
                             </button>
                           )}
                         </div>
@@ -409,24 +430,26 @@ export function SessionSidebar({
               </nav>
             )}
           </section>
-          <section>
-            {heading(
-              'chats',
-              '独立对话',
-              chats.length,
-              <button aria-label="新建独立对话" title="新建独立对话" onClick={() => create('')}>
-                <Icon name="plus" size={15} />
-              </button>,
-            )}
-            {(!flag('collapsed:chats') || query) && (
-              <div className="history-list">
-                {chats.map(runRow)}
-                {!chats.length && (
-                  <p className="sidebar-muted">{query ? '没有匹配的独立对话' : '从一个问题开始对话。'}</p>
-                )}
-              </div>
-            )}
-          </section>
+          {!terminal && (
+            <section>
+              {heading(
+                'chats',
+                '独立对话',
+                chats.length,
+                <button aria-label="新建独立对话" title="新建独立对话" onClick={() => create('')}>
+                  <Icon name="plus" size={15} />
+                </button>,
+              )}
+              {(!flag('collapsed:chats') || query) && (
+                <div className="history-list">
+                  {chats.map(runRow)}
+                  {!chats.length && (
+                    <p className="sidebar-muted">{query ? '没有匹配的独立对话' : '从一个问题开始对话。'}</p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
           {query &&
             !visibleRuns.some(matches) &&
             !activeProjects.some((p) => p.name.toLocaleLowerCase().includes(query)) && (

@@ -81,6 +81,7 @@ export class PreviewService {
   constructor(
     private store: Store,
     private gateway: ToolGateway,
+    private prefix = '',
   ) {}
   private capability(runId: string, taskId: string, scope = '', page = '') {
     const key = capabilityKey(taskId, scope, page);
@@ -347,7 +348,7 @@ export class PreviewService {
       files,
       revision: hash(JSON.stringify(files)),
       truncated,
-      renderBase: `/preview/${token}/`,
+      renderBase: `${this.prefix}/preview/${token}/`,
     };
   }
   async file(
@@ -469,10 +470,10 @@ export class PreviewService {
     }
     const scope = path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name);
     const resourceBase = !deleted
-      ? `/preview/${this.capability(runId, taskId)}/${scope ? scope.split('/').map(encodeURIComponent).join('/') + '/' : ''}`
+      ? `${this.prefix}/preview/${this.capability(runId, taskId)}/${scope ? scope.split('/').map(encodeURIComponent).join('/') + '/' : ''}`
       : null;
     const resourceUrl = !deleted
-      ? `/preview/${this.capability(runId, taskId, scope)}/` +
+      ? `${this.prefix}/preview/${this.capability(runId, taskId, scope)}/` +
         encodeURIComponent(path.posix.basename(name)) +
         (version ? '?version=' + version : '')
       : null;
@@ -492,7 +493,7 @@ export class PreviewService {
       resourceUrl,
       renderUrl:
         kind === 'html' && !deleted
-          ? `/preview/${this.capability(runId, taskId, scope, name)}/${encodeURIComponent(path.posix.basename(name))}`
+          ? `${this.prefix}/preview/${this.capability(runId, taskId, scope, name)}/${encodeURIComponent(path.posix.basename(name))}`
           : null,
     };
   }
@@ -559,7 +560,7 @@ export class PreviewService {
     }
     const result = await streamFile(filename, fileMediaType(filename), {
       ...options,
-      rewritePrefix: `/preview/${token}/`,
+      rewritePrefix: `${this.prefix}/preview/${token}/`,
     });
     try {
       invariant((await this.filename(task, name)) === filename, 'PREVIEW_PATH', '文件路径在读取时改变');

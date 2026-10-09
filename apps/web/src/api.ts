@@ -1,3 +1,21 @@
+import type { WorkspaceSurface } from '../../../packages/contracts/src/index';
+
+export const localSurface: WorkspaceSurface = (() => {
+  const requested = new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get(
+    'surface',
+  );
+  return requested === 'terminal' ? 'terminal' : 'native';
+})();
+const apiPrefix = localSurface === 'terminal' ? '/terminal/api' : '/api';
+export const apiUrl = (path: string) => apiPrefix + path;
+export const surfaceStorageKey = (key: string) => (localSurface === 'terminal' ? key + ':terminal' : key);
+export function surfaceLocation(surface: WorkspaceSurface): string {
+  const url = new URL(location.href);
+  if (surface === 'terminal') url.searchParams.set('surface', 'terminal');
+  else url.searchParams.delete('surface');
+  return url.pathname + url.search + url.hash;
+}
+
 let csrf = '';
 export class ApiError extends Error {
   constructor(
@@ -36,7 +54,7 @@ export async function api<T = any>(
   let response: Response;
   let text: string;
   try {
-    response = await fetch('/api' + path, request);
+    response = await fetch(apiUrl(path), request);
     text = await response.text();
   } catch (error) {
     if (signal && (signal.aborted || (error instanceof Error && error.name === 'AbortError'))) throw error;
@@ -65,7 +83,7 @@ export async function api<T = any>(
 export async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
   let response: Response;
   try {
-    response = await fetch('/api' + path, { method: 'GET', credentials: 'same-origin', signal });
+    response = await fetch(apiUrl(path), { method: 'GET', credentials: 'same-origin', signal });
   } catch (error) {
     if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
     throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
@@ -130,7 +148,9 @@ export function initializeSession(options?: { retry?: boolean }) {
     bootstrapToken = null;
     sessionFailure = undefined;
     return typeof result.selectionScope === 'string' && result.selectionScope.trim()
-      ? result.selectionScope
+      ? localSurface === 'terminal'
+        ? `${result.selectionScope}:terminal`
+        : result.selectionScope
       : undefined;
   })().catch((error) => {
     sessionPromise = null;

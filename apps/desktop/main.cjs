@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { mkdirSync, appendFileSync } = require('node:fs');
 const { attachServices } = require('./services.cjs');
+const { allowedLocalNavigation } = require('./navigation.cjs');
 const root = path.resolve(__dirname, '../..');
 const iconPath = path.join(
   root,
@@ -150,17 +151,8 @@ if (!app.requestSingleInstanceLock()) {
           const origin = new URL(message.origin).origin;
           uiOrigin = origin;
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
-          const allowed = (url, main) => {
-            try {
-              const parsed = new URL(url);
-              return (
-                parsed.origin === origin &&
-                (main ? parsed.pathname === '/' : parsed.pathname.startsWith('/preview/'))
-              );
-            } catch {
-              return false;
-            }
-          };
+          const allowed = (url, main) =>
+            allowedLocalNavigation(url, window.webContents.getURL(), origin, main);
           window.webContents.on('will-frame-navigate', (event) => {
             if (!allowed(event.url, event.isMainFrame)) event.preventDefault();
           });

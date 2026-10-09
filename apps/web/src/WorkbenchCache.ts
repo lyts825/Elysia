@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, surfaceStorageKey } from './api';
 
 export type CacheEntry = { value: string | boolean; revision: number };
 type Snapshot = {
@@ -13,10 +13,10 @@ export class WorkbenchCache {
   private scope = '';
   private recoverySlot = (() => {
     try {
-      const saved = sessionStorage.getItem('elysia.workbench.window');
+      const saved = sessionStorage.getItem(surfaceStorageKey('elysia.workbench.window'));
       if (saved) return saved;
       const slot = crypto.randomUUID();
-      sessionStorage.setItem('elysia.workbench.window', slot);
+      sessionStorage.setItem(surfaceStorageKey('elysia.workbench.window'), slot);
       return slot;
     } catch {
       return 'single-window';

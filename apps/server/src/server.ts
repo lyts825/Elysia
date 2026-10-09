@@ -1,4 +1,4 @@
-import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyRequest, type FastifyReply, type FastifyInstance } from 'fastify';
 import staticFiles from '@fastify/static';
 import { z } from 'zod';
 import { promises as fs, existsSync } from 'node:fs';
@@ -54,6 +54,8 @@ import { registerManagement } from './management.js';
 import { registerWorkbench } from './workbench.js';
 import { availableModels, resolveModelChoice } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
+import { createSurfaceAuth, type SurfaceAuth, type WorkbenchSurface } from './surfaces.js';
+import { registerTerminalSettings } from './terminal-settings.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -136,18 +138,50 @@ export function createServer(
     codex?: CodexSubscription;
     keys?: ProviderKeys;
     terminal?: ConstructorParameters<typeof DockerAgentService>[2];
+    app?: FastifyInstance;
+    prefix?: '' | '/terminal';
+    surface?: WorkbenchSurface;
+    auth?: SurfaceAuth;
+    serveWeb?: boolean;
   },
 ) {
-  const app = Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
+  const app = options.app ?? Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
+  const prefix = options.prefix ?? '';
+  const localUrl = (url: string) =>
+    prefix
+      ? url.startsWith(prefix + '/')
+        ? url.slice(prefix.length)
+        : null
+      : url.startsWith('/terminal/')
+        ? null
+        : url;
   const kernel = new Kernel(store),
     executor = new NativeExecutor(kernel);
+  executor.acceptRun = (run) =>
+    options.surface === 'native'
+      ? run.execution?.kind !== 'docker-agent'
+      : options.surface === 'terminal'
+        ? run.execution?.kind === 'docker-agent'
+        : true;
   const terminal = new DockerAgentService(kernel, executor.gateway, options.terminal);
   executor.terminalRunner = (task, signal) => terminal.run(task, signal);
   executor.terminalInterrupt = (runId, taskId) => terminal.interrupt(runId, taskId);
   executor.terminalDispose = () => terminal.dispose();
-  const subscription = options.subscription ?? new SubscriptionService(desktopServices());
-  const codex = options.codex ?? new CodexSubscription(store.directory, desktopServices());
-  const keys = options.keys ?? new ProviderKeys(desktopServices());
+  const nativeService = <T extends object>(factory: () => T): T =>
+    options.surface === 'terminal'
+      ? new Proxy({} as T, {
+          get() {
+            throw new AppError('SURFACE_EXECUTION', 'Agent 终端入口不访问原生模型和账号');
+          },
+        })
+      : factory();
+  const subscription = nativeService(
+    () => options.subscription ?? new SubscriptionService(desktopServices()),
+  );
+  const codex = nativeService(
+    () => options.codex ?? new CodexSubscription(store.directory, desktopServices()),
+  );
+  const keys = nativeService(() => options.keys ?? new ProviderKeys(desktopServices()));
   const apiCatalog = (provider: ProviderConfig) => apiModels(provider, keys);
   const providerAdapter = (provider: ProviderConfig) =>
     provider.authMode === 'codex'
@@ -160,21 +194,18 @@ export function createServer(
               ? () => keys.credential(provider)
               : undefined,
         );
-  executor.adapterFactory = (agent) => providerAdapter(agent.providerBinding);
-  for (const config of defaultProviders())
-    if (!store.get('providers', config.id)) store.put('providers', config);
-  const selectionScope = randomBytes(16).toString('hex'),
-    bootstrapToken = randomBytes(32).toString('hex'),
-    sessions = new Map<string, string>();
-  let bootstrapUsed = false;
-  let bootstrapExpires = Date.now() + 15 * 60000;
-  const origins = new Set([
-    `http://127.0.0.1:${options.port}`,
-    ...(options.dev ? ['http://127.0.0.1:5173'] : []),
-  ]);
-  const hosts = new Set([`127.0.0.1:${options.port}`, ...(options.dev ? ['127.0.0.1:5173'] : [])]);
-  const previews = new PreviewService(store, executor.gateway);
-  const artifactPreviews = new ArtifactPreviewService(store);
+  executor.adapterFactory = (agent) => {
+    invariant(options.surface !== 'terminal', 'SURFACE_EXECUTION', 'Agent 终端入口不调用原生模型');
+    return providerAdapter(agent.providerBinding);
+  };
+  if (options.surface !== 'terminal')
+    for (const config of defaultProviders())
+      if (!store.get('providers', config.id)) store.put('providers', config);
+  const selectionScope = randomBytes(16).toString('hex');
+  const auth = options.auth ?? createSurfaceAuth(options.port, options.dev);
+  const { bootstrapToken, sessions, origins, hosts } = auth;
+  const previews = new PreviewService(store, executor.gateway, prefix);
+  const artifactPreviews = new ArtifactPreviewService(store, prefix);
   app.addHook('onClose', async () => {
     await artifactPreviews.close();
   });
@@ -193,11 +224,13 @@ export function createServer(
       origins.add(`http://127.0.0.1:${address.port}`);
     }
     invariant(hosts.has(request.headers.host ?? ''), 'HOST_DENIED', 'Host 不允许');
+    const url = localUrl(request.url);
+    if (url === null) return;
     // Capability-scoped sandbox frames have opaque origins and no app session.
-    if (request.url.startsWith('/preview/')) return;
+    if (url.startsWith('/preview/')) return;
     const origin = request.headers.origin;
     if (origin) invariant(origins.has(origin), 'ORIGIN_DENIED', 'Origin 不允许');
-    const pathname = request.url.split('?')[0];
+    const pathname = url.split('?')[0];
     if (!pathname.startsWith('/api/')) return;
     if (pathname === '/api/health') return;
     if (pathname === '/api/session' && request.method === 'POST') {
@@ -212,17 +245,58 @@ export function createServer(
       invariant(typeof csrf === 'string' && csrf === sessions.get(token), 'CSRF_DENIED', '修改凭据无效');
     }
     reply.header('Cache-Control', 'no-store');
+    if (
+      (options.surface === 'terminal' &&
+        (/^\/api\/(?:providers|subscription|codex)(?:\/|$)/.test(pathname) ||
+          /^\/api\/runs\/[^/]+\/context$/.test(pathname))) ||
+      (options.surface === 'native' && /^\/api\/terminal(?:\/|$)/.test(pathname))
+    )
+      throw new AppError('NOT_FOUND', '当前入口不提供此接口', false, null, 404);
+    if (options.surface === 'native' && !['GET', 'HEAD'].includes(request.method)) {
+      const match = /^\/api\/runs\/([^/]+)(?:\/|$)/.exec(pathname);
+      const run = match ? store.get<Run>('runs', decodeURIComponent(match[1])) : undefined;
+      if (run?.execution?.kind === 'docker-agent')
+        throw new AppError(
+          'LEGACY_TERMINAL_READ_ONLY',
+          '旧版终端任务已保留为只读历史；请切换到 Agent 终端入口创建独立任务',
+          false,
+          null,
+          409,
+        );
+    }
   });
   app.addHook('onSend', async (_request, reply, payload) => {
+    const url = localUrl(_request.url);
+    if (url === null) return payload;
     reply
       .header('X-Content-Type-Options', 'nosniff')
       .header('Referrer-Policy', 'no-referrer')
       .header(
         'Content-Security-Policy',
-        requestPreviewPolicy(_request.url, reply.getHeader('Content-Security-Policy')) ??
+        requestPreviewPolicy(url, reply.getHeader('Content-Security-Policy')) ??
           "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'none'; base-uri 'self'",
       );
     return payload;
+  });
+  app.addHook('preHandler', async (request) => {
+    if (options.surface !== 'native' || ['GET', 'HEAD'].includes(request.method)) return;
+    const url = localUrl(request.url);
+    const match = url ? /^\/api\/projects\/([^/?]+)(?:\?|$)/.exec(url) : null;
+    if (!match || (request.method !== 'DELETE' && (request.body as any)?.archived !== true)) return;
+    if (
+      store
+        .all<Run>('runs')
+        .some(
+          (run) => run.projectId === decodeURIComponent(match[1]) && run.execution?.kind === 'docker-agent',
+        )
+    )
+      throw new AppError(
+        'LEGACY_TERMINAL_READ_ONLY',
+        '此项目包含保留的旧版终端历史，当前入口不能删除或归档；请保留历史并在 Agent 终端入口新建项目',
+        false,
+        null,
+        409,
+      );
   });
   app.setErrorHandler((error, _request, reply) => {
     const e = error as any;
@@ -269,8 +343,13 @@ export function createServer(
         : context,
     ),
   });
-  app.get('/api/health', async () => ({ version: VERSION, status: 'ok' }));
+  app.get('/api/health', async () => ({
+    version: VERSION,
+    status: 'ok',
+    surface: options.surface ?? 'native',
+  }));
   registerWorkbench(app, store);
+  if (options.surface !== 'native') registerTerminalSettings(app, store);
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview',
     async (request) =>
@@ -294,7 +373,7 @@ export function createServer(
     );
   });
   app.get<{ Params: { token: string; '*': string } }>('/preview/:token/*', async (request, reply) => {
-    const base = `http://${request.headers.host}/preview/${encodeURIComponent(request.params.token)}/`;
+    const base = `http://${request.headers.host}${prefix}/preview/${encodeURIComponent(request.params.token)}/`;
     reply
       .header('Cache-Control', 'no-store')
       .header('Access-Control-Allow-Origin', '*')
@@ -323,21 +402,25 @@ export function createServer(
     const a = Buffer.from(body.token),
       b = Buffer.from(bootstrapToken);
     invariant(
-      !bootstrapUsed && Date.now() < bootstrapExpires && a.length === b.length && timingSafeEqual(a, b),
+      !auth.bootstrapUsed &&
+        Date.now() < auth.bootstrapExpires &&
+        a.length === b.length &&
+        timingSafeEqual(a, b),
       'BOOTSTRAP_EXPIRED',
       '引导令牌无效、过期或已使用',
     );
-    bootstrapUsed = true;
+    auth.bootstrapUsed = true;
     const session = randomBytes(32).toString('hex'),
       csrf = randomBytes(32).toString('hex');
     sessions.set(session, csrf);
-    reply.header('Set-Cookie', `elysia_session=${session}; HttpOnly; SameSite=Strict; Path=/api`);
-    return { csrf, version: VERSION, selectionScope };
+    reply.header('Set-Cookie', `elysia_session=${session}; HttpOnly; SameSite=Strict; Path=/`);
+    return { csrf, version: VERSION, selectionScope, surface: options.surface ?? 'native' };
   });
   app.get('/api/session', async (request) => ({
     csrf: sessions.get(cookieSession(request.headers.cookie)!),
     version: VERSION,
     selectionScope,
+    surface: options.surface ?? 'native',
   }));
   app.get('/api/projects', async () => store.all<Project>('projects'));
   app.post('/api/projects/inspect', async (request) => {
@@ -361,6 +444,7 @@ export function createServer(
       z.string().max(4096).default('.').parse(request.query.path),
       encoding,
       { ...page, signal: fileRequestSignal(request, reply) },
+      prefix,
     );
   });
   app.get<{ Params: { id: string; '*': string }; Querystring: { version?: string } }>(
@@ -754,6 +838,17 @@ export function createServer(
         inputs: z.array(z.string()).default([]),
       })
       .parse(request.body);
+    invariant(
+      options.surface !== 'native' || body.execution.kind === 'native',
+      'SURFACE_EXECUTION',
+      'Elysia 入口仅使用原生模型；请在 Agent 终端入口创建 Docker 任务',
+    );
+    invariant(
+      options.surface !== 'terminal' ||
+        (body.kind === 'task' && body.execution.kind === 'docker-agent' && body.planMode === false),
+      'SURFACE_EXECUTION',
+      'Agent 终端入口仅支持项目 Docker 任务，并由终端调度执行',
+    );
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
       return command(body, '/runs', () => {
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
@@ -843,9 +938,15 @@ export function createServer(
     const run = store.require<Run>('runs', request.params.id);
     return {
       run,
+      readOnly: options.surface === 'native' && run.execution?.kind === 'docker-agent',
+      readOnlyReason:
+        options.surface === 'native' && run.execution?.kind === 'docker-agent'
+          ? '旧版终端任务保留为只读历史，请在 Agent 终端入口创建独立任务'
+          : null,
       tasks: store.all<Task>('tasks', run.id),
       agents: store.all<Agent>('agents', run.id),
-      contexts: contextBoundaries(kernel.contextSnapshot(run.id)).agents,
+      contexts:
+        options.surface === 'terminal' ? [] : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
       messages: store.all<Message>('messages', run.id),
       artifacts: store.all<Artifact>('artifacts', run.id),
       snapshots: store.all('snapshots', run.id),
@@ -1219,28 +1320,42 @@ export function createServer(
     });
   });
   const webRoot = path.join(process.cwd(), 'apps', 'web', 'dist');
-  if (existsSync(webRoot)) {
+  if (options.serveWeb !== false && existsSync(webRoot)) {
     void app.register(staticFiles, { root: webRoot });
     app.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api'))
+      if (/^\/(?:terminal\/)?api(?:\/|$)/.test(request.url))
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: '接口不存在', retryable: false, details: null });
       return reply.sendFile('index.html');
     });
-  } else
+  } else if (options.serveWeb !== false)
     app.get('/', async () => ({ message: '前端未构建，执行 pnpm build 或使用 pnpm dev', version: VERSION }));
+  if (options.serveWeb === false)
+    app.setNotFoundHandler((_request, reply) =>
+      reply.code(404).send({
+        code: 'NOT_FOUND',
+        message: '接口不存在',
+        retryable: false,
+        details: null,
+      }),
+    );
   app.addHook('preClose', async () => {
     for (const set of streams.values()) for (const stream of set) stream.end();
-    await codex.close();
-    await subscription.close();
-    await executor.dispose();
+    const stopped = await Promise.allSettled([
+      Promise.resolve().then(() => (options.surface === 'terminal' ? undefined : codex.close())),
+      Promise.resolve().then(() => (options.surface === 'terminal' ? undefined : subscription.close())),
+      Promise.resolve().then(() => executor.dispose()),
+    ]);
+    const failure = stopped.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
   });
   return {
     app,
     kernel,
     executor,
     terminal,
+    auth,
     bootstrapToken,
     origins,
     allowFrontendOrigin: (origin: string) => {
@@ -1248,7 +1363,7 @@ export function createServer(
       hosts.add(new URL(origin).host);
     },
     refreshBootstrapExpiry: () => {
-      bootstrapExpires = Date.now() + 15 * 60000;
+      auth.bootstrapExpires = Date.now() + 15 * 60000;
     },
   };
 }

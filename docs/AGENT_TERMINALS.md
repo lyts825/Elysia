@@ -1,19 +1,29 @@
 # Agent 终端与 Docker 调度
 
-本轮版本：0.13.0-preview.1。原生 API 与 Docker Agent 是同一调度器下的两种执行通道。首批预设为 DSH 和 Codex CLI，自定义程序可以用显式参数数组接入；协议注册还保留 Claude Stream JSON 的扩展入口。
+本轮版本：0.14.0-preview.1。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。首批终端预设为 DSH 和 Codex CLI，自定义程序可以用显式参数数组接入；协议注册还保留 Claude Stream JSON 的扩展入口。
 
 ```mermaid
 flowchart LR
-  UI[新建项目任务] --> RUN[冻结约定、计划开关和执行配置]
-  RUN --> S[共享任务调度与并发限制]
-  S --> API[原生 API runner]
-  S --> CLI[Docker Agent runner]
+  UI[左上角入口切换] --> N[Elysia 独立项目与会话]
+  UI --> T[Agent 终端独立项目与会话]
+  N --> API[独立内核与原生 API runner]
+  T --> CLI[独立内核与 Docker Agent runner]
   API --> TOOLS[Elysia 工具、委派与证据提交]
   CLI --> CONTAINER[独立任务目录与专属容器]
   CONTAINER --> REVIEW[公开日志、文件差异与用户验收]
   TOOLS --> DONE[通过验收后完成]
   REVIEW --> DONE
 ```
+
+## 两个独立入口
+
+Elysia 保留原有数据、原生模型设置、计划开关和订阅连接；Agent 终端拥有自己的项目空间、任务、终端模板、草稿、导航偏好、事件流和预览。模板修改不会改变已有任务。切换入口会重新加载对应工作台，已发出的请求始终属于原入口；草稿使用即时恢复副本和独立缓存保存。
+
+原生数据仍位于原数据目录，终端数据位于其中的 `surfaces/terminal/`，数据库、对象、日志、工作区和命令记录分开保存。两个入口共用本地服务进程和登录会话；终端不读取原生凭据库或提供商配置。相同项目 ID 也不会共享记录，但用户在两边主动打开同一宿主目录时，资料来源仍是该目录。
+
+旧版在 Elysia 中创建的 Docker 任务保留只读历史及预览，不自动迁移、恢复执行或删除。启动恢复可以停止遗留的专属容器并更新恢复状态；新任务从 Agent 终端创建。
+
+`pnpm backup` 和 `pnpm restore <备份目录>` 默认覆盖备份包含的两个入口，可用 `--surface=native|terminal|all` 指定范围。恢复先准备并校验全部选中数据库，再统一替换，失败时回滚已安装部分。无入口标记的旧备份仅恢复原生数据，现有终端数据保留。停止服务始终停止两个入口。
 
 ## 计划开关
 
@@ -34,14 +44,14 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
 
    镜像固定安装 `@openai/codex@0.162.1` 和 `@deepseek-ai/dsh@0.2.1-alpha.2`。可通过构建参数 `CODEX_VERSION`、`DSH_VERSION` 显式更新，更新后需再次核对 CLI 协议。构建上下文不会包含项目文件或密钥。运行时使用已有镜像，禁止自动拉取。
 3. 在启动 Elysia 的进程环境中配置所选 Agent 的凭据。DSH 默认读取 `DEEPSEEK_API_KEY`，Codex 默认读取 `OPENAI_API_KEY`。终端不复用原生 API 设置中的加密密钥，也不映射宿主 Agent 登录目录。
-4. 在项目输入目标，点击“继续”，选择“Agent 终端 · Docker 调度”。选择 Agent、镜像与参数，并点击“检查 Docker 与镜像”。该检查只探测引擎、镜像和环境变量名称，不调用模型或创建容器。
+4. 左上角切换 **Agent 终端**，打开 **终端与设置** 管理 Agent、镜像与参数，选择默认模板。打开项目并输入目标，点击“继续”，核对配置后可点击“检查 Docker 与镜像”。该检查只探测引擎、镜像和环境变量名称，不调用模型或创建容器。
 5. 创建任务后查看对话中的公开输出，右侧预览工作目录与产物。终端正常结束后，先查看日志和差异，再点击“确认交付并验收”。
 
-自定义命令使用 JSON 参数数组，例如 `["agent", "--json"]`；目标通过 stdin 发送。不会拼接宿主 shell 命令。输出协议可选择 Codex JSONL、DSH JSONL、Claude Stream JSON 或普通文本。
+自定义命令使用 JSON 参数数组，例如 `["agent", "--json"]`；目标通过 stdin 发送。不会拼接宿主 shell 命令。输出协议可选择 Codex JSONL、DSH JSONL、Claude Stream JSON 或普通文本。产品版本与镜像版本独立，本轮沿用已锁定的 `elysia-agents:0.13.0`。
 
 ## 执行、恢复与证据
 
-- `Run.execution` 保存配置快照；不存在时使用原生 API。共享调度循环按通道分派，避免两个执行器重复领取任务。终端兼容描述符仅用于旧任务历史展示，不进入提供商目录或原生模型调用。
+- `Run.execution` 保存配置快照；不存在时使用原生 API。每个入口仅调度自己的任务，原生执行器跳过旧 Docker 历史。终端兼容描述符不进入原生提供商目录或模型调用。
 - Git 项目使用已有独立 worktree；容器中的 `.git` 用只读文件遮蔽宿主指针。差异与集成由宿主工具处理。无 Git 项目先建立有数量和大小上限的独立文件快照，拒绝链接越界，保持项目主目录不变。
 - 容器只映射任务目录和专属状态目录，使用应用、运行、任务及操作标签核对归属。资源限制包括 2 CPU、2 GiB 内存和 256 个进程；最长执行时间不超过任务与配置时限。容器不持有宿主 Docker socket。
 - Codex 预设在这一明确授予完整任务权限的容器内关闭第二层审批与沙箱，并忽略宿主配置；隔离边界为 Docker。保留容器的 capability、进程权限和资源限制，避免嵌套 Linux sandbox 所需的 namespace 或 setuid 与容器限制冲突。原生 API 通道的授权不受此设置影响。
@@ -51,7 +61,7 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
 - 中断时检查日志和实际任务目录，填写核验说明。确认已发生会生成当前证据并进入 `terminal_review`；确认未发生会保持暂停，允许用户显式恢复。Docker 无法确认容器停止时，核验不会越过这一边界。
 - 验收再次校验产物哈希、实际目录签名、运行版本、任务状态和必需子任务。异步准备后的文件或记录变化会被拒绝；最终提交采用同步事务与幂等命令。内容正确性由用户根据约定逐条确认。
 
-源码入口为 `packages/contracts/src/index.ts`、`packages/kernel/src/index.ts`、`packages/runtime/src/index.ts`、`packages/runtime/src/docker-agent.ts`，HTTP 入口为 `/api/terminal/check` 和 `/api/runs/:id/terminal/{accept,verify}`。后续可在 runner 层扩展只读终端规划、会话续接、专属凭据引用和外部子代理投影，不改变现有原生 API 通道。
+源码入口为 `apps/server/src/surfaces.ts`、`apps/server/src/terminal-settings.ts`、`packages/contracts/src/index.ts`、`packages/kernel/src/index.ts` 和 `packages/runtime/src/docker-agent.ts`。原生 API 为 `/api/*`；终端 API 为 `/terminal/api/*`，包括 `terminal/settings`、`terminal/check` 和 `runs/:id/terminal/{accept,verify}`。两侧资源及预览地址也使用对应前缀。后续可在 runner 层扩展只读终端规划、会话续接、专属凭据引用和外部子代理投影。
 
 ## 验证边界与参考
 

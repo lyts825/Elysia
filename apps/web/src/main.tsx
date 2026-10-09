@@ -2,7 +2,18 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import './motion.css';
-import { api, mutation, initializeSession, ApiError, canRetryConnection } from './api';
+import {
+  api,
+  apiUrl,
+  mutation,
+  initializeSession,
+  ApiError,
+  canRetryConnection,
+  localSurface,
+  surfaceLocation,
+} from './api';
+import { SurfaceSwitcher } from './SurfaceSwitcher';
+import { TerminalSettings } from './TerminalSettings';
 import { PreviewPanel } from './PreviewPanel';
 import { PreviewDock } from './PreviewDock';
 import { ProjectFiles } from './ProjectFiles';
@@ -12,6 +23,7 @@ import {
   VERSION,
   minimumContextWindowTokens,
   AgentTerminalProfile,
+  SurfaceTerminalSettings,
 } from '../../../packages/contracts/src/index';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import { TerminalRecovery } from './TerminalRecovery';
@@ -130,6 +142,7 @@ function Badge({ status }: { status: string }) {
   );
 }
 function App() {
+  const terminalSurface = localSurface === 'terminal';
   const [ready, setReady] = useState(false),
     [error, setError] = useState(''),
     [readIssues, setReadIssues] = useState<Partial<Record<ReadSource, ReadIssue>>>({}),
@@ -139,6 +152,9 @@ function App() {
     [spaces, setSpaces] = useState<ProjectSpace[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
+    [terminalSettings, setTerminalSettings] = useState<SurfaceTerminalSettings | null>(null),
+    [sessionInitializing, setSessionInitializing] = useState(true),
+    [switchingSurface, setSwitchingSurface] = useState(false),
     [detail, setDetail] = useState<Detail | null>(null),
     [tab, setTab] = useState('tasks'),
     [previewOpen, setPreviewOpen] = useState(false),
@@ -184,6 +200,10 @@ function App() {
     [homeModelKey],
   );
   const homeModelValid = homeModelReady.key === homeModelKey && homeModelReady.valid;
+  const terminalProfileId = cacheState.entries['settings:selected-terminal-profile']?.value;
+  const terminalProfile =
+    terminalSettings?.profiles.find((profile) => profile.id === terminalProfileId) ||
+    terminalSettings?.profiles.find((profile) => profile.id === terminalSettings.defaultProfileId);
   const [homeContexts, setHomeContexts] = useState<Record<string, ContextPolicy>>({});
   const homeContext = homeContexts[draftKey] || { mode: 'managed' as const };
   const homeContextValid = validContextPolicy(
@@ -204,6 +224,8 @@ function App() {
   const runSetupKey = JSON.stringify([projectId, project ? 'task' : 'chat', draft]);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
+  const legacyTerminal = !terminalSurface && detail?.run.execution?.kind === 'docker-agent';
+  const runReadOnly = archived || legacyTerminal;
   const [feedbackTime, setFeedbackTime] = useState(Date.now);
   const hasRateWait =
     !!detail &&
@@ -222,7 +244,11 @@ function App() {
     : undefined;
   const questions = detail ? currentQuestions(detail) : [];
   const resumeTask = detail?.tasks.find((task) => task.id === feedback?.resumeTaskId);
-  const resumeTaskReason = detail && resumeTask ? modelSwitchReason(detail, archived, resumeTask.id) : '';
+  const resumeTaskReason = legacyTerminal
+    ? '旧终端记录仅供查看。'
+    : detail && resumeTask
+      ? modelSwitchReason(detail, archived, resumeTask.id)
+      : '';
   const planRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
@@ -244,9 +270,13 @@ function App() {
   const contextAgent = modal.startsWith('context:')
     ? detail?.contexts?.find((item) => item.agentId === modal.slice(8))
     : undefined;
-  const rootModelReason =
-    detail && rootAgent ? modelSwitchReason(detail, archived, rootAgent.taskId) : '模型正在准备中。';
+  const rootModelReason = legacyTerminal
+    ? '旧终端记录仅供查看。'
+    : detail && rootAgent
+      ? modelSwitchReason(detail, archived, rootAgent.taskId)
+      : '模型正在准备中。';
   const decisionDisabledReason = (operation: Operation) => {
+    if (legacyTerminal) return '旧终端记录仅供查看，请在 Agent 终端入口创建新任务。';
     if (archived) return '请先恢复归档记录，再提交核验决定。';
     if (
       ['DONE', 'CANCELLED'].includes(detail?.run.status || '') ||
@@ -293,6 +323,7 @@ function App() {
   const runStream = useRef(new RunStream());
   const [connection, setConnection] = useState('connecting');
   const actionPending = useRef(false);
+  const surfaceChanging = useRef(false);
   const navigation = useRef(initialNavigation);
   const navigationEpoch = useRef(0);
   const navigationStorageKey = useRef<string | undefined>(undefined);
@@ -360,13 +391,14 @@ function App() {
   const refresh = useCallback(async () => {
     const request = ++listRequest.current;
     const epoch = navigationEpoch.current;
-    let p: Project[], r: Run[], v: Provider[], s: ProjectSpace[];
+    let p: Project[], r: Run[], v: Provider[], s: ProjectSpace[], settings: SurfaceTerminalSettings | null;
     try {
-      [p, r, v, s] = await Promise.all([
+      [p, r, v, s, settings] = await Promise.all([
         api<Project[]>('/projects'),
         api<Run[]>('/runs'),
-        api<Provider[]>('/providers'),
+        terminalSurface ? Promise.resolve([]) : api<Provider[]>('/providers'),
         api<ProjectSpace[]>('/spaces'),
+        terminalSurface ? api<SurfaceTerminalSettings>('/terminal/settings') : Promise.resolve(null),
       ]);
     } catch (error) {
       if (request === listRequest.current)
@@ -378,6 +410,7 @@ function App() {
     setProjects(p);
     setRuns(r);
     setProviders(v);
+    setTerminalSettings(settings);
     setSpaces(s);
     cache.prune(new Set(p.map((project) => project.id)), new Set(r.map((run) => run.id)));
     if (epoch !== navigationEpoch.current) return;
@@ -392,7 +425,7 @@ function App() {
     }
     navigate(next);
     return true;
-  }, [navigate, clearReadIssue, cache]);
+  }, [navigate, clearReadIssue, cache, terminalSurface]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
@@ -417,6 +450,7 @@ function App() {
     async (retry = false, source?: ReadSource, target?: string) => {
       if (connectPending.current || actionPending.current) return;
       connectPending.current = true;
+      if (!sessionReady.current) setSessionInitializing(true);
       setRetrying(true);
       const refreshCurrentDetail = sessionReady.current && !source;
       try {
@@ -449,6 +483,7 @@ function App() {
         }
       } finally {
         connectPending.current = false;
+        setSessionInitializing(false);
         setRetrying(false);
       }
     },
@@ -469,7 +504,7 @@ function App() {
     setConnection('connecting');
     if (!ready || !runId) return;
     void refreshDetail();
-    const source = new EventSource('/api/runs/' + runId + '/events');
+    const source = new EventSource(apiUrl('/runs/' + runId + '/events'));
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const reload = () => {
@@ -536,7 +571,7 @@ function App() {
   }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
   async function act(fn: () => Promise<unknown>) {
-    if (actionPending.current) return false;
+    if (actionPending.current || surfaceChanging.current) return false;
     actionPending.current = true;
     setBusy(true);
     setError('');
@@ -554,6 +589,7 @@ function App() {
     }
   }
   const startConversation = () => {
+    if (terminalSurface && (!project || !terminalProfile)) return;
     if (busy || (!project && (!homeModelValid || !homeContextValid)) || !draft.trim() || project?.archived)
       return;
     if (project) {
@@ -587,7 +623,7 @@ function App() {
     });
   };
   const sendReply = () => {
-    if (!detail || busy || archived || !reply.trim() || ['DONE', 'CANCELLED'].includes(detail.run.status))
+    if (!detail || busy || runReadOnly || !reply.trim() || ['DONE', 'CANCELLED'].includes(detail.run.status))
       return;
     const target = runId;
     const text = reply;
@@ -699,6 +735,10 @@ function App() {
     changes: Record<string, unknown>,
     remove?: boolean,
   ): Promise<SessionUpdateResult> => {
+    if (target.kind === 'run' && !terminalSurface && target.item.execution?.kind === 'docker-agent') {
+      setError('旧终端记录仅供查看，请在 Agent 终端入口创建新任务。');
+      return false;
+    }
     let conflicted = false;
     const succeeded = await act(async () => {
       const current =
@@ -736,9 +776,26 @@ function App() {
   const totalTokens =
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
   const runAction = (action: string, taskId?: string) =>
-    act(() =>
-      mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
-    );
+    runReadOnly
+      ? Promise.resolve(false)
+      : act(() =>
+          mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
+        );
+  const switchSurface = (surface: 'native' | 'terminal') => {
+    if (surface === localSurface || actionPending.current || surfaceChanging.current || sessionInitializing)
+      return;
+    surfaceChanging.current = true;
+    setSwitchingSurface(true);
+    void cache.flush();
+    location.assign(surfaceLocation(surface));
+  };
+  const surfaceSwitcher = (
+    <SurfaceSwitcher
+      disabled={busy || sessionInitializing}
+      switching={switchingSurface}
+      change={switchSurface}
+    />
+  );
   function openArtifact(a: ArtifactTarget) {
     if (a.runId !== activeRunId.current) return;
     setArtifactView({ id: a.id, name: a.name, runId: a.runId });
@@ -748,9 +805,10 @@ function App() {
   if (!ready)
     return (
       <div className="auth-screen">
+        <div className="surface-loading-switcher">{surfaceSwitcher}</div>
         <BrandIcon />
-        <h1>Elysia</h1>
-        <p>{readIssue?.message || '正在连接 Elysia…'}</p>
+        <h1>{terminalSurface ? 'Agent 终端' : 'Elysia'}</h1>
+        <p>{readIssue?.message || (terminalSurface ? '正在连接 Agent 终端…' : '正在连接 Elysia…')}</p>
         {readIssue?.retryable && (
           <button
             className="secondary"
@@ -799,11 +857,8 @@ function App() {
         inert={(narrowLayout && !navigationOpen) || detailsOverlayOpen}
         tabIndex={navigationDrawerOpen ? -1 : undefined}
       >
-        <div className="brand">
-          <BrandIcon />
-          <span>
-            Elysia<small>你的本机协作空间</small>
-          </span>
+        <div className="brand surface-brand">
+          {surfaceSwitcher}
           {narrowLayout && (
             <button
               className="icon-button mobile-nav-close"
@@ -818,12 +873,12 @@ function App() {
         </div>
         <button
           className="new-task"
-          onClick={() => selectProject('')}
-          title="新建独立对话"
-          aria-label="新建独立对话"
+          onClick={() => (terminalSurface ? (project ? newRun() : setModal('project')) : selectProject(''))}
+          title={terminalSurface ? '新建终端任务' : '新建独立对话'}
+          aria-label={terminalSurface ? '新建终端任务' : '新建独立对话'}
         >
           <Icon name="plus" />
-          <span>新建独立对话</span>
+          <span>{terminalSurface ? '新建终端任务' : '新建独立对话'}</span>
         </button>
         <div className="space-selector">
           <label htmlFor="sidebar-space">项目空间</label>
@@ -865,6 +920,7 @@ function App() {
           selectProject={selectProject}
           selectRun={selectRun}
           create={(id, objective) => {
+            if (terminalSurface && !id) return;
             selectProject(id);
             if (objective !== undefined) cache.set(newDraftKey(id), objective);
           }}
@@ -888,11 +944,11 @@ function App() {
           <button
             className="nav-item"
             onClick={() => setModal('settings')}
-            aria-label="模型与设置"
-            title="模型与设置"
+            aria-label={terminalSurface ? '终端与设置' : '模型与设置'}
+            title={terminalSurface ? '终端与设置' : '模型与设置'}
           >
             <Icon name="settings" />
-            <span>模型与设置</span>
+            <span>{terminalSurface ? '终端与设置' : '模型与设置'}</span>
           </button>
           <div
             className="cache-state"
@@ -934,12 +990,21 @@ function App() {
               {narrowLayout && <span>会话</span>}
             </button>
             <Icon name="folder" size={16} />
-            <span className="breadcrumb-project" title={project?.name || '独立对话'}>
-              {project?.name || '独立对话'}
+            <span
+              className="breadcrumb-project"
+              title={project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
+            >
+              {project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
             </span>
             <span className="slash">/</span>
             <strong title={detail?.run.objective}>
-              {detail ? detail.run.title || detail.run.objective : project ? '新建任务' : '新建对话'}
+              {detail
+                ? detail.run.title || detail.run.objective
+                : project
+                  ? '新建任务'
+                  : terminalSurface
+                    ? '选择项目'
+                    : '新建对话'}
             </strong>
           </div>
           <div className="topbar-right">
@@ -995,7 +1060,7 @@ function App() {
             providers={providers}
             modelChoice={homeModel}
             changeModel={changeHomeModel}
-            modelReady={!!project || homeModelValid}
+            modelReady={terminalSurface ? !!terminalProfile : !!project || homeModelValid}
             setModelReady={updateHomeModelReady}
             contextReady={!!project || homeContextValid}
             contextControl={
@@ -1014,6 +1079,11 @@ function App() {
             busy={busy}
             openSettings={() => setModal('settings')}
             start={startConversation}
+            terminal={terminalSurface}
+            terminalProfiles={terminalSettings?.profiles || []}
+            terminalProfileId={terminalProfile?.id}
+            changeTerminalProfile={(id) => cache.set('settings:selected-terminal-profile', id)}
+            openProject={() => setModal('project')}
           />
         ) : detail ? (
           <>
@@ -1063,7 +1133,7 @@ function App() {
                     任务约定
                   </button>
                 )}
-                {feedback?.action && (
+                {feedback?.action && !legacyTerminal && (
                   <button className="quiet-button run-next-action" disabled={busy} onClick={feedbackAction}>
                     <Icon
                       name={
@@ -1109,7 +1179,7 @@ function App() {
                 {feedback?.control === 'pause' ? (
                   <button
                     className="quiet-button"
-                    disabled={busy || archived}
+                    disabled={busy || runReadOnly}
                     onClick={() => void runAction('pause')}
                   >
                     <Icon name="pause" size={14} />
@@ -1121,7 +1191,7 @@ function App() {
                   (feedback?.control === 'resume' || feedback?.control === 'retry') && (
                     <button
                       className="quiet-button"
-                      disabled={busy || archived}
+                      disabled={busy || runReadOnly}
                       title={feedback.control === 'retry' ? '按已有授权重试，累计预算保持' : undefined}
                       onClick={() => void runAction('resume')}
                     >
@@ -1133,7 +1203,7 @@ function App() {
                 {!['DONE', 'CANCELLED'].includes(detail.run.status) && (
                   <button
                     className="quiet-button danger"
-                    disabled={busy || archived}
+                    disabled={busy || runReadOnly}
                     onClick={() => void runAction('cancel')}
                   >
                     <Icon name="stop" size={14} />
@@ -1148,6 +1218,12 @@ function App() {
             >
               <section className="conversation" inert={detailsOverlayOpen}>
                 <ConversationScroll>
+                  {legacyTerminal && (
+                    <div className="system-note">
+                      <Icon name="history" size={14} />
+                      <span>旧终端记录 · 只读。新任务请切换到 Agent 终端。</span>
+                    </div>
+                  )}
                   {!isChat && (
                     <div className="user-message">
                       <div className="message-avatar user">你</div>
@@ -1310,7 +1386,7 @@ function App() {
                       assignmentReady={assignmentReady}
                       proposedChoice={proposedChoice}
                       busy={busy}
-                      archived={archived}
+                      archived={runReadOnly}
                       changeAssignment={(key, choice) =>
                         setAssignmentDrafts((old) => ({
                           ...old,
@@ -1361,7 +1437,7 @@ function App() {
                           <button
                             type="button"
                             className="primary"
-                            disabled={busy || archived}
+                            disabled={busy || runReadOnly}
                             onClick={() =>
                               void act(() =>
                                 mutation('/runs/' + detail.run.id + '/terminal/accept', {
@@ -1410,7 +1486,7 @@ function App() {
                       .map((operation) => (
                         <TerminalRecovery
                           key={operation.id}
-                          disabled={busy || archived}
+                          disabled={busy || runReadOnly}
                           submit={(outcome, note) =>
                             void act(() =>
                               mutation('/runs/' + detail.run.id + '/terminal/verify', {
@@ -1478,12 +1554,18 @@ function App() {
                         }
                       }}
                       placeholder={
-                        archived ? '恢复归档后可继续对话' : isChat ? '继续对话…' : '回答问题，或补充需求…'
+                        legacyTerminal
+                          ? '旧终端记录仅供查看'
+                          : archived
+                            ? '恢复归档后可继续对话'
+                            : isChat
+                              ? '继续对话…'
+                              : '回答问题，或补充需求…'
                       }
-                      disabled={archived || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                      disabled={runReadOnly || ['DONE', 'CANCELLED'].includes(detail.run.status)}
                     />
                     {!isChat &&
-                      !archived &&
+                      !runReadOnly &&
                       !['DONE', 'CANCELLED'].includes(detail.run.status) &&
                       (detail.run.authorized || detail.run.plan) && (
                         <p className="field-help" style={{ padding: '0 16px 10px' }}>
@@ -1528,20 +1610,22 @@ function App() {
                         <span className="reply-hint">
                           {busy
                             ? '正在提交…'
-                            : archived
-                              ? '已归档，保留全部对话记录'
-                              : isChat
-                                ? 'Ctrl + Enter 发送 · 独立会话自动保存'
-                                : detail.run.execution?.kind === 'docker-agent'
-                                  ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
-                                  : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
+                            : legacyTerminal
+                              ? '旧终端记录 · 只读'
+                              : archived
+                                ? '已归档，保留全部对话记录'
+                                : isChat
+                                  ? 'Ctrl + Enter 发送 · 独立会话自动保存'
+                                  : detail.run.execution?.kind === 'docker-agent'
+                                    ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
+                                    : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
                         </span>
                       </div>
                       <button
                         className="send-button"
                         aria-label="发送补充需求"
                         disabled={
-                          archived ||
+                          runReadOnly ||
                           !reply.trim() ||
                           busy ||
                           ['DONE', 'CANCELLED'].includes(detail.run.status)
@@ -1651,7 +1735,7 @@ function App() {
                             完成
                           </span>
                         </div>
-                        <TaskGraph detail={detail} archived={archived} />
+                        <TaskGraph detail={detail} archived={runReadOnly} />
                         <div className="panel-heading">
                           <h3>任务列表</h3>
                           <span>按任务查看进度与结果</span>
@@ -1732,7 +1816,9 @@ function App() {
                         </div>
                         {agentOrder(detail.agents).map((a) => {
                           const task = detail.tasks.find((t) => t.id === a.taskId);
-                          const switchReason = modelSwitchReason(detail, archived, a.taskId);
+                          const switchReason = legacyTerminal
+                            ? '旧终端记录仅供查看。'
+                            : modelSwitchReason(detail, archived, a.taskId);
                           return (
                             <div
                               className="agent-card"
@@ -1759,7 +1845,11 @@ function App() {
                                 <small>独立会话 {a.sessionId.slice(0, 8)}</small>
                                 <ContextMeter
                                   projection={detail.contexts?.find((item) => item.agentId === a.id)}
-                                  disabled={busy || !detail.contexts?.some((item) => item.agentId === a.id)}
+                                  disabled={
+                                    busy ||
+                                    runReadOnly ||
+                                    !detail.contexts?.some((item) => item.agentId === a.id)
+                                  }
                                   open={() => setModal('context:' + a.id)}
                                 />
                                 <button
@@ -1918,7 +2008,7 @@ function App() {
                   selectRun={selectRun}
                 />
               )}
-              {modal === 'run' && (
+              {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
                 <RunModal
                   objective={draft}
                   kind={project ? 'task' : 'chat'}
@@ -1926,6 +2016,7 @@ function App() {
                   providers={providers}
                   modelChoice={homeModel}
                   contextPolicy={homeContext}
+                  terminalTemplate={terminalProfile}
                   initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
                   close={() => {
                     setRunSetup(null);
@@ -1953,7 +2044,39 @@ function App() {
                   }}
                 />
               )}
-              {(modal === 'settings' || modal === 'run-settings') && (
+              {(modal === 'settings' || modal === 'run-settings') &&
+                terminalSurface &&
+                (terminalSettings ? (
+                  <TerminalSettings
+                    initial={terminalSettings}
+                    close={() => setModal(modal === 'run-settings' ? 'run' : '')}
+                    updated={(settings) => {
+                      if (settings.defaultProfileId !== terminalSettings.defaultProfileId)
+                        cache.set('settings:selected-terminal-profile', settings.defaultProfileId);
+                      setTerminalSettings(settings);
+                      void refresh();
+                    }}
+                    activity={(pending) => {
+                      actionPending.current = pending;
+                      setBusy(pending);
+                    }}
+                  />
+                ) : (
+                  <Modal title="终端与设置" close={() => setModal('')}>
+                    <div className="form-body" role="status">
+                      {readIssue ? readIssue.message : '正在读取终端模板…'}
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={retrying}
+                        onClick={() => void connect(true)}
+                      >
+                        重试读取
+                      </button>
+                    </div>
+                  </Modal>
+                ))}
+              {(modal === 'settings' || modal === 'run-settings') && !terminalSurface && (
                 <React.Suspense
                   fallback={
                     <Modal title="模型与连接" close={() => setModal(modal === 'run-settings' ? 'run' : '')}>
@@ -1978,7 +2101,11 @@ function App() {
                   task={switchTask}
                   chat={isChat}
                   busy={busy}
-                  disabledReason={modelSwitchReason(detail, archived, switchTask.id)}
+                  disabledReason={
+                    legacyTerminal
+                      ? '旧终端记录仅供查看。'
+                      : modelSwitchReason(detail, archived, switchTask.id)
+                  }
                   close={() => setModal('')}
                   submit={(choice, switchMode) =>
                     act(async () => {
@@ -2037,7 +2164,7 @@ function App() {
                   close={() => setModal('')}
                   busy={busy}
                   disabled={
-                    archived ||
+                    runReadOnly ||
                     ['DONE', 'CANCELLED'].includes(detail.run.status) ||
                     detail.run.execution?.kind === 'docker-agent'
                   }
@@ -2107,7 +2234,7 @@ function App() {
                     <button className="secondary" disabled={busy} onClick={() => setModal('')}>
                       返回
                     </button>
-                    {feedback?.limit?.recheck && !archived && (
+                    {feedback?.limit?.recheck && !runReadOnly && (
                       <button
                         className="secondary"
                         disabled={busy}
@@ -2589,6 +2716,7 @@ function RunModal({
   initial,
   modelChoice,
   contextPolicy,
+  terminalTemplate,
 }: {
   providers: Provider[];
   objective: string;
@@ -2601,14 +2729,13 @@ function RunModal({
   initial?: RunSetupDraft;
   modelChoice: ModelChoice;
   contextPolicy: ContextPolicy;
+  terminalTemplate?: AgentTerminalProfile;
 }) {
+  const executionKind = localSurface === 'terminal' ? 'docker-agent' : 'native';
   const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
     [planMode, setPlanMode] = useState(initial?.planMode ?? true),
-    [executionKind, setExecutionKind] = useState<'native' | 'docker-agent'>(
-      initial?.executionKind ?? 'native',
-    ),
-    [terminalProfile, setTerminalProfile] = useState<AgentTerminalProfile>(
-      () => initial?.terminalProfile ?? terminalPreset(),
+    [terminalProfile, setTerminalProfile] = useState<AgentTerminalProfile>(() =>
+      structuredClone(initial?.terminalProfile ?? terminalTemplate ?? terminalPreset()),
     ),
     [modelReady, setModelReady] = useState(false),
     [context, setContext] = useState<ContextPolicy>(() => initial?.contextPolicy ?? contextPolicy),
@@ -2646,7 +2773,7 @@ function RunModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || !setupReady || !objective.trim()) return;
+          if (busy || !setupReady || !objective.trim() || (localSurface === 'terminal' && chat)) return;
           submit({
             ...(terminal ? {} : { ...choice, contextPolicy: context }),
             planMode: terminal ? false : planMode,
@@ -2673,38 +2800,27 @@ function RunModal({
           <p className="field-help">
             {chat
               ? '选择会话模型后开始聊天。独立对话可使用技能说明；处理项目文件和生成附件时，在项目下新建任务。'
-              : '选择执行通道和授权范围。API 模式支持 Elysia 多代理；终端模式由外部 Agent 在 Docker 内调度。'}
+              : terminal
+                ? '确认终端配置后，在独立 Docker 任务目录中执行。'
+                : '确认模型、计划模式与授权范围。'}
           </p>
-          {!chat && (
+          {!chat && !terminal && (
             <>
-              <label>
-                执行通道
-                <select
-                  value={executionKind}
-                  disabled={busy}
-                  onChange={(e) => setExecutionKind(e.target.value as 'native' | 'docker-agent')}
-                >
-                  <option value="native">原生 API · Elysia 调度</option>
-                  <option value="docker-agent">Agent 终端 · Docker 调度</option>
-                </select>
-              </label>
               <label className="check-label">
                 <input
                   type="checkbox"
                   role="switch"
                   aria-label="计划模式"
-                  checked={!terminal && planMode}
-                  disabled={busy || terminal}
+                  checked={planMode}
+                  disabled={busy}
                   onChange={(e) => setPlanMode(e.target.checked)}
                 />
                 计划模式
               </label>
               <p className="field-help">
-                {terminal
-                  ? 'Docker 终端当前直接执行，结束后等待你验收。'
-                  : planMode
-                    ? '先生成计划，确认具体版本后执行。'
-                    : '创建任务即授权在下方权限和预算内执行，仍需提供验收证据。'}
+                {planMode
+                  ? '先生成计划，确认具体版本后执行。'
+                  : '创建任务即授权在下方权限和预算内执行，仍需提供验收证据。'}
               </p>
             </>
           )}

@@ -1,0 +1,201 @@
+.surface-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  text-align: left;
+}
+.surface-trigger:hover,
+.surface-trigger[aria-expanded='true'] {
+  background: var(--surface-hover);
+}
+.surface-trigger > span {
+  white-space: nowrap;
+}
+.surface-trigger > svg:last-child {
+  transform: rotate(90deg);
+}
+.surface-trigger .brand-mark {
+  width: 25px;
+  height: 25px;
+}
+.surface-menu {
+  position: fixed;
+  z-index: 220;
+  width: 310px;
+  max-width: calc(100vw - 16px);
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 10px 32px rgb(34 27 31 / 12%);
+}
+.surface-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 11px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.surface-menu > button:hover,
+.surface-menu > button:focus-visible {
+  background: var(--surface-hover);
+}
+.surface-menu > button[aria-disabled='true'] {
+  cursor: default;
+}
+.surface-menu .surface-option-label {
+  flex: 1;
+  min-width: 0;
+}
+.surface-menu strong,
+.surface-menu small {
+  display: block;
+}
+.surface-menu strong {
+  font-size: 16px;
+  font-weight: 550;
+}
+.surface-menu small,
+.surface-menu > p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.surface-menu > p {
+  margin: 4px 12px 7px;
+}
+.surface-loading-switcher {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+}
+.brand.surface-brand {
+  padding-inline: 0;
+  justify-content: space-between;
+}
+.sidebar-collapsed .surface-trigger > span,
+.sidebar-collapsed .surface-trigger > svg:last-child {
+  display: none;
+}
+.sidebar-collapsed .surface-trigger {
+  justify-content: center;
+  width: 100%;
+  padding-inline: 0;
+}
+.terminal-template-select {
+  min-width: 0;
+  max-width: 250px;
+  color: var(--secondary);
+}
+.terminal-template-select > select {
+  min-width: 0;
+  max-width: 100%;
+}
+.terminal-start-empty {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+.terminal-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 190px;
+  min-width: 0;
+  flex: none;
+}
+.terminal-settings-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.terminal-settings-profiles > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--secondary);
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.terminal-settings-profiles > button[aria-current='true'] {
+  color: var(--text);
+  background: var(--surface-selected);
+  border-color: var(--border);
+}
+.terminal-settings-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.terminal-settings-editor {
+  flex: 1;
+  min-width: 0;
+}
+.terminal-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.terminal-settings-actions > .check-label {
+  flex: 1;
+}
+@media (max-width: 760px) {
+  .terminal-settings-body {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .terminal-settings-list {
+    width: 100%;
+  }
+  .terminal-settings-profiles {
+    flex-direction: row;
+    align-items: flex-start;
+    overflow-x: auto;
+  }
+  .terminal-settings-profiles > button {
+    flex: none;
+    min-height: 42px;
+    max-width: 220px;
+  }
+  .terminal-settings-list > label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .terminal-settings-list > label > select {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .terminal-settings-editor {
+    width: 100%;
+  }
+  .terminal-template-select {
+    max-width: 160px;
+  }
+}

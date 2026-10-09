@@ -44,6 +44,8 @@ export class NativeExecutor implements ExecutorAdapter {
   terminalRunner?: (task: Task, signal: AbortSignal) => Promise<void>;
   terminalInterrupt?: (runId: string, taskId?: string) => Promise<void>;
   terminalDispose?: () => Promise<void>;
+  /** A workbench surface owns only its selected execution kind. */
+  acceptRun: (run: Run) => boolean = () => true;
   constructor(public kernel: Kernel) {
     this.gateway = new ToolGateway(kernel);
   }
@@ -80,7 +82,7 @@ export class NativeExecutor implements ExecutorAdapter {
     if (this.timer) clearInterval(this.timer);
     for (const run of this.kernel.store
       .all<Run>('runs')
-      .filter((r) => ['READY', 'RUNNING'].includes(r.status)))
+      .filter((r) => this.acceptRun(r) && ['READY', 'RUNNING'].includes(r.status)))
       this.kernel.action(run.id, 'pause');
     for (const value of this.active.values()) value.controller.abort();
     const stopped = await Promise.allSettled([
@@ -98,7 +100,7 @@ export class NativeExecutor implements ExecutorAdapter {
     try {
       for (let run of this.kernel.store
         .all<Run>('runs')
-        .filter((r) => !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
+        .filter((r) => this.acceptRun(r) && !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if (
           ![...this.active.values()].some((a) => a.runId === run.id) &&
@@ -141,6 +143,7 @@ export class NativeExecutor implements ExecutorAdapter {
         if (this.active.size >= 4) break;
         if (this.active.has(task.id)) continue;
         const run = this.kernel.store.require<Run>('runs', task.runId);
+        if (!this.acceptRun(run)) continue;
         if (run.archived || !['READY', 'RUNNING'].includes(run.status)) continue;
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if ([...this.active.values()].filter((a) => a.runId === run.id).length >= run.limits.concurrency)

@@ -81,8 +81,8 @@ async function projectFilename(store: Store, id: string, input: string) {
   check(target);
   return { target, relative };
 }
-const projectResourceBase = (id: string, directory = '') =>
-  `/api/projects/${encodeURIComponent(id)}/resources/${directory ? directory.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') + '/' : ''}`;
+const projectResourceBase = (id: string, directory = '', prefix = '') =>
+  `${prefix}/api/projects/${encodeURIComponent(id)}/resources/${directory ? directory.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') + '/' : ''}`;
 export async function projectResource(
   store: Store,
   id: string,
@@ -109,6 +109,7 @@ export async function projectFiles(
   input = '.',
   encoding: TextFileEncoding = 'auto',
   options: TextPageOptions = {},
+  prefix = '',
 ) {
   options.signal?.throwIfAborted();
   const { target, relative } = await projectFilename(store, id, input);
@@ -140,9 +141,10 @@ export async function projectFiles(
               ? 'html'
               : 'text';
   const directory = path.dirname(relative) === '.' ? '' : path.dirname(relative);
-  const resourceBase = projectResourceBase(id, directory);
+  const resourceBase = projectResourceBase(id, directory, prefix);
   const resourceUrl =
-    projectResourceBase(id) + relative.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
+    projectResourceBase(id, '', prefix) +
+    relative.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
   if (kind === 'image' || kind === 'pdf' || kind === 'binary')
     return {
       path: relative,

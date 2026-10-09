@@ -17,6 +17,7 @@ const fixedKeys = new Set([
   'collapsed:projects',
   'collapsed:chats',
   'collapsed:pinned',
+  'settings:selected-terminal-profile',
 ]);
 const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):([^:\s/\\]+)$/;
 const keySchema = z
@@ -47,11 +48,14 @@ function reference(key: string): { table: 'projects' | 'runs'; id: string } | un
 }
 
 function assertValue(key: string, value: string | boolean) {
+  const text = key.startsWith('draft:') || key === 'settings:selected-terminal-profile';
   invariant(
-    typeof value === (key.startsWith('draft:') ? 'string' : 'boolean'),
+    typeof value === (text ? 'string' : 'boolean'),
     'WORKBENCH_VALUE',
-    key.startsWith('draft:') ? '草稿内容必须是文本' : '工作台显示选项必须是布尔值',
+    text ? '草稿和模板选择必须是文本' : '工作台显示选项必须是布尔值',
   );
+  if (key === 'settings:selected-terminal-profile')
+    invariant(z.string().uuid().safeParse(value).success, 'WORKBENCH_VALUE', '终端模板选择无效');
 }
 
 function decode(row: Row): { entry: Entry; bytes: number } {

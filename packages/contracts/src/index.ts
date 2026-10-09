@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const VERSION = '0.13.1-preview.1';
+export const VERSION = '0.14.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -272,6 +272,25 @@ export const AgentTerminalProfile = z.object({
   network: z.enum(['none', 'bridge']).default('bridge'),
 });
 export type AgentTerminalProfile = z.infer<typeof AgentTerminalProfile>;
+export type WorkspaceSurface = 'native' | 'terminal';
+export const SurfaceTerminalSettings = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    profiles: z.array(AgentTerminalProfile).min(1).max(20),
+    defaultProfileId: z.string().uuid(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.profiles.map((profile) => profile.id)).size !== value.profiles.length)
+      context.addIssue({ code: 'custom', path: ['profiles'], message: '终端模板 ID 必须唯一' });
+    if (!value.profiles.some((profile) => profile.id === value.defaultProfileId))
+      context.addIssue({
+        code: 'custom',
+        path: ['defaultProfileId'],
+        message: '请选择现有终端模板作为默认值',
+      });
+  });
+export type SurfaceTerminalSettings = z.infer<typeof SurfaceTerminalSettings>;
 export const ExecutionBinding = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('native') }),
   z.object({ kind: z.literal('docker-agent'), profile: AgentTerminalProfile }),

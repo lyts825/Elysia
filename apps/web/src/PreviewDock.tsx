@@ -3,9 +3,10 @@ import type { Artifact } from '../../../packages/contracts/src/index';
 import { ArtifactFilePreview } from './ArtifactFilePreview';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
+import { apiUrl, surfaceStorageKey } from './api';
 import './preview-dock.css';
 
-const ratioKey = 'elysia.preview.split-ratio';
+const ratioKey = surfaceStorageKey('elysia.preview.split-ratio');
 function savedRatio() {
   try {
     const value = Number(localStorage.getItem(ratioKey));
@@ -255,7 +256,7 @@ export function PreviewDock({
               <span>
                 {artifact.verified ? '证据已核验' : '待验收'} · v{artifact.version}
               </span>
-              <a className="secondary" href={'/api/artifacts/' + artifact.id} download>
+              <a className="secondary" href={apiUrl('/artifacts/' + artifact.id)} download>
                 下载产物
                 <Icon name="arrow" size={14} />
               </a>
