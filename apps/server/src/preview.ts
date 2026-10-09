@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import type {
   PreviewEntry,
@@ -362,6 +362,7 @@ export class PreviewService {
     const ext = path.extname(name).toLowerCase(),
       mediaType = fileMediaType(name);
     let bytes: Buffer | null = null,
+      contentHash: string | null = null,
       deleted = false,
       page: PreviewFile['page'] = null,
       resolvedEncoding: PreviewFile['encoding'] = null,
@@ -390,7 +391,7 @@ export class PreviewService {
         (info.prefix[0] === 0xfe && info.prefix[1] === 0xff);
       binary = !unicode16 && isBinaryFile(name, info.prefix);
       if (!mediaType.startsWith('image/') && !binary) {
-        const result = await readTextPage(filename, encoding, options);
+        const result = await readTextPage(filename, encoding, { ...options, version });
         invariant((await this.filename(task, name)) === filename, 'PREVIEW_PATH', '文件路径在读取时改变');
         bytes = result.bytes;
         text = result.text;
@@ -403,6 +404,14 @@ export class PreviewService {
           page = null;
           resolvedEncoding = null;
           encodingSource = null;
+        } else if (['.html', '.htm'].includes(ext)) {
+          // The iframe renders the whole document, so its update key must include
+          // bytes beyond the source page. Stream against the same file version.
+          const resource = await streamFile(filename, mediaType, { version, signal: options.signal });
+          const digest = createHash('sha256');
+          for await (const chunk of resource.stream) digest.update(chunk);
+          options.signal?.throwIfAborted();
+          contentHash = digest.digest('hex');
         }
       }
     } catch (error) {
@@ -470,7 +479,7 @@ export class PreviewService {
     return {
       path: name,
       text,
-      hash: bytes ? hash(bytes) : null,
+      hash: contentHash ?? (bytes ? hash(bytes) : null),
       mediaType,
       kind,
       diff,

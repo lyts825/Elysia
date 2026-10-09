@@ -24,6 +24,8 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number)
   const scope = JSON.stringify([endpoint, encoding, refresh]);
   const [position, setPosition] = useState(() => start(scope));
   const current = position.scope === scope ? position : start(scope);
+  // Retire the old cursor even when the new file/encoding fails to load.
+  if (position.scope !== scope) setPosition(current);
   const key = JSON.stringify([scope, current.offset, current.version, current.revision]);
   const [result, setResult] = useState<{
     scope: string;

@@ -627,7 +627,7 @@ export class ToolGateway {
         if (name === 'apply_patch') {
           const oldText = old!.toString('utf8');
           invariant(oldText.split(args.oldText).length === 2, 'PATCH_AMBIGUOUS', '原文必须唯一匹配');
-          content = oldText.replace(args.oldText, args.newText);
+          content = oldText.replace(args.oldText, () => args.newText);
         }
         const expectedNewHash = hash(content);
         const op = this.store.require<Operation>('tool_operations', operation.id);

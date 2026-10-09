@@ -9,7 +9,7 @@ export function ArtifactFilePreview({ id }: { id: string }) {
   const { value, loading, error } = reader;
   return (
     <div className="artifact-file-preview" aria-busy={loading}>
-      {value && value.text !== null && (
+      {(!value || value.text !== null) && (
         <div className="file-encoding-choice">
           <label>
             编码{' '}

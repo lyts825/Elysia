@@ -598,7 +598,7 @@ export function PreviewPanel({
                 <code>{selected}</code>
               </span>
               <small>{formatFileBytes(selectedEntry.size)}</small>
-              {selectedFile?.text !== null && selectedFile?.encoding && (
+              {(!selectedFile || selectedFile.text !== null) && (
                 <select
                   aria-label="预览文本编码"
                   value={position.encoding}
@@ -617,7 +617,9 @@ export function PreviewPanel({
                   {textFileEncodings.map((name) => (
                     <option key={name} value={name}>
                       {name === 'auto'
-                        ? `自动 · ${selectedFile.encoding?.toUpperCase()}`
+                        ? selectedFile?.encoding
+                          ? `自动 · ${selectedFile.encoding.toUpperCase()}`
+                          : '自动'
                         : name.toUpperCase()}
                     </option>
                   ))}
