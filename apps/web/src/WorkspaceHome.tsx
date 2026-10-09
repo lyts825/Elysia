@@ -41,6 +41,7 @@ export function WorkspaceHome({
       <div className="welcome-content">
         <header className="home-heading">
           <h1>{project ? '新建任务' : '新建对话'}</h1>
+          <p>{project ? `在 ${project.name} 中，把想法变成成果。` : '从一个想法开始，一起把它完成。'}</p>
         </header>
         <section className="composer" aria-label={project ? '创建项目任务' : '创建独立对话'}>
           <textarea

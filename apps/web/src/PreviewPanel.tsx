@@ -31,6 +31,7 @@ const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
   'not-file': '路径不是文件',
 };
 type Props = {
+  embedded?: boolean;
   runId: string;
   tasks: Task[];
   agents: Agent[];
@@ -43,6 +44,7 @@ type Props = {
   close: () => void;
 };
 export function PreviewPanel({
+  embedded = false,
   runId,
   tasks,
   agents,
@@ -350,40 +352,42 @@ export function PreviewPanel({
       : '';
   return (
     <aside
-      ref={panel}
-      className={'preview-panel' + (wide ? ' preview-expanded' : '')}
+      ref={embedded ? undefined : panel}
+      className={'preview-panel' + (embedded ? ' preview-embedded' : wide ? ' preview-expanded' : '')}
       aria-label="代理工作预览"
       data-leaving={!present || undefined}
       inert={!present}
     >
-      <header className="preview-heading">
-        <div>
-          <span className="preview-glyph">
-            <Icon name="panel" size={19} />
-          </span>
-          <strong>预览</strong>
-          <span className="preview-label">{tasks.length} 个代理</span>
-        </div>
-        <div>
-          <button
-            className="icon-button"
-            onClick={() => setWide(!wide)}
-            aria-label={wide ? '收起预览' : '展开预览'}
-          >
-            <Icon name={wide ? 'collapse' : 'expand'} size={17} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={() => {
-              document.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
-              close();
-            }}
-            aria-label="关闭预览"
-          >
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      </header>
+      {!embedded && (
+        <header className="preview-heading">
+          <div>
+            <span className="preview-glyph">
+              <Icon name="panel" size={19} />
+            </span>
+            <strong>预览</strong>
+            <span className="preview-label">{tasks.length} 个代理</span>
+          </div>
+          <div>
+            <button
+              className="icon-button"
+              onClick={() => setWide(!wide)}
+              aria-label={wide ? '收起预览' : '展开预览'}
+            >
+              <Icon name={wide ? 'collapse' : 'expand'} size={17} />
+            </button>
+            <button
+              className="icon-button"
+              onClick={() => {
+                document.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
+                close();
+              }}
+              aria-label="关闭预览"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+        </header>
+      )}
       <div className="preview-agent-picker">
         <label htmlFor="preview-agent">代理</label>
         <select id="preview-agent" value={taskId} onChange={(e) => selectTask(e.target.value)}>

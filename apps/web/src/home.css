@@ -7,9 +7,9 @@
 }
 .welcome-content {
   width: 100%;
-  max-width: 908px;
+  max-width: calc(var(--conversation-width) + 48px);
   margin: auto;
-  padding: 32px 24px 64px;
+  padding: 32px 24px clamp(32px, 10vh, 100px);
 }
 .home-heading {
   margin-bottom: 20px;
@@ -21,17 +21,23 @@
   line-height: 1.4;
   letter-spacing: -0.025em;
 }
+.home-heading p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
 .composer {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
   background: var(--surface);
+  box-shadow: var(--composer-shadow);
   transition:
     border-color var(--motion-fast),
     box-shadow var(--motion-fast);
 }
 .composer:focus-within {
-  border-color: var(--border-strong);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .composer textarea {
@@ -89,6 +95,9 @@
 }
 .composer-model > svg {
   flex: none;
+}
+.composer-model > .brand-glyph {
+  color: var(--accent);
 }
 .composer-model > span {
   min-width: 0;

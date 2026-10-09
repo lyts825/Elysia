@@ -4,8 +4,8 @@ import './style.css';
 import './motion.css';
 import { api, mutation, initializeSession, ApiError, canRetryConnection } from './api';
 import { PreviewPanel } from './PreviewPanel';
+import { PreviewDock } from './PreviewDock';
 import { ProjectFiles } from './ProjectFiles';
-import { ArtifactFilePreview } from './ArtifactFilePreview';
 import { MarkdownDocument } from './MarkdownDocument';
 import { manageUsage } from './desktop';
 import { VERSION, minimumContextWindowTokens } from '../../../packages/contracts/src/index';
@@ -729,6 +729,8 @@ function App() {
   function openArtifact(a: ArtifactTarget) {
     if (a.runId !== activeRunId.current) return;
     setArtifactView({ id: a.id, name: a.name, runId: a.runId });
+    setDetailsDrawerOpen(false);
+    setPreviewOpen(true);
   }
   if (!ready)
     return (
@@ -1032,21 +1034,21 @@ function App() {
                   <Icon name="history" size={14} />
                   管理对话
                 </button>
+                <button
+                  className="quiet-button preview-toggle"
+                  aria-pressed={previewOpen}
+                  aria-expanded={previewOpen}
+                  aria-controls="run-preview"
+                  onClick={() => setPreviewOpen(!previewOpen)}
+                >
+                  <Icon name="panel" size={14} />
+                  {previewOpen ? '收起预览' : '打开预览'}
+                </button>
                 {!isChat && (
-                  <>
-                    <button
-                      className="quiet-button preview-toggle"
-                      aria-pressed={previewOpen}
-                      onClick={() => setPreviewOpen(!previewOpen)}
-                    >
-                      <Icon name="code" size={14} />
-                      {previewOpen ? '收起预览' : '打开预览'}
-                    </button>
-                    <button className="quiet-button" onClick={() => setModal('contract')}>
-                      <Icon name="file" size={14} />
-                      任务约定
-                    </button>
-                  </>
+                  <button className="quiet-button" onClick={() => setModal('contract')}>
+                    <Icon name="file" size={14} />
+                    任务约定
+                  </button>
                 )}
                 {feedback?.action && (
                   <button className="quiet-button run-next-action" disabled={busy} onClick={feedbackAction}>
@@ -1430,18 +1432,32 @@ function App() {
               </section>
               <Presence>
                 {previewOpen && (
-                  <PreviewPanel
-                    runId={runId}
-                    tasks={detail.tasks}
-                    agents={detail.agents}
-                    messages={detail.messages}
-                    operations={detail.operations}
+                  <PreviewDock
+                    key={runId}
+                    workspaceAvailable={detail.run.contract.permissionProfile.read}
                     artifacts={detail.artifacts}
-                    streaming={streaming}
-                    selectedTaskId={previewTaskId}
-                    selectTask={setPreviewTaskId}
+                    selectedArtifactId={artifactView?.runId === runId ? artifactView.id : undefined}
+                    selectArtifact={(artifact) =>
+                      setArtifactView(
+                        artifact ? { id: artifact.id, name: artifact.name, runId: artifact.runId } : null,
+                      )
+                    }
                     close={() => setPreviewOpen(false)}
-                  />
+                  >
+                    <PreviewPanel
+                      embedded
+                      runId={runId}
+                      tasks={detail.tasks}
+                      agents={detail.agents}
+                      messages={detail.messages}
+                      operations={detail.operations}
+                      artifacts={detail.artifacts}
+                      streaming={streaming}
+                      selectedTaskId={previewTaskId}
+                      selectTask={setPreviewTaskId}
+                      close={() => setPreviewOpen(false)}
+                    />
+                  </PreviewDock>
                 )}
               </Presence>
               {detailsOverlayOpen && (
@@ -1561,6 +1577,7 @@ function App() {
                             <button
                               className="agent-preview-button"
                               onClick={() => {
+                                setArtifactView(null);
                                 setPreviewTaskId(t.id);
                                 setPreviewOpen(true);
                               }}
@@ -1648,6 +1665,7 @@ function App() {
                                   <button
                                     className="agent-preview-button"
                                     onClick={() => {
+                                      setArtifactView(null);
                                       setPreviewTaskId(a.taskId);
                                       setPreviewOpen(true);
                                     }}
@@ -2000,26 +2018,6 @@ function App() {
           ) : null}
         </Presence>
       </ModalErrorContext.Provider>
-      <Presence>
-        {artifactView && (
-          <Modal
-            title={artifactView.name}
-            subtitle="已登记产物 · 内容哈希由服务端核对"
-            close={closeArtifact}
-            wide
-          >
-            <ArtifactFilePreview key={artifactView.id} id={artifactView.id} />
-            <footer className="modal-footer">
-              <a className="secondary" href={'/api/artifacts/' + artifactView.id} download>
-                下载产物
-              </a>
-              <button className="primary" onClick={closeArtifact}>
-                关闭
-              </button>
-            </footer>
-          </Modal>
-        )}
-      </Presence>
     </div>
   );
 }
