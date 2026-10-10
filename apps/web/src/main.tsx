@@ -22,6 +22,7 @@ import {
   VERSION,
   minimumContextWindowTokens,
   AgentTerminalProfile,
+  terminalResourceRequirement,
   SurfaceTerminalSettings,
   type TerminalControlOverview,
   type TerminalProjectPreferences,
@@ -69,6 +70,7 @@ import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { ReadCoordinator } from './ReadCoordinator';
+import { bindReadingCheckpointScope } from './ReadingCheckpoint';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
 import { conversationIndex } from './ConversationIndex';
 import {
@@ -802,6 +804,7 @@ function App({
             return;
           }
           clearReadIssue('session', request);
+          bindReadingCheckpointScope(client, scope);
           navigationStorageKey.current = navigationKey(scope, client);
           savedNavigation.current = readNavigation(navigationStorageKey.current);
           // The authenticated workbench and lists do not depend on each other.
@@ -2928,7 +2931,8 @@ function UsagePanel({
   totalTokens: number;
   configureContext: (projection: ContextProjection) => void;
 }) {
-  if (detail.run.execution?.kind === 'docker-agent')
+  if (detail.run.execution?.kind === 'docker-agent') {
+    const resources = terminalResourceRequirement(detail.run.execution.profile.resourcePreset);
     return (
       <div className="terminal-activity">
         <h3>Docker Agent 执行</h3>
@@ -2938,9 +2942,13 @@ function UsagePanel({
         <p className="field-help">
           外部 Agent 管理模型请求与用量，Elysia 未观测其 Token 与费用。请结合终端日志及服务商用量复核。
         </p>
-        <p className="field-help">最长 {detail.run.limits.maxMinutes} 分钟 · 容器 2 CPU / 2 GiB 内存</p>
+        <p className="field-help">
+          最长 {detail.run.limits.maxMinutes} 分钟 · 容器 {resources.cpus} CPU / {resources.memoryMiB / 1024}{' '}
+          GiB 内存
+        </p>
       </div>
     );
+  }
   const settled = detail.requests.filter((r) => r.status === 'SETTLED'),
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);

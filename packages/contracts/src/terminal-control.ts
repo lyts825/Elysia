@@ -48,6 +48,7 @@ export type TerminalConnectionBinding = z.infer<typeof TerminalConnectionBinding
 export interface TerminalConnectionView extends TerminalConnectionBinding {
   keyConfigured: boolean;
   credentialSource: 'environment' | 'vault';
+  health?: TerminalConnectionHealth;
 }
 export const TerminalConnectionWrite = z
   .object({
@@ -94,6 +95,23 @@ export const TerminalConnectionProbeResult = z
   })
   .strict();
 export type TerminalConnectionProbeResult = z.infer<typeof TerminalConnectionProbeResult>;
+/** Persist summaries only: never provider bodies, generated text, model lists or credentials. */
+export const TerminalConnectionHealthResult = TerminalConnectionProbeResult.omit({
+  models: true,
+  resolvedModel: true,
+})
+  .extend({ modelCount: z.number().int().nonnegative().optional() })
+  .strict();
+export type TerminalConnectionHealthResult = z.infer<typeof TerminalConnectionHealthResult>;
+export const TerminalConnectionHealth = z
+  .object({
+    connectionId: z.string().uuid(),
+    revision: z.number().int().nonnegative(),
+    check: TerminalConnectionHealthResult.optional(),
+    models: TerminalConnectionHealthResult.optional(),
+  })
+  .strict();
+export type TerminalConnectionHealth = z.infer<typeof TerminalConnectionHealth>;
 export const TerminalProfileDiagnostics = z
   .object({
     profileId: z.string().uuid(),

@@ -13,7 +13,10 @@ import {
   TerminalSessionBackupView,
   TerminalMaintenanceScan,
   TerminalMaintenanceScanInput,
+  TerminalBackupHistoryItem,
+  TerminalBackupEligibility,
 } from '../../../packages/contracts/src/terminal-maintenance.js';
+import { TerminalBackupIndex } from './terminal-backup-index.js';
 import { type Store, hash, id, now, stable } from '../../../packages/storage/src/index.js';
 import {
   TerminalSessionRecordSchema,
@@ -42,7 +45,11 @@ export type TerminalMaintenanceDependencies = {
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const sessionKey = 'terminal-session:';
 const cleanupKey = 'terminal-maintenance:cleanup:';
-type ScanOptions = { signal?: AbortSignal; progress?: (patch: Partial<TerminalMaintenanceScan>) => void };
+type ScanOptions = {
+  scanId?: string;
+  signal?: AbortSignal;
+  progress?: (patch: Partial<TerminalMaintenanceScan>) => void;
+};
 function cancelled(options: ScanOptions) {
   if (options.signal?.aborted)
     throw new AppError('TERMINAL_MAINTENANCE_CANCELLED', '维护扫描已取消', false, null, 409);
@@ -98,6 +105,7 @@ type InternalPlan = {
   excluded?: string[];
   cleanup?: string[];
   retry?: CleanupJournal;
+  deletionProof?: unknown;
 };
 const cleanupJournalSchema = z
   .object({
@@ -111,12 +119,25 @@ const cleanupJournalSchema = z
       .array(
         z
           .object({
-            ref: z.string().regex(/^terminal-state\/[a-f0-9-]+(?:\/environment)?$/i),
+            ref: z
+              .string()
+              .regex(/^(?:terminal-state\/[a-f0-9-]+(?:\/environment)?|maintenance\/backups\/[a-f0-9-]+)$/i),
             slot: z.string().regex(/^\d+$/),
-            owner: TerminalStateOwnerSchema,
+            owner: TerminalStateOwnerSchema.optional(),
             directory: z.boolean(),
             files: z.array(fileEntrySchema).max(20000),
             directories: z.array(z.string().max(2000)).max(20000),
+            backup: z
+              .object({
+                id: z.string().uuid(),
+                owner: z.string().regex(/^[a-f0-9]{32}$/),
+                runId: z.string().uuid(),
+                taskId: z.string().uuid(),
+                manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+                checkpoint: z.string().regex(/^[a-f0-9]{64}$/),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )
@@ -411,7 +432,12 @@ function copyFileChecked(sourceRoot: string, destinationRoot: string, entry: Fil
 
 export class TerminalMaintenance {
   private plans = new Map<string, InternalPlan>();
-  private scans = new Map<string, { view: TerminalMaintenanceScan; controller: AbortController }>();
+  private scans = new Map<
+    string,
+    { view: TerminalMaintenanceScan; controller: AbortController; backupId?: string }
+  >();
+  private backupIndex: TerminalBackupIndex;
+  private backupReaders = new Map<string, number>();
   private closed = false;
   private owner: string;
   constructor(
@@ -419,6 +445,18 @@ export class TerminalMaintenance {
     private dependencies: TerminalMaintenanceDependencies,
   ) {
     this.owner = hash(path.resolve(store.directory)).slice(0, 32);
+    this.backupIndex = new TerminalBackupIndex(
+      store,
+      this.owner,
+      (backupId, options) =>
+        secureAsync(
+          store.directory,
+          'maintenance/backups' + (backupId ? '/' + backupId + '/backup.json' : ''),
+          options,
+          true,
+        ),
+      async (backupId, options) => this.historyView(await this.readBackupAsync(backupId, options)),
+    );
   }
   startScan(input: unknown) {
     if (this.closed) fail('维护服务已停止');
@@ -440,12 +478,13 @@ export class TerminalMaintenance {
       createdAt,
       updatedAt: createdAt,
     };
-    this.scans.set(view.id, { view, controller });
+    this.scans.set(view.id, { view, controller, ...('backupId' in body ? { backupId: body.backupId } : {}) });
     // A disconnected POST may never deliver its job ID to the caller. Such read-only work expires locally.
     const expiry = setTimeout(() => controller.abort(), 120000);
     expiry.unref();
     const options: ScanOptions = {
       signal: controller.signal,
+      scanId: view.id,
       progress: (patch) => {
         if (view.status !== 'running' || controller.signal.aborted) return;
         for (const field of ['filesVisited', 'bytesProcessed', 'groupsCompleted'] as const)
@@ -458,6 +497,8 @@ export class TerminalMaintenance {
       try {
         await pause(options);
         if (body.kind === 'overview') view.overview = await this.overview(options);
+        else if (body.kind === 'delete')
+          view.plan = await this.deleteBackupPlan({ backupId: body.backupId }, options);
         else
           view.plan =
             body.kind === 'cleanup'
@@ -514,6 +555,11 @@ export class TerminalMaintenance {
   close() {
     this.closed = true;
     for (const job of this.scans.values()) if (job.view.status === 'running') this.cancelScan(job.view.id);
+  }
+  cancelPlan(planId: string) {
+    z.string().uuid().parse(planId);
+    this.plans.delete(planId);
+    return { cancelled: true };
   }
   async overview(options: ScanOptions = {}): Promise<TerminalMaintenanceOverview> {
     const scan = await this.inventoryAsync(options);
@@ -1215,7 +1261,46 @@ export class TerminalMaintenance {
       .all() as { value: string }[];
     const operations = this.references('tool_operations');
     for (const item of entry.items) {
+      if (item.backup) {
+        const authority = item.backup;
+        if (
+          item.owner ||
+          authority.owner !== this.owner ||
+          item.ref !== 'maintenance/backups/' + authority.id ||
+          !item.directory ||
+          !this.backupIndex.isDeleted(authority.id)
+        )
+          fail('快照暂存归属或已删除身份无法确认，保留');
+        const run = this.store.get<Run>('runs', authority.runId),
+          task = this.store.get<Task>('tasks', authority.taskId);
+        if (
+          this.dependencies.isActive(authority.runId) ||
+          run?.status === 'RUNNING' ||
+          task?.status === 'RUNNING' ||
+          this.backupReaders.has(authority.id) ||
+          this.references('tool_operations').some(
+            (op) => op.runId === authority.runId && ['INTENT', 'UNCERTAIN'].includes(op.status),
+          )
+        )
+          fail('快照仍有活跃或未确认引用，暂存内容保留');
+        const row = this.store.db
+          .prepare('SELECT value FROM storage_meta WHERE key=?')
+          .get(sessionKey + authority.taskId) as { value: string } | undefined;
+        if (row) {
+          let data: unknown;
+          try {
+            data = JSON.parse(row.value);
+          } catch {
+            fail('当前会话元数据无法确认，快照暂存内容保留');
+          }
+          const record = TerminalSessionRecordSchema.safeParse(data);
+          if (!record.success || record.data.pending)
+            fail('当前会话存在待确认或未知状态，快照暂存内容保留', 'TERMINAL_BACKUP_PENDING');
+        }
+        continue;
+      }
       const owner = item.owner;
+      if (!owner) fail('暂存内容没有明确的清理归属，保留');
       if (
         !owner.stopped ||
         owner.owner !== this.owner ||
@@ -1261,7 +1346,10 @@ export class TerminalMaintenance {
     this.assertJournalReferences(entry);
     const relative = 'maintenance/cleanup/' + entry.id,
       root = secure(this.store.directory, relative, true);
-    if (!fs.existsSync(root)) return [] as unknown[];
+    if (!fs.existsSync(root))
+      return [
+        ['missing', entry.items.map((item) => (item.backup ? this.backupReferenceProof(item.backup) : null))],
+      ] as unknown[];
     if (!fs.lstatSync(root).isDirectory()) fail('暂存路径不是普通目录');
     const slots = fs.readdirSync(root).sort();
     if (slots.some((slot) => !entry.items.some((item) => item.slot === slot)))
@@ -1270,7 +1358,7 @@ export class TerminalMaintenance {
     for (const item of entry.items) {
       const filename = secure(this.store.directory, relative + '/' + item.slot, true);
       if (!fs.existsSync(filename)) {
-        proof.push([item.slot, 'missing']);
+        proof.push([item.slot, 'missing', item.backup ? this.backupReferenceProof(item.backup) : null]);
         continue;
       }
       if (fs.lstatSync(filename).isDirectory() !== item.directory) fail('暂存文件类型发生变化，保留');
@@ -1283,7 +1371,12 @@ export class TerminalMaintenance {
         files.some((file) => !item.files.some((expected) => stable(expected) === stable(file)))
       )
         fail('暂存清单出现未知或变化内容，已保留');
-      proof.push([item.slot, files, directories]);
+      proof.push([
+        item.slot,
+        files,
+        directories,
+        item.backup ? this.backupReferenceProof(item.backup) : null,
+      ]);
     }
     return proof;
   }
@@ -1294,7 +1387,13 @@ export class TerminalMaintenance {
     try {
       slots = await fsp.readdir(root);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as unknown[];
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+        return [
+          [
+            'missing',
+            entry.items.map((item) => (item.backup ? this.backupReferenceProof(item.backup) : null)),
+          ],
+        ] as unknown[];
       throw error;
     }
     if (slots.some((slot) => !entry.items.some((item) => item.slot === slot)))
@@ -1313,7 +1412,7 @@ export class TerminalMaintenance {
         stat = await fsp.lstat(filename);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          proof.push([item.slot, 'missing']);
+          proof.push([item.slot, 'missing', item.backup ? this.backupReferenceProof(item.backup) : null]);
           continue;
         }
         throw error;
@@ -1329,7 +1428,12 @@ export class TerminalMaintenance {
         files.some((file) => !item.files.some((expected) => stable(expected) === stable(file)))
       )
         fail('暂存清单出现未知或变化内容，已保留');
-      proof.push([item.slot, files, directories]);
+      proof.push([
+        item.slot,
+        files,
+        directories,
+        item.backup ? this.backupReferenceProof(item.backup) : null,
+      ]);
     }
     cancelled(options);
     this.assertJournalReferences(entry);
@@ -1507,9 +1611,11 @@ export class TerminalMaintenance {
         ? supplied.retryId
           ? await this.retryCleanupPlan(supplied.retryId)
           : await this.cleanupPlan()
-        : supplied.kind === 'backup'
-          ? await this.backupPlan({ runId: supplied.runId, expectedRevision: supplied.runRevision })
-          : await this.restorePlan({ backupId: supplied.backupId, expectedRevision: supplied.runRevision });
+        : supplied.kind === 'delete'
+          ? await this.deleteBackupPlan({ backupId: supplied.backupId })
+          : supplied.kind === 'backup'
+            ? await this.backupPlan({ runId: supplied.runId, expectedRevision: supplied.runRevision })
+            : await this.restorePlan({ backupId: supplied.backupId, expectedRevision: supplied.runRevision });
     if (fresh.revision !== supplied.revision)
       fail('文件、引用或会话版本变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
     const plan = this.plans.get(fresh.id)!;
@@ -1550,6 +1656,328 @@ export class TerminalMaintenance {
       }
     }
     return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  private historyView(backup: Backup, title?: string): TerminalBackupHistoryItem {
+    const run = this.store.get<Run>('runs', backup.runId);
+    return TerminalBackupHistoryItem.parse({
+      id: backup.id,
+      createdAt: backup.createdAt,
+      runId: backup.runId,
+      taskId: backup.taskId,
+      runRevision: backup.runRevision,
+      imageId: backup.imageId,
+      bytes: backup.bytes,
+      files: backup.files,
+      checkpoint: backup.checkpoint,
+      consistent: backup.consistent,
+      title: (title ?? run?.title ?? run?.objective ?? backup.taskId).slice(0, 240),
+      excludedCount: backup.excluded.length,
+    });
+  }
+  async backupPage(input: unknown, options: ScanOptions = {}) {
+    return this.backupIndex.page(input, options);
+  }
+  private async readBackupAsync(backupId: string, options: ScanOptions = {}): Promise<Backup> {
+    z.string().uuid().parse(backupId);
+    cancelled(options);
+    if (this.backupIndex.isDeleted(backupId)) fail('此快照已删除，不能再恢复', 'TERMINAL_BACKUP_DELETED');
+    this.backupReaders.set(backupId, (this.backupReaders.get(backupId) ?? 0) + 1);
+    try {
+      const filename = await secureAsync(
+          this.store.directory,
+          'maintenance/backups/' + backupId + '/backup.json',
+          options,
+        ),
+        before = await fsp.lstat(filename);
+      if (!before.isFile() || before.size > 32 * 1024 * 1024) fail('快照清单不是有界普通文件');
+      const handle = await fsp.open(filename, 'r');
+      let raw = '';
+      try {
+        const decoder = new TextDecoder(),
+          buffer = Buffer.allocUnsafe(256 * 1024),
+          opened = await handle.stat();
+        if (opened.ino !== before.ino || opened.dev !== before.dev || opened.nlink > 1) fail('快照清单变化');
+        let offset = 0;
+        while (offset < before.size) {
+          cancelled(options);
+          const part = await handle.read(buffer, 0, Math.min(buffer.length, before.size - offset), offset);
+          if (!part.bytesRead) fail('快照清单正在变化');
+          offset += part.bytesRead;
+          raw += decoder.decode(buffer.subarray(0, part.bytesRead), { stream: true });
+          await pause(options);
+        }
+        raw += decoder.decode();
+      } finally {
+        await handle.close();
+      }
+      const after = await fsp.lstat(filename);
+      if (
+        after.isSymbolicLink() ||
+        after.nlink > 1 ||
+        after.ino !== before.ino ||
+        after.dev !== before.dev ||
+        after.size !== before.size ||
+        after.mtimeMs !== before.mtimeMs ||
+        after.ctimeMs !== before.ctimeMs
+      )
+        fail('快照清单正在变化');
+      const backup = backupSchema.parse(JSON.parse(raw)) as Backup;
+      if (
+        backup.owner !== this.owner ||
+        backup.id !== backupId ||
+        backup.record.runId !== backup.runId ||
+        backup.record.taskId !== backup.taskId ||
+        hash(stable({ rollout: backup.rollout, workspace: backup.workspace })) !== backup.manifestHash ||
+        hash(stable(backup.checkpointData)) !== backup.checkpoint
+      )
+        fail('快照归属、身份或清单摘要无法确认');
+      cancelled(options);
+      return backup;
+    } finally {
+      const count = (this.backupReaders.get(backupId) ?? 1) - 1;
+      if (count) this.backupReaders.set(backupId, count);
+      else this.backupReaders.delete(backupId);
+    }
+  }
+  private assertBackupDeletable(backup: Backup, ignorePlanId?: string, ignoreScanId?: string) {
+    const run = this.store.get<Run>('runs', backup.runId),
+      task = this.store.get<Task>('tasks', backup.taskId);
+    if (
+      this.dependencies.isActive(backup.runId) ||
+      run?.status === 'RUNNING' ||
+      task?.status === 'RUNNING' ||
+      this.references('tool_operations').some(
+        (op) => op.runId === backup.runId && ['INTENT', 'UNCERTAIN'].includes(op.status),
+      )
+    )
+      fail('此任务仍在运行或存在未确认操作，请停止并确认后再删除', 'TERMINAL_BACKUP_ACTIVE');
+    const row = this.store.db
+      .prepare('SELECT value FROM storage_meta WHERE key=?')
+      .get(sessionKey + backup.taskId) as { value: string } | undefined;
+    if (row) {
+      let value: unknown;
+      try {
+        value = JSON.parse(row.value);
+      } catch {
+        fail('当前会话元数据无法确认，快照保留');
+      }
+      const record = TerminalSessionRecordSchema.safeParse(value);
+      if (!record.success || record.data.pending)
+        fail('此会话有待确认操作，快照保留', 'TERMINAL_BACKUP_PENDING');
+    }
+    if (
+      this.backupReaders.has(backup.id) ||
+      [...this.scans.values()].some(
+        (job) => job.backupId === backup.id && job.view.id !== ignoreScanId && job.view.status === 'running',
+      )
+    )
+      fail('此快照仍在恢复检查中，请等待或取消', 'TERMINAL_BACKUP_REFERENCED');
+    for (const [planId, plan] of this.plans)
+      if (
+        planId !== ignorePlanId &&
+        plan.view.kind === 'restore' &&
+        plan.view.backupId === backup.id &&
+        Date.parse(plan.view.expiresAt) > Date.now() &&
+        run?.revision === plan.view.runRevision
+      ) {
+        const current = row ? TerminalSessionRecordSchema.safeParse(JSON.parse(row.value)) : null;
+        if (current?.success && current.data.revision === plan.snapshot?.record.revision)
+          fail('此快照有待确认的恢复计划，请取消该计划后删除', 'TERMINAL_BACKUP_REFERENCED');
+      }
+  }
+  async backupEligibility(backupId: string, options: ScanOptions = {}): Promise<TerminalBackupEligibility> {
+    const backup = await this.readBackupAsync(backupId, options),
+      run = this.store.get<Run>('runs', backup.runId);
+    let canDelete = true,
+      deleteReason = '只删除此归属快照，不影响当前会话、工作区或冻结镜像';
+    try {
+      this.assertBackupDeletable(backup);
+    } catch (error) {
+      canDelete = false;
+      deleteReason = error instanceof AppError ? error.message : '引用无法确认，快照保留';
+    }
+    let canRestore = false,
+      code = 'TERMINAL_BACKUP_RUN_MISSING',
+      message = '原任务已不存在，此快照不能再续接；请使用新会话';
+    if (!backup.consistent) {
+      code = 'TERMINAL_BACKUP_CHECKPOINT';
+      message = '恢复前保全快照不含可靠会话检查点，不能用于原会话续接';
+    } else if (run) {
+      try {
+        cancelled(options);
+        const snapshot = await this.dependencies.snapshot(run.id, run.revision, { requireConsistent: false });
+        this.validateRestoreMetadata(snapshot, backup);
+        canRestore = true;
+        code = 'TERMINAL_BACKUP_ELIGIBLE';
+        message = '同任务、最新轮次与冻结身份一致，可预览恢复；执行前会再次校验文件和版本';
+      } catch (error) {
+        code = error instanceof AppError ? error.code : 'TERMINAL_BACKUP_UNAVAILABLE';
+        message = error instanceof AppError ? error.message : '当前会话资格无法确认，请使用新会话';
+        if (!message.includes('新会话')) message += '；请使用新会话或重新选择最新快照';
+      }
+    }
+    cancelled(options);
+    return TerminalBackupEligibility.parse({
+      backupId,
+      runId: backup.runId,
+      checkedAt: now(),
+      canRestore,
+      canDelete,
+      runRevision: run?.revision ?? null,
+      code,
+      message,
+      deleteReason,
+    });
+  }
+  private backupReferenceProof(backup: Pick<Backup, 'runId' | 'taskId'>) {
+    const run = this.store.get<Run>('runs', backup.runId),
+      task = this.store.get<Task>('tasks', backup.taskId),
+      row = this.store.db
+        .prepare('SELECT value FROM storage_meta WHERE key=?')
+        .get(sessionKey + backup.taskId) as { value: string } | undefined;
+    return {
+      run: run ? [run.id, run.revision, run.status] : null,
+      task: task ? [task.id, task.revision, task.status] : null,
+      session: row?.value ?? null,
+      operations: this.references('tool_operations')
+        .filter((op) => op.runId === backup.runId || op.taskId === backup.taskId)
+        .map((op) => [op.id, op.revision, op.status]),
+    };
+  }
+  async deleteBackupPlan(input: unknown, options: ScanOptions = {}) {
+    const { backupId } = z.object({ backupId: z.string().uuid() }).strict().parse(input),
+      backup = await this.readBackupAsync(backupId, options);
+    this.assertBackupDeletable(backup, undefined, options.scanId);
+    const refs = this.backupReferenceProof(backup),
+      root = await secureAsync(this.store.directory, 'maintenance/backups/' + backupId, options);
+    options.progress?.({ phase: 'hashing' });
+    const files = await treeAsync(root, { ...options, hashes: true }),
+      directories = this.directoryEntries(root);
+    this.validateSnapshotFiles(backup, files.files, directories);
+    cancelled(options);
+    this.assertBackupDeletable(backup, undefined, options.scanId);
+    if (stable(refs) !== stable(this.backupReferenceProof(backup)))
+      fail('预览期间引用或版本变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
+    const proof = { backup: hash(stable(backup)), files: files.files, directories, refs },
+      view = this.plan(
+        'delete',
+        hash(stable(proof)),
+        [{ kind: 'backup-snapshot', ref: 'maintenance/backups/' + backupId, bytes: files.bytes }],
+        {
+          backupId,
+          runId: backup.runId,
+          warnings: [
+            '删除后此快照不能再恢复；历史命令重放不会重建它。',
+            '仅删除选定的本应用归属快照；CLI HOME、任务工作区、凭据与冻结镜像保持不变。',
+          ],
+        },
+      );
+    this.plans.set(view.id, { view, backup, deletionProof: proof });
+    return view;
+  }
+  private validateSnapshotFiles(backup: Backup, files: FileEntry[], directories: string[]) {
+    const expected = [
+      { path: 'backup.json', bytes: 0, hash: '' },
+      ...(backup.rollout ? [{ ...backup.rollout, path: 'home/' + backup.rollout.path }] : []),
+      ...backup.workspace.map((file) => ({ ...file, path: 'workspace/' + file.path })),
+    ];
+    const allowedDirectories = new Set(['home', 'workspace']);
+    for (const file of expected)
+      for (let parent = path.posix.dirname(file.path); parent !== '.'; parent = path.posix.dirname(parent))
+        allowedDirectories.add(parent);
+    if (
+      files.length !== expected.length ||
+      directories.some((directory) => !allowedDirectories.has(directory)) ||
+      files.some((file) => {
+        const value = expected.find((entry) => entry.path === file.path);
+        return (
+          !value || (file.path !== 'backup.json' && (file.bytes !== value.bytes || file.hash !== value.hash))
+        );
+      })
+    )
+      fail('快照目录含未知、缺失或变更文件，保留全部内容');
+  }
+  deleteBackup(input: unknown) {
+    const parsed = TerminalMaintenanceApply.parse(input),
+      payload = { route: 'terminal-maintenance/backup-delete', body: parsed };
+    let journal: CleanupJournal | undefined, moved: { from: string; to: string } | undefined;
+    let result: { deleted: string; bytes: number };
+    try {
+      result = this.store.command(parsed.commandId, payload, () => {
+        const { plan } = this.requested(parsed, 'delete'),
+          backup = plan.backup!;
+        this.assertBackupDeletable(backup, plan.view.id);
+        const source = secure(this.store.directory, 'maintenance/backups/' + backup.id),
+          filename = secure(source, 'backup.json'),
+          current = backupSchema.parse(JSON.parse(fs.readFileSync(filename, 'utf8'))) as Backup;
+        if (stable(current) !== stable(backup) || current.owner !== this.owner)
+          fail('快照归属或清单变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
+        const files = tree(source, { hashes: true }).files,
+          directories = this.directoryEntries(source);
+        this.validateSnapshotFiles(backup, files, directories);
+        const proof = {
+          backup: hash(stable(backup)),
+          files,
+          directories,
+          refs: this.backupReferenceProof(backup),
+        };
+        if (hash(stable(proof)) !== plan.view.revision)
+          fail('快照、路径、引用或版本已变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
+        const root = secure(this.store.directory, 'maintenance/cleanup/' + parsed.commandId, true);
+        if (fs.existsSync(root)) fail('暂存路径已存在，未知内容保留');
+        journal = cleanupJournalSchema.parse({
+          format: 1,
+          owner: this.owner,
+          id: parsed.commandId,
+          revision: 0,
+          createdAt: now(),
+          bytes: plan.view.bytes,
+          items: [
+            {
+              ref: 'maintenance/backups/' + backup.id,
+              slot: '0',
+              directory: true,
+              files,
+              directories,
+              backup: {
+                id: backup.id,
+                owner: this.owner,
+                runId: backup.runId,
+                taskId: backup.taskId,
+                manifestHash: backup.manifestHash,
+                checkpoint: backup.checkpoint,
+              },
+            },
+          ],
+        });
+        fs.mkdirSync(root, { recursive: true });
+        this.store.db
+          .prepare('INSERT INTO storage_meta(key,value) VALUES(?,?)')
+          .run(cleanupKey + parsed.commandId, stable(journal));
+        const to = path.join(root, '0');
+        fs.renameSync(source, to);
+        moved = { from: source, to };
+        const stamp = fs.lstatSync(path.join(to, 'backup.json'));
+        this.backupIndex.record(this.historyView(backup), `${stamp.size}:${stamp.mtimeMs}:${stamp.ctimeMs}`);
+        this.backupIndex.deleted(backup.id);
+        this.plans.delete(plan.view.id);
+        return { deleted: backup.id, bytes: plan.view.bytes };
+      });
+    } catch (error) {
+      if (moved && !fs.existsSync(moved.from)) {
+        secure(this.store.directory, path.relative(this.store.directory, moved.to));
+        fs.renameSync(moved.to, moved.from);
+      }
+      throw error;
+    }
+    const pending = journal ? this.finishCleanup(journal) : !!this.journal(parsed.commandId);
+    return {
+      ...result,
+      pendingCleanup: pending,
+      message: pending
+        ? '快照已从历史移除，暂存文件待完成清理；不会重建或执行任务'
+        : '选定快照已删除；当前会话和工作区未变更',
+    };
   }
   async backupPlan(input: unknown, options: ScanOptions = {}) {
     const body = z
@@ -1667,7 +2095,13 @@ export class TerminalMaintenance {
         workspace,
         manifestHash: hash(stable({ rollout, workspace })),
       };
-      fs.writeFileSync(path.join(root, 'backup.json'), stable(manifest), { flag: 'wx' });
+      const filename = path.join(root, 'backup.json');
+      fs.writeFileSync(filename, stable(manifest), { flag: 'wx' });
+      const stamp = fs.lstatSync(filename);
+      this.backupIndex.record(
+        this.historyView(manifest, snapshot.run.title ?? snapshot.run.objective),
+        `${stamp.size}:${stamp.mtimeMs}:${stamp.ctimeMs}`,
+      );
       return view;
     } catch (error) {
       secure(this.store.directory, 'maintenance/backups/' + backupId);
@@ -1681,7 +2115,22 @@ export class TerminalMaintenance {
         .object({ backupId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
         .strict()
         .parse(input),
-      backup = this.readBackups().find((b) => b.id === body.backupId);
+      backupId = body.backupId;
+    this.backupReaders.set(backupId, (this.backupReaders.get(backupId) ?? 0) + 1);
+    try {
+      return await this.restorePlanInternal(body, options);
+    } finally {
+      const count = (this.backupReaders.get(backupId) ?? 1) - 1;
+      if (count) this.backupReaders.set(backupId, count);
+      else this.backupReaders.delete(backupId);
+    }
+  }
+  private async restorePlanInternal(input: unknown, options: ScanOptions = {}) {
+    const body = z
+        .object({ backupId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
+        .strict()
+        .parse(input),
+      backup = await this.readBackupAsync(body.backupId, options);
     if (!backup) fail('没有可验证的同机备份');
     const snapshot = await this.dependencies.snapshot(backup.runId, body.expectedRevision, {
       requireConsistent: false,
@@ -1858,6 +2307,7 @@ export class TerminalMaintenance {
               fail('恢复后工作区摘要不一致');
             if (hash(fs.readFileSync(snapshot.rollout.path)) !== snapshot.record.state?.hash)
               fail('恢复后会话摘要未匹配检查点');
+            this.plans.delete(plan.view.id);
             return {
               restored: backup.id,
               runId: backup.runId,
@@ -1923,6 +2373,22 @@ export function registerTerminalMaintenance(
   };
   app.get(root, (request, reply) => readonly(request, reply, (options) => maintenance.overview(options)));
   app.get(root + '/backups', () => maintenance.backups());
+  app.get(root + '/backups/page', (request, reply) =>
+    readonly(request, reply, (options) => maintenance.backupPage(request.query, options)),
+  );
+  app.get<{ Params: { id: string } }>(root + '/backups/:id/eligibility', (request, reply) =>
+    readonly(request, reply, (options) => maintenance.backupEligibility(request.params.id, options)),
+  );
+  app.post(root + '/backups/delete/plan', (request, reply) =>
+    readonly(request, reply, (options) => maintenance.deleteBackupPlan(request.body, options)),
+  );
+  app.post(root + '/backups/delete', (request) => maintenance.deleteBackup(request.body));
+  app.post<{ Params: { id: string } }>(root + '/plans/:id/cancel', (request) => {
+    z.object({})
+      .strict()
+      .parse(request.body ?? {});
+    return maintenance.cancelPlan(request.params.id);
+  });
   app.post(root + '/cleanup/plan', (request, reply) => {
     z.object({})
       .strict()

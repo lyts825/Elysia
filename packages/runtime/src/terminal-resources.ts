@@ -1,14 +1,18 @@
 import { AppError } from '../../contracts/src/index.js';
-import type { TerminalResourceSnapshot } from '../../contracts/src/terminal-runtime.js';
+import {
+  terminalResourceRequirement,
+  type TerminalResourcePreset,
+  type TerminalResourceSnapshot,
+} from '../../contracts/src/terminal-runtime.js';
 
-const requirement = { sessions: 1, cpus: 2, memoryMiB: 2048 };
 type Kind = 'task' | 'installation' | 'probe';
+type Reservation = { kind: Kind; resourcePreset?: TerminalResourcePreset };
 /** Per-application admission, independent of the execution's immutable permission/budget binding. */
 export class TerminalResourcePool {
   private state: TerminalResourceSnapshot['status'] = 'unknown';
   private message = '尚未读取 Docker 资源容量';
   private capacity = { sessions: 2, cpus: 4, memoryMiB: 4096 };
-  private reservations = new Map<string, Kind>();
+  private reservations = new Map<string, Reservation>();
   private held = new Set<string>();
   private heldReasons = new Map<string, string>();
   private sponsors = new Map<string, string>();
@@ -36,17 +40,17 @@ export class TerminalResourcePool {
       memoryMiB: Math.min(4096, Math.floor(memoryMiB)),
     };
     this.message =
-      this.capacity.cpus < requirement.cpus || this.capacity.memoryMiB < requirement.memoryMiB
-        ? 'Docker 资源不足以启动一个终端，请至少分配 2 CPU / 2048 MiB'
-        : '终端按 2 CPU / 2048 MiB 预约，最多同时运行两个';
+      this.capacity.cpus < 1 || this.capacity.memoryMiB < 1024
+        ? 'Docker 资源不足以启动轻量终端，请至少分配 1 CPU / 1024 MiB'
+        : '按任务冻结的资源规格预约，最多同时运行两个终端';
     this.drain();
   }
   unavailable(message: string) {
     this.state = 'unavailable';
     this.message = message;
   }
-  private amount(id: string, kind: Kind) {
-    if (kind !== 'probe') return requirement;
+  private amount(id: string, kind: Kind, preset?: TerminalResourcePreset) {
+    if (kind !== 'probe') return terminalResourceRequirement(kind === 'task' ? preset : undefined);
     const sponsor = this.sponsors.get(id);
     return {
       sessions: 0,
@@ -56,8 +60,8 @@ export class TerminalResourcePool {
   }
   private used() {
     return [...this.reservations].reduce(
-      (sum, [id, kind]) => {
-        const value = this.amount(id, kind);
+      (sum, [id, reservation]) => {
+        const value = this.amount(id, reservation.kind, reservation.resourcePreset);
         return {
           sessions: sum.sessions + value.sessions,
           cpus: sum.cpus + value.cpus,
@@ -67,36 +71,47 @@ export class TerminalResourcePool {
       { sessions: 0, cpus: 0, memoryMiB: 0 },
     );
   }
-  private fits(id = '', kind: Kind = 'task') {
+  private fits(id = '', kind: Kind = 'task', preset?: TerminalResourcePreset) {
     const used = this.used(),
-      amount = this.amount(id, kind);
+      amount = this.amount(id, kind, preset);
     return (
       this.state === 'ready' &&
-      (kind !== 'probe' || [...this.reservations.values()].filter((value) => value === 'probe').length < 2) &&
+      (kind !== 'probe' ||
+        [...this.reservations.values()].filter((value) => value.kind === 'probe').length < 2) &&
       used.sessions + amount.sessions <= this.capacity.sessions &&
       used.cpus + amount.cpus <= this.capacity.cpus &&
       used.memoryMiB + amount.memoryMiB <= this.capacity.memoryMiB
     );
   }
-  reason(): 'terminal-resources' | 'terminal-engine' {
-    return this.state === 'ready' ? 'terminal-resources' : 'terminal-engine';
+  reason(preset?: TerminalResourcePreset): 'terminal-resources' | 'terminal-capacity' | 'terminal-engine' {
+    if (this.state !== 'ready') return 'terminal-engine';
+    const required = terminalResourceRequirement(preset);
+    return required.cpus > this.capacity.cpus || required.memoryMiB > this.capacity.memoryMiB
+      ? 'terminal-capacity'
+      : 'terminal-resources';
   }
-  canAcquireTask(id: string) {
-    return this.has(id) || (this.fits(id) && !this.waiters.some((entry) => entry.kind === 'installation'));
+  canAcquireTask(id: string, preset?: TerminalResourcePreset) {
+    return (
+      this.has(id) ||
+      (this.fits(id, 'task', preset) && !this.waiters.some((entry) => entry.kind === 'installation'))
+    );
   }
-  tryAcquire(id: string, kind: Kind = 'task') {
+  tryAcquire(id: string, kind: Kind = 'task', preset?: TerminalResourcePreset) {
     if (this.reservations.has(id)) return true;
     // A user-requested install gets the next available slot rather than starving behind fresh tasks.
     if (
-      !this.fits(id, kind) ||
+      !this.fits(id, kind, preset) ||
       (kind === 'task' && this.waiters.some((entry) => entry.kind === 'installation'))
     )
       return false;
-    this.reservations.set(id, kind);
+    this.reservations.set(id, { kind, ...(kind === 'task' && preset ? { resourcePreset: preset } : {}) });
     return true;
   }
-  hold(id: string, reason?: string, kind: Kind = 'task') {
-    this.reservations.set(id, this.reservations.get(id) ?? kind);
+  hold(id: string, reason?: string, kind: Kind = 'task', preset?: TerminalResourcePreset) {
+    this.reservations.set(
+      id,
+      this.reservations.get(id) ?? { kind, ...(kind === 'task' && preset ? { resourcePreset: preset } : {}) },
+    );
     this.held.add(id);
     if (reason) this.heldReasons.set(id, reason);
   }
@@ -113,7 +128,7 @@ export class TerminalResourcePool {
   sponsorProbe(id: string, sponsorId?: string) {
     if (
       sponsorId &&
-      ['task', 'installation'].includes(this.reservations.get(sponsorId) ?? '') &&
+      ['task', 'installation'].includes(this.reservations.get(sponsorId)?.kind ?? '') &&
       !this.held.has(sponsorId)
     ) {
       this.sponsors.set(id, sponsorId);
@@ -163,7 +178,7 @@ export class TerminalResourcePool {
       const index = this.waiters.findIndex((entry) => this.fits(entry.id, entry.kind));
       if (index < 0) break;
       const [entry] = this.waiters.splice(index, 1);
-      this.reservations.set(entry.id, entry.kind);
+      this.reservations.set(entry.id, { kind: entry.kind });
       entry.cleanup();
       entry.resolve();
     }
@@ -174,9 +189,11 @@ export class TerminalResourcePool {
       message: this.message,
       capacity: { ...this.capacity },
       reserved: this.used(),
-      reservations: [...this.reservations].map(([id, kind]) => ({
+      reservations: [...this.reservations].map(([id, reservation]) => ({
         id,
-        kind,
+        kind: reservation.kind,
+        resources: this.amount(id, reservation.kind, reservation.resourcePreset),
+        ...(reservation.resourcePreset ? { resourcePreset: reservation.resourcePreset } : {}),
         held: this.held.has(id),
         ...(this.heldReasons.has(id) ? { reason: this.heldReasons.get(id) } : {}),
       })),

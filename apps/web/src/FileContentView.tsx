@@ -19,12 +19,14 @@ export function FileContentView({
   anchor,
   highlight,
   checkpointKey,
+  readingReady = true,
 }: {
   file: FilePreviewContent;
   onLocalLink?: (path: string) => void;
   anchor?: string;
   highlight?: { offset: number; endOffset: number; requestId: string };
   checkpointKey?: string;
+  readingReady?: boolean;
 }) {
   const client = useSurfaceClient();
   const savedKey = JSON.stringify(['content-view', checkpointKey, file.path]);
@@ -34,8 +36,8 @@ export function FileContentView({
   const [mode, setMode] = useState<'document' | 'source'>(saved?.mode || 'document');
   const [wrap, setWrap] = useState(saved?.wrap || false);
   const scrollKey = JSON.stringify([savedKey, file.page?.version, file.page?.offset, file.encoding, mode]);
-  const documentScroll = useReadingScroll(client, scrollKey, !!checkpointKey);
-  const sourceScroll = useReadingScroll<HTMLPreElement>(client, scrollKey, !!checkpointKey);
+  const documentScroll = useReadingScroll(client, scrollKey, !!checkpointKey && readingReady);
+  const sourceScroll = useReadingScroll<HTMLPreElement>(client, scrollKey, !!checkpointKey && readingReady);
   useLayoutEffect(() => {
     if (checkpointKey) saveReadingCheckpoint(client, savedKey, { mode, wrap });
   }, [client, checkpointKey, savedKey, mode, wrap]);

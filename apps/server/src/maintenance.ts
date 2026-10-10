@@ -45,6 +45,9 @@ const terminalActions = [
   'terminal-session-backup',
   'terminal-session-restore-plan',
   'terminal-session-restore',
+  'terminal-session-delete-plan',
+  'terminal-session-delete',
+  'terminal-session-history',
 ];
 let selection: Selection = 'all';
 let argument: string | undefined;
@@ -113,6 +116,8 @@ async function terminalMaintenance(directory: string) {
   try {
     if (action === 'terminal-inspect')
       return { overview: await maintenance.overview(scanOptions), backups: maintenance.backups() };
+    if (action === 'terminal-session-history')
+      return await maintenance.backupPage(argument ? input() : {}, scanOptions);
     if (action.endsWith('-plan')) {
       const plan =
         action === 'terminal-cleanup-plan'
@@ -125,9 +130,11 @@ async function terminalMaintenance(directory: string) {
                   .parse(input());
                 return maintenance.retryCleanupPlan(body.retryId, body.expectedRevision, scanOptions);
               })()
-            : action === 'terminal-session-backup-plan'
-              ? await maintenance.backupPlan(input(), scanOptions)
-              : await maintenance.restorePlan(input(), scanOptions);
+            : action === 'terminal-session-delete-plan'
+              ? await maintenance.deleteBackupPlan(input(), scanOptions)
+              : action === 'terminal-session-backup-plan'
+                ? await maintenance.backupPlan(input(), scanOptions)
+                : await maintenance.restorePlan(input(), scanOptions);
       return { commandId: id(), plan };
     }
     const supplied = input(),
@@ -137,9 +144,11 @@ async function terminalMaintenance(directory: string) {
         .parse(supplied);
     const expectedKind = ['terminal-cleanup', 'terminal-cleanup-retry'].includes(action)
       ? 'cleanup'
-      : action === 'terminal-session-backup'
-        ? 'backup'
-        : 'restore';
+      : action === 'terminal-session-delete'
+        ? 'delete'
+        : action === 'terminal-session-backup'
+          ? 'backup'
+          : 'restore';
     if (envelope.plan.kind !== expectedKind) throw new Error('维护计划与当前操作不一致');
     // A committed command is replayed using its original payload before revalidating an expired plan.
     if (!store.db.prepare('SELECT id FROM commands WHERE id=?').get(envelope.commandId))
@@ -153,6 +162,7 @@ async function terminalMaintenance(directory: string) {
       if (!envelope.plan.retryId) throw new Error('重试计划缺少暂存记录');
       return maintenance.retryCleanup(envelope.plan.retryId, body);
     }
+    if (action === 'terminal-session-delete') return maintenance.deleteBackup(body);
     return action === 'terminal-cleanup'
       ? maintenance.cleanup(body)
       : action === 'terminal-session-backup'

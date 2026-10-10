@@ -4,7 +4,9 @@ import type {
   TerminalMaintenanceOverview,
   TerminalMaintenancePlan,
   TerminalMaintenanceScan,
-  TerminalSessionBackupView,
+  TerminalBackupHistoryItem,
+  TerminalBackupPage,
+  TerminalBackupEligibility,
 } from '../../../packages/contracts/src/terminal-maintenance';
 import { useSurfaceClient } from './SurfaceClientContext';
 const endpoint = '/terminal/control/maintenance';
@@ -19,7 +21,7 @@ export function TerminalDataMaintenance({
 }) {
   const { api, mutation } = useSurfaceClient();
   const [overview, setOverview] = useState<TerminalMaintenanceOverview | null>(null),
-    [backups, setBackups] = useState<TerminalSessionBackupView[]>([]),
+    [backups, setBackups] = useState<TerminalBackupHistoryItem[]>([]),
     [runs, setRuns] = useState<RunListItem[]>([]);
   const [runId, setRunId] = useState(''),
     [backupId, setBackupId] = useState(''),
@@ -27,6 +29,106 @@ export function TerminalDataMaintenance({
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [scan, setScan] = useState<TerminalMaintenanceScan | null>(null);
+  const [historyQuery, setHistoryQuery] = useState(''),
+    [historyCursor, setHistoryCursor] = useState<string | undefined>(),
+    [historyTrail, setHistoryTrail] = useState<(string | undefined)[]>([]),
+    [historyPage, setHistoryPage] = useState<TerminalBackupPage | null>(null),
+    [historyBusy, setHistoryBusy] = useState(false),
+    [eligibility, setEligibility] = useState<TerminalBackupEligibility | null>(null);
+  const planRef = useRef<TerminalMaintenancePlan | null>(null),
+    historyStarted = useRef(false),
+    pendingPlanCancellation = useRef(new Set<string>()),
+    planCancellation = useRef<Promise<void> | null>(null);
+  useEffect(() => {
+    planRef.current = plan;
+  }, [plan]);
+  async function clearPlan() {
+    const current = planRef.current;
+    planRef.current = null;
+    setPlan(null);
+    if (current) pendingPlanCancellation.current.add(current.id);
+    if (planCancellation.current) return planCancellation.current;
+    const request = (async () => {
+      for (const id of pendingPlanCancellation.current) {
+        await api(endpoint + '/plans/' + id + '/cancel', {});
+        pendingPlanCancellation.current.delete(id);
+      }
+    })();
+    planCancellation.current = request;
+    try {
+      await request;
+    } finally {
+      if (planCancellation.current === request) planCancellation.current = null;
+    }
+  }
+  function cancelPlanForChange() {
+    void clearPlan().catch((issue) =>
+      setError(
+        '旧计划取消未确认，预览新计划前将重试。' +
+          (issue instanceof Error ? issue.message : '请检查连接后重试'),
+      ),
+    );
+  }
+  async function readHistory(query: string, cursor: string | undefined, signal?: AbortSignal) {
+    const params = new URLSearchParams({ query, limit: '20' });
+    if (cursor) params.set('cursor', cursor);
+    const next = await api<TerminalBackupPage>(
+      endpoint + '/backups/page?' + params,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (signal?.aborted) return;
+    setBackups(next.items);
+    setHistoryPage(next);
+    setBackupId((current) => (next.items.some((item) => item.id === current) ? current : ''));
+    const currentPlan = planRef.current;
+    if (currentPlan?.backupId && !next.items.some((item) => item.id === currentPlan.backupId))
+      void clearPlan().catch((issue) =>
+        setError(issue instanceof Error ? issue.message : '旧维护计划取消未确认'),
+      );
+  }
+  useEffect(() => {
+    if (!historyStarted.current) {
+      historyStarted.current = true;
+      return;
+    }
+    const controller = new AbortController(),
+      timer = setTimeout(() => {
+        setHistoryBusy(true);
+        void readHistory(historyQuery, historyCursor, controller.signal)
+          .catch((issue) => {
+            if (!controller.signal.aborted)
+              setError(issue instanceof Error ? issue.message : '无法读取快照历史');
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) setHistoryBusy(false);
+          });
+      }, 180);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, historyQuery, historyCursor]);
+  useEffect(() => {
+    setEligibility(null);
+    if (!backupId) return;
+    const controller = new AbortController();
+    void api<TerminalBackupEligibility>(
+      endpoint + '/backups/' + backupId + '/eligibility',
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((value) => {
+        if (!controller.signal.aborted) setEligibility(value);
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted) setError(issue instanceof Error ? issue.message : '无法确认快照资格');
+      });
+    return () => controller.abort();
+  }, [api, backupId, historyPage?.revision]);
+
   const controllerRef = useRef<AbortController | null>(null),
     scanIdRef = useRef<string | null>(null);
   const scanning = scan?.status === 'running';
@@ -90,7 +192,9 @@ export function TerminalDataMaintenance({
     });
     setError('');
     setNotice('');
-    setPlan(null);
+    void clearPlan().catch((issue) =>
+      setError(issue instanceof Error ? issue.message : '无法取消旧维护计划'),
+    );
     return controller;
   }
   async function load(signal?: AbortSignal) {
@@ -99,14 +203,15 @@ export function TerminalDataMaintenance({
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     try {
-      const [next, history, conversations] = await Promise.all([
+      await readHistory(historyQuery, undefined, controller.signal);
+      setHistoryCursor(undefined);
+      setHistoryTrail([]);
+      const [next, conversations] = await Promise.all([
         scanRequest({ kind: 'overview' }, controller.signal),
-        api<TerminalSessionBackupView[]>(endpoint + '/backups', undefined, undefined, controller.signal),
         api<{ runs: RunListItem[] }>('/runs?limit=100', undefined, undefined, controller.signal),
       ]);
       if (controller.signal.aborted) return;
       setOverview(next.overview!);
-      setBackups(history);
       setRuns(conversations.runs);
     } catch (issue) {
       failedScan(controller, issue, '无法读取数据占用');
@@ -135,29 +240,43 @@ export function TerminalDataMaintenance({
       controllerRef.current?.abort();
       const scanId = scanIdRef.current;
       if (scanId) void api(endpoint + '/scans/' + scanId + '/cancel', {}).catch(() => {});
+      const currentPlan = planRef.current;
+      if (currentPlan) pendingPlanCancellation.current.add(currentPlan.id);
+      for (const id of pendingPlanCancellation.current)
+        void api(endpoint + '/plans/' + id + '/cancel', {}).catch(() => {});
     };
   }, [api]);
   async function preview(
     kind: TerminalMaintenancePlan['kind'],
     retry?: TerminalMaintenanceOverview['pendingCleanup'][number],
   ) {
+    try {
+      await clearPlan();
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : '无法取消旧计划，请刷新后重试');
+      return;
+    }
     const controller = beginScan();
     try {
       const backup = backups.find((b) => b.id === backupId),
-        selectedId = kind === 'backup' ? runId : backup?.runId;
-      const selected =
-        kind === 'cleanup'
-          ? null
-          : await api<Run>('/runs/' + selectedId + '/header', undefined, undefined, controller.signal);
+        selectedId = kind === 'backup' ? runId : (eligibility?.runId ?? backup?.runId);
+      const selected = ['cleanup', 'delete'].includes(kind)
+        ? null
+        : await api<Run>('/runs/' + selectedId + '/header', undefined, undefined, controller.signal);
       const body = retry
         ? { kind: 'retry', retryId: retry.id, expectedRevision: retry.revision }
         : kind === 'cleanup'
           ? { kind }
-          : kind === 'backup'
-            ? { kind, runId, expectedRevision: selected!.revision }
-            : { kind, backupId, expectedRevision: selected!.revision };
+          : kind === 'delete'
+            ? { kind, backupId }
+            : kind === 'backup'
+              ? { kind, runId, expectedRevision: selected!.revision }
+              : { kind, backupId, expectedRevision: selected!.revision };
       const result = await scanRequest(body, controller.signal);
-      if (!controller.signal.aborted) setPlan(result.plan!);
+      if (!controller.signal.aborted) {
+        planRef.current = result.plan!;
+        setPlan(result.plan!);
+      }
     } catch (issue) {
       failedScan(controller, issue, '无法生成维护计划');
     } finally {
@@ -173,13 +292,17 @@ export function TerminalDataMaintenance({
             ? plan.retryId
               ? '/cleanup/retries/' + plan.retryId + '/apply'
               : '/cleanup/apply'
-            : plan.kind === 'backup'
-              ? '/backups/create'
-              : '/backups/restore'),
+            : plan.kind === 'delete'
+              ? '/backups/delete'
+              : plan.kind === 'backup'
+                ? '/backups/create'
+                : '/backups/restore'),
         { planId: plan.id, expectedRevision: plan.revision },
       );
       setNotice(result.message || (plan.kind === 'cleanup' ? '孤立数据已清理。' : '一致会话快照已保存。'));
       setPlan(null);
+      planRef.current = null;
+      setBackupId('');
       await load();
     });
   }
@@ -323,7 +446,9 @@ export function TerminalDataMaintenance({
                 disabled={disabled || scanning}
                 onChange={(e) => {
                   setRunId(e.target.value);
-                  setPlan(null);
+                  void clearPlan().catch((issue) =>
+                    setError(issue instanceof Error ? issue.message : '取消计划失败'),
+                  );
                 }}
               >
                 <option value="">选择会话…</option>
@@ -347,6 +472,69 @@ export function TerminalDataMaintenance({
               预览备份
             </button>
             <label>
+              快照历史搜索
+              <input
+                aria-label="搜索快照历史"
+                maxLength={200}
+                value={historyQuery}
+                disabled={disabled || scanning}
+                placeholder="标题、任务或快照 ID"
+                onChange={(event) => {
+                  setHistoryQuery(event.target.value);
+                  setHistoryCursor(undefined);
+                  setHistoryTrail([]);
+                  setBackupId('');
+                  cancelPlanForChange();
+                }}
+              />
+            </label>
+            <p className="field-help">
+              {historyBusy
+                ? '正在读取快照历史…'
+                : `共 ${historyPage?.total ?? 0} 份，当前页 ${backups.length} 份`}
+            </p>
+            <div className="terminal-backup-pages" aria-label="快照历史分页">
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled || scanning || historyBusy || !historyTrail.length}
+                onClick={() => {
+                  setHistoryCursor(historyTrail.at(-1));
+                  setHistoryTrail((values) => values.slice(0, -1));
+                  setBackupId('');
+                  cancelPlanForChange();
+                }}
+              >
+                更新快照
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled || scanning || historyBusy || !historyPage?.page.hasMore}
+                onClick={() => {
+                  setHistoryTrail((values) => [...values, historyCursor]);
+                  setHistoryCursor(historyPage?.page.nextCursor ?? undefined);
+                  setBackupId('');
+                  cancelPlanForChange();
+                }}
+              >
+                更早快照
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled || scanning || historyBusy || !historyTrail.length}
+                onClick={() => {
+                  setHistoryCursor(undefined);
+                  setHistoryTrail([]);
+                  setBackupId('');
+                  cancelPlanForChange();
+                }}
+              >
+                返回最新
+              </button>
+            </div>
+            <label>
               同机快照
               <select
                 aria-label="恢复终端快照"
@@ -354,14 +542,15 @@ export function TerminalDataMaintenance({
                 disabled={disabled || scanning}
                 onChange={(e) => {
                   setBackupId(e.target.value);
-                  setPlan(null);
+                  void clearPlan().catch((issue) =>
+                    setError(issue instanceof Error ? issue.message : '取消计划失败'),
+                  );
                 }}
               >
                 <option value="">选择快照…</option>
                 {backups.map((b) => (
-                  <option key={b.id} value={b.id} disabled={!b.consistent}>
-                    {new Date(b.createdAt).toLocaleString()} ·{' '}
-                    {runs.find((r) => r.id === b.runId)?.title || b.taskId} · {size(b.bytes)}
+                  <option key={b.id} value={b.id}>
+                    {new Date(b.createdAt).toLocaleString()} · {b.title || b.taskId} · {size(b.bytes)}
                     {b.consistent ? '' : ' · 恢复前保全（不可续接）'}
                   </option>
                 ))}
@@ -370,10 +559,24 @@ export function TerminalDataMaintenance({
             <button
               type="button"
               className="secondary"
-              disabled={disabled || scanning || !backups.find((b) => b.id === backupId)?.consistent}
+              disabled={disabled || scanning || historyBusy || !eligibility?.canRestore}
               onClick={() => void preview('restore')}
             >
               预览恢复
+            </button>
+            {backupId && (
+              <div className="terminal-backup-eligibility" role="status" aria-label="当前快照恢复资格">
+                <p>{eligibility?.message ?? '正在检查当前恢复资格…'}</p>
+                {eligibility && <small>{eligibility.deleteReason}</small>}
+              </div>
+            )}
+            <button
+              type="button"
+              className="secondary danger"
+              disabled={disabled || scanning || historyBusy || !eligibility?.canDelete}
+              onClick={() => void preview('delete')}
+            >
+              预览删除快照
             </button>
           </div>
         </>
@@ -387,7 +590,9 @@ export function TerminalDataMaintenance({
                 : '清理计划'
               : plan.kind === 'backup'
                 ? '备份计划'
-                : '恢复计划'}{' '}
+                : plan.kind === 'delete'
+                  ? '快照删除计划'
+                  : '恢复计划'}{' '}
             · {size(plan.bytes)}
           </h4>
           {plan.items.map((item) => (
@@ -407,7 +612,11 @@ export function TerminalDataMaintenance({
               className="secondary"
               type="button"
               disabled={disabled || scanning}
-              onClick={() => setPlan(null)}
+              onClick={() =>
+                void clearPlan().catch((issue) =>
+                  setError(issue instanceof Error ? issue.message : '无法取消计划'),
+                )
+              }
             >
               取消计划
             </button>
@@ -421,7 +630,9 @@ export function TerminalDataMaintenance({
                 ? '确认清理'
                 : plan.kind === 'backup'
                   ? '创建一致快照'
-                  : '确认恢复文件'}
+                  : plan.kind === 'delete'
+                    ? '确认删除快照'
+                    : '确认恢复文件'}
             </button>
           </div>
         </div>

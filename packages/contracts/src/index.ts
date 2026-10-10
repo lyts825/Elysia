@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
+import { terminalResourcePresets } from './terminal-runtime.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '0.18.1-preview.1';
+export const VERSION = '0.19.0-preview.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -269,6 +270,7 @@ export const AgentTerminalProfile = z.object({
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
   command: z.array(z.string().min(1).max(2000)).min(1).max(40),
   protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'gemini-stream-json', 'text']),
+  resourcePreset: z.enum(terminalResourcePresets).optional(),
   connectionId: z.string().uuid().nullable().optional(),
   connection: TerminalConnectionBinding.optional(),
   environment: z

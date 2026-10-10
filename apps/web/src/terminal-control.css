@@ -615,3 +615,29 @@
   border-top: 1px solid var(--border);
   padding-top: 12px;
 }
+
+.terminal-connection-health p {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.terminal-connection-health small,
+.terminal-backup-eligibility small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.terminal-backup-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.terminal-backup-eligibility {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.terminal-backup-eligibility p {
+  margin: 0 0 6px;
+}

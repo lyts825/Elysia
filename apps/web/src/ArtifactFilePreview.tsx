@@ -297,6 +297,7 @@ export function ArtifactFilePreview({
             file={value}
             highlight={target || undefined}
             checkpointKey={savedKey}
+            readingReady={!loading && !error}
           />
         </>
       )}

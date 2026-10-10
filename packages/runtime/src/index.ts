@@ -79,6 +79,10 @@ export class NativeExecutor implements ExecutorAdapter {
         .every((key) => this.kernel.store.require<Task>('tasks', key).status === 'DONE')
     )
       return 'dependencies';
+    if (run.execution?.kind === 'docker-agent' && this.terminalResources) {
+      const reason = this.terminalResources.reason(run.execution.profile.resourcePreset);
+      if (reason !== 'terminal-resources') return reason;
+    }
     const agent = this.kernel.store.require<Agent>('agents', task.agentId);
     if (
       [...this.active.values()].filter((entry) => entry.account === agent.providerBinding.account).length >=
@@ -88,9 +92,9 @@ export class NativeExecutor implements ExecutorAdapter {
     if (
       run.execution?.kind === 'docker-agent' &&
       this.terminalResources &&
-      !this.terminalResources.canAcquireTask(task.id)
+      !this.terminalResources.canAcquireTask(task.id, run.execution.profile.resourcePreset)
     )
-      return this.terminalResources.reason();
+      return this.terminalResources.reason(run.execution.profile.resourcePreset);
     return 'ready';
   }
   private schedulableRun(run: Run) {
@@ -112,6 +116,9 @@ export class NativeExecutor implements ExecutorAdapter {
           taskId: task.id,
           position: queue.length + 1,
           reason: this.queueReason(task, run),
+          ...(run.execution?.kind === 'docker-agent'
+            ? { resourcePreset: run.execution.profile.resourcePreset ?? 'standard' }
+            : {}),
         });
     }
     const activeTaskIds = [...this.active.keys()];
@@ -244,7 +251,15 @@ export class NativeExecutor implements ExecutorAdapter {
           continue;
         const controller = new AbortController();
         const terminalReservation = run.execution?.kind === 'docker-agent' && !!this.terminalResources;
-        if (terminalReservation && !this.terminalResources!.tryAcquire(task.id)) continue;
+        if (
+          terminalReservation &&
+          !this.terminalResources!.tryAcquire(
+            task.id,
+            'task',
+            run.execution?.kind === 'docker-agent' ? run.execution.profile.resourcePreset : undefined,
+          )
+        )
+          continue;
         const promise = this.step(task, controller.signal)
           .catch((error) => this.fail(task, error))
           .finally(() => {

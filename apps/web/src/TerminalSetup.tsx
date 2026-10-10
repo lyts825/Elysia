@@ -1,5 +1,9 @@
 import { useRef, useState } from 'react';
-import { AgentTerminalProfile } from '../../../packages/contracts/src/index';
+import {
+  AgentTerminalProfile,
+  terminalResourcePresets,
+  terminalResourceRequirement,
+} from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
 
 export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): AgentTerminalProfile {
@@ -60,6 +64,7 @@ export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): Ag
     timeoutMs: 1800000,
     outputLimit: 100000,
     network: 'bridge',
+    resourcePreset: 'standard',
   };
 }
 
@@ -100,7 +105,12 @@ export function TerminalSetup({
             disabled={disabled}
             onChange={(e) => {
               const next = terminalPreset(e.target.value as AgentTerminalProfile['agent']);
-              const profile = { ...next, id: value.id, image: value.image };
+              const profile = {
+                ...next,
+                id: value.id,
+                image: value.image,
+                resourcePreset: value.resourcePreset,
+              };
               currentProfile.current = JSON.stringify(profile);
               change(profile);
               setArgv(JSON.stringify(next.command));
@@ -120,6 +130,30 @@ export function TerminalSetup({
           <input value={value.image} disabled={disabled} onChange={(e) => patch({ image: e.target.value })} />
         </label>
       </div>
+      <label>
+        终端资源规格
+        <select
+          aria-label="终端资源规格"
+          value={value.resourcePreset ?? 'standard'}
+          disabled={disabled}
+          onChange={(e) =>
+            patch({ resourcePreset: e.target.value as AgentTerminalProfile['resourcePreset'] })
+          }
+        >
+          {terminalResourcePresets.map((preset) => {
+            const amount = terminalResourceRequirement(preset);
+            return (
+              <option key={preset} value={preset}>
+                {{ light: '轻量', standard: '标准', large: '大型' }[preset]} · {amount.cpus} CPU /{' '}
+                {amount.memoryMiB} MiB
+              </option>
+            );
+          })}
+        </select>
+        <small className="field-help">
+          创建任务时固定。最多同时运行两个终端；容量不足时排队，不会自动降低规格。
+        </small>
+      </label>
       <details>
         <summary>终端命令与连接配置</summary>
         <label>

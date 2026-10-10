@@ -52,14 +52,20 @@ export type TerminalMaintenanceOverview = z.infer<typeof TerminalMaintenanceOver
 export const TerminalMaintenancePlan = z
   .object({
     id: z.string().uuid(),
-    kind: z.enum(['cleanup', 'backup', 'restore']),
+    kind: z.enum(['cleanup', 'backup', 'restore', 'delete']),
     revision: digest,
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
     bytes: z.number().int().nonnegative(),
     items: z.array(
       z.object({
-        kind: z.enum(['session-metadata', 'owned-residue', 'session-rollout', 'workspace']),
+        kind: z.enum([
+          'session-metadata',
+          'owned-residue',
+          'session-rollout',
+          'workspace',
+          'backup-snapshot',
+        ]),
         ref: pathText,
         bytes: z.number().int().nonnegative(),
       }),
@@ -91,9 +97,46 @@ export const TerminalSessionBackupView = z
   })
   .strict();
 export type TerminalSessionBackupView = z.infer<typeof TerminalSessionBackupView>;
+export const TerminalBackupHistoryItem = TerminalSessionBackupView.omit({ excluded: true })
+  .extend({
+    title: z.string().max(240),
+    excludedCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type TerminalBackupHistoryItem = z.infer<typeof TerminalBackupHistoryItem>;
+export const TerminalBackupPage = z
+  .object({
+    items: z.array(TerminalBackupHistoryItem).max(100),
+    total: z.number().int().nonnegative(),
+    revision: digest,
+    page: z
+      .object({
+        limit: z.number().int().min(1).max(100),
+        hasMore: z.boolean(),
+        nextCursor: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export type TerminalBackupPage = z.infer<typeof TerminalBackupPage>;
+export const TerminalBackupEligibility = z
+  .object({
+    backupId: z.string().uuid(),
+    runId: z.string().uuid(),
+    checkedAt: z.string().datetime(),
+    canRestore: z.boolean(),
+    canDelete: z.boolean(),
+    runRevision: z.number().int().nonnegative().nullable(),
+    code: z.string().max(100),
+    message: z.string().max(1000),
+    deleteReason: z.string().max(1000),
+  })
+  .strict();
+export type TerminalBackupEligibility = z.infer<typeof TerminalBackupEligibility>;
 export const TerminalMaintenanceScanInput = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('overview') }).strict(),
   z.object({ kind: z.literal('cleanup') }).strict(),
+  z.object({ kind: z.literal('delete'), backupId: z.string().uuid() }).strict(),
   z
     .object({
       kind: z.literal('backup'),
@@ -119,7 +162,7 @@ export const TerminalMaintenanceScanInput = z.discriminatedUnion('kind', [
 export const TerminalMaintenanceScan = z
   .object({
     id: z.string().uuid(),
-    kind: z.enum(['overview', 'cleanup', 'backup', 'restore', 'retry']),
+    kind: z.enum(['overview', 'cleanup', 'backup', 'restore', 'retry', 'delete']),
     status: z.enum(['running', 'completed', 'cancelled', 'failed']),
     phase: z.enum(['references', 'sessions', 'storage', 'ownership', 'hashing', 'verification', 'complete']),
     filesVisited: z.number().int().nonnegative(),

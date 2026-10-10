@@ -17,6 +17,8 @@ import {
   TerminalProjectPreferences,
   TerminalConnectionProbeRequest,
   TerminalConnectionProbeResult,
+  TerminalConnectionHealth,
+  TerminalConnectionHealthResult,
   TerminalProfileDiagnostics,
   type TerminalAppCatalogEntry,
   type TerminalConnectionView,
@@ -50,6 +52,7 @@ export {
 } from './terminal-catalog.js';
 
 const connectionsKey = 'surface:terminal:control:connections:v1';
+const healthKey = (id: string) => `surface:terminal:control:health:${id}`;
 const deletedConnectionsKey = 'surface:terminal:control:deleted-connections:v1';
 const appsKey = 'surface:terminal:control:apps:v1';
 const projectKey = (projectId: string) => `surface:terminal:control:project:${projectId}`;
@@ -140,6 +143,7 @@ export class TerminalControlService {
       ...connection,
       keyConfigured: await this.keys.configured(this.keyConfig(connection)),
       credentialSource: connection.auth.kind,
+      health: this.connectionHealth(connection),
     };
   }
   async overview(): Promise<TerminalControlOverview> {
@@ -159,6 +163,23 @@ export class TerminalControlService {
   async credential(binding: TerminalConnectionBinding): Promise<string> {
     const connection = TerminalConnectionBinding.parse(binding);
     return (await this.keys.credential(this.keyConfig(connection))).token;
+  }
+  private connectionHealth(binding: TerminalConnectionBinding): TerminalConnectionHealth {
+    const recorded = this.read(healthKey(binding.id), TerminalConnectionHealth, () => ({
+      connectionId: binding.id,
+      revision: binding.revision,
+    }));
+    return TerminalConnectionHealth.parse({
+      ...recorded,
+      connectionId: binding.id,
+      revision: binding.revision,
+    });
+  }
+  health(connectionId: string) {
+    const id = z.string().uuid().parse(connectionId),
+      binding = this.connections().find((entry) => entry.id === id);
+    invariant(binding, 'TERMINAL_CONNECTION_MISSING', '所选 API 连接已删除，请刷新');
+    return this.connectionHealth(binding);
   }
   async probe(connectionId: string, input: unknown, operation: 'check' | 'models', caller?: AbortSignal) {
     const id = z.string().uuid().parse(connectionId);
@@ -197,13 +218,28 @@ export class TerminalControlService {
           null,
           409,
         );
-      return TerminalConnectionProbeResult.parse({
+      const result = TerminalConnectionProbeResult.parse({
         ...outcome,
         connectionId: id,
         revision: binding.revision,
         checkedAt: new Date().toISOString(),
         latencyMs: Math.max(0, Date.now() - started),
       });
+      if (!caller?.aborted && !this.closed && result.code !== 'TERMINAL_API_CANCELLED') {
+        const { models, resolvedModel: _ignored, ...summary } = result;
+        const safe = TerminalConnectionHealthResult.parse({
+          ...summary,
+          ...(models ? { modelCount: models.length } : {}),
+        });
+        // Read/recheck/write is synchronous. A late response can never validate a newer binding.
+        this.store.tx(() => {
+          const latest = this.connections().find((entry) => entry.id === id);
+          if (!latest || latest.revision !== binding.revision)
+            throw new AppError('TERMINAL_CONNECTION_STALE', '连接已修改，请重新验证', false, null, 409);
+          this.write(healthKey(id), { ...this.connectionHealth(latest), [operation]: safe });
+        });
+      }
+      return result;
     } finally {
       this.probes.delete(id);
     }
@@ -456,6 +492,7 @@ export class TerminalControlService {
           ...this.read(deletedConnectionsKey, z.array(z.string().uuid()), () => []),
           id,
         ]);
+        this.store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(healthKey(id));
         const apps = this.apps();
         if (apps.entries.some((entry) => entry.connectionId === id))
           this.write(appsKey, {
@@ -600,6 +637,9 @@ export function registerTerminalControl(app: FastifyInstance, control: TerminalC
   );
   app.post<{ Params: { id: string } }>(root + '/connections/:id/models', (request, reply) =>
     probe(request, reply, 'models'),
+  );
+  app.get<{ Params: { id: string } }>(root + '/connections/:id/health', (request) =>
+    control.health(request.params.id),
   );
   app.post<{ Params: { id: string } }>(root + '/profiles/:id/diagnostics', (request) =>
     control.diagnostics(request.params.id, request.body ?? {}),

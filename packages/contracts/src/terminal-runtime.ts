@@ -25,12 +25,26 @@ export type RuntimeQueueReason =
   | 'account-concurrency'
   | 'dependencies'
   | 'terminal-resources'
+  | 'terminal-capacity'
   | 'terminal-engine';
+export const terminalResourcePresets = ['light', 'standard', 'large'] as const;
+export type TerminalResourcePreset = (typeof terminalResourcePresets)[number];
+export interface TerminalResourceAmount {
+  sessions: number;
+  cpus: number;
+  memoryMiB: number;
+}
+/** Missing values retain the original standard allocation without changing frozen profiles. */
+export function terminalResourceRequirement(preset?: TerminalResourcePreset): TerminalResourceAmount {
+  const cpus = preset === 'light' ? 1 : preset === 'large' ? 4 : 2;
+  return { sessions: 1, cpus, memoryMiB: cpus * 1024 };
+}
 export interface RuntimeQueueEntry {
   runId: string;
   taskId: string;
   position: number;
   reason: RuntimeQueueReason;
+  resourcePreset?: TerminalResourcePreset;
 }
 export interface ExecutorRuntimeSnapshot {
   revision: number;
@@ -47,6 +61,8 @@ export interface TerminalResourceSnapshot {
     id: string;
     kind: 'task' | 'installation' | 'probe';
     held: boolean;
+    resources: TerminalResourceAmount;
+    resourcePreset?: TerminalResourcePreset;
     reason?: string;
     owner?: {
       runId: string;

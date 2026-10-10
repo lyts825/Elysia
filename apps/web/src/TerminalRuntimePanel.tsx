@@ -24,6 +24,7 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'account-concurrency': '等待账号执行位',
   dependencies: '等待前置任务',
   'terminal-resources': '等待终端资源',
+  'terminal-capacity': '规格超出 Docker 容量，请增加 Docker 资源或新建较小规格任务',
   'terminal-engine': '等待 Docker 引擎',
 };
 export function TerminalRuntimePanel({
@@ -65,6 +66,8 @@ export function TerminalRuntimePanel({
         {snapshot.executor.queue.map((item) => (
           <p key={item.taskId}>
             {names.get(item.taskId) || '终端任务'} · 队列第 {item.position} 位 · {reasons[item.reason]}
+            {item.resourcePreset &&
+              ` · ${{ light: '轻量', standard: '标准', large: '大型' }[item.resourcePreset]}`}
           </p>
         ))}
         {snapshot.terminal.tasks.map((item) => (

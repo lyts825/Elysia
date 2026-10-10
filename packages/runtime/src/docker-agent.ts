@@ -29,10 +29,11 @@ import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
 import { DockerCliManager } from './cli-manager.js';
 import { TerminalResourcePool } from './terminal-resources.js';
-import type {
-  TerminalTaskRuntime,
-  TerminalRuntimePhase,
-  TerminalRuntimeSnapshot,
+import {
+  terminalResourceRequirement,
+  type TerminalTaskRuntime,
+  type TerminalRuntimePhase,
+  type TerminalRuntimeSnapshot,
 } from '../../contracts/src/terminal-runtime.js';
 import { terminalConnectionConfiguration } from './terminal-connection.js';
 import {
@@ -1066,7 +1067,13 @@ export class DockerAgentService {
       .all<Operation>('tool_operations')
       .filter((op) => op.name === 'terminal_agent' && ['INTENT', 'UNCERTAIN'].includes(op.status))) {
       const task = this.store.require<Task>('tasks', operation.taskId);
-      this.resources.hold(task.id);
+      const run = this.store.require<Run>('runs', task.runId);
+      this.resources.hold(
+        task.id,
+        undefined,
+        'task',
+        run.execution?.kind === 'docker-agent' ? run.execution.profile.resourcePreset : undefined,
+      );
       try {
         await this.stopOwned(task, operation);
       } catch {
@@ -1521,7 +1528,15 @@ export class DockerAgentService {
     if (!alreadyReserved) {
       await this.refreshResourceCapacity(signal);
       signal.throwIfAborted();
-      if (!this.resources.tryAcquire(task.id)) return;
+      const run = this.store.require<Run>('runs', task.runId);
+      if (
+        !this.resources.tryAcquire(
+          task.id,
+          'task',
+          run.execution?.kind === 'docker-agent' ? run.execution.profile.resourcePreset : undefined,
+        )
+      )
+        return;
     }
     try {
       await this.runWithReservation(task, signal);
@@ -1795,6 +1810,7 @@ export class DockerAgentService {
           mode: 0o600,
         },
       );
+      const allocation = terminalResourceRequirement(frozenProfile.resourcePreset);
       const args = [
         'create',
         '--interactive',
@@ -1810,9 +1826,9 @@ export class DockerAgentService {
         '--pids-limit',
         '256',
         '--memory',
-        '2g',
+        `${allocation.memoryMiB}m`,
         '--cpus',
-        '2',
+        String(allocation.cpus),
         '--network',
         profile.network,
         '--user',
