@@ -59,6 +59,9 @@ import { registerTerminalSettings, terminalSettings } from './terminal-settings.
 import { registerTerminalLogSearchRoutes } from './terminal-log-search.js';
 import { TerminalControlService, registerTerminalControl, terminalAppCatalog } from './terminal-control.js';
 import { registerCliManagement } from './cli-management.js';
+import { RunReads, registerRunRecordRoutes } from './run-reads.js';
+import { registerPreviewLocationRoutes } from './preview-location.js';
+import { registerTerminalMaintenance } from './terminal-maintenance.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -193,6 +196,8 @@ export function createServer(
   executor.terminalRunner = (task, signal) => terminal.run(task, signal);
   executor.terminalInterrupt = (runId, taskId) => terminal.interrupt(runId, taskId);
   executor.terminalDispose = () => terminal.dispose();
+  executor.terminalResources = terminal.resources;
+  executor.terminalCapacityRefresh = (signal) => terminal.refreshResourceCapacity(signal);
   const nativeService = <T extends object>(factory: () => T): T =>
     options.surface === 'terminal'
       ? new Proxy({} as T, {
@@ -380,6 +385,21 @@ export function createServer(
   if (terminalControl) {
     registerTerminalControl(app, terminalControl);
     registerCliManagement(app, store, terminal.cliManager);
+    registerTerminalMaintenance(app, store, {
+      snapshot: terminal.maintenanceSnapshot.bind(terminal),
+      guard: terminal.withMaintenanceGuard.bind(terminal),
+      isActive: (runId) =>
+        executor.runtimeSnapshot(runId).activeTaskIds.length > 0 || terminal.hasActive(runId),
+    });
+    app.get('/api/terminal/capabilities', () => terminal.capabilities());
+    app.get('/api/terminal/runtime', (request) => {
+      const query = z.object({ runId: z.string().uuid().optional() }).strict().parse(request.query);
+      if (query.runId) store.require<Run>('runs', query.runId);
+      return {
+        executor: executor.runtimeSnapshot(query.runId),
+        terminal: terminal.runtimeSnapshot(query.runId),
+      };
+    });
   }
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview',
@@ -774,7 +794,33 @@ export function createServer(
     pendingChecks.set(key, promise);
     return promise;
   });
-  app.get('/api/runs', async () => store.all<Run>('runs').reverse());
+  const runReads = new RunReads(store);
+  registerRunRecordRoutes(app, store);
+  registerPreviewLocationRoutes(app, previews);
+  app.get('/api/runs', async (request) => {
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+        before: z.string().uuid().optional(),
+        query: z.string().max(200).optional(),
+        includeRunId: z.string().uuid().optional(),
+        archived: z.enum(['true', 'false']).optional(),
+        pinned: z.string().max(1600).optional(),
+      })
+      .strict()
+      .parse(request.query);
+    if (!query.limit) {
+      invariant(!Object.keys(query).length, 'RECORD_PAGE_LIMIT', '会话筛选须指定分页数量');
+      return store.all<Run>('runs').reverse();
+    }
+    const pinned = query.pinned ? z.array(z.string().uuid()).max(40).parse(query.pinned.split(',')) : [];
+    return runReads.list({
+      ...query,
+      archived: query.archived === undefined ? undefined : query.archived === 'true',
+      limit: query.limit,
+      pinned,
+    });
+  });
   app.post('/api/terminal/check', async (request) => {
     const body = z
       .object({
@@ -1019,6 +1065,7 @@ export function createServer(
       .object({
         messageLimit: z.coerce.number().int().min(40).max(240).optional(),
         beforeMessage: z.string().uuid().optional(),
+        view: z.literal('conversation').optional(),
       })
       .strict()
       .parse(request.query);
@@ -1033,6 +1080,14 @@ export function createServer(
         : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
     return {
       run,
+      ...(options.surface === 'terminal'
+        ? {
+            terminalRuntime: {
+              executor: executor.runtimeSnapshot(run.id),
+              terminal: terminal.runtimeSnapshot(run.id),
+            },
+          }
+        : {}),
       readOnly: options.surface === 'native' && run.execution?.kind === 'docker-agent',
       readOnlyReason:
         options.surface === 'native' && run.execution?.kind === 'docker-agent'
@@ -1043,11 +1098,15 @@ export function createServer(
       contexts:
         options.surface === 'terminal' ? [] : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
       ...history,
-      artifacts: store.all<Artifact>('artifacts', run.id),
-      snapshots: store.all('snapshots', run.id),
-      requests: store.all<RequestRecord>('requests', run.id),
-      operations: store.all<Operation>('tool_operations', run.id),
-      decisions: store.all('decisions', run.id),
+      ...(query.view === 'conversation'
+        ? runReads.conversation(run, history.messages)
+        : {
+            artifacts: store.all<Artifact>('artifacts', run.id),
+            snapshots: store.all('snapshots', run.id),
+            requests: store.all<RequestRecord>('requests', run.id),
+            operations: store.all<Operation>('tool_operations', run.id),
+            decisions: store.all('decisions', run.id),
+          }),
       events: store.events(
         run.id,
         Math.max(

@@ -133,14 +133,16 @@ export class WorkbenchCache {
     this.backup();
     this.publish();
   }
-  prune(projectIds: Set<string>, runIds: Set<string>) {
+  prune(projectIds: Set<string>, runIds: Set<string>, runsComplete = true) {
     const obsolete = Object.keys(this.entries).filter((key) => {
       const selection = /^settings:selected-terminal-profile:(.+)$/.exec(key);
       if (selection) return selection[1] !== 'home' && !projectIds.has(selection[1]);
       const match = /^(?:draft|collapsed):project:(.+)$/.exec(key);
       if (match) return !projectIds.has(match[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
-      return run ? !runIds.has(run[1]) : false;
+      const terminalDraft = /^draft:terminal-(?:continuation|recovery):([^:]+)(?::[^:]+)?$/.exec(key);
+      if (terminalDraft) return runsComplete && !runIds.has(terminalDraft[1]);
+      return run ? runsComplete && !runIds.has(run[1]) : false;
     });
     if (obsolete.length) this.remove(obsolete);
   }

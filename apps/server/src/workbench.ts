@@ -21,11 +21,16 @@ const fixedKeys = new Set([
 ]);
 const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):([^:\s/\\]+)$/;
 const terminalSelectionKey = /^settings:selected-terminal-profile:([^:\s/\\]+)$/;
+const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
   .string()
   .max(240)
   .refine(
-    (key) => fixedKeys.has(key) || entityKey.test(key) || terminalSelectionKey.test(key),
+    (key) =>
+      fixedKeys.has(key) ||
+      entityKey.test(key) ||
+      terminalSelectionKey.test(key) ||
+      terminalDraftKey.test(key),
     '工作台缓存键无效',
   );
 const valueSchema = z.union([z.string().max(200000), z.boolean()]);
@@ -46,6 +51,8 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const terminalDraft = terminalDraftKey.exec(key);
+  if (terminalDraft) return { table: 'runs', id: terminalDraft[1] };
   const selection = terminalSelectionKey.exec(key);
   if (selection && selection[1] !== 'home') return { table: 'projects', id: selection[1] };
   const match = entityKey.exec(key);

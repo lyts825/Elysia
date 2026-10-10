@@ -13,6 +13,15 @@ import { MarkdownDocument } from './MarkdownDocument';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { MotionContent, MotionTabs, usePresenceMotion } from './Motion';
 import './preview.css';
+import { SourceText } from './FileContentView';
+import {
+  forgetReadingCheckpoint,
+  readingCheckpoint,
+  saveReadingCheckpoint,
+  useReadingScroll,
+  type ReadingPosition,
+} from './ReadingCheckpoint';
+import type { FileLocation } from '../../../packages/contracts/src/file-location';
 
 const labels: Record<string, string> = {
   READY: '就绪',
@@ -65,17 +74,44 @@ export function PreviewPanel({
   selectTask,
   close,
 }: Props) {
-  const { api, surface } = useSurfaceClient();
+  const client = useSurfaceClient(),
+    { api, surface } = client;
+  const selectionKey = JSON.stringify(['preview-selection', runId]);
+  const preferenceKey = JSON.stringify(['preview-preferences', runId]);
+  const savedPreferences = readingCheckpoint<{ view: string; auto: boolean; viewport: string }>(
+    client,
+    preferenceKey,
+  );
   const surfaceRoot = useSurfaceRoot();
   const panel = useRef<HTMLElement>(null);
   const present = usePresenceMotion(panel, 'panel');
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
   const taskId = task?.id || '',
     agent = agents.find((a) => a.taskId === taskId);
+  const restoredTask = useRef(false);
+  useEffect(() => {
+    if (restoredTask.current || !tasks.length) return;
+    restoredTask.current = true;
+    const savedTask = readingCheckpoint<{ taskId: string }>(client, selectionKey + ':task');
+    if (
+      !fileTarget &&
+      savedTask &&
+      tasks.some((item) => item.id === savedTask.taskId) &&
+      savedTask.taskId !== taskId
+    )
+      selectTask(savedTask.taskId);
+  }, [client, selectionKey, tasks, fileTarget, taskId, selectTask]);
+  useEffect(() => {
+    if (taskId) saveReadingCheckpoint(client, selectionKey + ':task', { taskId });
+  }, [client, selectionKey, taskId]);
   const [snapshot, setSnapshot] = useState<(PreviewSnapshot & { runId: string }) | null>(null);
-  const [filesByTask, setFilesByTask] = useState<Record<string, string>>({});
+  const [filesByTask, setFilesByTask] = useState<Record<string, string>>(
+    () => readingCheckpoint<Record<string, string>>(client, selectionKey) || {},
+  );
   const requestedFile = useRef<(PreviewFileTarget & { runId: string }) | null>(null);
-  const handledTarget = useRef('');
+  const handledTarget = useRef(
+    readingCheckpoint<{ requestId: string }>(client, selectionKey + ':target')?.requestId || '',
+  );
   const [content, setContent] = useState<
     | (PreviewFile & {
         context: string;
@@ -100,14 +136,14 @@ export function PreviewPanel({
     requestId: string;
   } | null>(null);
   const [htmlPermission, setHtmlPermission] = useState('');
-  const [view, setView] = useState('page'),
-    [auto, setAuto] = useState(true),
+  const [view, setView] = useState(savedPreferences?.view || 'page'),
+    [auto, setAuto] = useState(savedPreferences?.auto ?? true),
     [refresh, setRefresh] = useState(0);
   const [filter, setFilter] = useState(''),
     [snapshotError, setSnapshotError] = useState(''),
     [fileError, setFileError] = useState(''),
     [updated, setUpdated] = useState('');
-  const [viewport, setViewport] = useState('desktop'),
+  const [viewport, setViewport] = useState(savedPreferences?.viewport || 'desktop'),
     [wide, setWide] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileRetryCount, setFileRetryCount] = useState(0),
@@ -133,13 +169,50 @@ export function PreviewPanel({
   const selectedVersion = JSON.stringify(
     selectedEntry ? [selectedEntry.size, selectedEntry.modifiedAt, selectedEntry.change] : null,
   );
+  const checkpointKey = JSON.stringify([
+    'workspace-file',
+    runId,
+    taskId,
+    selected,
+    current?.workspace,
+    current?.baseline,
+  ]);
+  const savedPosition = selectedEntry ? readingCheckpoint<ReadingPosition>(client, checkpointKey) : undefined;
+  const obsoletePosition = !!savedPosition && savedPosition.revision !== selectedVersion;
   const readScope = JSON.stringify([context, selectedVersion]);
   const position =
     readPosition.scope === readScope
       ? readPosition
-      : { scope: readScope, offset: 0, history: [], encoding: 'auto' as TextFileEncoding };
+      : savedPosition && !obsoletePosition
+        ? { ...savedPosition, scope: readScope, encoding: savedPosition.encoding as TextFileEncoding }
+        : { scope: readScope, offset: 0, history: [], encoding: 'auto' as TextFileEncoding };
+  if (selectedEntry && readPosition.scope !== readScope) setReadPosition(position);
   const readKey = JSON.stringify([readScope, position.offset, position.encoding]);
   const pageLimit = /\.(md|markdown)$/i.test(selected) ? 64 * 1024 : 256 * 1024;
+  const [location, setLocation] = useState<(FileLocation & { requestId: string; scope: string }) | null>(
+    null,
+  );
+  const [locationCursor, setLocationCursor] = useState('');
+  const [locating, setLocating] = useState(false);
+  const completedLocation = useRef('');
+  const restoredFileView = useRef('');
+  useEffect(() => {
+    saveReadingCheckpoint(client, selectionKey, Object.fromEntries(Object.entries(filesByTask).slice(-64)));
+  }, [client, selectionKey, filesByTask]);
+  useEffect(() => {
+    saveReadingCheckpoint(client, preferenceKey, { view, auto, viewport });
+  }, [client, preferenceKey, view, auto, viewport]);
+  useEffect(() => {
+    if (!selectedEntry) return;
+    if (obsoletePosition) {
+      forgetReadingCheckpoint(client, checkpointKey);
+      setFileNotice('文件已更新，已回到开头重新读取。');
+    }
+    if (restoredFileView.current !== checkpointKey) {
+      restoredFileView.current = checkpointKey;
+      if (savedPosition?.view && !obsoletePosition) setView(savedPosition.view);
+    }
+  }, [checkpointKey, selectedVersion]);
   const moveTo = (
     offset: number,
     history = [...position.history, content?.page?.offset ?? position.offset],
@@ -158,6 +231,9 @@ export function PreviewPanel({
       selectedRef.current = path;
       setFilesByTask((old) => ({ ...old, [taskId]: path }));
       setPendingAnchor(anchor ? { taskId, path, anchor, requestId: crypto.randomUUID() } : null);
+      setLocation(null);
+      setLocationCursor('');
+      setFileNotice('');
       setHtmlPermission('');
     },
     [taskId],
@@ -173,6 +249,9 @@ export function PreviewPanel({
     },
     [chooseFile],
   );
+  const notifyAnchorMissing = useCallback(() => {
+    setFileNotice('链接标题在当前片段无法渲染，可切换源码查看。');
+  }, []);
   const permissionContext = useRef(context);
   useEffect(() => {
     if (permissionContext.current === context) return;
@@ -194,14 +273,78 @@ export function PreviewPanel({
   useEffect(() => {
     if (!fileTarget || fileTarget.taskId !== taskId || handledTarget.current === fileTarget.requestId) return;
     handledTarget.current = fileTarget.requestId;
+    saveReadingCheckpoint(client, selectionKey + ':target', { requestId: fileTarget.requestId });
     chooseFile(fileTarget.path, fileTarget.anchor);
     requestedFile.current = { ...fileTarget, runId };
-    setReadPosition({ scope: '', offset: 0, history: [], encoding: 'auto' });
     setFilter('');
     setView('page');
     setFileNotice('');
     setRefresh((value) => value + 1);
   }, [fileTarget?.requestId, taskId, runId, chooseFile]);
+  useEffect(() => {
+    if (
+      !pendingAnchor ||
+      pendingAnchor.taskId !== taskId ||
+      pendingAnchor.path !== selected ||
+      !selectedEntry ||
+      !current?.workspace
+    )
+      return;
+    const key = JSON.stringify([pendingAnchor.requestId, readScope, position.encoding, locationCursor]);
+    if (completedLocation.current === key) return;
+    const controller = new AbortController();
+    setLocating(true);
+    const query = new URLSearchParams({
+      path: selected,
+      anchor: pendingAnchor.anchor,
+      encoding: position.encoding,
+    });
+    if (position.version) query.set('version', position.version);
+    if (locationCursor) query.set('cursor', locationCursor);
+    void api<FileLocation>(
+      `/runs/${runId}/tasks/${taskId}/preview/locate?` + query,
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        completedLocation.current = key;
+        setLocation({ ...next, scope: readScope, requestId: pendingAnchor.requestId });
+        if (next.status === 'found' && next.offset !== undefined) {
+          setReadPosition({
+            ...position,
+            offset: next.offset,
+            history:
+              position.offset === next.offset
+                ? position.history
+                : [...position.history, position.offset].slice(-128),
+            version: next.version,
+          });
+          setView(next.anchor ? 'page' : 'source');
+          setFileNotice(
+            next.anchor
+              ? '已定位标题。'
+              : `已定位第 ${next.line}${next.endLine !== next.line ? `–${next.endLine}` : ''} 行。`,
+          );
+        } else if (next.status === 'missing') setFileNotice('链接目标未找到：' + pendingAnchor.anchor);
+        else setFileNotice(`已扫描 ${formatFileBytes(next.scannedUntil)}，可继续定位。`);
+      })
+      .catch((issue) => {
+        if (controller.signal.aborted) return;
+        completedLocation.current = key;
+        setLocation(null);
+        setFileNotice(
+          issue instanceof ApiError && issue.code === 'FILE_CHANGED'
+            ? '文件已变化，请重新打开链接定位。'
+            : `链接定位失败：${issue instanceof Error ? issue.message : '请重试'}`,
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLocating(false);
+      });
+    return () => controller.abort();
+  }, [pendingAnchor?.requestId, readScope, position.encoding, locationCursor]);
   useEffect(() => {
     if (!taskId) return;
     const controller = new AbortController();
@@ -333,6 +476,7 @@ export function PreviewPanel({
       } catch (e) {
         if (!disposed) {
           if (e instanceof ApiError && e.code === 'FILE_CHANGED') {
+            forgetReadingCheckpoint(client, checkpointKey);
             setReadPosition({ ...position, offset: 0, history: [], version: undefined });
             setContent(null);
             setFileNotice('文件已更新，已回到开头重新读取。');
@@ -374,6 +518,62 @@ export function PreviewPanel({
     content.requestedEncoding === position.encoding
       ? content
       : null;
+  useEffect(() => {
+    if (selectedEntry && selectedFile && !loading)
+      saveReadingCheckpoint(client, checkpointKey, {
+        revision: selectedVersion,
+        offset: position.offset,
+        history: position.history.slice(-128),
+        encoding: position.encoding,
+        version: selectedFile.page?.version || position.version,
+        view,
+      });
+  }, [
+    client,
+    checkpointKey,
+    selectedVersion,
+    selectedFile,
+    loading,
+    position.offset,
+    position.encoding,
+    view,
+  ]);
+  const scroll = useReadingScroll(
+    client,
+    JSON.stringify([
+      checkpointKey,
+      selectedVersion,
+      selectedFile?.page?.version,
+      view,
+      position.offset,
+      position.encoding,
+      'scroll',
+    ]),
+    !!selectedFile && !loading,
+  );
+  const located =
+    location?.status === 'found' &&
+    location.scope === readScope &&
+    location.version === selectedFile?.page?.version &&
+    location.offset === selectedFile?.page?.offset
+      ? location
+      : null;
+  const sourceText = (text: string) => (
+    <SourceText
+      text={text}
+      line={!located?.anchor ? located?.line : undefined}
+      endLine={located?.endLine}
+      requestId={located?.requestId}
+      checkpointKey={JSON.stringify([
+        checkpointKey,
+        selectedVersion,
+        selectedFile?.page?.version,
+        view,
+        position.offset,
+        position.encoding,
+      ])}
+    />
+  );
   const resourceUrl =
     selectedFile?.resourceUrl ||
     (current?.renderBase && selected
@@ -514,6 +714,22 @@ export function PreviewPanel({
           </span>
           <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
             重试
+          </button>
+        </div>
+      )}
+      {locating && (
+        <p className="preview-format-note" role="status">
+          正在定位链接…
+        </p>
+      )}
+      {location?.status === 'continue' && location.scope === readScope && (
+        <div className="preview-format-note">
+          <button
+            className="secondary"
+            disabled={locating}
+            onClick={() => setLocationCursor(location.cursor || '')}
+          >
+            继续定位
           </button>
         </div>
       )}
@@ -709,6 +925,8 @@ export function PreviewPanel({
           )}
           <MotionContent
             className="preview-canvas"
+            elementRef={scroll.ref}
+            onScroll={scroll.onScroll}
             motionKey={`${taskId}:${view}:${wide}:${position.offset}:${position.encoding}`}
           >
             {!current?.workspace ? (
@@ -769,7 +987,7 @@ export function PreviewPanel({
                 </div>
               ) : view === 'source' ? (
                 selectedFile.text !== null ? (
-                  <pre className="preview-source">{selectedFile.text}</pre>
+                  sourceText(selectedFile.text)
                 ) : (
                   <PreviewEmpty
                     title={selectedFile.deleted ? '文件已删除' : '二进制文件'}
@@ -784,7 +1002,7 @@ export function PreviewPanel({
                     此 HTML 为 {formatFileBytes(htmlBytes)}，默认按片段显示源码。加载页面会读取整份文档。
                     <button onClick={() => setHtmlPermission(htmlPermissionKey)}>加载页面</button>
                   </div>
-                  <pre className="preview-source">{selectedFile.text}</pre>
+                  {sourceText(selectedFile.text || '')}
                 </>
               ) : selectedFile.kind === 'html' ? (
                 <div className={'preview-page ' + viewport}>
@@ -836,16 +1054,10 @@ export function PreviewPanel({
                   text={selectedFile.text || ''}
                   sourcePath={selected}
                   resourceBase={markdownBase}
-                  anchor={
-                    pendingAnchor?.taskId === taskId && pendingAnchor.path === selected
-                      ? pendingAnchor.anchor
-                      : undefined
-                  }
-                  anchorRequestId={
-                    pendingAnchor?.taskId === taskId && pendingAnchor.path === selected
-                      ? pendingAnchor.requestId
-                      : undefined
-                  }
+                  anchor={located?.anchor}
+                  anchorRequestId={located?.requestId}
+                  anchorHeadingLine={located?.anchor ? 1 : undefined}
+                  onAnchorMissing={notifyAnchorMissing}
                   onLocalLink={followLocalLink}
                 />
               ) : selectedFile.kind === 'image' ? (
@@ -867,7 +1079,7 @@ export function PreviewPanel({
                       ? '此格式支持文件查看，暂不提供渲染。'
                       : '此文件以源代码显示；选择 HTML、Markdown 或图片可查看渲染结果。'}
                   </div>
-                  <pre className="preview-source">{selectedFile.text}</pre>
+                  {sourceText(selectedFile.text || '')}
                 </>
               )
             ) : (

@@ -7,6 +7,7 @@
   padding: 12px 22px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow-x: auto;
 }
 .terminal-control-tabs button {
   border: 0;
@@ -461,6 +462,102 @@
   display: flex;
   gap: 12px;
   margin: 6px 0;
+  flex-wrap: wrap;
+}
+.terminal-diagnostic-issue,
+.terminal-diagnostic-return {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.terminal-diagnostic-issue p {
+  flex: 1 1 160px;
+  margin: 6px 0;
+}
+.terminal-diagnostic-return {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.terminal-diagnostic-return span {
+  flex: 1 1 220px;
+}
+.terminal-data-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.terminal-data-groups > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.terminal-data-groups small,
+.terminal-data-references span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.terminal-data-references {
+  margin-top: 18px;
+  font-size: 13px;
+}
+.terminal-data-references p,
+.terminal-maintenance-plan p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.terminal-data-backups {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.terminal-data-backups h4 {
+  margin-bottom: 0;
+}
+.terminal-data-backups label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.terminal-data-backups select {
+  min-width: 0;
+  max-width: 100%;
+}
+.terminal-data-backups > button {
+  justify-self: start;
+}
+.terminal-maintenance-plan {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.terminal-maintenance-plan code {
+  flex: 1 1 160px;
+  font-size: 12px;
+}
+.terminal-capabilities {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.terminal-capabilities p {
+  display: grid;
+  gap: 4px;
+  padding: 6px 0;
+}
+.terminal-capabilities strong {
+  font-weight: 600;
 }
 .terminal-diagnostic-stage > span:first-child {
   min-width: 65px;
@@ -485,4 +582,9 @@
     font-size: 12px;
     padding: 7px 10px;
   }
+}
+.terminal-template-connection {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
 }

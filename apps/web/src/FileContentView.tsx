@@ -2,6 +2,8 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownDocument } from './MarkdownDocument';
 import type { FilePreviewContent } from './useFilePage';
 import './file-content.css';
+import { useSurfaceClient } from './SurfaceClientContext';
+import { readingCheckpoint, saveReadingCheckpoint, useReadingScroll } from './ReadingCheckpoint';
 
 export const fileEncodingOptions = [
   ['auto', '自动'],
@@ -16,14 +18,27 @@ export function FileContentView({
   onLocalLink,
   anchor,
   highlight,
+  checkpointKey,
 }: {
   file: FilePreviewContent;
   onLocalLink?: (path: string) => void;
   anchor?: string;
   highlight?: { offset: number; endOffset: number; requestId: string };
+  checkpointKey?: string;
 }) {
-  const [mode, setMode] = useState<'document' | 'source'>('document');
-  const [wrap, setWrap] = useState(false);
+  const client = useSurfaceClient();
+  const savedKey = JSON.stringify(['content-view', checkpointKey, file.path]);
+  const saved = checkpointKey
+    ? readingCheckpoint<{ mode: 'document' | 'source'; wrap: boolean }>(client, savedKey)
+    : undefined;
+  const [mode, setMode] = useState<'document' | 'source'>(saved?.mode || 'document');
+  const [wrap, setWrap] = useState(saved?.wrap || false);
+  const scrollKey = JSON.stringify([savedKey, file.page?.version, file.page?.offset, file.encoding, mode]);
+  const documentScroll = useReadingScroll(client, scrollKey, !!checkpointKey);
+  const sourceScroll = useReadingScroll<HTMLPreElement>(client, scrollKey, !!checkpointKey);
+  useLayoutEffect(() => {
+    if (checkpointKey) saveReadingCheckpoint(client, savedKey, { mode, wrap });
+  }, [client, checkpointKey, savedKey, mode, wrap]);
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const highlighted = useRef<HTMLElement>(null);
   const scrolledHighlight = useRef('');
@@ -86,7 +101,12 @@ export function FileContentView({
           {file.page?.paged && (
             <p className="file-fragment-note">大文档按片段显示。跨片段的代码块、表格或引用可切换源码查看。</p>
           )}
-          <div className="file-document-scroll" key={file.page?.offset || 0}>
+          <div
+            className="file-document-scroll"
+            key={file.page?.offset || 0}
+            ref={documentScroll.ref}
+            onScroll={documentScroll.onScroll}
+          >
             <MarkdownDocument
               text={file.text}
               sourcePath={file.path}
@@ -97,7 +117,12 @@ export function FileContentView({
           </div>
         </>
       ) : file.text !== null ? (
-        <pre key={file.page?.offset || 0} className={'file-source-scroll' + (wrap ? ' wrapped' : '')}>
+        <pre
+          key={file.page?.offset || 0}
+          className={'file-source-scroll' + (wrap ? ' wrapped' : '')}
+          ref={sourceScroll.ref}
+          onScroll={sourceScroll.onScroll}
+        >
           {range && file.text ? (
             <>
               {file.text.slice(0, range.start)}
@@ -128,5 +153,66 @@ export function FileContentView({
         </div>
       )}
     </div>
+  );
+}
+
+// Highlight a source range without creating one DOM element per file line.
+export function SourceText({
+  text,
+  line,
+  endLine,
+  requestId,
+  checkpointKey,
+  className = 'preview-source',
+}: {
+  text: string;
+  line?: number;
+  endLine?: number;
+  requestId?: string;
+  checkpointKey?: string;
+  className?: string;
+}) {
+  const client = useSurfaceClient();
+  const scroll = useReadingScroll<HTMLPreElement>(
+    client,
+    (checkpointKey || '') + ':source-scroll',
+    !!checkpointKey,
+  );
+  const target = useRef<HTMLElement>(null),
+    handled = useRef('');
+  let end = 0;
+  if (line && endLine) {
+    for (let count = 0; count <= endLine - line; count++) {
+      const newline = text.indexOf('\n', end);
+      if (newline < 0) {
+        end = text.length;
+        break;
+      }
+      end = newline + 1;
+    }
+  }
+  useLayoutEffect(() => {
+    if (requestId && target.current && handled.current !== requestId) {
+      handled.current = requestId;
+      target.current.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' });
+    }
+  }, [requestId, text]);
+  return (
+    <pre className={className} ref={scroll.ref} onScroll={scroll.onScroll}>
+      {line ? (
+        <>
+          <mark
+            ref={target}
+            className="file-line-hit"
+            aria-label={`第 ${line}${endLine && endLine !== line ? `–${endLine}` : ''} 行`}
+          >
+            {text.slice(0, end) || ' '}
+          </mark>
+          {text.slice(end)}
+        </>
+      ) : (
+        text
+      )}
+    </pre>
   );
 }

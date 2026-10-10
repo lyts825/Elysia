@@ -87,8 +87,13 @@ export function usePresenceMotion<T extends HTMLElement>(
 export function MotionContent({
   motionKey,
   children,
+  elementRef,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { motionKey: string; children: ReactNode }) {
+}: HTMLAttributes<HTMLDivElement> & {
+  motionKey: string;
+  children: ReactNode;
+  elementRef?: { current: HTMLDivElement | null };
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const active = useRef<Animation | null>(null);
   const reduced = useReducedMotion();
@@ -110,7 +115,13 @@ export function MotionContent({
   }, [motionKey, reduced]);
   useLayoutEffect(() => () => active.current?.cancel(), []);
   return (
-    <div {...props} ref={ref}>
+    <div
+      {...props}
+      ref={(node) => {
+        ref.current = node;
+        if (elementRef) elementRef.current = node;
+      }}
+    >
       {children}
     </div>
   );

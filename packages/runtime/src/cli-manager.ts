@@ -3,6 +3,8 @@ import path from 'node:path';
 import { AgentTerminalProfile, AppError, invariant } from '../../contracts/src/index.js';
 import { TerminalAppId, type TerminalCliInstallationPhase } from '../../contracts/src/terminal-control.js';
 import type { DockerCommandOptions, DockerCommandResult, DockerTransport } from './docker-agent.js';
+import { TerminalResourcePool } from './terminal-resources.js';
+import type { TerminalCliCapability } from '../../contracts/src/terminal-runtime.js';
 
 const packages = {
   codex: { name: '@openai/codex', version: '0.162.1', executable: 'codex' },
@@ -42,14 +44,79 @@ export class DockerCliManager {
   private readonly probes = new Map<string, TerminalCliStatus>();
   private readonly resumeProbes = new Map<string, Promise<TerminalResumeCapability>>();
   private owner: string;
+  private capacityProbe?: Promise<void>;
+  private capacityCheckedAt = 0;
   constructor(
     private directory: string,
-    private options: { transport: DockerTransport },
+    private options: { transport: DockerTransport; resources?: TerminalResourcePool },
   ) {
     this.owner = createHash('sha256').update(path.resolve(directory)).digest('hex').slice(0, 32);
   }
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.options.transport.run(args, { cwd: this.directory, ...options });
+  }
+  async refreshResourceCapacity(signal?: AbortSignal, force = false) {
+    if (!this.options.resources) return;
+    if (!force && Date.now() - this.capacityCheckedAt < 15000) return this.capacityProbe;
+    if (this.capacityProbe) return this.capacityProbe;
+    this.capacityProbe = (async () => {
+      try {
+        const result = await this.command(
+          ['info', '--format', '{"os":{{json .OSType}},"cpus":{{.NCPU}},"memoryBytes":{{.MemTotal}}}'],
+          { signal, timeoutMs: 8000, outputLimit: 1000 },
+        );
+        invariant(complete(result), 'DOCKER_UNAVAILABLE', 'Docker 资源检测未完成，请检查 Linux 引擎');
+        const info = JSON.parse(result.stdout) as { os: string; cpus: number; memoryBytes: number };
+        invariant(info.os === 'linux', 'DOCKER_PLATFORM', '终端需要 Docker Linux 容器模式');
+        this.options.resources!.configure(info.cpus, info.memoryBytes / 1024 / 1024);
+      } catch (error) {
+        this.options.resources!.unavailable(
+          error instanceof AppError ? error.message : 'Docker 资源检测未完成',
+        );
+      } finally {
+        this.capacityCheckedAt = Date.now();
+      }
+    })().finally(() => {
+      this.capacityProbe = undefined;
+    });
+    return this.capacityProbe;
+  }
+  capabilityMatrix(): TerminalCliCapability[] {
+    return (['codex', 'dsh', 'claude', 'gemini', 'custom'] as const).map((appId) => ({
+      appId,
+      execution: {
+        status: 'conditional',
+        validation: 'fixed-image-required',
+        realVerified: false,
+        reason: '已有执行适配器；启动前仍需检测选定固定镜像、命令与连接配置',
+      },
+      planning: {
+        status: 'unsupported',
+        validation: 'unverified',
+        realVerified: false,
+        reason: '尚未验证固定 CLI 的规划协议与只读工作区约束，终端不能开启计划模式',
+      },
+      resume:
+        appId === 'codex'
+          ? {
+              status: 'conditional',
+              validation: 'fixed-image-required',
+              realVerified: false,
+              reason: '仅在固定镜像帮助确认所有续接参数，且同任务会话 seal 一致时允许显式续接',
+            }
+          : {
+              status: 'unsupported',
+              validation: 'unverified',
+              realVerified: false,
+              reason: '尚未核实该 CLI 的原会话续接协议，可显式开启新会话',
+            },
+      usage: {
+        status: 'unknown',
+        validation: 'unverified',
+        realVerified: false,
+        reason: '尚未核实固定版本的用量协议，未知用量不会记为零或推断费用',
+      },
+    }));
   }
   private async engine(signal?: AbortSignal) {
     const result = await this.command(['version', '--format', '{{json .Server}}'], { signal });
@@ -213,9 +280,15 @@ export class DockerCliManager {
       '基础镜像名称无效',
     );
     this.busy = true;
+    const reservationId = `installation:${randomUUID()}`;
     try {
       onPhase?.('engine');
       await this.engine(signal);
+      if (this.options.resources) {
+        await this.refreshResourceCapacity(signal, true);
+        onPhase?.('queued');
+        await this.options.resources.acquireInstallation(reservationId, signal);
+      }
       onPhase?.('base-image');
       const existing = await this.image(input.baseImage, signal);
       invariant(
@@ -294,6 +367,7 @@ export class DockerCliManager {
       onPhase?.('complete');
       return { image, imageTag, version };
     } finally {
+      this.options.resources?.release(reservationId);
       this.busy = false;
     }
   }

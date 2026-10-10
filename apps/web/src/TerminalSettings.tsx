@@ -15,6 +15,9 @@ export function TerminalSettings({
   activity,
   embedded = false,
   dirtyChanged,
+  focusProfileId,
+  focusRequest,
+  connectionOptions,
 }: {
   initial: SurfaceTerminalSettings;
   close: () => void;
@@ -22,6 +25,14 @@ export function TerminalSettings({
   activity: (busy: boolean) => void;
   embedded?: boolean;
   dirtyChanged?: (dirty: boolean) => void;
+  focusProfileId?: string;
+  focusRequest?: number;
+  connectionOptions?: Partial<
+    Record<
+      AgentTerminalProfile['agent'],
+      import('../../../packages/contracts/src/index').TerminalConnectionView[]
+    >
+  >;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [baseline, setBaseline] = useState(() => structuredClone(initial));
@@ -32,6 +43,7 @@ export function TerminalSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const submitting = useRef(false);
   const selected = profiles.find((profile) => profile.id === selectedId)!;
   const valid = SurfaceTerminalSettings.safeParse({
@@ -58,6 +70,16 @@ export function TerminalSettings({
     if (!changed && latest.revision !== baseline.revision) adopt(latest);
   }, [latest, baseline.revision, changed]);
   useEffect(() => dirtyChanged?.(changed), [changed, dirtyChanged]);
+  useEffect(() => {
+    if (
+      !focusProfileId ||
+      !profiles.some((profile) => profile.id === focusProfileId) ||
+      selectedId === focusProfileId
+    )
+      return;
+    if (changed) setPendingFocus(focusProfileId);
+    else setSelectedId(focusProfileId);
+  }, [focusProfileId, focusRequest]);
   const requestClose = () => {
     if (busy) return;
     if (!embedded && changed) setConfirmClose(true);
@@ -103,6 +125,24 @@ export function TerminalSettings({
       }}
     >
       <div className="form-body">
+        {pendingFocus && (
+          <div className="terminal-control-confirm" role="group" aria-label="诊断模板定位确认">
+            <span>当前模板修改已保留。是否切换到诊断对应模板？</span>
+            <button type="button" className="secondary" onClick={() => setPendingFocus(null)}>
+              继续编辑
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setSelectedId(pendingFocus);
+                setPendingFocus(null);
+              }}
+            >
+              保留修改并定位
+            </button>
+          </div>
+        )}
         {confirmClose && (
           <div className="terminal-control-confirm" role="group" aria-label="未保存模板确认">
             <span>模板修改尚未保存。</span>
@@ -133,6 +173,7 @@ export function TerminalSettings({
               {profiles.map((profile) => (
                 <button
                   key={profile.id}
+                  data-profile-id={profile.id}
                   type="button"
                   aria-current={profile.id === selectedId ? 'true' : undefined}
                   disabled={busy}
@@ -191,6 +232,51 @@ export function TerminalSettings({
                 删除模板
               </button>
             </div>
+            {connectionOptions && (
+              <label className="terminal-template-connection">
+                模板 API 连接
+                <select
+                  aria-label="模板 API 连接"
+                  disabled={busy}
+                  value={
+                    selected.connectionId === undefined
+                      ? 'inherit'
+                      : selected.connectionId === null
+                        ? 'environment'
+                        : selected.connectionId
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setProfiles((current) =>
+                      current.map((profile) => {
+                        if (profile.id !== selectedId) return profile;
+                        const { connection: _, connectionId: __, ...remaining } = profile;
+                        return value === 'inherit'
+                          ? remaining
+                          : { ...remaining, connectionId: value === 'environment' ? null : value };
+                      }),
+                    );
+                  }}
+                >
+                  <option value="inherit">跟随项目与应用默认</option>
+                  <option value="environment">只使用模板环境变量</option>
+                  {selected.connectionId &&
+                    !(connectionOptions[selected.agent] || []).some(
+                      (connection) => connection.id === selected.connectionId,
+                    ) && (
+                      <option value={selected.connectionId} disabled>
+                        当前连接已失效或不兼容，请重选
+                      </option>
+                    )}
+                  {(connectionOptions[selected.agent] || []).map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name} · {connection.model}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-help">模板指定优先于项目和应用默认；保存仅用于新任务。</small>
+              </label>
+            )}
             <TerminalSetup
               key={`${selected.id}:${baseline.revision}`}
               value={selected}

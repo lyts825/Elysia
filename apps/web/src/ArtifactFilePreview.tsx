@@ -4,16 +4,70 @@ import { FileContentView, fileEncodingOptions } from './FileContentView';
 import { useFilePage } from './useFilePage';
 import { useSurfaceClient } from './SurfaceClientContext';
 import type { TerminalLogMatch, TerminalLogSearchPage } from '../../../packages/contracts/src/log-search';
+import { readingCheckpoint, saveReadingCheckpoint, useReadingScroll } from './ReadingCheckpoint';
 
 export interface TerminalLogContext {
   runId: string;
   taskId: string;
 }
-export function ArtifactFilePreview({ id, logContext }: { id: string; logContext?: TerminalLogContext }) {
-  const { api } = useSurfaceClient();
-  const [encoding, setEncoding] = useState('auto');
-  const reader = useFilePage('/artifacts/' + id + '/preview', encoding, 0);
+export function ArtifactFilePreview({
+  id,
+  logContext,
+  checkpointKey,
+  resolveLogContext = true,
+}: {
+  id: string;
+  logContext?: TerminalLogContext;
+  checkpointKey?: string;
+  resolveLogContext?: boolean;
+}) {
+  const client = useSurfaceClient(),
+    { api } = client;
+  const savedKey = JSON.stringify(['artifact', checkpointKey, id]);
+  const [encoding, setEncoding] = useState(
+    () => readingCheckpoint<{ encoding: string }>(client, savedKey)?.encoding || 'auto',
+  );
+  const reader = useFilePage('/artifacts/' + id + '/preview', encoding, 0, savedKey);
   const { value, loading, error } = reader;
+  const [resolvedContext, setResolvedContext] = useState<{
+    runId: string;
+    id: string;
+    value: TerminalLogContext | null;
+  } | null>(null);
+  const [contextIssue, setContextIssue] = useState(''),
+    [contextRetry, setContextRetry] = useState(0);
+  const currentResolvedContext =
+    resolvedContext && resolvedContext.runId === checkpointKey && resolvedContext.id === id
+      ? resolvedContext
+      : null;
+  const context = logContext || currentResolvedContext?.value || undefined;
+  useEffect(() => {
+    if (!resolveLogContext || logContext || !checkpointKey || currentResolvedContext) return;
+    const controller = new AbortController();
+    setContextIssue('');
+    void api<TerminalLogContext | null>(
+      `/runs/${checkpointKey}/records/artifacts/${id}/log-context`,
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((value) => {
+        if (!controller.signal.aborted) setResolvedContext({ runId: checkpointKey, id, value });
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted)
+          setContextIssue(issue instanceof Error ? issue.message : '无法检查日志检索能力');
+      });
+    return () => controller.abort();
+  }, [api, checkpointKey, id, resolveLogContext, logContext?.runId, logContext?.taskId, contextRetry]);
+  const scroll = useReadingScroll(
+    client,
+    JSON.stringify([savedKey, 'outer', value?.page?.version]),
+    !!value && !loading,
+  );
+  useEffect(() => {
+    saveReadingCheckpoint(client, savedKey, { encoding });
+  }, [client, savedKey, encoding]);
   const [searchOpen, setSearchOpen] = useState(false),
     [query, setQuery] = useState('');
   const [intent, setIntent] = useState<{
@@ -31,14 +85,14 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
     null,
   );
   useEffect(() => {
-    if (!intent || !logContext || completed.current === intent.id) return;
+    if (!intent || !context || completed.current === intent.id) return;
     const controller = new AbortController();
     setSearchBusy(true);
     setSearchError('');
     const params = new URLSearchParams({ artifactId: id, q: intent.query, cursor: String(intent.cursor) });
     if (intent.version) params.set('version', intent.version);
     api<TerminalLogSearchPage>(
-      `/runs/${logContext.runId}/tasks/${logContext.taskId}/terminal-log/search?` + params,
+      `/runs/${context.runId}/tasks/${context.taskId}/terminal-log/search?` + params,
       undefined,
       undefined,
       controller.signal,
@@ -68,7 +122,7 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
         if (!controller.signal.aborted) setSearchBusy(false);
       });
     return () => controller.abort();
-  }, [intent, id, logContext?.runId, logContext?.taskId]);
+  }, [intent, id, context?.runId, context?.taskId]);
   useEffect(() => {
     if (!target || loading || !value?.page || value.encoding !== 'utf-8') return;
     if (target.version !== value.page.version) {
@@ -80,7 +134,7 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
       reader.jump(Math.max(0, target.offset - 2048));
   }, [target, loading, value?.page?.offset, value?.page?.version, value?.encoding]);
   return (
-    <div className="artifact-file-preview" aria-busy={loading}>
+    <div className="artifact-file-preview" aria-busy={loading} ref={scroll.ref} onScroll={scroll.onScroll}>
       {(!value || value.text !== null) && (
         <div className="file-encoding-choice">
           <label>
@@ -98,7 +152,7 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
               ))}
             </select>
           </label>
-          {logContext && (
+          {context && (
             <button
               type="button"
               className="quiet-button"
@@ -116,7 +170,15 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
           )}
         </div>
       )}
-      {logContext && searchOpen && (
+      {contextIssue && (
+        <p className="file-read-notice" role="alert">
+          无法检查日志检索能力：{contextIssue}{' '}
+          <button className="text-button" onClick={() => setContextRetry((value) => value + 1)}>
+            重试
+          </button>
+        </p>
+      )}
+      {context && searchOpen && (
         <section className="terminal-log-search" aria-label="完整公开日志检索">
           <form
             onSubmit={(event) => {
@@ -230,7 +292,12 @@ export function ArtifactFilePreview({ id, logContext }: { id: string; logContext
               restart={reader.restart}
             />
           )}
-          <FileContentView key={id + ':' + encoding} file={value} highlight={target || undefined} />
+          <FileContentView
+            key={id + ':' + encoding}
+            file={value}
+            highlight={target || undefined}
+            checkpointKey={savedKey}
+          />
         </>
       )}
     </div>

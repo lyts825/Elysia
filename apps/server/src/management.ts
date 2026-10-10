@@ -183,13 +183,14 @@ export function registerManagement(
         return runs.map((r) => r.id);
       },
       () => {
-        for (const run of store.all<Run>('runs').filter((r) => r.projectId === request.params.id)) {
+        const deletedRuns = store.all<Run>('runs').filter((r) => r.projectId === request.params.id);
+        for (const run of deletedRuns) {
           closeStreams(run.id);
           store.deleteRun(run.id);
         }
         store.delete('projects', request.params.id);
         deletedProject?.(request.params.id);
-        return { ok: true };
+        return { ok: true, deletedRunIds: deletedRuns.map((run) => run.id) };
       },
     );
   });

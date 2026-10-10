@@ -61,12 +61,47 @@ const sqliteObjectPattern = /^sqlite:[a-f0-9]{64}$/;
 const compress = (value: unknown) => gzipSync(Buffer.from(stable(value)), { level: 6 });
 const expand = (value: Uint8Array) => JSON.parse(gunzipSync(value).toString('utf8'));
 function projection(table: Table, entity: any) {
+  const readModel =
+    table === 'runs'
+      ? {
+          id: entity.id,
+          revision: entity.revision,
+          title: entity.title,
+          objective: entity.objective.slice(0, 240),
+          kind: entity.kind,
+          projectId: entity.projectId,
+          rootTaskId: entity.rootTaskId,
+          status: entity.status,
+          reason: entity.reason,
+          archived: entity.archived,
+          createdAt: entity.createdAt,
+          ...(entity.execution?.kind === 'docker-agent' ? { execution: { kind: 'docker-agent' } } : {}),
+        }
+      : table === 'tool_operations'
+        ? { taskId: entity.taskId, toolCallId: entity.toolCallId, name: entity.name, status: entity.status }
+        : table === 'requests'
+          ? {
+              taskId: entity.taskId,
+              status: entity.status,
+              providerId: entity.providerId,
+              usage: entity.usage
+                ? {
+                    inputTotal: entity.usage.inputTotal,
+                    outputTotal: entity.usage.outputTotal,
+                    cost: entity.usage.cost,
+                    cacheRead: entity.usage.cacheRead,
+                    ttftMs: entity.usage.ttftMs,
+                  }
+                : null,
+            }
+          : undefined;
   return stable({
     id: entity.id,
     runId: entity.runId,
     revision: entity.revision,
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages' ? { sessionId: entity.sessionId, ordinal: entity.ordinal } : {}),
+    ...(readModel ? { readModelVersion: 1, readModel } : {}),
   });
 }
 function objectRefs(value: unknown, refs = new Set<string>(), field = ''): Set<string> {
@@ -288,6 +323,12 @@ export class Store {
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
   }
+  /** Upgrade redundant read metadata without changing compressed business content or revision. */
+  refreshReadProjection(table: 'runs' | 'requests' | 'tool_operations', entity: Entity) {
+    this.db
+      .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
+      .run(projection(table, entity), entity.id, entity.revision);
+  }
   messagePage<T>(runId: string, limit: number, before?: string) {
     let boundary: number | undefined;
     if (before) {
@@ -314,6 +355,54 @@ export class Store {
         (row) => this.hydrate('messages', row.content ? expand(row.content) : JSON.parse(row.data)) as T,
       ),
       messagePage: { hasMore, nextBefore: hasMore ? selected[0]?.id : null, before: before ?? null, limit },
+    };
+  }
+  entityPage<T>(
+    table: 'requests' | 'tool_operations' | 'artifacts' | 'runs',
+    limit: number,
+    before?: string,
+    runId?: string,
+  ) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 160)
+      throw new AppError('RECORD_PAGE_LIMIT', '记录分页数量无效');
+    let boundary: number | undefined;
+    if (before) {
+      const cursor = this.db
+        .prepare(`SELECT rowid position FROM ${table} WHERE id=?${runId ? ' AND run_id=?' : ''}`)
+        .get(...(runId ? [before, runId] : [before])) as { position: number } | undefined;
+      if (!cursor)
+        throw new AppError('RECORD_CURSOR_MISSING', '记录位置已失效，请返回最新', false, null, 409);
+      boundary = Number(cursor.position);
+    }
+    const conditions = [...(runId ? ['run_id=?'] : []), ...(boundary === undefined ? [] : ['rowid<?'])];
+    const rows = this.db
+      .prepare(
+        `SELECT id,data,content FROM ${table}${conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''} ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(...(runId ? [runId] : []), ...(boundary === undefined ? [] : [boundary]), limit + 1) as {
+      id: string;
+      data: string;
+      content?: Uint8Array;
+    }[];
+    const selected = rows.slice(0, limit);
+    const total = Number(
+      (
+        this.db
+          .prepare(`SELECT COUNT(*) n FROM ${table}${runId ? ' WHERE run_id=?' : ''}`)
+          .get(...(runId ? [runId] : [])) as { n: number }
+      ).n,
+    );
+    return {
+      items: selected.map(
+        (row) => this.hydrate(table, row.content ? expand(row.content) : JSON.parse(row.data)) as T,
+      ),
+      page: {
+        total,
+        limit,
+        before: before ?? null,
+        hasMore: rows.length > limit,
+        nextBefore: rows.length > limit ? (selected.at(-1)?.id ?? null) : null,
+      },
     };
   }
   private hydrate(table: Table, entity: any) {
@@ -486,6 +575,23 @@ export class Store {
       for (const table of tables.filter((t) => !unscopedTables.has(t)))
         this.db.prepare(`DELETE FROM ${table} WHERE run_id=?`).run(runId);
       this.deleteCommands(identifiers, runId);
+      for (const key of identifiers) {
+        this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`terminal-session:${key}`);
+        this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`terminal-runtime:${key}`);
+      }
+      const runCacheKeys = new Set([
+        `draft:run:${runId}`,
+        `pinned:run:${runId}`,
+        `unread:run:${runId}`,
+        `draft:terminal-continuation:${runId}`,
+      ]);
+      for (const row of this.db
+        .prepare("SELECT key FROM storage_meta WHERE key LIKE 'workbench:v1:%'")
+        .all() as { key: string }[]) {
+        const cacheKey = row.key.slice('workbench:v1:'.length);
+        if (runCacheKeys.has(cacheKey) || cacheKey.startsWith(`draft:terminal-recovery:${runId}:`))
+          this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(row.key);
+      }
       this.db.prepare('DELETE FROM runs WHERE id=?').run(runId);
       this.collectObjects();
     });

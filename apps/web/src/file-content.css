@@ -184,6 +184,11 @@
   border-radius: 2px;
   outline: 1px solid var(--accent);
 }
+.file-line-hit {
+  background: var(--accent-pale);
+  color: inherit;
+  box-shadow: inset 3px 0 var(--accent);
+}
 .artifact-file-preview {
   flex: 1;
   min-height: 0;

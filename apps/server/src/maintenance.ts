@@ -1,4 +1,10 @@
-import { Store, acquireLock, dataDirectory, now, stable } from '../../../packages/storage/src/index.js';
+import { Store, acquireLock, dataDirectory, id, now, stable } from '../../../packages/storage/src/index.js';
+import { Kernel } from '../../../packages/kernel/src/index.js';
+import { ToolGateway } from '../../../packages/tools/src/index.js';
+import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
+import { TerminalMaintenance } from './terminal-maintenance.js';
+import { z } from 'zod';
+import { TerminalMaintenancePlan } from '../../../packages/contracts/src/terminal-maintenance.js';
 import {
   existsSync,
   readFileSync,
@@ -29,6 +35,15 @@ type BackupMetadata = {
 };
 const fileNames = ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs'];
 const action = process.argv[2];
+const terminalActions = [
+  'terminal-inspect',
+  'terminal-cleanup-plan',
+  'terminal-cleanup',
+  'terminal-session-backup-plan',
+  'terminal-session-backup',
+  'terminal-session-restore-plan',
+  'terminal-session-restore',
+];
 let selection: Selection = 'all';
 let argument: string | undefined;
 let hasSelection = false;
@@ -43,7 +58,89 @@ for (let index = 3; index < process.argv.length; index++) {
   } else if (value.startsWith('--') || argument) throw new Error('未知或重复的维护参数：' + value);
   else argument = value;
 }
-if (argument && !['backup', 'restore'].includes(action)) throw new Error('此维护操作不接受路径参数');
+if (
+  argument &&
+  ![
+    'backup',
+    'restore',
+    ...terminalActions.filter((name) => !['terminal-inspect', 'terminal-cleanup-plan'].includes(name)),
+  ].includes(action)
+)
+  throw new Error('此维护操作不接受路径参数');
+if (terminalActions.includes(action) && hasSelection && selection !== 'terminal')
+  throw new Error('terminal-* 维护操作只能用于 terminal 入口');
+
+async function terminalMaintenance(directory: string) {
+  assertSurfacePath(directory, 'terminal');
+  const target = surfaceDirectory(directory, 'terminal');
+  if (!existsSync(path.join(target, 'state.db'))) throw new Error('未找到终端入口数据库');
+  const store = new Store(target),
+    kernel = new Kernel(store),
+    gateway = new ToolGateway(kernel);
+  const service = new DockerAgentService(kernel, gateway, {
+    transport: {
+      run: async () => {
+        throw new Error('文件维护不能调用 Docker');
+      },
+    },
+    environment: () => {
+      throw new Error('文件维护不能读取 CLI 凭据');
+    },
+    resolveConnection: async () => {
+      throw new Error('文件维护不能读取 API 凭据');
+    },
+  });
+  const maintenance = new TerminalMaintenance(store, {
+    snapshot: service.maintenanceSnapshot.bind(service),
+    guard: service.withMaintenanceGuard.bind(service),
+    isActive: (runId) => store.all<any>('tasks', runId).some((task) => task.status === 'RUNNING'),
+  });
+  function input() {
+    if (!argument) throw new Error(action + ' 需要预览输入或计划 JSON 文件路径');
+    const filename = path.resolve(argument),
+      stat = lstatSync(filename);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024)
+      throw new Error('维护输入须为不超过 1 MiB 的普通 JSON 文件');
+    return JSON.parse(readFileSync(filename, 'utf8'));
+  }
+  try {
+    if (action === 'terminal-inspect')
+      return { overview: maintenance.overview(), backups: maintenance.backups() };
+    if (action.endsWith('-plan')) {
+      const plan =
+        action === 'terminal-cleanup-plan'
+          ? maintenance.cleanupPlan()
+          : action === 'terminal-session-backup-plan'
+            ? await maintenance.backupPlan(input())
+            : await maintenance.restorePlan(input());
+      return { commandId: id(), plan };
+    }
+    const supplied = input(),
+      envelope = z
+        .object({ commandId: z.string().uuid(), plan: TerminalMaintenancePlan })
+        .strict()
+        .parse(supplied);
+    const expectedKind =
+      action === 'terminal-cleanup' ? 'cleanup' : action === 'terminal-session-backup' ? 'backup' : 'restore';
+    if (envelope.plan.kind !== expectedKind) throw new Error('维护计划与当前操作不一致');
+    // A committed command is replayed using its original payload before revalidating an expired plan.
+    if (!store.db.prepare('SELECT id FROM commands WHERE id=?').get(envelope.commandId))
+      await maintenance.loadPlan(envelope.plan);
+    const body = {
+      commandId: envelope.commandId,
+      planId: envelope.plan.id,
+      expectedRevision: envelope.plan.revision,
+    };
+    return action === 'terminal-cleanup'
+      ? maintenance.cleanup(body)
+      : action === 'terminal-session-backup'
+        ? await maintenance.createBackup(body)
+        : await maintenance.restore(body);
+  } finally {
+    await gateway.dispose();
+    store.close();
+  }
+}
 
 function isWithin(root: string, candidate: string, allowRoot = false) {
   const relative = path.relative(root, candidate);
@@ -273,7 +370,9 @@ if (action === 'stop') {
   const release = acquireLock(configuredDirectory);
   const directory = realpathSync(configuredDirectory);
   try {
-    if (action === 'migrate') {
+    if (terminalActions.includes(action)) {
+      console.log(stable(await terminalMaintenance(directory)));
+    } else if (action === 'migrate') {
       const surfaces: Surface[] =
         selection === 'all'
           ? [

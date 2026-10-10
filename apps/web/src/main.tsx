@@ -29,7 +29,14 @@ import {
 } from '../../../packages/contracts/src/index';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import { TerminalRecovery } from './TerminalRecovery';
-import { TerminalContinuation } from './TerminalContinuation';
+import { TerminalContinuation, readContinuationDraft } from './TerminalContinuation';
+import { RecordHistory } from './RecordHistory';
+import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
+import type {
+  ExecutorRuntimeSnapshot,
+  TerminalRuntimeSnapshot,
+} from '../../../packages/contracts/src/terminal-runtime';
+import { TerminalRuntimePanel } from './TerminalRuntimePanel';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -99,10 +106,14 @@ type Detail = {
   events: any[];
   edges: { taskId: string; dependencyId: string }[];
   contexts: ContextProjection[];
+  usageSummary?: RunUsageSummary;
+  recordCounts?: { requests: number; operations: number; artifacts: number };
+  recordsLimited?: boolean;
+  recordVersions?: { requests: string; operations: string; artifacts: string };
+  terminalRuntime?: { executor: ExecutorRuntimeSnapshot; terminal: TerminalRuntimeSnapshot };
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
-type ArtifactTarget = Pick<Artifact, 'id' | 'name' | 'runId'>;
-type ArtifactView = ArtifactTarget;
+type ArtifactView = Artifact;
 type ReadSource = 'session' | 'lists' | 'detail';
 type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
 function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
@@ -166,7 +177,7 @@ function App({
     [busy, setBusy] = useState(false),
     [projects, setProjects] = useState<Project[]>([]),
     [spaces, setSpaces] = useState<ProjectSpace[]>([]),
-    [runs, setRuns] = useState<Run[]>([]),
+    [runs, setRuns] = useState<RunListItem[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
     [terminalSettings, setTerminalSettings] = useState<SurfaceTerminalSettings | null>(null),
     [terminalControl, setTerminalControl] = useState<TerminalControlOverview | null>(null),
@@ -188,12 +199,32 @@ function App({
     status: 'loading' | 'saved' | 'saving' | 'error';
     error: string;
   }>({ entries: {}, status: 'loading', error: '' });
+  const cacheStateRef = useRef(cacheState);
+  cacheStateRef.current = cacheState;
   const historyPosition = useRef<{ runId: string; before: string; trail: string[] }>({
     runId: '',
     before: '',
     trail: [],
   });
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [runListPage, setRunListPage] = useState<RecordPage>({
+    total: 0,
+    limit: 100,
+    before: null,
+    hasMore: false,
+    nextBefore: null,
+  });
+  const [projectCounts, setProjectCounts] = useState<Record<string, number>>({});
+  const [runListQuery, setRunListQuery] = useState('');
+  const [runListArchive, setRunListArchive] = useState<boolean | undefined>(undefined);
+  const [runListBusy, setRunListBusy] = useState(false);
+  const runListPosition = useRef({
+    before: '',
+    trail: [] as string[],
+    query: '',
+    archived: undefined as boolean | undefined,
+  });
+  const runListMoving = useRef(false);
   const [previewFileTarget, setPreviewFileTarget] = useState<{
     taskId: string;
     path: string;
@@ -502,15 +533,51 @@ function App({
     const request = ++listRequest.current;
     const epoch = navigationEpoch.current;
     let p: Project[],
-      r: Run[],
+      listing: {
+        runs: RunListItem[];
+        included: RunListItem[];
+        page: RecordPage;
+        projectCounts: Record<string, number>;
+      },
       v: Provider[],
       s: ProjectSpace[],
       settings: SurfaceTerminalSettings | null,
       control: TerminalControlOverview | null;
     try {
-      [p, r, v, s, settings, control] = await Promise.all([
+      const position = runListPosition.current;
+      const listQuery = new URLSearchParams({ limit: '100' });
+      if (position.before) listQuery.set('before', position.before);
+      if (position.query) listQuery.set('query', position.query);
+      if (position.archived !== undefined) listQuery.set('archived', String(position.archived));
+      const selected = savedNavigation.current?.runId || navigation.current.runId;
+      if (selected) listQuery.set('includeRunId', selected);
+      const pinned = Object.entries(cacheStateRef.current.entries)
+        .filter(([key, entry]) => key.startsWith('pinned:run:') && entry.value === true)
+        .map(([key]) => key.slice('pinned:run:'.length))
+        .slice(0, 40);
+      if (pinned.length) listQuery.set('pinned', pinned.join(','));
+      const readListing = async () => {
+        try {
+          return await api<typeof listing>('/runs?' + listQuery.toString());
+        } catch (issue) {
+          if (
+            issue instanceof ApiError &&
+            issue.code === 'RECORD_CURSOR_MISSING' &&
+            position.before &&
+            request === listRequest.current &&
+            epoch === navigationEpoch.current &&
+            runListPosition.current === position
+          ) {
+            runListPosition.current = { ...position, before: '', trail: [] };
+            listQuery.delete('before');
+            return api<typeof listing>('/runs?' + listQuery.toString());
+          }
+          throw issue;
+        }
+      };
+      [p, listing, v, s, settings, control] = await Promise.all([
         api<Project[]>('/projects'),
-        api<Run[]>('/runs'),
+        readListing(),
         terminalSurface ? Promise.resolve([]) : api<Provider[]>('/providers'),
         api<ProjectSpace[]>('/spaces'),
         terminalSurface ? api<SurfaceTerminalSettings>('/terminal/settings') : Promise.resolve(null),
@@ -523,6 +590,9 @@ function App({
     }
     if (request !== listRequest.current) return;
     clearReadIssue('lists', request);
+    const r = [...new Map([...listing.runs, ...listing.included].map((run) => [run.id, run])).values()];
+    setRunListPage(listing.page);
+    setProjectCounts(listing.projectCounts);
     setProjects(p);
     setRuns(r);
     setProviders(v);
@@ -533,7 +603,7 @@ function App({
       projects: new Set(p.map((project) => project.id)),
       runs: new Set(r.map((run) => run.id)),
     };
-    cache.prune(listedEntities.current.projects, listedEntities.current.runs);
+    cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
     if (epoch !== navigationEpoch.current) return;
     const restoring = !navigationInitialized.current;
     const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
@@ -547,6 +617,43 @@ function App({
     navigate(next);
     return true;
   }, [navigate, clearReadIssue, cache, terminalSurface]);
+  async function changeRunList(direction: 'older' | 'newer' | 'latest') {
+    if (runListMoving.current) return;
+    const prior = runListPosition.current;
+    if (direction === 'older' && !runListPage.nextBefore) return;
+    if (direction === 'newer' && !prior.trail.length) return;
+    const next =
+      direction === 'older'
+        ? { ...prior, before: runListPage.nextBefore!, trail: [...prior.trail, prior.before] }
+        : direction === 'newer'
+          ? { ...prior, before: prior.trail.at(-1)!, trail: prior.trail.slice(0, -1) }
+          : { ...prior, before: '', trail: [] };
+    runListPosition.current = next;
+    runListMoving.current = true;
+    setRunListBusy(true);
+    try {
+      if ((await refresh()) === false && runListPosition.current === next) runListPosition.current = prior;
+    } finally {
+      runListMoving.current = false;
+      setRunListBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (!ready) return;
+    const timer = setTimeout(() => {
+      runListPosition.current = {
+        before: '',
+        trail: [],
+        query: runListQuery.trim(),
+        archived: runListArchive,
+      };
+      void refresh();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [runListQuery, runListArchive, ready, refresh]);
+  useEffect(() => {
+    if (!modal.startsWith('manage:')) setRunListArchive(undefined);
+  }, [modal]);
   const refreshDetail = useCallback(async () => {
     const wanted = activeRunId.current;
     if (!wanted) return;
@@ -557,7 +664,7 @@ function App({
       result = await api<Detail>(
         '/runs/' +
           wanted +
-          '?messageLimit=160' +
+          '?messageLimit=160&view=conversation' +
           (before ? '&beforeMessage=' + encodeURIComponent(before) : ''),
       );
     } catch (error) {
@@ -621,7 +728,8 @@ function App({
           const lists = refresh();
           try {
             const [, listed] = await Promise.all([cache.load(), lists]);
-            if (listed === true) cache.prune(listedEntities.current.projects, listedEntities.current.runs);
+            if (listed === true)
+              cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
           } catch (error) {
             setReadIssues((old) => ({ ...old, session: readIssueFor(error, request) }));
             return;
@@ -726,6 +834,7 @@ function App({
       'context.updated',
       'context.policy.updated',
       'terminal.started',
+      'terminal.phase',
       'terminal.output',
       'terminal.completed',
       'terminal.failed',
@@ -837,7 +946,7 @@ function App({
       if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
     });
   };
-  const selectRun = (run: Run) => {
+  const selectRun = (run: RunListItem) => {
     if (cache.get(`unread:run:${run.id}`) === true) cache.set(`unread:run:${run.id}`, false);
     if (run.projectId && cache.get(`collapsed:project:${run.projectId}`) === true)
       cache.set(`collapsed:project:${run.projectId}`, false);
@@ -909,7 +1018,7 @@ function App({
     setDetail(null);
     setPreviewOpen(false);
   };
-  const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => {
+  const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string; runIds?: string[] }) => {
     if (
       (deleted?.kind === 'run' && deleted.id === runId) ||
       (deleted?.kind === 'project' && deleted.id === projectId)
@@ -923,13 +1032,32 @@ function App({
         Object.fromEntries(Object.entries(old).filter(([key]) => !key.startsWith(deleted.id + ':'))),
       );
     if (deleted?.kind === 'run')
-      cache.remove([`draft:run:${deleted.id}`, `pinned:run:${deleted.id}`, `unread:run:${deleted.id}`]);
+      cache.remove(
+        Object.keys(cacheStateRef.current.entries).filter(
+          (key) =>
+            [
+              `draft:run:${deleted.id}`,
+              `pinned:run:${deleted.id}`,
+              `unread:run:${deleted.id}`,
+              `draft:terminal-continuation:${deleted.id}`,
+            ].includes(key) || key.startsWith(`draft:terminal-recovery:${deleted.id}:`),
+        ),
+      );
     if (deleted?.kind === 'project') {
-      const children = runs.filter((run) => run.projectId === deleted.id);
+      const children = new Set(
+        deleted.runIds || runs.filter((run) => run.projectId === deleted.id).map((run) => run.id),
+      );
       cache.remove([
         newDraftKey(deleted.id),
         `collapsed:project:${deleted.id}`,
-        ...children.flatMap((run) => [`draft:run:${run.id}`, `pinned:run:${run.id}`, `unread:run:${run.id}`]),
+        `settings:selected-terminal-profile:${deleted.id}`,
+        ...Object.keys(cacheStateRef.current.entries).filter((key) => {
+          const match =
+            /^(?:(?:draft|pinned|unread):run:|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
+              key,
+            );
+          return !!match && children.has(match[1]);
+        }),
       ]);
     }
     return refreshed;
@@ -951,11 +1079,12 @@ function App({
           : projects.find((project) => project.id === target.item.id);
       if (!current) throw new Error('记录已被删除，请刷新会话列表。');
       try {
-        await mutation(
+        const result = await mutation<{ deletedRunIds?: string[] }>(
           `/${target.kind === 'run' ? 'runs' : 'projects'}/${current.id}`,
           { ...changes, expectedRevision: target.item.revision },
           remove ? 'DELETE' : 'PATCH',
         );
+        if (remove) await managed({ kind: target.kind, id: current.id, runIds: result.deletedRunIds });
       } catch (e) {
         if (
           !(e instanceof ApiError && e.kind === 'http' && e.status === 409 && e.code === 'REVISION_CONFLICT')
@@ -973,12 +1102,13 @@ function App({
         }
         throw new Error(message);
       }
-      if (remove) await managed({ kind: target.kind, id: current.id });
     });
     return conflicted ? 'conflict' : succeeded;
   };
   const totalTokens =
-    detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) || 0;
+    detail?.usageSummary?.totalTokens ??
+    detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) ??
+    0;
   const runAction = (action: string, taskId?: string) =>
     runReadOnly
       ? Promise.resolve(false)
@@ -993,9 +1123,9 @@ function App({
   const surfaceSwitcher = (
     <SurfaceSwitcher disabled={busy || sessionInitializing} switching={false} change={switchSurface} />
   );
-  function openArtifact(a: ArtifactTarget) {
+  function openArtifact(a: Artifact) {
     if (a.runId !== activeRunId.current) return;
-    setArtifactView({ id: a.id, name: a.name, runId: a.runId });
+    setArtifactView(a);
     setDetailsDrawerOpen(false);
     setPreviewOpen(true);
   }
@@ -1107,6 +1237,13 @@ function App({
           projects={projects}
           spaces={spaces}
           runs={runs}
+          listPage={runListPage}
+          listTrail={runListPosition.current.trail.length > 0}
+          listBusy={runListBusy}
+          listQuery={runListQuery}
+          changeListQuery={setRunListQuery}
+          listNavigate={(direction) => void changeRunList(direction)}
+          projectCounts={projectCounts}
           spaceId={spaceId}
           projectId={projectId}
           runId={runId}
@@ -1711,7 +1848,27 @@ function App({
                             确认交付并验收
                           </button>
                           {!runReadOnly && (
-                            <TerminalContinuation run={detail.run} disabled={busy} act={act} />
+                            <TerminalContinuation
+                              key={detail.run.id}
+                              run={detail.run}
+                              disabled={busy}
+                              act={act}
+                              draft={readContinuationDraft(
+                                cacheState.entries[`draft:terminal-continuation:${detail.run.id}`]?.value,
+                              )}
+                              changeDraft={(value) =>
+                                cache.set(
+                                  `draft:terminal-continuation:${detail.run.id}`,
+                                  JSON.stringify(value),
+                                )
+                              }
+                              submitted={(sent) => {
+                                const key = `draft:terminal-continuation:${detail.run.id}`;
+                                const current = readContinuationDraft(cache.get(key));
+                                if (current.text === sent.text && current.mode === sent.mode)
+                                  cache.set(key, JSON.stringify({ ...current, text: '' }));
+                              }}
+                            />
                           )}
                         </div>
                       </div>
@@ -1741,6 +1898,9 @@ function App({
                       </p>
                     </div>
                   )}
+                  {detail.terminalRuntime && (
+                    <TerminalRuntimePanel snapshot={detail.terminalRuntime} tasks={detail.tasks} />
+                  )}
                   {detail.run.execution?.kind === 'docker-agent' &&
                     detail.run.reason === 'terminal_verification' &&
                     detail.operations
@@ -1752,15 +1912,30 @@ function App({
                         <TerminalRecovery
                           key={operation.id}
                           disabled={busy || runReadOnly}
+                          note={
+                            typeof cacheState.entries[
+                              `draft:terminal-recovery:${detail.run.id}:${operation.id}`
+                            ]?.value === 'string'
+                              ? (cacheState.entries[
+                                  `draft:terminal-recovery:${detail.run.id}:${operation.id}`
+                                ].value as string)
+                              : ''
+                          }
+                          changeNote={(note) =>
+                            cache.set(`draft:terminal-recovery:${detail.run.id}:${operation.id}`, note)
+                          }
                           submit={(outcome, note) =>
-                            void act(() =>
-                              mutation('/runs/' + detail.run.id + '/terminal/verify', {
+                            void act(async () => {
+                              const key = `draft:terminal-recovery:${detail.run.id}:${operation.id}`;
+                              const sent = cache.get(key);
+                              await mutation('/runs/' + detail.run.id + '/terminal/verify', {
                                 expectedRevision: detail.run.revision,
                                 operationId: operation.id,
                                 outcome,
                                 note,
-                              }),
-                            )
+                              });
+                              if (cache.get(key) === sent) cache.set(key, '');
+                            })
                           }
                         />
                       ))}
@@ -1908,14 +2083,17 @@ function App({
                     key={runId}
                     workspaceRequestId={previewFileTarget?.requestId}
                     logContexts={logContexts}
+                    allowLogContextLookup={detail.run.contract.permissionProfile.read}
                     workspaceAvailable={detail.run.contract.permissionProfile.read}
-                    artifacts={detail.artifacts}
-                    selectedArtifactId={artifactView?.runId === runId ? artifactView.id : undefined}
-                    selectArtifact={(artifact) =>
-                      setArtifactView(
-                        artifact ? { id: artifact.id, name: artifact.name, runId: artifact.runId } : null,
-                      )
+                    artifacts={
+                      artifactView?.runId === runId &&
+                      !detail.artifacts.some((item) => item.id === artifactView.id)
+                        ? [artifactView, ...detail.artifacts]
+                        : detail.artifacts
                     }
+                    checkpointKey={detail.run.id}
+                    selectedArtifactId={artifactView?.runId === runId ? artifactView.id : undefined}
+                    selectArtifact={setArtifactView}
                     close={() => setPreviewOpen(false)}
                   >
                     <PreviewPanel
@@ -2173,7 +2351,7 @@ function App({
                       <>
                         <div className="panel-heading">
                           <h3>版本化产物</h3>
-                          <span>{detail.artifacts.length} 个</span>
+                          <span>{detail.recordCounts?.artifacts ?? detail.artifacts.length} 个</span>
                         </div>
                         {detail.artifacts.map((a) => (
                           <button className="artifact-card" key={a.id} onClick={() => void openArtifact(a)}>
@@ -2192,6 +2370,24 @@ function App({
                         ))}
                         {!detail.artifacts.length && (
                           <Empty title="产物将在这里交付" text="报告、附件和 Git diff 会保留版本与来源。" />
+                        )}
+                        {detail.recordsLimited && (
+                          <RecordHistory
+                            runId={detail.run.id}
+                            kind="artifacts"
+                            label="全部产物"
+                            version={detail.recordVersions?.artifacts ?? detail.run.revision}
+                            total={detail.recordCounts?.artifacts ?? 0}
+                            render={(artifact: Artifact) => (
+                              <button
+                                className="secondary"
+                                type="button"
+                                onClick={() => openArtifact(artifact)}
+                              >
+                                {artifact.name} · v{artifact.version}
+                              </button>
+                            )}
+                          />
                         )}
                         <div className="panel-heading">
                           <h3>待核验操作</h3>
@@ -2217,6 +2413,15 @@ function App({
                           ))}
                         {!detail.operations.some((o) => o.status === 'UNCERTAIN') && (
                           <p className="muted small">当前没有待核验副作用</p>
+                        )}
+                        {detail.recordsLimited && (
+                          <RecordHistory
+                            runId={detail.run.id}
+                            kind="operations"
+                            label="全部操作记录"
+                            version={detail.recordVersions?.operations ?? detail.run.revision}
+                            total={detail.recordCounts?.operations ?? 0}
+                          />
                         )}
                       </>
                     )}
@@ -2270,6 +2475,14 @@ function App({
                   spaces={spaces}
                   projects={projects}
                   runs={runs}
+                  listPage={runListPage}
+                  listTrail={runListPosition.current.trail.length > 0}
+                  listBusy={runListBusy}
+                  listQuery={runListQuery}
+                  changeListQuery={setRunListQuery}
+                  listNavigate={(direction) => void changeRunList(direction)}
+                  projectCounts={projectCounts}
+                  changeListArchive={setRunListArchive}
                   initial={modal.slice(7)}
                   close={() => setModal('')}
                   updated={managed}
@@ -2610,6 +2823,23 @@ function UsagePanel({
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);
   const costs = settled.reduce((sum, r) => sum + (r.usage?.cost || 0), 0);
+  const summary = detail.usageSummary;
+  const requestCount = summary?.requestCount ?? detail.requests.length;
+  const providerMetrics =
+    summary?.providers ??
+    [...new Set(detail.requests.map((r) => r.providerId))].map((providerId) => {
+      const rows = detail.requests.filter((r) => r.providerId === providerId && r.usage);
+      const ttft = rows.flatMap((r) => (typeof r.usage?.ttftMs === 'number' ? [r.usage.ttftMs] : []));
+      return {
+        providerId,
+        input: rows.reduce((s, r) => s + (r.usage?.inputTotal ?? 0), 0),
+        cacheRead:
+          rows.length && rows.every((r) => typeof r.usage?.cacheRead === 'number')
+            ? rows.reduce((s, r) => s + (r.usage?.cacheRead ?? 0), 0)
+            : null,
+        ttftMs: ttft.length ? ttft.reduce((a, b) => a + b, 0) / ttft.length : null,
+      };
+    });
   return (
     <>
       <ContextOverview
@@ -2627,7 +2857,7 @@ function UsagePanel({
         <div>
           <span>模型请求</span>
           <strong>
-            {detail.requests.length}
+            {requestCount}
             <small> / {detail.run.contract.budget.maxRequests}</small>
           </strong>
         </div>
@@ -2637,45 +2867,41 @@ function UsagePanel({
         </div>
         <div>
           <span>已知成本</span>
-          <strong>{totalCostKnown ? costs.toFixed(4) : '—'}</strong>
+          <strong>
+            {(summary?.costKnown ?? totalCostKnown) ? (summary?.cost ?? costs).toFixed(4) : '—'}
+          </strong>
         </div>
         <div>
           <span>待核验调用</span>
-          <strong>{unknown.length}</strong>
+          <strong>{summary?.unknownCount ?? unknown.length}</strong>
         </div>
       </div>
       <div className="budget-bar">
         <i
           style={{
-            transform: `scaleX(${Math.min(1, detail.requests.length / detail.run.contract.budget.maxRequests)})`,
+            transform: `scaleX(${Math.min(1, requestCount / detail.run.contract.budget.maxRequests)})`,
           }}
         />
       </div>
       <div className="panel-heading">
         <h3>厂商缓存观测</h3>
       </div>
-      {[...new Set(detail.requests.map((r) => r.providerId))].map((providerId) => {
-        const rows = detail.requests.filter((r) => r.providerId === providerId && r.usage),
-          cacheKnown = rows.length && rows.every((r) => r.usage?.cacheRead !== null),
-          input = rows.reduce((s, r) => s + (r.usage?.inputTotal || 0), 0),
-          cache = rows.reduce((s, r) => s + (r.usage?.cacheRead || 0), 0),
-          ttft = rows.map((r) => r.usage?.ttftMs).filter((n): n is number => typeof n === 'number');
+      {providerMetrics.map(({ providerId, input, cacheRead: cache, ttftMs }) => {
+        const cacheKnown = cache !== null;
         return (
           <div className="cache-card" key={providerId}>
             <div>
               <strong>{providerId}</strong>
-              <span>{cacheKnown && input ? Math.round((cache / input) * 100) + '% 命中' : '待观测'}</span>
+              <span>{cacheKnown && input ? Math.round((cache! / input) * 100) + '% 命中' : '待观测'}</span>
             </div>
             <p>
-              读取 {cacheKnown ? cache.toLocaleString() : '—'} / 输入 {input.toLocaleString()} Token
+              读取 {cacheKnown ? cache!.toLocaleString() : '—'} / 输入 {input.toLocaleString()} Token
             </p>
-            <small>
-              平均首字 {ttft.length ? Math.round(ttft.reduce((a, b) => a + b, 0) / ttft.length) + ' ms' : '—'}
-            </small>
+            <small>平均首字 {ttftMs === null ? '—' : Math.round(ttftMs) + ' ms'}</small>
           </div>
         );
       })}
-      {!detail.requests.length && (
+      {!requestCount && (
         <Empty kind="workspace" title="等待真实调用" text="使用供应商返回的 usage；缺失指标显示为未知。" />
       )}
       <div className="info-note">
@@ -2692,21 +2918,31 @@ function UsagePanel({
       <div className="panel-heading">
         <h3>请求清单</h3>
       </div>
-      {detail.requests.map((r) => (
-        <details className="request-detail" key={r.id}>
-          <summary>
-            <span>{r.providerBinding.model}</span>
-            <small>{r.status}</small>
-          </summary>
-          <pre>
-            {JSON.stringify(
-              { requestId: r.id, manifest: r.manifest, usage: r.usage, error: r.error },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
-      ))}
+      {detail.recordsLimited ? (
+        <RecordHistory
+          runId={detail.run.id}
+          kind="requests"
+          label="请求清单"
+          version={detail.recordVersions?.requests ?? detail.run.revision}
+          total={requestCount}
+        />
+      ) : (
+        detail.requests.map((r) => (
+          <details className="request-detail" key={r.id}>
+            <summary>
+              <span>{r.providerBinding.model}</span>
+              <small>{r.status}</small>
+            </summary>
+            <pre>
+              {JSON.stringify(
+                { requestId: r.id, manifest: r.manifest, usage: r.usage, error: r.error },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        ))
+      )}
     </>
   );
 }

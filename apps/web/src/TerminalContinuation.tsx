@@ -10,20 +10,37 @@ type Session = {
   revision: number;
   sessionId?: string;
 };
+export type ContinuationDraft = { text: string; mode: 'resume' | 'new-session' };
+export function readContinuationDraft(value: string | boolean | undefined): ContinuationDraft {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : null;
+    if (parsed && typeof parsed.text === 'string' && ['resume', 'new-session'].includes(parsed.mode))
+      return { text: parsed.text.slice(0, 60000), mode: parsed.mode };
+  } catch {
+    // An invalid recovery value cannot become a continuation request.
+  }
+  return { text: '', mode: 'resume' };
+}
 export function TerminalContinuation({
   run,
   disabled,
   act,
+  draft,
+  changeDraft,
+  submitted,
 }: {
   run: Run;
   disabled: boolean;
   act: (action: () => Promise<unknown>) => Promise<unknown>;
+  draft: ContinuationDraft;
+  changeDraft: (draft: ContinuationDraft) => void;
+  submitted: (draft: ContinuationDraft) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [session, setSession] = useState<Session | null>(null),
     [issue, setIssue] = useState('');
-  const [text, setText] = useState(''),
-    [mode, setMode] = useState<'resume' | 'new-session'>('resume');
+  const [readAttempt, setReadAttempt] = useState(0);
+  const { text, mode } = draft;
   useEffect(() => {
     const controller = new AbortController();
     setSession(null);
@@ -32,18 +49,30 @@ export function TerminalContinuation({
       .then((value) => {
         if (!controller.signal.aborted && value.revision === run.revision) {
           setSession(value);
-          setMode((current) => (current === 'resume' && !value.canResume ? 'new-session' : current));
-        }
+        } else if (!controller.signal.aborted) setIssue('会话已更新，请重新检查。');
       })
       .catch((error) => {
         if (!controller.signal.aborted) setIssue(error instanceof Error ? error.message : '无法读取会话状态');
       });
     return () => controller.abort();
-  }, [run.id, run.revision, api]);
+  }, [run.id, run.revision, api, readAttempt]);
+  useEffect(() => {
+    if (session && mode === 'resume' && !session.canResume) changeDraft({ text, mode: 'new-session' });
+  }, [session, mode, text, changeDraft]);
   return (
     <details className="terminal-continuation">
       <summary>补充需求并继续</summary>
       <p className="field-help">{issue || session?.reason || '正在检查会话能力…'}</p>
+      {issue && (
+        <button
+          type="button"
+          className="text-button"
+          disabled={disabled}
+          onClick={() => setReadAttempt((value) => value + 1)}
+        >
+          重新检查
+        </button>
+      )}
       {session && (
         <>
           <label>
@@ -52,7 +81,7 @@ export function TerminalContinuation({
               aria-label="终端继续方式"
               value={mode}
               disabled={disabled}
-              onChange={(event) => setMode(event.target.value as typeof mode)}
+              onChange={(event) => changeDraft({ text, mode: event.target.value as typeof mode })}
             >
               <option value="resume" disabled={!session.canResume}>
                 继续原 CLI 会话{!session.canResume ? '（不可用）' : ''}
@@ -70,7 +99,7 @@ export function TerminalContinuation({
               value={text}
               maxLength={60000}
               disabled={disabled}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => changeDraft({ text: event.target.value, mode })}
               placeholder="描述下一步需要完成的工作…"
             />
           </label>
@@ -90,7 +119,7 @@ export function TerminalContinuation({
                   mode,
                   text: text.trim(),
                 });
-                setText('');
+                submitted(draft);
               })
             }
           >

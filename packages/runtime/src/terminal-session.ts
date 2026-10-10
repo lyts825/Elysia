@@ -12,7 +12,7 @@ export interface TerminalSessionView {
   sessionId?: string;
   lastOperationId?: string;
 }
-const Session = z.object({
+export const TerminalSessionRecordSchema = z.object({
   revision: z.number().int().nonnegative(),
   runId: z.string().uuid(),
   taskId: z.string().uuid(),
@@ -33,7 +33,29 @@ const Session = z.object({
     })
     .optional(),
 });
+const Session = TerminalSessionRecordSchema;
 export type TerminalSessionRecord = z.infer<typeof Session>;
+export const TerminalStateOwnerSchema = z.object({
+  format: z.literal('elysia-terminal-state-v1'),
+  owner: z.string().regex(/^[a-f0-9]{32}$/),
+  runId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  operationId: z.string().uuid(),
+  homeOperationId: z.string().uuid(),
+  stopped: z.boolean().optional(),
+});
+export type TerminalStateOwner = z.infer<typeof TerminalStateOwnerSchema>;
+export interface TerminalMaintenanceSnapshot {
+  run: Run;
+  task: Task;
+  operation: import('../../contracts/src/index.js').Operation;
+  record: TerminalSessionRecord;
+  home: string;
+  workspace: string;
+  imageId: string;
+  rollout: { path: string; relativePath: string; exists: boolean; hash: string | null };
+  consistent: boolean;
+}
 const key = (taskId: string) => `terminal-session:${taskId}`;
 export function readTerminalSession(store: Store, taskId: string): TerminalSessionRecord | undefined {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key(taskId)) as

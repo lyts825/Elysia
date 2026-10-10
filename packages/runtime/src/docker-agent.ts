@@ -28,15 +28,23 @@ import { Kernel } from '../../kernel/src/index.js';
 import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
 import { DockerCliManager } from './cli-manager.js';
+import { TerminalResourcePool } from './terminal-resources.js';
+import type {
+  TerminalTaskRuntime,
+  TerminalRuntimePhase,
+  TerminalRuntimeSnapshot,
+} from '../../contracts/src/terminal-runtime.js';
 import { terminalConnectionConfiguration } from './terminal-connection.js';
 import {
   codexResumeProfile,
   readTerminalSession,
   terminalSessionIdentity,
   writeTerminalSession,
+  TerminalStateOwnerSchema,
   type TerminalContinuationMode,
   type TerminalSessionRecord,
   type TerminalSessionView,
+  type TerminalMaintenanceSnapshot,
 } from './terminal-session.js';
 export type { TerminalSessionView, TerminalContinuationMode } from './terminal-session.js';
 
@@ -374,7 +382,14 @@ export class DockerAgentService {
   private closed = false;
   private transport: DockerTransport;
   public cliManager: DockerCliManager;
-  private active = new Map<string, { task: Task; operation: Operation; stopping?: Promise<void> }>();
+  public readonly resources = new TerminalResourcePool();
+  private maintenanceLocks = new Set<string>();
+  private runtimeRevision = 0;
+  private runtimeLast = '';
+  private active = new Map<
+    string,
+    { task: Task; operation: Operation; stopping?: Promise<void>; creating?: boolean; created?: boolean }
+  >();
   private owner: string;
   private environment: (names: string[]) => Record<string, string>;
   private resolveConnection?: (binding: TerminalConnectionBinding) => Promise<string>;
@@ -388,7 +403,10 @@ export class DockerAgentService {
     } = {},
   ) {
     this.transport = options.transport ?? new DockerCliTransport();
-    this.cliManager = new DockerCliManager(kernel.store.directory, { transport: this.transport });
+    this.cliManager = new DockerCliManager(kernel.store.directory, {
+      transport: this.transport,
+      resources: this.resources,
+    });
     this.resolveConnection = options.resolveConnection;
     this.environment =
       options.environment ??
@@ -403,6 +421,76 @@ export class DockerAgentService {
   }
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.transport.run(args, { cwd: this.store.directory, ...options });
+  }
+  refreshResourceCapacity(signal?: AbortSignal) {
+    if (this.closed) return Promise.resolve();
+    return this.cliManager.refreshResourceCapacity(signal);
+  }
+  capabilities() {
+    return this.cliManager.capabilityMatrix();
+  }
+  /** Liveness comes from in-flight work and retained resource ownership, never a persisted UI phase. */
+  hasActive(runId?: string) {
+    if ([...this.active.values()].some((entry) => !runId || entry.task.runId === runId)) return true;
+    return this.resources
+      .snapshot()
+      .reservations.some(
+        (entry) =>
+          (!runId && entry.kind === 'installation') ||
+          (entry.held && (!runId || this.store.get<Task>('tasks', entry.id)?.runId === runId)),
+      );
+  }
+  runtimeSnapshot(runId?: string): TerminalRuntimeSnapshot {
+    const rows = this.store.db
+      .prepare("SELECT value FROM storage_meta WHERE key LIKE 'terminal-runtime:%'")
+      .all() as { value: string }[];
+    const tasks = rows
+      .map((row) => JSON.parse(row.value) as TerminalTaskRuntime)
+      .filter((entry) => !!this.store.get('tasks', entry.taskId));
+    const resources = this.resources.snapshot();
+    const serialized = stable({ tasks, resources });
+    if (serialized !== this.runtimeLast) {
+      this.runtimeLast = serialized;
+      this.runtimeRevision++;
+    }
+    return {
+      revision: this.runtimeRevision,
+      tasks: tasks.filter((entry) => !runId || entry.runId === runId),
+      resources,
+    };
+  }
+  private runtimePhase(task: Task, phase: TerminalRuntimePhase, operationId?: string, activity = false) {
+    const key = `terminal-runtime:${task.id}`;
+    const row = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
+      | { value: string }
+      | undefined;
+    const previous = row ? (JSON.parse(row.value) as TerminalTaskRuntime) : undefined;
+    const timestamp = Date.now();
+    if (
+      previous?.phase === phase &&
+      previous.operationId === operationId &&
+      (!activity || timestamp - (previous.lastPublicActivityAt ?? 0) < 500)
+    )
+      return;
+    const record: TerminalTaskRuntime = {
+      runId: task.runId,
+      taskId: task.id,
+      phase,
+      operationId,
+      phaseStartedAt:
+        previous?.phase === phase && previous.operationId === operationId
+          ? previous.phaseStartedAt
+          : timestamp,
+      lastPublicActivityAt: activity ? timestamp : previous?.lastPublicActivityAt,
+      revision: (previous?.revision ?? 0) + 1,
+    };
+    this.store.db
+      .prepare(
+        'INSERT INTO storage_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      )
+      .run(key, stable(record));
+    if (previous?.phase !== phase || previous.operationId !== operationId)
+      this.kernel.event(task.runId, 'terminal.phase', record, task.id);
   }
   private async connectionConfiguration(profile: AgentTerminalProfile) {
     if (!profile.connection) return undefined;
@@ -808,7 +896,14 @@ export class DockerAgentService {
     );
     const inspected = await this.command(['inspect', '--format', '{{json .Config.Labels}}', name]);
     if (inspected.exitCode !== 0) {
-      if (/No such (object|container)/i.test(inspected.stderr)) return;
+      if (/No such (object|container)/i.test(inspected.stderr)) {
+        const entry = this.active.get(task.id);
+        if (!entry?.creating && (entry?.created || operation.args.containerCreated === true))
+          await this.markStateStopped(task, operation, true);
+        this.resources.confirmStopped(task.id);
+        if (!this.active.has(task.id)) this.resources.release(task.id);
+        return;
+      }
       throw new AppError('TERMINAL_STOP_FAILED', '无法核验容器是否停止，请检查 Docker 后再继续');
     }
     let labels: Record<string, string>;
@@ -834,6 +929,42 @@ export class DockerAgentService {
       'TERMINAL_STOP_FAILED',
       '容器已停止，但尚未清理；请检查 Docker 后再继续',
     );
+    this.resources.confirmStopped(task.id);
+    const entry = this.active.get(task.id);
+    if (!entry?.creating && (entry?.created || operation.args.containerCreated === true))
+      await this.markStateStopped(task, operation, true);
+    if (!this.active.has(task.id)) this.resources.release(task.id);
+  }
+  private async markStateStopped(task: Task, operation: Operation, stopped: boolean) {
+    const root = path.resolve(this.store.directory, 'terminal-state'),
+      folder = path.join(root, operation.id),
+      filename = path.join(folder, 'owner.json');
+    let temporary: string | undefined;
+    try {
+      for (const item of [root, folder, filename])
+        invariant(
+          !(await fs.lstat(item)).isSymbolicLink() &&
+            contained(await fs.realpath(this.store.directory), await fs.realpath(item)),
+          'TERMINAL_STATE_SCOPE',
+          '终端标记路径无效',
+        );
+      const marker = TerminalStateOwnerSchema.parse(JSON.parse(await fs.readFile(filename, 'utf8')));
+      invariant(
+        marker.owner === this.owner &&
+          marker.runId === task.runId &&
+          marker.taskId === task.id &&
+          marker.operationId === operation.id,
+        'TERMINAL_STATE_SCOPE',
+        '终端标记不属于本次操作',
+      );
+      temporary = path.join(folder, `.owner-${id()}.tmp`);
+      await fs.writeFile(temporary, stable({ ...marker, stopped }), { mode: 0o600, flag: 'wx' });
+      await fs.rename(temporary, filename);
+    } catch {
+      // A missing or unknown marker is retained conservatively and cannot authorize maintenance cleanup.
+    } finally {
+      if (temporary) await fs.rm(temporary, { force: true }).catch(() => {});
+    }
   }
   async interrupt(runId: string, taskId?: string) {
     const tasks = taskId
@@ -896,6 +1027,7 @@ export class DockerAgentService {
       .all<Operation>('tool_operations')
       .filter((op) => op.name === 'terminal_agent' && ['INTENT', 'UNCERTAIN'].includes(op.status))) {
       const task = this.store.require<Task>('tasks', operation.taskId);
+      this.resources.hold(task.id);
       try {
         await this.stopOwned(task, operation);
       } catch {
@@ -910,11 +1042,39 @@ export class DockerAgentService {
         const current = this.store.require<Task>('tasks', task.id);
         if (!['DONE', 'CANCELLED'].includes(current.status))
           this.kernel.wait(current, 'terminal_verification');
+        this.runtimePhase(current, 'verification', operation.id);
       });
     }
+    const rows = this.store.db
+      .prepare("SELECT value FROM storage_meta WHERE key LIKE 'terminal-runtime:%'")
+      .all() as { value: string }[];
+    for (const row of rows) {
+      const runtime = JSON.parse(row.value) as TerminalTaskRuntime;
+      if (!['preparing', 'starting', 'running', 'finalizing'].includes(runtime.phase)) continue;
+      const task = this.store.get<Task>('tasks', runtime.taskId);
+      if (!task || this.active.has(task.id)) continue;
+      const phase: TerminalRuntimePhase =
+        task.waitReason === 'terminal_verification'
+          ? 'verification'
+          : task.waitReason === 'terminal_review'
+            ? 'review'
+            : task.waitReason === 'terminal_unavailable'
+              ? 'unavailable'
+              : 'stopped';
+      this.runtimePhase(task, phase, runtime.operationId);
+    }
   }
-  private continuationState(runId: string, expectedRevision?: number) {
+  private continuationState(
+    runId: string,
+    expectedRevision?: number,
+    options: { allowExpired?: boolean; allowMaintenance?: boolean } = {},
+  ) {
     invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    invariant(
+      options.allowMaintenance || !this.maintenanceLocks.has(runId),
+      'TERMINAL_MAINTENANCE_BUSY',
+      '会话维护正在进行，请稍后继续',
+    );
     const run = this.store.require<Run>('runs', runId);
     invariant(
       expectedRevision === undefined || run.revision === expectedRevision,
@@ -947,7 +1107,7 @@ export class DockerAgentService {
       '请先等待终端停止并核验所有未确认操作',
     );
     invariant(
-      !run.startedAt || Date.now() - run.startedAt < run.limits.maxMinutes * 60000,
+      options.allowExpired || !run.startedAt || Date.now() - run.startedAt < run.limits.maxMinutes * 60000,
       'TIME_BUDGET',
       '运行时间达到上限，请创建新任务',
     );
@@ -972,7 +1132,133 @@ export class DockerAgentService {
       'TERMINAL_SESSION_IMAGE_UNKNOWN',
       '旧任务未记录实际镜像内容，请创建新任务后使用续接',
     );
+    invariant(
+      !operation.args.imageId || operation.args.imageId === imageId,
+      'TERMINAL_SESSION_CHANGED',
+      '会话镜像与最后操作记录不一致，请先核验',
+    );
     return { run, task, operation, profile, record, imageId, identity };
+  }
+  /** Local consistency proof only; this method never probes Docker or resolves credentials. */
+  maintenanceSnapshot(
+    runId: string,
+    expectedRevision: number,
+    options: { requireConsistent?: boolean } = {},
+  ): TerminalMaintenanceSnapshot {
+    const state = this.continuationState(runId, expectedRevision, {
+      allowExpired: true,
+      allowMaintenance: true,
+    });
+    const record = state.record;
+    invariant(
+      state.profile.agent === 'codex' &&
+        state.profile.protocol === 'codex-jsonl' &&
+        record?.ready &&
+        record.state,
+      'TERMINAL_MAINTENANCE_UNSUPPORTED',
+      '仅支持已可靠停止且有一致性记录的 Codex 会话',
+    );
+    const home = this.sessionHome(record);
+    const relativePath = record.state.path;
+    invariant(
+      /^\.codex\/sessions\//.test(relativePath) &&
+        !relativePath.split('/').some((part) => part === '..' || !part) &&
+        relativePath.endsWith('.jsonl') &&
+        !!record.sessionId &&
+        path.basename(relativePath).includes(record.sessionId),
+      'TERMINAL_SESSION_SCOPE',
+      '会话文件路径不符合受管范围',
+    );
+    const rolloutPath = path.resolve(home, ...relativePath.split('/'));
+    invariant(contained(home, rolloutPath), 'TERMINAL_SESSION_SCOPE', '会话文件超出受管范围');
+    let exists = true,
+      actualHash: string | null = null;
+    try {
+      for (let directory = rolloutPath; directory !== home; directory = path.dirname(directory)) {
+        const stat = lstatSync(directory);
+        invariant(
+          !stat.isSymbolicLink() && contained(realpathSync(home), realpathSync(directory)),
+          'TERMINAL_SESSION_SCOPE',
+          '会话文件路径包含链接或超出受管目录',
+        );
+      }
+      actualHash = this.rolloutHash(rolloutPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      exists = false;
+    }
+    let consistent = false;
+    try {
+      consistent = stable(this.sessionSeal(record)) === stable(record.state);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'TERMINAL_SESSION_SCOPE') throw error;
+      // A missing or modified rollout can be repaired from the exact same reliable checkpoint.
+    }
+    invariant(
+      options.requireConsistent === false || consistent,
+      'TERMINAL_SESSION_CHANGED',
+      '当前会话文件与可靠记录不一致',
+    );
+    invariant(
+      typeof state.task.workspace === 'string' && !lstatSync(state.task.workspace).isSymbolicLink(),
+      'TERMINAL_SESSION_SCOPE',
+      '任务工作区不可维护',
+    );
+    return {
+      run: state.run,
+      task: state.task,
+      operation: state.operation,
+      record,
+      home,
+      workspace: state.task.workspace,
+      imageId: state.imageId,
+      rollout: { path: rolloutPath, relativePath, exists, hash: actualHash },
+      consistent,
+    };
+  }
+  withMaintenanceGuard<T>(
+    runId: string,
+    expectedRevision: number,
+    callback: (snapshot: TerminalMaintenanceSnapshot) => T,
+    options: { mutates?: boolean; requireConsistent?: boolean } = {},
+  ): T {
+    invariant(!this.maintenanceLocks.has(runId), 'TERMINAL_MAINTENANCE_BUSY', '会话维护正在进行');
+    const before = this.maintenanceSnapshot(runId, expectedRevision, {
+      requireConsistent: options.requireConsistent ?? !options.mutates,
+    });
+    this.maintenanceLocks.add(runId);
+    try {
+      return this.store.tx(() => {
+        const result = callback(before);
+        invariant(
+          !(result && typeof (result as { then?: unknown }).then === 'function'),
+          'TERMINAL_MAINTENANCE_ASYNC',
+          '维护文件操作必须在同步保护范围内完成',
+        );
+        const after = this.maintenanceSnapshot(runId, expectedRevision, {
+          requireConsistent: options.mutates ? true : options.requireConsistent,
+        });
+        invariant(
+          stable(before.record) === stable(after.record) &&
+            before.task.revision === after.task.revision &&
+            before.operation.revision === after.operation.revision &&
+            before.imageId === after.imageId,
+          'TERMINAL_SESSION_CHANGED',
+          '维护期间会话绑定已变化',
+        );
+        invariant(
+          options.mutates ||
+            (before.rollout.hash === after.rollout.hash && before.rollout.exists === after.rollout.exists),
+          'TERMINAL_SESSION_CHANGED',
+          '维护期间会话文件已变化',
+        );
+        if (options.mutates)
+          writeTerminalSession(this.store, { ...after.record, revision: after.record.revision + 1 });
+        return result;
+      });
+    } finally {
+      this.maintenanceLocks.delete(runId);
+    }
   }
   private sessionHome(record: TerminalSessionRecord, requireSession = false) {
     const source = this.store.require<Operation>('tool_operations', record.homeOperationId);
@@ -1047,14 +1333,20 @@ export class DockerAgentService {
     };
     visit(sessions, 0);
     invariant(matches.length === 1, 'TERMINAL_SESSION_MISSING', '未找到唯一的 Codex 会话文件；请开启新会话');
-    const filename = matches[0],
-      before = lstatSync(filename),
+    const filename = matches[0];
+    return {
+      path: path.relative(home, filename).split(path.sep).join('/'),
+      hash: this.rolloutHash(filename),
+    };
+  }
+  private rolloutHash(filename: string) {
+    const before = lstatSync(filename),
       descriptor = openSync(filename, 'r'),
       digest = createHash('sha256'),
       buffer = Buffer.allocUnsafe(65536);
     try {
       invariant(
-        before.size <= 64 * 1024 * 1024,
+        before.isFile() && !before.isSymbolicLink() && before.size <= 64 * 1024 * 1024,
         'TERMINAL_SESSION_LIMIT',
         '会话文件超出续接上限；请开启新会话',
       );
@@ -1077,7 +1369,7 @@ export class DockerAgentService {
       'TERMINAL_SESSION_CHANGED',
       '会话文件正在变化，请稍后重试',
     );
-    return { path: path.relative(home, filename).split(path.sep).join('/'), hash: digest.digest('hex') };
+    return digest.digest('hex');
   }
   async sessionView(runId: string): Promise<TerminalSessionView> {
     const revision = this.store.require<Run>('runs', runId).revision;
@@ -1186,6 +1478,28 @@ export class DockerAgentService {
   }
   async run(task: Task, signal: AbortSignal) {
     invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    const alreadyReserved = this.resources.has(task.id);
+    if (!alreadyReserved) {
+      await this.refreshResourceCapacity(signal);
+      signal.throwIfAborted();
+      if (!this.resources.tryAcquire(task.id)) return;
+    }
+    try {
+      await this.runWithReservation(task, signal);
+    } catch (error) {
+      this.runtimePhase(task, 'unavailable');
+      throw error;
+    } finally {
+      if (!alreadyReserved) this.resources.release(task.id);
+    }
+  }
+  private async runWithReservation(task: Task, signal: AbortSignal) {
+    invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    invariant(
+      !this.maintenanceLocks.has(task.runId),
+      'TERMINAL_MAINTENANCE_BUSY',
+      '会话维护正在进行，请稍后继续',
+    );
     task = this.store.require<Task>('tasks', task.id);
     let run = this.store.require<Run>('runs', task.runId);
     invariant(run.execution?.kind === 'docker-agent', 'TERMINAL_EXECUTION', '当前任务不是 Agent 终端执行');
@@ -1267,6 +1581,7 @@ export class DockerAgentService {
       '续接源操作已变化，请核验终端状态',
     );
     if (pending?.mode === 'resume') this.sessionHome(session!, true);
+    this.runtimePhase(task, 'preparing');
     const check = await this.check({ ...profile, image: session?.imageId ?? profile.image }, signal);
     signal.throwIfAborted();
     task = this.store.require<Task>('tasks', task.id);
@@ -1284,6 +1599,7 @@ export class DockerAgentService {
         });
         this.kernel.wait(this.store.require<Task>('tasks', task.id), 'terminal_unavailable');
         this.kernel.event(run.id, 'terminal.unavailable', check, task.id);
+        this.runtimePhase(task, 'unavailable');
       });
       return;
     }
@@ -1333,7 +1649,13 @@ export class DockerAgentService {
       },
       status: 'INTENT',
     };
-    const entry = { task, operation, stopping: undefined as Promise<void> | undefined };
+    const entry = {
+      task,
+      operation,
+      stopping: undefined as Promise<void> | undefined,
+      creating: false,
+      created: false,
+    };
     const state = path.join(this.store.directory, 'terminal-state', operation.id);
     const homeOperationId = pending?.mode === 'resume' ? session!.homeOperationId : operation.id;
     const home = path.join(this.store.directory, 'terminal-state', homeOperationId, 'home');
@@ -1344,14 +1666,16 @@ export class DockerAgentService {
       profile.protocol,
       profile.outputLimit,
       configuration?.secrets ?? Object.values(values),
-      (text) =>
+      (text) => {
+        this.runtimePhase(task, 'running', operation.id, true);
         this.kernel.event(
           run.id,
           'terminal.output',
           { operationId: operation.id, text },
           task.id,
           attempt.id,
-        ),
+        );
+      },
     );
     this.store.tx(() => {
       const currentSession = readTerminalSession(this.store, task.id);
@@ -1403,6 +1727,19 @@ export class DockerAgentService {
       );
       await fs.mkdir(state, { mode: 0o700 });
       ownedState = true;
+      await fs.writeFile(
+        path.join(state, 'owner.json'),
+        stable({
+          format: 'elysia-terminal-state-v1',
+          owner: this.owner,
+          runId: run.id,
+          taskId: task.id,
+          operationId: operation.id,
+          homeOperationId,
+          stopped: false,
+        }),
+        { mode: 0o600, flag: 'wx' },
+      );
       if (pending?.mode !== 'resume') {
         await fs.mkdir(home, { mode: 0o700 });
         for (const file of configuration?.files ?? [])
@@ -1465,7 +1802,15 @@ export class DockerAgentService {
       if (task.baseline) args.push('--mount', `type=bind,source=${guard},target=/workspace/.git,readonly`);
       args.push(check.imageId!, ...(configuration?.command ?? profile.command));
       invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
-      const created = await this.command(args, { signal });
+      this.runtimePhase(task, 'starting', operation.id);
+      entry.creating = true;
+      await this.markStateStopped(task, operation, false);
+      let created: DockerCommandResult;
+      try {
+        created = await this.command(args, { signal });
+      } finally {
+        entry.creating = false;
+      }
       await this.clearEnvironmentFile(operation);
       invariant(
         created.exitCode === 0 &&
@@ -1475,6 +1820,12 @@ export class DockerAgentService {
         'TERMINAL_CREATE_FAILED',
         '无法创建 Agent 容器，请检查镜像、挂载权限与 Docker 状态',
       );
+      entry.created = true;
+      operation.args.containerCreated = true;
+      this.store.put('tool_operations', {
+        ...this.store.require<Operation>('tool_operations', operation.id),
+        args: operation.args,
+      });
       if (signal.aborted || this.closed) {
         entry.stopping = this.stopOwned(task, operation);
         await entry.stopping;
@@ -1496,6 +1847,7 @@ export class DockerAgentService {
         '终端任务输入超过 1 MiB，请拆分任务后重试',
       );
       started = true;
+      this.runtimePhase(task, 'running', operation.id);
       const controller = new AbortController();
       const relay = () => controller.abort(signal.reason);
       signal.addEventListener('abort', relay, { once: true });
@@ -1526,6 +1878,7 @@ export class DockerAgentService {
         signal.removeEventListener('abort', relay);
       }
       const transcript = projection.finish();
+      this.runtimePhase(task, 'finalizing', operation.id);
       const artifact = this.gateway.artifact(
         task,
         'agent-terminal.txt',
@@ -1593,7 +1946,10 @@ export class DockerAgentService {
         });
         writeTerminalSession(this.store, completedSession);
         const current = this.store.require<Task>('tasks', task.id);
-        if (current.status !== 'RUNNING') return;
+        if (current.status !== 'RUNNING') {
+          this.runtimePhase(current, 'stopped', operation.id);
+          return;
+        }
         this.kernel.appendMessage(
           current,
           'assistant',
@@ -1602,15 +1958,20 @@ export class DockerAgentService {
         this.kernel.updateTask(current, 'RUNNING', { result: { terminal: terminalResult } });
         this.kernel.wait(this.store.require<Task>('tasks', task.id), 'terminal_review');
         this.kernel.event(run.id, 'terminal.completed', terminalResult, task.id, attempt.id);
+        this.runtimePhase(task, 'review', operation.id);
       });
     } catch (error) {
+      this.runtimePhase(task, 'finalizing', operation.id);
       let stopped = false;
       try {
-        await (entry.stopping ?? this.stopOwned(task, operation));
+        await entry.stopping;
+        // A stop made during create cannot prove that a late create response left no container.
+        await this.stopOwned(task, operation);
         stopped = true;
       } catch {
         /* Do not turn a failed stop into a successful task. */
       }
+      if (!stopped || (signal.aborted && !entry.created)) this.resources.hold(task.id);
       if (!terminalResult) {
         const artifact = this.gateway.artifact(
           task,
@@ -1680,6 +2041,7 @@ export class DockerAgentService {
           task.id,
           attempt.id,
         );
+        this.runtimePhase(task, uncertain ? 'verification' : 'unavailable', operation.id);
       });
     } finally {
       signal.removeEventListener('abort', abort);

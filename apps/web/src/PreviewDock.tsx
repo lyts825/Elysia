@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import './preview-dock.css';
+import { readingCheckpoint, saveReadingCheckpoint } from './ReadingCheckpoint';
 
 function savedRatio(ratioKey: string) {
   try {
@@ -23,6 +24,8 @@ export function PreviewDock({
   selectedArtifactId,
   workspaceRequestId,
   logContexts,
+  checkpointKey,
+  allowLogContextLookup = true,
   selectArtifact,
   close,
 }: {
@@ -32,31 +35,86 @@ export function PreviewDock({
   selectedArtifactId?: string;
   workspaceRequestId?: string;
   logContexts?: Record<string, TerminalLogContext>;
+  checkpointKey?: string;
+  allowLogContextLookup?: boolean;
   selectArtifact: (artifact: Artifact | null) => void;
   close: () => void;
 }) {
-  const { apiUrl, surfaceStorageKey, surface } = useSurfaceClient();
+  const client = useSurfaceClient(),
+    { apiUrl, surfaceStorageKey, surface } = client;
+  const savedKey = JSON.stringify(['preview-dock', checkpointKey]);
+  const saved = checkpointKey
+    ? readingCheckpoint<{ view: string; artifactId?: string; requestId?: string; wide: boolean }>(
+        client,
+        savedKey,
+      )
+    : undefined;
   const surfaceRoot = useSurfaceRoot();
   const ratioKey = surfaceStorageKey('elysia.preview.split-ratio');
   const panel = useRef<HTMLElement>(null);
   const present = usePresenceMotion(panel, 'panel');
   const [ratio, setRatio] = useState(() => savedRatio(ratioKey));
   const [available, setAvailable] = useState(0);
-  const [wide, setWide] = useState(false);
+  const [wide, setWide] = useState(saved?.wide || false);
   const [dragging, setDragging] = useState(false);
-  const [view, setView] = useState(selectedArtifactId || !workspaceAvailable ? 'artifacts' : 'workspace');
-  const [workspaceVisited, setWorkspaceVisited] = useState(workspaceAvailable && !selectedArtifactId);
-  const [artifactsVisited, setArtifactsVisited] = useState(!!selectedArtifactId || !workspaceAvailable);
-  const [lastArtifactId, setLastArtifactId] = useState(selectedArtifactId);
-  const handledWorkspaceRequest = useRef('');
+  const [view, setView] = useState(
+    selectedArtifactId || !workspaceAvailable ? 'artifacts' : saved?.view || 'workspace',
+  );
+  const [workspaceVisited, setWorkspaceVisited] = useState(
+    workspaceAvailable && !selectedArtifactId && view === 'workspace',
+  );
+  const [artifactsVisited, setArtifactsVisited] = useState(view === 'artifacts');
+  const [lastArtifactId, setLastArtifactId] = useState(selectedArtifactId || saved?.artifactId);
+  const handledWorkspaceRequest = useRef(saved?.requestId || '');
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const single = available < 668;
   const usable = Math.max(0, available - 8);
   const minimum = 320;
   const maximum = Math.max(minimum, usable - 320);
   const width = Math.max(minimum, Math.min(maximum, usable * ratio));
+  const wantedArtifactId = selectedArtifactId || lastArtifactId;
+  const listedArtifact = artifacts.find((item) => item.id === wantedArtifactId);
+  const [historicalArtifact, setHistoricalArtifact] = useState<{
+    runId: string;
+    id: string;
+    value?: Artifact;
+    error?: string;
+  } | null>(null);
+  const [artifactRetry, setArtifactRetry] = useState(0);
+  const historical =
+    historicalArtifact &&
+    historicalArtifact.runId === checkpointKey &&
+    historicalArtifact.id === wantedArtifactId
+      ? historicalArtifact
+      : null;
   const artifact =
-    artifacts.find((item) => item.id === (selectedArtifactId || lastArtifactId)) || artifacts[0];
+    listedArtifact || historical?.value || (!wantedArtifactId || !checkpointKey ? artifacts[0] : undefined);
+  const artifactChoices =
+    artifact && !artifacts.some((item) => item.id === artifact.id) ? [artifact, ...artifacts] : artifacts;
+  useEffect(() => {
+    if (!checkpointKey || view !== 'artifacts' || !wantedArtifactId || listedArtifact || historical) return;
+    const controller = new AbortController();
+    void client
+      .api<Artifact>(
+        `/runs/${checkpointKey}/records/artifacts/${wantedArtifactId}`,
+        undefined,
+        undefined,
+        controller.signal,
+      )
+      .then((value) => {
+        if (!controller.signal.aborted)
+          setHistoricalArtifact({ runId: checkpointKey, id: wantedArtifactId, value });
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted)
+          setHistoricalArtifact({
+            runId: checkpointKey,
+            id: wantedArtifactId,
+            error: issue instanceof Error ? issue.message : '读取产物失败',
+          });
+      });
+    return () => controller.abort();
+  }, [client, checkpointKey, view, wantedArtifactId, listedArtifact, artifactRetry]);
 
   useLayoutEffect(() => {
     const layout = panel.current!.parentElement!;
@@ -114,6 +172,15 @@ export function PreviewDock({
       setView('artifacts');
     }
   }, [workspaceAvailable]);
+  useEffect(() => {
+    if (checkpointKey)
+      saveReadingCheckpoint(client, savedKey, {
+        view,
+        artifactId: wantedArtifactId || artifact?.id,
+        requestId: handledWorkspaceRequest.current,
+        wide,
+      });
+  }, [client, savedKey, view, artifact?.id, workspaceRequestId, wide]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
@@ -289,7 +356,7 @@ export function PreviewDock({
                         selectArtifact(artifacts.find((item) => item.id === event.target.value) || null);
                       }}
                     >
-                      {artifacts.map((item) => (
+                      {artifactChoices.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name} · v{item.version}
                         </option>
@@ -299,6 +366,8 @@ export function PreviewDock({
                   <ArtifactFilePreview
                     key={artifact.id}
                     id={artifact.id}
+                    checkpointKey={checkpointKey}
+                    resolveLogContext={allowLogContextLookup}
                     logContext={logContexts?.[artifact.id]}
                   />
                   <footer className="preview-dock-footer">
@@ -314,12 +383,31 @@ export function PreviewDock({
               ) : (
                 <div className="preview-empty">
                   <Icon name="file" size={28} />
-                  <h3>产物将在这里交付</h3>
+                  <h3>
+                    {wantedArtifactId && checkpointKey
+                      ? historical?.error
+                        ? '无法读取所选产物'
+                        : '正在读取所选产物…'
+                      : '产物将在这里交付'}
+                  </h3>
                   <p>
-                    {workspaceAvailable
-                      ? '选择工作区可以先查看代理正在修改的文件。'
-                      : '对话中交付的文件会显示在这里。'}
+                    {wantedArtifactId && checkpointKey
+                      ? historical?.error || '正在核对当前任务的历史产物。'
+                      : workspaceAvailable
+                        ? '选择工作区可以先查看代理正在修改的文件。'
+                        : '对话中交付的文件会显示在这里。'}
                   </p>
+                  {historical?.error && (
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setHistoricalArtifact(null);
+                        setArtifactRetry((value) => value + 1);
+                      }}
+                    >
+                      重试
+                    </button>
+                  )}
                 </div>
               )}
             </div>

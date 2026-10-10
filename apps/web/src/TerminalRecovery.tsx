@@ -1,13 +1,14 @@
-import { useState } from 'react';
-
 export function TerminalRecovery({
   disabled,
+  note,
+  changeNote,
   submit,
 }: {
   disabled: boolean;
+  note: string;
+  changeNote: (value: string) => void;
   submit: (outcome: 'confirmed' | 'not_applied', note: string) => void;
 }) {
-  const [note, setNote] = useState('');
   return (
     <div className="terminal-activity">
       <h4>核验中断的终端操作</h4>
@@ -20,7 +21,8 @@ export function TerminalRecovery({
           value={note}
           disabled={disabled}
           rows={2}
-          onChange={(e) => setNote(e.target.value)}
+          maxLength={60000}
+          onChange={(e) => changeNote(e.target.value)}
           placeholder="说明已检查的文件、日志与执行结果"
         />
       </label>

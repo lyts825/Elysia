@@ -16,8 +16,10 @@ import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { TerminalSettings } from './TerminalSettings';
 import { TerminalConnectionChecks } from './TerminalConnectionChecks';
-import { TerminalDiagnostics } from './TerminalDiagnostics';
+import { TerminalDiagnostics, type TerminalDiagnosticRepair } from './TerminalDiagnostics';
 import { TerminalInstallHistory, installationPhase, InstallationElapsed } from './TerminalInstallHistory';
+import { TerminalDataMaintenance } from './TerminalDataMaintenance';
+import type { TerminalCliCapability } from '../../../packages/contracts/src/terminal-runtime';
 import './terminal-control.css';
 
 type CliStatus = { available: boolean; installed: boolean | null; version?: string; message: string };
@@ -127,7 +129,7 @@ export function TerminalControlCenter({
   controlUpdated: (overview: TerminalControlOverview, preferences?: TerminalProjectPreferences) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
-  const [tab, setTab] = useState<'apps' | 'connections' | 'project' | 'templates'>('apps');
+  const [tab, setTab] = useState<'apps' | 'connections' | 'project' | 'templates' | 'maintenance'>('apps');
   const [overview, setOverview] = useState<TerminalControlOverview | null>(null);
   const [settings, setSettings] = useState(initial);
   const [preferences, setPreferences] = useState<TerminalProjectPreferences | null>(null);
@@ -142,6 +144,7 @@ export function TerminalControlCenter({
   >(null);
   const [applyTargets, setApplyTargets] = useState<Record<string, string>>({});
   const [jobs, setJobs] = useState<TerminalCliInstallationJob[]>([]);
+  const [capabilities, setCapabilities] = useState<TerminalCliCapability[]>([]);
   const [statuses, setStatuses] = useState<
     Partial<Record<TerminalAppId, { key: string; result: CliStatus }>>
   >({});
@@ -151,6 +154,17 @@ export function TerminalControlCenter({
     [notice, setNotice] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [versions, setVersions] = useState<Partial<Record<TerminalAppId, string>>>({});
+  const [repairTarget, setRepairTarget] = useState<{
+    target: TerminalDiagnosticRepair;
+    origin: 'apps' | 'project';
+    request: number;
+  } | null>(null);
+  const [recheck, setRecheck] = useState<{
+    profileId: string;
+    origin: 'apps' | 'project';
+    request: number;
+  } | null>(null);
+  const content = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
   const drafts = useRef({ projectDraft, projectBaseline });
   drafts.current = { projectDraft, projectBaseline };
@@ -171,7 +185,7 @@ export function TerminalControlCenter({
   const panelId = useId(),
     tabPrefix = useId();
   async function load(signal?: AbortSignal) {
-    const [control, installs, prefs, latestSettings] = await Promise.all([
+    const [control, installs, prefs, latestSettings, matrix] = await Promise.all([
       api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal),
       api<TerminalCliInstallationJob[]>(
         '/terminal/control/installations?latest=true',
@@ -188,11 +202,13 @@ export function TerminalControlCenter({
           )
         : Promise.resolve(null),
       api<SurfaceTerminalSettings>('/terminal/settings', undefined, undefined, signal),
+      api<TerminalCliCapability[]>('/terminal/capabilities', undefined, undefined, signal),
     ]);
     if (signal?.aborted) return;
     setOverview(control);
     setJobs(installs);
     setSettings(latestSettings);
+    setCapabilities(matrix);
     setPreferences(prefs);
     if (
       !drafts.current.projectDraft ||
@@ -299,6 +315,37 @@ export function TerminalControlCenter({
     setError('');
     setNotice('');
   }
+  function repairDiagnostic(target: TerminalDiagnosticRepair, origin: 'apps' | 'project') {
+    setRepairTarget({ target, origin, request: Date.now() });
+    if (target.kind === 'connection') {
+      const connection = overview?.connections.find((entry) => entry.id === target.connectionId);
+      if (connection) selectConnection(connectionDraft(connection));
+      selectTab('connections');
+    } else
+      selectTab(target.kind === 'template' ? 'templates' : target.kind === 'project' ? 'project' : 'apps');
+  }
+  function finishRepair(kind: TerminalDiagnosticRepair['kind'], connectionId?: string) {
+    if (
+      !repairTarget ||
+      repairTarget.target.kind !== kind ||
+      (kind === 'connection' && repairTarget.target.connectionId !== connectionId)
+    )
+      return;
+    setRecheck({
+      profileId: repairTarget.target.profileId,
+      origin: repairTarget.origin,
+      request: Date.now(),
+    });
+    setTab(repairTarget.origin);
+    setRepairTarget(null);
+  }
+  useEffect(() => {
+    if (tab === 'apps' && repairTarget?.target.kind === 'install') {
+      const row = content.current?.querySelector<HTMLElement>(`[data-app="${repairTarget.target.appId}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.querySelector<HTMLButtonElement>('.cli-app-actions button')?.focus();
+    }
+  }, [tab, repairTarget]);
   useEffect(() => {
     if (selectedConnection && !connectionDirty && draft?.revision !== selectedConnection.revision)
       replaceConnection(connectionDraft(selectedConnection));
@@ -343,6 +390,7 @@ export function TerminalControlCenter({
             ['connections', 'API 连接'],
             ['project', '项目默认'],
             ['templates', '终端模板'],
+            ['maintenance', '数据维护'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -358,17 +406,17 @@ export function TerminalControlCenter({
               selectTab(id);
             }}
             onKeyDown={(event) => {
-              const tabs = ['apps', 'connections', 'project', 'templates'] as const;
+              const tabs = ['apps', 'connections', 'project', 'templates', 'maintenance'] as const;
               const index = tabs.indexOf(tab);
               const target =
                 event.key === 'ArrowRight'
-                  ? tabs[(index + 1) % 4]
+                  ? tabs[(index + 1) % tabs.length]
                   : event.key === 'ArrowLeft'
-                    ? tabs[(index + 3) % 4]
+                    ? tabs[(index + tabs.length - 1) % tabs.length]
                     : event.key === 'Home'
                       ? tabs[0]
                       : event.key === 'End'
-                        ? tabs[3]
+                        ? tabs[tabs.length - 1]
                         : undefined;
               if (target) {
                 event.preventDefault();
@@ -404,7 +452,24 @@ export function TerminalControlCenter({
         role="tabpanel"
         aria-labelledby={`${tabPrefix}-${tab}`}
         className={`terminal-control-content ${tab === 'templates' ? 'with-templates' : ''}`}
+        ref={content}
       >
+        {repairTarget && (
+          <div className="terminal-diagnostic-return" role="status">
+            <span>保存修复后将返回原诊断并重新检查本地配置；已有任务保持原配置。</span>
+            <button
+              type="button"
+              className="text-button"
+              disabled={busy}
+              onClick={() => {
+                setTab(repairTarget.origin);
+                setRepairTarget(null);
+              }}
+            >
+              返回诊断
+            </button>
+          </div>
+        )}
         {error && (
           <div className="terminal-control-read-error">
             <p className="inline-warning" role="alert">
@@ -456,6 +521,7 @@ export function TerminalControlCenter({
                   settings.profiles.find((value) => value.id === settings.defaultProfileId)?.agent ===
                   item.id;
                 const applied = !!job?.result && target?.image === job.result.image;
+                const capability = capabilities.find((value) => value.appId === item.id);
                 return (
                   <article key={item.id} className="cli-app-row" data-app={item.id}>
                     <span className={`cli-app-glyph ${item.id}`} aria-hidden="true">
@@ -475,6 +541,36 @@ export function TerminalControlCenter({
                         {defaultApp && <span className="terminal-control-tag">默认</span>}
                       </div>
                       <p>{item.description}</p>
+                      {capability && (
+                        <details className="terminal-capabilities">
+                          <summary>能力与验证状态</summary>
+                          {(
+                            [
+                              ['execution', '执行'],
+                              ['planning', '计划'],
+                              ['resume', '原会话续接'],
+                              ['usage', '用量'],
+                            ] as const
+                          ).map(([key, label]) => (
+                            <p key={key}>
+                              <strong>
+                                {label} ·{' '}
+                                {capability[key].status === 'unsupported'
+                                  ? '未支持'
+                                  : capability[key].status === 'unknown'
+                                    ? '未知'
+                                    : capability[key].status === 'conditional'
+                                      ? '有条件支持'
+                                      : '已支持'}
+                              </strong>
+                              <span>{capability[key].reason}</span>
+                              <small>
+                                {capability[key].realVerified ? '实际镜像已验证' : '实际镜像尚未验收'}
+                              </small>
+                            </p>
+                          ))}
+                        </details>
+                      )}
                       <label className="cli-api-binding">
                         <span>API 连接</span>
                         <select
@@ -507,6 +603,13 @@ export function TerminalControlCenter({
                       {profile && (
                         <TerminalDiagnostics
                           profileId={profile.id}
+                          repair={(target) => repairDiagnostic(target, 'apps')}
+                          recheckRequest={
+                            recheck?.origin === 'apps' && recheck.profileId === profile.id
+                              ? recheck.request
+                              : undefined
+                          }
+                          rechecked={() => setRecheck(null)}
                           configKey={JSON.stringify([
                             settings.revision,
                             overview.apps.revision,
@@ -523,6 +626,7 @@ export function TerminalControlCenter({
                         perform={perform}
                         saved={(next) => {
                           savedSettings(next);
+                          finishRepair('install');
                           setNotice('历史镜像已恢复，供新任务使用。');
                         }}
                       />
@@ -575,6 +679,7 @@ export function TerminalControlCenter({
                                   },
                                 );
                                 savedSettings(next);
+                                finishRepair('install');
                                 setNotice('镜像已保存，供新任务使用。');
                               })
                             }
@@ -790,6 +895,7 @@ export function TerminalControlCenter({
                     setOverview(next);
                     replaceConnection(connectionDraft(saved));
                     controlUpdated(next);
+                    finishRepair('connection', saved.id);
                     setNotice('API 连接已保存。');
                   });
                 }}
@@ -1017,6 +1123,7 @@ export function TerminalControlCenter({
                   setPending(null);
                   controlUpdated(overview, saved);
                   setNotice('项目默认配置已保存。');
+                  finishRepair('project');
                 });
               }}
             >
@@ -1100,6 +1207,13 @@ export function TerminalControlCenter({
                     preferences,
                   ])}
                   disabled={busy || projectDirty}
+                  repair={(target) => repairDiagnostic(target, 'project')}
+                  recheckRequest={
+                    recheck?.origin === 'project' && recheck.profileId === projectProfile.id
+                      ? recheck.request
+                      : undefined
+                  }
+                  rechecked={() => setRecheck(null)}
                 />
               )}
             </form>
@@ -1110,14 +1224,37 @@ export function TerminalControlCenter({
               <p>在工作台打开项目后，可在此设置独立的 CLI 与 API 连接。</p>
             </div>
           )
+        ) : tab === 'maintenance' ? (
+          <TerminalDataMaintenance disabled={busy} perform={perform} />
         ) : null}
         {(templateVisited || tab === 'templates') && (
           <Activity mode={tab === 'templates' ? 'visible' : 'hidden'}>
             <TerminalSettings
               initial={settings}
               embedded
-              close={() => setTab('apps')}
+              close={() => {
+                if (repairTarget?.target.kind === 'template') {
+                  setTab(repairTarget.origin);
+                  setRepairTarget(null);
+                } else setTab('apps');
+              }}
               dirtyChanged={setTemplateDirty}
+              focusProfileId={
+                repairTarget?.target.kind === 'template' ? repairTarget.target.profileId : undefined
+              }
+              focusRequest={repairTarget?.request}
+              connectionOptions={
+                overview
+                  ? Object.fromEntries(
+                      overview.catalog.map((app) => [
+                        app.id,
+                        overview.connections.filter((connection) =>
+                          app.protocols.includes(connection.protocol),
+                        ),
+                      ]),
+                    )
+                  : undefined
+              }
               updated={async (next) => {
                 savedSettings(next);
                 try {
@@ -1126,6 +1263,7 @@ export function TerminalControlCenter({
                   setError(message(issue));
                 }
                 setNotice('模板已保存。');
+                finishRepair('template');
               }}
               activity={(value) => {
                 setBusy(value);

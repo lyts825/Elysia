@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
+import { useEffect, useRef, useState } from 'react';
+import type { Project, ProjectSpace, RunListItem, RecordPage } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
@@ -13,14 +13,34 @@ export function WorkspaceManager({
   close,
   updated,
   selectRun,
+  listPage,
+  listTrail,
+  listBusy,
+  listQuery,
+  changeListQuery,
+  listNavigate,
+  projectCounts,
+  changeListArchive,
 }: {
   spaces: ProjectSpace[];
   projects: Project[];
-  runs: Run[];
+  runs: RunListItem[];
   initial?: string;
   close: () => void;
-  updated: (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => Promise<void | boolean>;
-  selectRun: (run: Run) => void;
+  updated: (deleted?: {
+    kind: 'project' | 'run' | 'space';
+    id: string;
+    runIds?: string[];
+  }) => Promise<void | boolean>;
+  selectRun: (run: RunListItem) => void;
+  listPage?: RecordPage;
+  listTrail?: boolean;
+  listBusy?: boolean;
+  listQuery?: string;
+  changeListQuery?: (value: string) => void;
+  listNavigate?: (direction: 'older' | 'newer' | 'latest') => void;
+  projectCounts?: Record<string, number>;
+  changeListArchive?: (archived: boolean) => void;
 }) {
   const { mutation } = useSurfaceClient();
   const [tab, setTab] = useState(initial),
@@ -36,6 +56,11 @@ export function WorkspaceManager({
       action: () => Promise<void>;
     } | null>(null);
   const actionPending = useRef(false);
+  useEffect(() => {
+    changeListArchive?.(tab === 'archive');
+  }, [tab, changeListArchive]);
+  const searchValue = changeListQuery ? listQuery || '' : search;
+  const projectCount = (id: string) => projectCounts?.[id] ?? runs.filter((r) => r.projectId === id).length;
   const perform = async (action: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -71,18 +96,18 @@ export function WorkspaceManager({
       await mutation('/projects/' + p.id, { expectedRevision: p.revision, ...changes }, 'PATCH');
       await updated();
     });
-  const updateRun = (r: Run, changes: Record<string, unknown>) =>
+  const updateRun = (r: RunListItem, changes: Record<string, unknown>) =>
     perform(async () => {
       await mutation('/runs/' + r.id, { expectedRevision: r.revision, ...changes }, 'PATCH');
       await updated();
     });
   const filteredProjects = projects.filter(
-    (p) => p.archived === (tab === 'archive') && p.name.toLowerCase().includes(search.toLowerCase()),
+    (p) => p.archived === (tab === 'archive') && p.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
   const filteredRuns = runs.filter(
     (r) =>
       r.archived === (tab === 'archive') &&
-      `${r.title} ${r.objective}`.toLowerCase().includes(search.toLowerCase()),
+      (!!changeListQuery || `${r.title} ${r.objective}`.toLowerCase().includes(searchValue.toLowerCase())),
   );
   const projectRow = (p: Project) => (
     <div className="management-row" key={p.id}>
@@ -93,8 +118,7 @@ export function WorkspaceManager({
         </strong>
         <small title={p.workspaceRoot}>{p.workspaceRoot}</small>
         <span>
-          {runs.filter((r) => r.projectId === p.id).length} 个对话 ·{' '}
-          {spaces.find((s) => s.id === p.spaceId)?.name || '初始项目空间'}
+          {projectCount(p.id)} 个对话 · {spaces.find((s) => s.id === p.spaceId)?.name || '初始项目空间'}
         </span>
       </div>
       <div className="management-fields">
@@ -139,10 +163,14 @@ export function WorkspaceManager({
           onClick={() =>
             setConfirmation({
               title: `删除项目「${p.name}」？`,
-              description: `将永久删除此项目及其 ${runs.filter((r) => r.projectId === p.id).length} 个对话、执行和产物登记数据，无法恢复。原始资料目录 ${p.workspaceRoot} 保留。`,
+              description: `将永久删除此项目及其 ${projectCount(p.id)} 个对话、执行和产物登记数据，无法恢复。原始资料目录 ${p.workspaceRoot} 保留。`,
               action: async () => {
-                await mutation('/projects/' + p.id, { expectedRevision: p.revision }, 'DELETE');
-                await updated({ kind: 'project', id: p.id });
+                const result = await mutation<{ deletedRunIds: string[] }>(
+                  '/projects/' + p.id,
+                  { expectedRevision: p.revision },
+                  'DELETE',
+                );
+                await updated({ kind: 'project', id: p.id, runIds: result.deletedRunIds });
               },
             })
           }
@@ -152,7 +180,7 @@ export function WorkspaceManager({
       </div>
     </div>
   );
-  const runRow = (r: Run) => (
+  const runRow = (r: RunListItem) => (
     <div className="management-row" key={r.id}>
       <div className="management-info">
         <strong>
@@ -240,8 +268,10 @@ export function WorkspaceManager({
             disabled={busy}
             onClick={() => {
               setTab(key);
+              changeListArchive?.(key === 'archive');
               setConfirmation(null);
-              setSearch('');
+              if (changeListQuery) changeListQuery('');
+              else setSearch('');
             }}
           >
             {title}
@@ -277,9 +307,12 @@ export function WorkspaceManager({
               <input
                 type="search"
                 aria-label="搜索项目或对话"
+                maxLength={200}
                 placeholder="搜索名称或目标…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchValue}
+                onChange={(e) =>
+                  changeListQuery ? changeListQuery(e.target.value) : setSearch(e.target.value)
+                }
               />
             )}
             {tab === 'spaces' ? (
@@ -433,6 +466,34 @@ export function WorkspaceManager({
                     {filteredRuns.map(runRow)}
                     {!filteredRuns.length && (
                       <p className="muted small">没有{tab === 'archive' ? '已归档' : '匹配'}对话。</p>
+                    )}
+                    {listPage && listNavigate && (
+                      <nav className="session-pagination" aria-label="管理对话分页">
+                        <span role="status">
+                          {listBusy
+                            ? '读取会话…'
+                            : `本页 ${filteredRuns.length} / 共 ${listPage.total} 个会话`}
+                        </span>
+                        <div>
+                          <button
+                            disabled={busy || listBusy || !listTrail}
+                            onClick={() => listNavigate('newer')}
+                          >
+                            更新会话
+                          </button>
+                          <button
+                            disabled={busy || listBusy || !listPage.nextBefore}
+                            onClick={() => listNavigate('older')}
+                          >
+                            更早会话
+                          </button>
+                          {listPage.before && (
+                            <button disabled={busy || listBusy} onClick={() => listNavigate('latest')}>
+                              返回最新
+                            </button>
+                          )}
+                        </div>
+                      </nav>
                     )}
                   </>
                 )}

@@ -36,7 +36,7 @@ export function writeNavigation(key: string | undefined, value: NavigationState)
 export function resolveNavigation(
   value: NavigationState,
   projects: Project[],
-  runs: Run[],
+  runs: Pick<Run, 'id' | 'kind' | 'projectId' | 'archived'>[],
   spaces: ProjectSpace[],
   restoring = false,
 ): NavigationState {

@@ -17,6 +17,8 @@ import {
 import { Store, hash } from '../../../packages/storage/src/index.js';
 import { ToolGateway } from '../../../packages/tools/src/index.js';
 import { inspectFile, readTextPage, streamFile } from './file-reader.js';
+import { FileLocator } from './file-location.js';
+import type { FileLocationOptions } from '../../../packages/contracts/src/file-location.js';
 
 const textLimit = 1024 * 1024,
   listLimit = 1500;
@@ -76,6 +78,7 @@ const resourceVersion = (stat: { size: number; mtimeMs: number; ctimeMs: number;
   stat.isFile() ? JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs]) : 'unavailable:NOT_FILE';
 
 export class PreviewService {
+  private locator = new FileLocator();
   private capabilities = new Map<string, Capability>();
   private tokens = new Map<string, string>();
   constructor(
@@ -350,6 +353,12 @@ export class PreviewService {
       truncated,
       renderBase: `${this.prefix}/preview/${token}/`,
     };
+  }
+  async locate(runId: string, taskId: string, input: string, options: FileLocationOptions) {
+    const task = this.task(runId, taskId);
+    const name = normalized(input);
+    const filename = await this.filename(task, name);
+    return this.locator.locate(filename, JSON.stringify([runId, taskId, name]), options);
   }
   async file(
     runId: string,

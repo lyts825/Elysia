@@ -132,6 +132,8 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   onLocalLink,
   anchor,
   anchorRequestId,
+  anchorHeadingLine,
+  onAnchorMissing,
   className = '',
 }: {
   text: string;
@@ -140,6 +142,8 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   onLocalLink?: (path: string) => void;
   anchor?: string;
   anchorRequestId?: string;
+  anchorHeadingLine?: number;
+  onAnchorMissing?: (anchor: string) => void;
   className?: string;
 }) {
   const prefix = 'md-' + useId().replace(/[^\w-]/g, '') + '-';
@@ -164,14 +168,18 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   };
   useEffect(() => {
     const key = JSON.stringify([sourcePath, anchor, anchorRequestId]);
-    if (anchor && scrolledAnchor.current !== key && scrollToAnchor(anchor)) scrolledAnchor.current = key;
-  }, [anchor, anchorRequestId, text, sourcePath, prefix]);
+    if (anchor && scrolledAnchor.current !== key) {
+      if (scrollToAnchor(anchor)) scrolledAnchor.current = key;
+      else onAnchorMissing?.(anchor);
+    }
+  }, [anchor, anchorRequestId, text, sourcePath, prefix, onAnchorMissing]);
   const headings = new Map<string, number>();
   const heading = (
     level: 1 | 2 | 3 | 4 | 5 | 6,
     children: ReactNode,
     suppliedId?: string,
     className?: string,
+    line?: number,
   ) => {
     const slug = plainText(children)
       .toLowerCase()
@@ -180,7 +188,11 @@ export const MarkdownDocument = memo(function MarkdownDocument({
       .replace(/\s/g, '-');
     const count = headings.get(slug) || 0;
     headings.set(slug, count + 1);
-    const id = prefix + slug + (count ? '-' + count : '');
+    const id =
+      prefix +
+      (anchor && anchorHeadingLine !== undefined && anchorHeadingLine === line
+        ? anchor.replace(/^#/, '')
+        : slug + (count ? '-' + count : ''));
     const Tag = `h${level}` as 'h1';
     return (
       <Tag id={suppliedId || id} className={className}>
@@ -195,12 +207,18 @@ export const MarkdownDocument = memo(function MarkdownDocument({
         remarkPlugins={[remarkGfm]}
         remarkRehypeOptions={{ footnoteLabel: '注释', footnoteBackLabel: '返回正文', clobberPrefix: prefix }}
         components={{
-          h1: ({ children, id, className }) => heading(1, children, id, className),
-          h2: ({ children, id, className }) => heading(2, children, id, className),
-          h3: ({ children, id, className }) => heading(3, children, id, className),
-          h4: ({ children, id, className }) => heading(4, children, id, className),
-          h5: ({ children, id, className }) => heading(5, children, id, className),
-          h6: ({ children, id, className }) => heading(6, children, id, className),
+          h1: ({ children, id, className, node }) =>
+            heading(1, children, id, className, node?.position?.start.line),
+          h2: ({ children, id, className, node }) =>
+            heading(2, children, id, className, node?.position?.start.line),
+          h3: ({ children, id, className, node }) =>
+            heading(3, children, id, className, node?.position?.start.line),
+          h4: ({ children, id, className, node }) =>
+            heading(4, children, id, className, node?.position?.start.line),
+          h5: ({ children, id, className, node }) =>
+            heading(5, children, id, className, node?.position?.start.line),
+          h6: ({ children, id, className, node }) =>
+            heading(6, children, id, className, node?.position?.start.line),
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           table: ({ children }) => (
             <div className="markdown-table-scroll" role="region" aria-label="文档表格" tabIndex={0}>
@@ -226,7 +244,10 @@ export const MarkdownDocument = memo(function MarkdownDocument({
                   title={props.title}
                   onClick={(event) => {
                     event.preventDefault();
-                    scrollToAnchor(href);
+                    if (!scrollToAnchor(href)) {
+                      if (onLocalLink && sourcePath) onLocalLink(sourcePath + href);
+                      else onAnchorMissing?.(href);
+                    }
                   }}
                 >
                   {children}

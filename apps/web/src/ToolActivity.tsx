@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { Message, Operation, Task, ToolCall } from '../../../packages/contracts/src/index';
+import { useSurfaceClient } from './SurfaceClientContext';
 import { Icon } from './Icon';
 import './tool-activity.css';
 
@@ -134,9 +136,11 @@ function resultSummary(name: string, outcome: unknown): string {
   if (!result) return '已返回结果';
   const suffix = result?.truncated === true ? '（结果已截断）' : '';
   if (name === 'list' && Array.isArray(result?.entries))
-    return result.entries.length ? `列出 ${result.entries.length} 项` : '目录为空';
+    return Number(result.entriesTotal ?? result.entries.length)
+      ? `列出 ${result.entriesTotal ?? result.entries.length} 项`
+      : '目录为空';
   if (name === 'search' && Array.isArray(result?.matches))
-    return `${result.matches.length ? `找到 ${result.matches.length} 处匹配` : '未找到匹配'}${suffix}`;
+    return `${Number(result.matchesTotal ?? result.matches.length) ? `找到 ${result.matchesTotal ?? result.matches.length} 处匹配` : '未找到匹配'}${suffix}`;
   if (name === 'read' || name === 'read_artifact')
     return `已读取${result?.binary === true ? '二进制文件' : '文件'}${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}${suffix}`;
   if (name === 'write' || name === 'apply_patch')
@@ -182,7 +186,7 @@ function resultPreview(name: string, outcome: unknown): string {
 
 export function ToolActivity({
   call,
-  operation,
+  operation: summaryOperation,
   taskStatus,
   toolResponse,
 }: {
@@ -191,6 +195,43 @@ export function ToolActivity({
   taskStatus?: Task['status'];
   toolResponse?: Message;
 }) {
+  const { api } = useSurfaceClient();
+  const [full, setFull] = useState<Operation | null>(null),
+    [readError, setReadError] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false),
+    [readAttempt, setReadAttempt] = useState(0);
+  useEffect(() => {
+    setFull(null);
+    setReadError('');
+  }, [summaryOperation?.id, summaryOperation?.revision]);
+  const operation =
+    full?.id === summaryOperation?.id && full?.revision === summaryOperation?.revision
+      ? full
+      : summaryOperation;
+  useEffect(() => {
+    if (
+      !summaryOperation ||
+      !(summaryOperation as Operation & { detailsOmitted?: boolean }).detailsOmitted ||
+      !detailsOpen
+    )
+      return;
+    const controller = new AbortController();
+    setReadError('');
+    void api<Operation>(
+      `/runs/${summaryOperation.runId}/records/operations/${summaryOperation.id}`,
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((result) => {
+        if (!controller.signal.aborted && result.revision === summaryOperation.revision) setFull(result);
+        else if (!controller.signal.aborted) setReadError('操作已更新，请刷新对话后重试。');
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setReadError(error instanceof Error ? error.message : '详情读取失败');
+      });
+    return () => controller.abort();
+  }, [summaryOperation?.id, summaryOperation?.revision, detailsOpen, readAttempt, api]);
   let parsed: unknown = call.arguments;
   try {
     parsed = JSON.parse(call.arguments);
@@ -318,8 +359,29 @@ export function ToolActivity({
             {stopped ? '操作已中断，暂无结果。' : taskStatus === 'WAITING' ? '等待继续。' : '正在执行…'}
           </p>
         )}
-        <details className="tool-activity-details">
+        <details
+          className="tool-activity-details"
+          onToggle={(event) => {
+            setDetailsOpen(event.currentTarget.open);
+          }}
+        >
           <summary>查看详情</summary>
+          {readError && (
+            <p role="alert">
+              {readError}{' '}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setReadAttempt((value) => value + 1)}
+              >
+                重试
+              </button>
+            </p>
+          )}
+          {!full &&
+            (summaryOperation as (Operation & { detailsOmitted?: boolean }) | undefined)?.detailsOmitted && (
+              <p className="tool-activity-note">当前显示摘要，完整参数与结果在展开时读取。</p>
+            )}
           <section>
             <h4>输入参数</h4>
             {fields.length ? (

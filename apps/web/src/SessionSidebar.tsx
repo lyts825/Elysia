@@ -1,13 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
+import type {
+  Project,
+  ProjectSpace,
+  Run,
+  RunListItem,
+  RecordPage,
+} from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 
-type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: Run };
+type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: RunListItem };
 export type SessionTarget = Target;
 export type SessionUpdateResult = boolean | 'conflict';
 type Dialog = { target: Target; action: 'rename' | 'delete' | 'move'; value: string };
@@ -29,10 +35,17 @@ export function SessionSidebar({
   files,
   manage,
   update,
+  listPage,
+  listTrail,
+  listBusy,
+  listQuery,
+  changeListQuery,
+  listNavigate,
+  projectCounts,
 }: {
   projects: Project[];
   spaces: ProjectSpace[];
-  runs: Run[];
+  runs: RunListItem[];
   spaceId: string;
   projectId: string;
   runId: string;
@@ -41,7 +54,7 @@ export function SessionSidebar({
   error: string;
   setValue: (key: string, value: string | boolean) => void;
   selectProject: (id: string) => void;
-  selectRun: (run: Run) => void;
+  selectRun: (run: RunListItem) => void;
   create: (projectId: string, objective?: string) => void;
   files: (project: Project) => void;
   manage: (tab: string) => void;
@@ -50,8 +63,15 @@ export function SessionSidebar({
     changes: Record<string, unknown>,
     remove?: boolean,
   ) => Promise<SessionUpdateResult>;
+  listPage?: RecordPage;
+  listTrail?: boolean;
+  listBusy?: boolean;
+  listQuery?: string;
+  changeListQuery?: (value: string) => void;
+  listNavigate?: (direction: 'older' | 'newer' | 'latest') => void;
+  projectCounts?: Record<string, number>;
 }) {
-  const { surface: localSurface } = useSurfaceClient();
+  const { surface: localSurface, api } = useSurfaceClient();
   const surfaceRoot = useSurfaceRoot();
   const [search, setSearch] = useState('');
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number; trigger: HTMLElement } | null>(
@@ -65,11 +85,14 @@ export function SessionSidebar({
   const menuRef = useRef<HTMLDivElement>(null);
   const flag = (key: string) => entries[key]?.value === true;
   const terminal = localSurface === 'terminal';
-  const readOnlyRun = (run: Run) => !terminal && run.execution?.kind === 'docker-agent';
+  const readOnlyRun = (run: RunListItem) => !terminal && run.execution?.kind === 'docker-agent';
   const title = (target: Target) =>
     target.kind === 'project' ? target.item.name : target.item.title || target.item.objective;
-  const query = search.trim().toLocaleLowerCase();
-  const matches = (run: Run) => `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
+  const searchValue = changeListQuery ? listQuery || '' : search;
+  const query = searchValue.trim().toLocaleLowerCase();
+  const matches = (run: RunListItem) =>
+    !!changeListQuery || `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
+  const projectCount = (id: string) => projectCounts?.[id] ?? runs.filter((r) => r.projectId === id).length;
   const activeProjects = projects.filter((p) => !p.archived && p.spaceId === spaceId);
   const visibleRuns = runs.filter(
     (r) =>
@@ -77,7 +100,7 @@ export function SessionSidebar({
       (!terminal || r.kind === 'task') &&
       (r.kind === 'chat' || activeProjects.some((p) => p.id === r.projectId)),
   );
-  const ordered = (list: Run[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const ordered = (list: RunListItem[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pinned = ordered(visibleRuns.filter((r) => flag(`pinned:run:${r.id}`) && matches(r)));
   const chats = ordered(visibleRuns.filter((r) => r.kind === 'chat' && matches(r)));
   const closeMenu = (restore = false) => {
@@ -140,6 +163,14 @@ export function SessionSidebar({
       setClipboardError('无法复制，请检查剪贴板权限后重试。');
     }
   };
+  async function fullObjective(run: RunListItem, action: (run: Run) => void | Promise<void>) {
+    try {
+      const full = await api<Run>(`/runs/${run.id}/header`);
+      await action(full);
+    } catch (issue) {
+      setClipboardError(issue instanceof Error ? issue.message : '无法读取完整目标，请重试。');
+    }
+  }
   const actions = (target: Target): MenuAction[] => {
     const item = target.item;
     const common: MenuAction[] = [
@@ -161,9 +192,17 @@ export function SessionSidebar({
           action: () => setValue(`unread:run:${run.id}`, !flag(`unread:run:${run.id}`)),
         },
         { label: '打开对话', icon: 'chat', action: () => selectRun(run) },
-        { label: '以此目标新建', icon: 'plus', action: () => create(run.projectId || '', run.objective) },
+        {
+          label: '以此目标新建',
+          icon: 'plus',
+          action: () => void fullObjective(run, (full) => create(full.projectId || '', full.objective)),
+        },
         { label: '复制名称', icon: 'copy', action: () => void copy(title(target)) },
-        { label: '复制目标', icon: 'copy', action: () => void copy(run.objective) },
+        {
+          label: '复制目标',
+          icon: 'copy',
+          action: () => void fullObjective(run, (full) => copy(full.objective)),
+        },
       );
     } else {
       const project = target.item;
@@ -269,7 +308,7 @@ export function SessionSidebar({
     document.addEventListener('keydown', hotkey);
     return () => document.removeEventListener('keydown', hotkey);
   });
-  const runRow = (run: Run) => (
+  const runRow = (run: RunListItem) => (
     <div
       className={
         'session-row' +
@@ -338,9 +377,10 @@ export function SessionSidebar({
           <input
             type="search"
             aria-label="搜索会话"
+            maxLength={200}
             placeholder="搜索会话…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchValue}
+            onChange={(e) => (changeListQuery ? changeListQuery(e.target.value) : setSearch(e.target.value))}
           />
         </div>
         {clipboardError && (
@@ -400,7 +440,7 @@ export function SessionSidebar({
                         >
                           <Icon name="folder" size={16} />
                           <span>{project.name}</span>
-                          <small>{children.length}</small>
+                          <small>{projectCount(project.id)}</small>
                         </button>
                         <button
                           className="session-more"
@@ -460,6 +500,29 @@ export function SessionSidebar({
               <p className="sidebar-muted">没有匹配的项目或会话。</p>
             )}
         </div>
+        {listPage && listNavigate && (
+          <nav className="session-pagination" aria-label="会话列表分页">
+            <span role="status">
+              {listBusy ? '读取会话…' : `本页 ${runs.length} / 共 ${listPage.total} 个会话`}
+            </span>
+            <div>
+              <button disabled={busy || listBusy || !listTrail} onClick={() => listNavigate('newer')}>
+                更新会话
+              </button>
+              <button
+                disabled={busy || listBusy || !listPage.nextBefore}
+                onClick={() => listNavigate('older')}
+              >
+                更早会话
+              </button>
+              {listPage.before && (
+                <button disabled={busy || listBusy} onClick={() => listNavigate('latest')}>
+                  返回最新
+                </button>
+              )}
+            </div>
+          </nav>
+        )}
       </div>
       {menu &&
         createPortal(
@@ -585,7 +648,7 @@ export function SessionSidebar({
                 {dialog.action === 'delete' && (
                   <p>
                     {dialog.target.kind === 'project'
-                      ? `此项目及其 ${runs.filter((r) => r.projectId === dialog.target.item.id).length} 个对话、消息和产物登记将被永久删除。`
+                      ? `此项目及其 ${projectCount(dialog.target.item.id)} 个对话、消息和产物登记将被永久删除。`
                       : '此对话、消息、调用和产物登记将被永久删除。'}
                     无法恢复，原始项目资料目录会保留。
                   </p>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
 import type { PreviewFile } from '../../../packages/contracts/src/preview';
+import { forgetReadingCheckpoint, readingCheckpoint, saveReadingCheckpoint } from './ReadingCheckpoint';
 
 export type FilePreviewContent = Pick<
   PreviewFile,
@@ -21,11 +22,18 @@ const start = (scope: string) => ({
   revision: 0,
 });
 
-export function useFilePage(endpoint: string, encoding: string, refresh: number) {
-  const { api } = useSurfaceClient();
+export function useFilePage(endpoint: string, encoding: string, refresh: number, checkpointKey?: string) {
+  const client = useSurfaceClient(),
+    { api } = client;
   const scope = JSON.stringify([endpoint, encoding, refresh]);
-  const [position, setPosition] = useState(() => start(scope));
-  const current = position.scope === scope ? position : start(scope);
+  const savedKey = JSON.stringify(['file-page', checkpointKey, endpoint, encoding]);
+  const restore = () => ({
+    ...start(scope),
+    ...(checkpointKey ? readingCheckpoint<ReturnType<typeof start>>(client, savedKey) : {}),
+    scope,
+  });
+  const [position, setPosition] = useState(restore);
+  const current = position.scope === scope ? position : restore();
   // Retire the old cursor even when the new file/encoding fails to load.
   if (position.scope !== scope) setPosition(current);
   const key = JSON.stringify([scope, current.offset, current.version, current.revision]);
@@ -57,11 +65,16 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number)
       controller.signal,
     )
       .then((value) => {
-        if (alive && !controller.signal.aborted) setResult({ scope, key, value, loading: false });
+        if (alive && !controller.signal.aborted) {
+          setResult({ scope, key, value, loading: false });
+          if (checkpointKey && value.page)
+            saveReadingCheckpoint(client, savedKey, { ...current, version: value.page.version });
+        }
       })
       .catch((error: unknown) => {
         if (!alive || controller.signal.aborted) return;
         if (error instanceof ApiError && error.code === 'FILE_CHANGED' && current.version) {
+          if (checkpointKey) forgetReadingCheckpoint(client, savedKey);
           setNotice({ scope, text: '文件已变化，已重新读取开头。' });
           setPosition({ ...start(scope), revision: current.revision + 1 });
         } else
@@ -89,13 +102,15 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number)
     if (!Number.isSafeInteger(offset) || offset < 0 || offset >= total || offset === value.page.offset)
       return;
     pending.current = true;
-    setPosition({
+    const next = {
       scope,
       offset,
       version: value.page.version,
       history: history.slice(-128),
       revision: current.revision,
-    });
+    };
+    if (checkpointKey) saveReadingCheckpoint(client, savedKey, next);
+    setPosition(next);
   };
   return {
     value,
@@ -115,6 +130,7 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number)
     jump: (offset: number) => move(offset, value?.page ? [...current.history, value.page.offset] : []),
     restart: () => {
       request.current?.abort();
+      if (checkpointKey) forgetReadingCheckpoint(client, savedKey);
       setPosition({ ...start(scope), revision: current.revision + 1 });
     },
   };
