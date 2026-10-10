@@ -1,0 +1,124 @@
+.task-center-body {
+  padding: 18px 22px;
+  min-height: 280px;
+}
+.task-center-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.task-center-filters button {
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.task-center-filters button[aria-pressed='true'] {
+  background: var(--accent-pale);
+  color: var(--accent-strong);
+}
+.task-center-options {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-center-options label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  white-space: nowrap;
+  color: var(--text);
+}
+.task-center-options > button {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.task-center-list {
+  display: grid;
+  gap: 6px;
+}
+.task-center-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  min-width: 0;
+}
+.task-center-row:hover {
+  background: var(--surface-hover);
+}
+.task-center-description {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.task-center-description strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 550;
+}
+.task-center-description small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.task-center-status {
+  flex: 0 0 58px;
+  text-align: center;
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+.task-center-status.failed,
+.task-center-status.verification {
+  color: var(--danger);
+}
+.task-center-status.done {
+  color: var(--success);
+}
+.task-center-empty {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--muted);
+}
+.task-center-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--danger);
+  padding-bottom: 14px;
+}
+.task-center-error span {
+  flex: 1;
+}
+.task-center-pagination > span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .task-center-body {
+    padding: 14px;
+  }
+  .task-center-options {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .task-center-options > span {
+    order: 3;
+    flex: 0 0 100%;
+  }
+  .task-center-row {
+    padding: 10px 8px;
+    gap: 8px;
+  }
+  .task-center-pagination {
+    gap: 8px;
+  }
+}

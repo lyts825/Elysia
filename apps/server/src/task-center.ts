@@ -1,0 +1,363 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { AppError, type Entity } from '../../../packages/contracts/src/index.js';
+import type {
+  TaskCenterItem,
+  TaskCenterPage,
+  TaskCenterChanges,
+} from '../../../packages/contracts/src/task-center.js';
+import type { Store } from '../../../packages/storage/src/index.js';
+
+type Row = {
+  seq: number;
+  run_id: string;
+  position: number | null;
+  title: string | null;
+  project_id: string | null;
+  kind: 'task' | 'chat';
+  status: TaskCenterItem['status'];
+  revision: number;
+  category: TaskCenterItem['category'];
+  reason: string | null;
+  archived: number;
+  deleted: number;
+  updated_at: string;
+  notification_status: NonNullable<TaskCenterItem['notification']>['status'] | null;
+  notification_revision: number;
+};
+const categories = ['all', 'running', 'waiting', 'verification', 'done', 'failed', 'paused'] as const;
+const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+const state = (alias: string) =>
+  `COALESCE(json_extract(${alias ? alias + '.' : ''}data,'$.readModel.status'),json_extract(${alias ? alias + '.' : ''}data,'$.status'))`;
+const waitReason = (alias: string) =>
+  `COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))`;
+
+/** A small persistent current-state read model; historical bodies are warmed only on explicit access. */
+export class TaskCenterReads {
+  private warming?: Promise<void>;
+  constructor(private store: Store) {
+    const status = state('r');
+    const runReason = "COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))";
+    const tasks = (condition: string) => `EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id AND ${condition})`;
+    const taskWaiting = `${state('t')}='WAITING'`;
+    const verification = [
+      `(${status}='WAITING' AND ${runReason} IN ('verification','terminal_review','terminal_verification'))`,
+      `EXISTS(SELECT 1 FROM tool_operations o WHERE o.run_id=r.id AND ${state('o')}='UNCERTAIN')`,
+      `EXISTS(SELECT 1 FROM requests q WHERE q.run_id=r.id AND ${state('q')}='UNKNOWN')`,
+      tasks(
+        `${taskWaiting} AND ${waitReason('t')} IN ('verification','terminal_review','terminal_verification')`,
+      ),
+    ].join(' OR ');
+    const paused = `(${status}='WAITING' AND ${runReason} IN ('paused','interrupted')) OR ${tasks(`${taskWaiting} AND ${waitReason('t')} IN ('paused','interrupted')`)}`;
+    const waiting = `${status}='WAITING' OR ${tasks(`${taskWaiting} AND COALESCE(${waitReason('t')},'')<>'children'`)}`;
+    this.store.db.exec(`
+      CREATE TABLE IF NOT EXISTS task_center_changes_v1(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL UNIQUE,
+        position INTEGER,title TEXT,project_id TEXT,kind TEXT,status TEXT,revision INTEGER,
+        category TEXT,reason TEXT,archived INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL,
+        notification_status TEXT,notification_revision INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS task_center_current ON task_center_changes_v1(deleted,archived,category,position);
+      CREATE INDEX IF NOT EXISTS task_center_tombstones ON task_center_changes_v1(deleted,seq);
+      INSERT OR IGNORE INTO storage_meta(key,value) VALUES('task-center-floor:v1','0');
+      INSERT OR IGNORE INTO storage_meta(key,value) VALUES('task-center-warm:v1','1');
+      CREATE VIEW IF NOT EXISTS task_center_source_v1 AS SELECT
+        r.id run_id,r.rowid position,
+        COALESCE(json_extract(r.data,'$.readModel.title'),json_extract(r.data,'$.title'),json_extract(r.data,'$.objective'),r.id) title,
+        COALESCE(json_extract(r.data,'$.readModel.projectId'),json_extract(r.data,'$.projectId')) project_id,
+        COALESCE(json_extract(r.data,'$.readModel.kind'),json_extract(r.data,'$.kind'),'task') kind,
+        ${status} status,r.revision revision,
+        CASE WHEN ${verification} THEN 'verification'
+          WHEN ${status}='FAILED' THEN 'failed'
+          WHEN ${status} IN ('DONE','CANCELLED') THEN 'done'
+          WHEN ${tasks(`${state('t')}='FAILED'`)} THEN 'failed'
+          WHEN ${paused} THEN 'paused'
+          WHEN ${waiting} THEN 'waiting' ELSE 'running' END category,
+        COALESCE(${runReason},(SELECT ${waitReason('t')} FROM tasks t WHERE t.run_id=r.id
+          AND ${taskWaiting} AND COALESCE(${waitReason('t')},'')<>'children' ORDER BY t.rowid LIMIT 1)) reason,
+        COALESCE(json_extract(r.data,'$.readModel.archived'),json_extract(r.data,'$.archived'),0) archived
+      FROM runs r;
+      CREATE TRIGGER IF NOT EXISTS task_center_initial_notification AFTER INSERT ON task_center_changes_v1
+      WHEN NEW.notification_status IS NOT NULL
+      BEGIN UPDATE task_center_changes_v1 SET notification_revision=NEW.seq WHERE run_id=NEW.run_id; END;
+    `);
+    for (const table of ['tasks', 'requests', 'tool_operations'] as const)
+      this.store.db.exec(
+        `CREATE INDEX IF NOT EXISTS task_center_${table}_state ON ${table}(run_id,${state('')});`,
+      );
+    for (const table of ['runs', 'tasks', 'requests', 'tool_operations'] as const) {
+      const key = table === 'runs' ? 'NEW.id' : 'NEW.run_id';
+      const oldKey = table === 'runs' ? 'OLD.id' : 'OLD.run_id';
+      const changed =
+        table === 'runs'
+          ? 'NEW.revision IS NOT OLD.revision OR NEW.data IS NOT OLD.data'
+          : `${state('NEW')} IS NOT ${state('OLD')}${table === 'tasks' ? ` OR ${waitReason('NEW')} IS NOT ${waitReason('OLD')}` : ''}`;
+      const oldProjection =
+        table === 'runs' || table === 'tasks'
+          ? "json_type(NEW.data,'$.readModel') IS NOT 'object' OR json_extract(NEW.data,'$.readModelVersion') IS NOT 1"
+          : `${state('NEW')} IS NULL`;
+      this.store.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_insert AFTER INSERT ON ${table}
+        BEGIN ${this.refreshSql(key)} END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_update AFTER UPDATE ON ${table} WHEN ${changed}
+        BEGIN ${this.refreshSql(key)} END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_delete AFTER DELETE ON ${table}
+        BEGIN ${
+          table === 'runs'
+            ? `
+          INSERT INTO task_center_changes_v1(run_id,deleted,updated_at) VALUES(OLD.id,1,${stamp})
+          ON CONFLICT(run_id) DO UPDATE SET seq=excluded.seq,deleted=1,updated_at=excluded.updated_at;
+          UPDATE storage_meta SET value=CAST(MAX(CAST(value AS INTEGER),COALESCE((
+            SELECT seq FROM task_center_changes_v1 WHERE deleted=1 ORDER BY seq DESC LIMIT 1 OFFSET 1024
+          ),0)) AS TEXT) WHERE key='task-center-floor:v1';
+          DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=CAST((
+            SELECT value FROM storage_meta WHERE key='task-center-floor:v1'
+          ) AS INTEGER);
+        `
+            : this.refreshSql(oldKey)
+        } END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_legacy_insert AFTER INSERT ON ${table}
+        WHEN NEW.content IS NOT NULL AND (${oldProjection})
+        BEGIN UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'; END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_legacy_update AFTER UPDATE ON ${table}
+        WHEN NEW.content IS NOT NULL AND (${oldProjection})
+        BEGIN UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'; END;
+      `);
+    }
+  }
+  private refreshSql(runId: string) {
+    // seq is allocated even on upsert, so observations can continue across process restarts.
+    const meaningful =
+      "excluded.notification_status IS NOT NULL AND (excluded.category IS NOT task_center_changes_v1.category OR (excluded.status='DONE' AND task_center_changes_v1.status IS NOT 'DONE'))";
+    return `INSERT INTO task_center_changes_v1(run_id,position,title,project_id,kind,status,revision,category,reason,archived,updated_at,notification_status)
+      SELECT run_id,position,title,project_id,kind,status,revision,category,reason,archived,${stamp},
+        CASE category WHEN 'verification' THEN 'UNCERTAIN' WHEN 'waiting' THEN 'WAITING'
+          WHEN 'failed' THEN 'FAILED' WHEN 'done' THEN CASE WHEN status='DONE' THEN 'DONE' END END
+      FROM task_center_source_v1 WHERE run_id=${runId}
+      ON CONFLICT(run_id) DO UPDATE SET seq=excluded.seq,position=excluded.position,title=excluded.title,
+        project_id=excluded.project_id,kind=excluded.kind,status=excluded.status,revision=excluded.revision,
+        category=excluded.category,reason=excluded.reason,archived=excluded.archived,deleted=0,updated_at=excluded.updated_at,
+        notification_status=CASE WHEN ${meaningful} THEN excluded.notification_status ELSE task_center_changes_v1.notification_status END,
+        notification_revision=CASE WHEN ${meaningful} THEN excluded.seq ELSE task_center_changes_v1.notification_revision END;`;
+  }
+  private async warm() {
+    if (this.warming) return this.warming;
+    if (
+      (
+        this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-warm:v1'").get() as {
+          value: string;
+        }
+      ).value !== '1'
+    )
+      return;
+    const pending = this.warmBatches();
+    this.warming = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.warming === pending) this.warming = undefined;
+    }
+  }
+  private async warmBatches() {
+    for (;;) {
+      this.store.db.prepare("UPDATE storage_meta SET value='0' WHERE key='task-center-warm:v1'").run();
+      for (const table of ['runs', 'tasks', 'requests', 'tool_operations'] as const) {
+        const where =
+          table === 'runs' || table === 'tasks'
+            ? "json_type(data,'$.readModel') IS NOT 'object' OR json_extract(data,'$.readModelVersion') IS NOT 1"
+            : `${state(table)} IS NULL`;
+        for (;;) {
+          const rows = this.store.db
+            .prepare(
+              `SELECT id FROM ${table} WHERE content IS NOT NULL AND (${where}) ORDER BY rowid LIMIT 32`,
+            )
+            .all() as { id: string }[];
+          if (!rows.length) break;
+          this.store.tx(() => {
+            for (const { id } of rows) {
+              const entity = this.store.get<Entity>(table, id);
+              if (entity) this.store.refreshReadProjection(table, entity);
+            }
+          });
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+      for (;;) {
+        const missing = this.store.db
+          .prepare(
+            'SELECT id FROM runs WHERE id NOT IN(SELECT run_id FROM task_center_changes_v1 WHERE deleted=0) ORDER BY rowid LIMIT 32',
+          )
+          .all() as { id: string }[];
+        if (!missing.length) break;
+        this.store.tx(() => {
+          for (const { id } of missing) this.store.db.prepare(this.refreshSql('?')).run(id);
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      if (
+        (
+          this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-warm:v1'").get() as {
+            value: string;
+          }
+        ).value !== '1'
+      )
+        break;
+    }
+    this.store.tx(() => this.prune());
+  }
+  private prune() {
+    const old = this.store.db
+      .prepare('SELECT seq FROM task_center_changes_v1 WHERE deleted=1 ORDER BY seq DESC LIMIT 1 OFFSET 1024')
+      .get() as { seq: number } | undefined;
+    if (!old) return;
+    const through = old.seq;
+    this.store.db
+      .prepare(
+        "UPDATE storage_meta SET value=CAST(MAX(CAST(value AS INTEGER),?) AS TEXT) WHERE key='task-center-floor:v1'",
+      )
+      .run(through);
+    this.store.db.prepare('DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=?').run(through);
+  }
+  private item(row: Row): TaskCenterItem {
+    const expected =
+      row.category === 'verification'
+        ? 'UNCERTAIN'
+        : row.category === 'waiting'
+          ? 'WAITING'
+          : row.category === 'failed'
+            ? 'FAILED'
+            : row.category === 'done' && row.status === 'DONE'
+              ? 'DONE'
+              : null;
+    return {
+      id: row.run_id,
+      title: (row.title || row.run_id).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 200),
+      projectId: row.project_id,
+      kind: row.kind,
+      status: row.status,
+      revision: row.revision,
+      category: row.category,
+      changeRevision: row.seq,
+      ...(row.reason ? { reason: row.reason } : {}),
+      updatedAt: row.updated_at,
+      ...(expected && expected === row.notification_status && row.notification_revision > 0
+        ? { notification: { status: expected, revision: row.notification_revision } }
+        : {}),
+    };
+  }
+  async list(query: {
+    filter: (typeof categories)[number];
+    limit: number;
+    before?: string;
+    projectId?: string;
+  }): Promise<TaskCenterPage> {
+    await this.warm();
+    let position: number | undefined;
+    if (query.before) {
+      const row = this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
+        | { position: number }
+        | undefined;
+      if (!row)
+        throw new AppError('RECORD_CURSOR_MISSING', '任务位置已失效，请返回最新列表', false, null, 409);
+      position = row.position;
+    }
+    const clauses = [
+      'deleted=0',
+      'archived=0',
+      ...(query.filter === 'all' ? [] : ['category=?']),
+      ...(query.projectId ? ['project_id=?'] : []),
+    ];
+    const params = [
+      ...(query.filter === 'all' ? [] : [query.filter]),
+      ...(query.projectId ? [query.projectId] : []),
+    ];
+    const total = Number(
+      (
+        this.store.db
+          .prepare(`SELECT COUNT(*) n FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}`)
+          .get(...params) as { n: number }
+      ).n,
+    );
+    const rows = this.store.db
+      .prepare(
+        `SELECT * FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}${position === undefined ? '' : ' AND position<?'} ORDER BY position DESC LIMIT ?`,
+      )
+      .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as Row[];
+    const hasMore = rows.length > query.limit,
+      selected = rows.slice(0, query.limit);
+    return {
+      items: selected.map((row) => this.item(row)),
+      page: {
+        total,
+        limit: query.limit,
+        before: query.before ?? null,
+        hasMore,
+        nextBefore: hasMore ? selected.at(-1)!.run_id : null,
+      },
+    };
+  }
+  async changes(after: number | undefined, limit: number): Promise<TaskCenterChanges> {
+    await this.warm();
+    this.store.tx(() => this.prune());
+    const latest = Number(
+      (
+        this.store.db
+          .prepare(
+            "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='task_center_changes_v1'),0) n",
+          )
+          .get() as { n: number }
+      ).n,
+    );
+    const floor = Number(
+      (
+        this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-floor:v1'").get() as {
+          value: string;
+        }
+      ).value,
+    );
+    if (after === undefined) return { items: [], cursor: latest, hasMore: false, baseline: true };
+    if (after < floor || after > latest)
+      return { items: [], cursor: latest, hasMore: false, baseline: true, resetRequired: true };
+    const rows = this.store.db
+      .prepare('SELECT * FROM task_center_changes_v1 WHERE seq>? ORDER BY seq LIMIT ?')
+      .all(after, limit + 1) as Row[];
+    const hasMore = rows.length > limit,
+      selected = rows.slice(0, limit);
+    return {
+      items: selected.map((row) => ({
+        id: row.run_id,
+        changeRevision: row.seq,
+        item: row.deleted || row.archived ? null : this.item(row),
+      })),
+      cursor: hasMore ? selected.at(-1)!.seq : latest,
+      hasMore,
+    };
+  }
+}
+export function registerTaskCenter(app: FastifyInstance, store: Store) {
+  const reads = new TaskCenterReads(store);
+  app.get('/api/task-center', (request) =>
+    reads.list(
+      z
+        .object({
+          filter: z.enum(categories).default('all'),
+          limit: z.coerce.number().int().min(1).max(100).default(40),
+          before: z.string().uuid().optional(),
+          projectId: z.string().uuid().optional(),
+        })
+        .strict()
+        .parse(request.query),
+    ),
+  );
+  app.get('/api/task-center/changes', (request) => {
+    const query = z
+      .object({
+        after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(40),
+      })
+      .strict()
+      .parse(request.query);
+    return reads.changes(query.after, query.limit);
+  });
+}

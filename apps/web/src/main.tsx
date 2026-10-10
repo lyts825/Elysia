@@ -70,6 +70,17 @@ import { WorkspaceManager } from './WorkspaceManager';
 import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
 import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
+import { ConversationHistoryState } from './ConversationHistoryState';
+const ConversationSearch = React.lazy(() =>
+  import('./ConversationSearch').then((module) => ({ default: module.ConversationSearch })),
+);
+import type { HistoryAnchor } from './HistoryScroll';
+import { TaskNotifications } from './TaskNotifications';
+import type { TaskCenterState } from './TaskCenter';
+import { markStartupStage } from './StartupDiagnostics';
+const TaskCenter = React.lazy(() =>
+  import('./TaskCenter').then((module) => ({ default: module.TaskCenter })),
+);
 import {
   earlierMessages,
   retainedRuns,
@@ -114,7 +125,14 @@ type Detail = {
   tasks: Task[];
   agents: Agent[];
   messages: Message[];
-  messagePage?: { hasMore: boolean; nextBefore: string | null; before: string | null; limit: number };
+  messagePage?: {
+    hasMore: boolean;
+    nextBefore: string | null;
+    before: string | null;
+    limit: number;
+    anchorMessageId?: string;
+    hasNewer?: boolean;
+  };
   artifacts: Artifact[];
   requests: RequestRecord[];
   operations: Operation[];
@@ -130,6 +148,7 @@ type Detail = {
   terminalRuntime?: { executor: ExecutorRuntimeSnapshot; terminal: TerminalRuntimeSnapshot };
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
+type HistoryPosition = { runId: string; before: string; trail: string[]; around?: string };
 type ArtifactView = Artifact;
 type ReadSource = 'session' | 'lists' | 'detail' | 'configuration';
 type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
@@ -180,9 +199,15 @@ function Badge({ status }: { status: string }) {
 function App({
   changeSurface,
   registerCache,
+  registerSession,
 }: {
   changeSurface: (surface: 'native' | 'terminal') => void;
-  registerCache: (surface: 'native' | 'terminal', cache: WorkbenchCache) => void;
+  registerCache: (
+    surface: 'native' | 'terminal',
+    cache: WorkbenchCache,
+    reading: ConversationHistoryState,
+  ) => void;
+  registerSession: (surface: 'native' | 'terminal') => void;
 }) {
   const client = useSurfaceClient();
   const { api, apiUrl, mutation, initializeSession, surface: localSurface } = client;
@@ -218,7 +243,9 @@ function App({
   }>({ entries: {}, status: 'loading', error: '' });
   const cacheStateRef = useRef(cacheState);
   cacheStateRef.current = cacheState;
-  const historyPosition = useRef<{ runId: string; before: string; trail: string[] }>({
+  const modalCurrent = useRef(modal);
+  modalCurrent.current = modal;
+  const historyPosition = useRef<HistoryPosition>({
     runId: '',
     before: '',
     trail: [],
@@ -228,14 +255,24 @@ function App({
   const historyAppend = useRef(false);
   const historyPending = useRef<
     | {
-        target: { runId: string; before: string; trail: string[] };
-        prior: { runId: string; before: string; trail: string[] };
+        target: HistoryPosition;
+        prior: HistoryPosition;
         priorAppend: boolean;
         reposition: boolean;
       }
     | undefined
   >(undefined);
   const [historySegment, setHistorySegment] = useState(0);
+  const [initialHistoryAnchor, setInitialHistoryAnchor] = useState<HistoryAnchor>();
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [taskCenterState, setTaskCenterState] = useState<TaskCenterState>({
+    filter: 'all',
+    before: '',
+    trail: [],
+  });
+  const [conversationHistory] = useState(() => new ConversationHistoryState(client));
+  const startupMeasured = useRef({ lists: false, messages: false });
+  useEffect(() => () => conversationHistory.flush(), [conversationHistory]);
   const fullDetailRequested = useRef(false);
   const summaryDemand = useRef(false);
   const streamCursor = useRef({ runId: '', cursor: 0 });
@@ -276,8 +313,16 @@ function App({
     [detail?.messages, detail?.requests, detail?.agents, detail?.tasks, detail?.operations],
   );
   const visibleMessages = useMemo(
-    () => conversationMessages(detail?.messages || []).filter((message) => message.role !== 'tool'),
-    [detail?.messages],
+    () =>
+      conversationMessages(detail?.messages || []).filter(
+        (message) =>
+          message.role !== 'tool' ||
+          messageIndex.responses.get(message.callId || '')?.id !== message.id ||
+          !detail?.messages.some(
+            (owner) => owner.role !== 'tool' && owner.calls?.some((call) => call.id === message.callId),
+          ),
+      ),
+    [detail?.messages, messageIndex],
   );
   const logContexts = useMemo(
     () =>
@@ -316,7 +361,7 @@ function App({
   );
   const [cache] = useState(() => {
     const instance = new WorkbenchCache(setCacheState, client);
-    registerCache(localSurface, instance);
+    registerCache(localSurface, instance, conversationHistory);
     return instance;
   });
   const [selection, setSelection] = useState(initialNavigation);
@@ -576,7 +621,11 @@ function App({
         savedNavigation.current = undefined;
       }
       if (navigation.current.runId !== next.runId) {
-        historyPosition.current = { runId: next.runId, before: '', trail: [] };
+        const reading = conversationHistory.get(next.runId);
+        const anchor = reading?.following === false ? reading.anchor : undefined;
+        historyPosition.current = { runId: next.runId, before: '', trail: [], around: anchor?.id };
+        setInitialHistoryAnchor(anchor);
+        setConversationSearchOpen(false);
         historyAppend.current = false;
         historyPending.current = undefined;
         historyMoving.current = false;
@@ -601,7 +650,7 @@ function App({
       setSelection(next);
       if (navigationInitialized.current) writeNavigation(navigationStorageKey.current, next);
     },
-    [closeArtifact],
+    [closeArtifact, conversationHistory],
   );
   const refreshConfiguration = useCallback(
     (force = false) => {
@@ -712,6 +761,10 @@ function App({
           const failure = [projectResult, listingResult, spaceResult].find(
             (entry) => entry.status === 'rejected',
           );
+          if (!startupMeasured.current.lists) {
+            startupMeasured.current.lists = true;
+            markStartupStage('lists-ready', { surface: localSurface, status: failure ? 'error' : 'ok' });
+          }
           if (failure?.status === 'rejected')
             setReadIssues((old) => ({ ...old, lists: readIssueFor(failure.reason, request) }));
           else clearReadIssue('lists', request);
@@ -744,6 +797,10 @@ function App({
             return true;
           const restoring = !navigationInitialized.current;
           const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
+          if (!startupMeasured.current.messages && !next.runId) {
+            startupMeasured.current.messages = true;
+            markStartupStage('messages-ready', { surface: localSurface, status: 'skipped' });
+          }
           navigationInitialized.current = true;
           savedNavigation.current = undefined;
           if (restoring && next.runId) {
@@ -824,6 +881,7 @@ function App({
       if (!wanted) return;
       const position = historyPosition.current;
       const before = position.runId === wanted ? position.before : '';
+      const around = position.runId === wanted ? position.around : undefined;
       const full = forceSummary || (fullDetailRequested.current && summaryDemand.current);
       const append = historyAppend.current;
       const retained =
@@ -831,22 +889,47 @@ function App({
           ? detailSnapshot.current.messages.map((message) => message.id)
           : [];
       return detailReads.current.run(
-        `${wanted}:${before}:${full}:${retained.join(',')}`,
+        `${wanted}:${before}:${around || ''}:${full}:${retained.join(',')}`,
         async (signal) => {
           const request = ++detailRequest.current;
           let result: Detail;
           try {
-            result = await api<Detail>(
-              '/runs/' +
-                wanted +
-                `?messageLimit=${messageHistoryPageSize}&view=conversation` +
-                (full ? '' : '&summary=deferred') +
-                (before ? '&beforeMessage=' + encodeURIComponent(before) : '') +
-                (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : ''),
-              undefined,
-              undefined,
-              signal,
-            );
+            const read = (cursor: string, anchor?: string) =>
+              api<Detail>(
+                '/runs/' +
+                  wanted +
+                  `?messageLimit=${messageHistoryPageSize}&view=conversation` +
+                  (full ? '' : '&summary=deferred') +
+                  (anchor
+                    ? '&aroundMessage=' + encodeURIComponent(anchor)
+                    : cursor
+                      ? '&beforeMessage=' + encodeURIComponent(cursor)
+                      : '') +
+                  (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : ''),
+                undefined,
+                undefined,
+                signal,
+              );
+            try {
+              result = await read(before, around);
+            } catch (issue) {
+              if (
+                !signal.aborted &&
+                activeRunId.current === wanted &&
+                detailRequest.current === request &&
+                issue instanceof ApiError &&
+                issue.code === 'MESSAGE_CURSOR_MISSING' &&
+                (around || before) &&
+                !historyPending.current &&
+                detailSnapshot.current?.run.id !== wanted
+              ) {
+                historyPosition.current = { runId: wanted, before: '', trail: [] };
+                conversationHistory.remove([wanted]);
+                setInitialHistoryAnchor(undefined);
+                setError('原阅读位置已失效，已返回最新消息。');
+                result = await read('');
+              } else throw issue;
+            }
           } catch (error) {
             if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
               const pending = historyPending.current;
@@ -861,6 +944,25 @@ function App({
             return;
           }
           if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+            if (!startupMeasured.current.messages) {
+              startupMeasured.current.messages = true;
+              markStartupStage('messages-ready', { surface: localSurface });
+            }
+            if (around) {
+              const target = result.messages.find((message) => message.id === around);
+              const canonical =
+                target &&
+                conversationMessages(result.messages).find(
+                  (message) =>
+                    message.id === around ||
+                    (isInboxUserMessage(target) &&
+                      isInboxUserMessage(message) &&
+                      message.sourceInboxId === target.sourceInboxId &&
+                      message.text === target.text),
+                );
+              if (canonical && canonical.id !== around)
+                setInitialHistoryAnchor((old) => old && { ...old, id: canonical.id });
+            }
             if (Number.isSafeInteger(result.eventCursor) && result.eventCursor! >= 0)
               streamCursor.current = { runId: wanted, cursor: result.eventCursor! };
             const pending = historyPending.current;
@@ -889,25 +991,27 @@ function App({
         trailing,
       );
     },
-    [clearReadIssue],
+    [clearReadIssue, conversationHistory],
   );
-  async function changeHistory(before: string, trail: string[]) {
+  async function changeHistory(before: string, trail: string[], around?: string) {
     if (historyMoving.current) return;
     const wanted = activeRunId.current;
     const prior = historyPosition.current;
     const priorAppend = historyAppend.current;
     const append =
+      !around &&
       !!before &&
       trail.length > prior.trail.length &&
       (detailSnapshot.current?.messages.length || 0) + messageHistoryPageSize <= messageHistoryWindowLimit;
     historyMoving.current = true;
     historyAppend.current = append;
-    const target = { runId: wanted, before, trail };
+    const target = { runId: wanted, before, trail, around };
+    setInitialHistoryAnchor(around ? { id: around, offset: 24 } : undefined);
     historyPosition.current = target;
     historyPending.current = { target, prior, priorAppend, reposition: !append };
     setHistoryLoading(true);
     try {
-      await refreshDetail();
+      return (await refreshDetail()) === true;
     } finally {
       if (activeRunId.current === wanted) {
         historyMoving.current = false;
@@ -954,9 +1058,12 @@ function App({
           navigationStorageKey.current = navigationKey(scope, client);
           savedNavigation.current = readNavigation(navigationStorageKey.current);
           cache.bindScope(client.workbenchScope());
+          conversationHistory.bindScope(client.workbenchScope());
+          markStartupStage('auth-ready', { surface: localSurface });
           // The authenticated workbench and lists do not depend on each other.
           sessionReady.current = true;
           setReady(true);
+          registerSession(localSurface);
           // The workbench is usable after authentication. History and persisted
           // drafts reconcile independently, preserving edits made while loading.
           void cache.load().catch(() => {});
@@ -977,7 +1084,15 @@ function App({
         setRetrying(false);
       }
     },
-    [clearReadIssue, refresh, refreshDetail, refreshConfiguration, cache],
+    [
+      clearReadIssue,
+      refresh,
+      refreshDetail,
+      refreshConfiguration,
+      cache,
+      conversationHistory,
+      registerSession,
+    ],
   );
   useEffect(() => {
     void connect();
@@ -1317,6 +1432,7 @@ function App({
     setPreviewOpen(false);
   };
   const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string; runIds?: string[] }) => {
+    if (deleted) conversationHistory.remove(deleted.kind === 'run' ? [deleted.id] : deleted.runIds || []);
     if (
       (deleted?.kind === 'run' && deleted.id === runId) ||
       (deleted?.kind === 'project' && deleted.id === projectId)
@@ -1657,6 +1773,15 @@ function App({
             </strong>
           </div>
           <div className="topbar-right">
+            <button
+              className="icon-button"
+              aria-label="任务中心"
+              title="任务中心"
+              disabled={!ready}
+              onClick={() => setModal('task-center')}
+            >
+              <Icon name="grid" size={17} />
+            </button>
             <span className="local-chip port-chip" title={location.origin}>
               <Icon name="lock" size={12} />
               本机 · {location.port}
@@ -1753,6 +1878,14 @@ function App({
                 )}
               </div>
               <div className="run-controls">
+                <button
+                  className="quiet-button"
+                  aria-expanded={conversationSearchOpen}
+                  onClick={() => setConversationSearchOpen((value) => !value)}
+                >
+                  <Icon name="search" size={14} />
+                  搜索正文
+                </button>
                 <button
                   className="quiet-button details-toggle"
                   aria-expanded={detailsVisible}
@@ -1876,9 +2009,40 @@ function App({
               className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
             >
               <section className="conversation" inert={detailsOverlayOpen}>
+                {conversationSearchOpen && (
+                  <React.Suspense
+                    fallback={
+                      <p className="field-help" role="status">
+                        正在载入搜索…
+                      </p>
+                    }
+                  >
+                    <ConversationSearch
+                      embedded
+                      onClose={() => setConversationSearchOpen(false)}
+                      runId={detail.run.id}
+                      disabled={historyLoading}
+                      activeMessageId={historyPosition.current.around}
+                      onSelect={(messageId) => changeHistory('', [], messageId)}
+                    />
+                  </React.Suspense>
+                )}
                 <ConversationScroll
                   positionKey={detail.run.id + ':' + historySegment}
-                  startAtLatest={!detail.messagePage?.before}
+                  startAtLatest={
+                    !detail.messagePage?.before && !detail.messagePage?.hasNewer && !initialHistoryAnchor
+                  }
+                  initialAnchor={initialHistoryAnchor}
+                  onCheckpoint={(reading) =>
+                    conversationHistory.set(detail.run.id, {
+                      ...reading,
+                      following:
+                        reading.following && !detail.messagePage?.before && !detail.messagePage?.hasNewer,
+                      before: detail.messagePage?.before,
+                      around: detail.messagePage?.anchorMessageId,
+                    })
+                  }
+                  onReturnLatest={() => void changeHistory('', [])}
                   olderCursor={
                     detail.messages.length + messageHistoryPageSize <= messageHistoryWindowLimit
                       ? detail.messagePage?.nextBefore
@@ -1896,7 +2060,9 @@ function App({
                     ])
                   }
                 >
-                  {(detail.messagePage?.hasMore || detail.messagePage?.before) && (
+                  {(detail.messagePage?.hasMore ||
+                    detail.messagePage?.before ||
+                    detail.messagePage?.hasNewer) && (
                     <nav className="conversation-pages" aria-label="对话历史分页">
                       <button
                         className="secondary"
@@ -1915,11 +2081,11 @@ function App({
                       <span role="status">
                         {historyLoading
                           ? '读取历史…'
-                          : detail.messagePage?.before
+                          : detail.messagePage?.before || detail.messagePage?.hasNewer
                             ? `已加载 ${detail.messages.length} 条历史${detail.messages.length + messageHistoryPageSize > messageHistoryWindowLimit ? ' · 继续将切换历史段落' : ''}`
                             : '最近消息'}
                       </span>
-                      {detail.messagePage?.before && (
+                      {(detail.messagePage?.before || detail.messagePage?.hasNewer) && (
                         <>
                           <button
                             className="secondary"
@@ -2004,21 +2170,25 @@ function App({
                         <div className={'message-avatar ' + m.role}>
                           {m.role === 'user' ? (
                             '你'
+                          ) : m.role === 'tool' ? (
+                            <Icon name="code" size={17} />
                           ) : (
                             <Icon name={task?.spec.role === 'coordinator' ? 'spark' : 'tree'} size={17} />
                           )}
                         </div>
                         <div className="message-body">
                           <div className="message-label">
-                            {m.role === 'user'
-                              ? isChat || isInboxUserMessage(m)
-                                ? '你'
-                                : '用户 / 交接'
-                              : task?.spec.role === 'coordinator'
-                                ? isChat
-                                  ? '助手'
-                                  : '总代理'
-                                : task?.spec.title || 'Agent'}
+                            {m.role === 'tool'
+                              ? '工具返回'
+                              : m.role === 'user'
+                                ? isChat || isInboxUserMessage(m)
+                                  ? '你'
+                                  : '用户 / 交接'
+                                : task?.spec.role === 'coordinator'
+                                  ? isChat
+                                    ? '助手'
+                                    : '总代理'
+                                  : task?.spec.title || 'Agent'}
                             <small>
                               {m.role === 'assistant'
                                 ? request?.providerBinding.model || agent?.providerBinding.model
@@ -2026,7 +2196,12 @@ function App({
                             </small>
                           </div>
                           {m.text &&
-                            (m.role === 'assistant' ? (
+                            (m.role === 'tool' ? (
+                              <details open={initialHistoryAnchor?.id === m.id || undefined}>
+                                <summary>查看结果</summary>
+                                <pre>{m.text}</pre>
+                              </details>
+                            ) : m.role === 'assistant' ? (
                               <MarkdownDocument
                                 text={m.text}
                                 onLocalLink={
@@ -2044,6 +2219,7 @@ function App({
                               call={c}
                               operation={messageIndex.operations.get(c.id)}
                               toolResponse={messageIndex.responses.get(c.id)}
+                              focused={initialHistoryAnchor?.id === messageIndex.responses.get(c.id)?.id}
                               taskStatus={task?.status}
                             />
                           ))}
@@ -2796,7 +2972,30 @@ function App({
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      <ModalErrorContext.Provider value={error || readIssue?.message || ''}>
+      <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
+        {modal === 'task-center' && (
+          <React.Suspense
+            fallback={
+              <Modal title="任务中心" close={() => setModal('')}>
+                <p className="field-help">正在载入…</p>
+              </Modal>
+            }
+          >
+            <TaskCenter
+              state={taskCenterState}
+              changeState={setTaskCenterState}
+              projects={projects}
+              close={() => setModal('')}
+              openRun={async (id) => {
+                const epoch = navigationEpoch.current;
+                const target = await api<Run>('/runs/' + id + '/header');
+                if (epoch !== navigationEpoch.current || modalCurrent.current !== 'task-center') return;
+                selectRun(target);
+                setModal('');
+              }}
+            />
+          </React.Suspense>
+        )}
         {modal === 'appearance' && (
           <React.Suspense
             fallback={
@@ -4134,11 +4333,19 @@ function SurfaceEntry({
   active,
   changeSurface,
   registerCache,
+  registerSession,
+  ready,
 }: {
   client: SurfaceClient;
   active: boolean;
   changeSurface: (surface: 'native' | 'terminal') => void;
-  registerCache: (surface: 'native' | 'terminal', cache: WorkbenchCache) => void;
+  registerCache: (
+    surface: 'native' | 'terminal',
+    cache: WorkbenchCache,
+    reading: ConversationHistoryState,
+  ) => void;
+  registerSession: (surface: 'native' | 'terminal') => void;
+  ready: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   return (
@@ -4152,8 +4359,13 @@ function SurfaceEntry({
       <SurfaceClientContext.Provider value={client}>
         <SurfaceRootContext.Provider value={root}>
           <Activity name={client.surface} mode={active ? 'visible' : 'hidden'}>
-            <App changeSurface={changeSurface} registerCache={registerCache} />
+            <App
+              changeSurface={changeSurface}
+              registerCache={registerCache}
+              registerSession={registerSession}
+            />
           </Activity>
+          <TaskNotifications client={client} ready={ready} />
         </SurfaceRootContext.Provider>
       </SurfaceClientContext.Provider>
     </div>
@@ -4168,12 +4380,22 @@ function SurfaceWorkspaces() {
     terminal: localSurface === 'terminal' ? defaultSurfaceClient : createSurfaceClient('terminal'),
   }));
   const caches = useRef(new Map<'native' | 'terminal', WorkbenchCache>());
-  const registerCache = useCallback((surface: 'native' | 'terminal', cache: WorkbenchCache) => {
-    caches.current.set(surface, cache);
+  const histories = useRef(new Map<'native' | 'terminal', ConversationHistoryState>());
+  const [sessions, setSessions] = useState(() => new Set<'native' | 'terminal'>());
+  const registerSession = useCallback((surface: 'native' | 'terminal') => {
+    setSessions((old) => (old.has(surface) ? old : new Set([...old, surface])));
   }, []);
+  const registerCache = useCallback(
+    (surface: 'native' | 'terminal', cache: WorkbenchCache, reading: ConversationHistoryState) => {
+      caches.current.set(surface, cache);
+      histories.current.set(surface, reading);
+    },
+    [],
+  );
   useEffect(
     () => () => {
       for (const cache of caches.current.values()) cache.stop();
+      for (const reading of histories.current.values()) reading.stop();
     },
     [],
   );
@@ -4201,10 +4423,13 @@ function SurfaceWorkspaces() {
               active={current === surface}
               changeSurface={changeSurface}
               registerCache={registerCache}
+              registerSession={registerSession}
+              ready={sessions.has(surface)}
             />
           ),
       )}
     </>
   );
 }
+if (!window.elysia) markStartupStage('web-loaded');
 createRoot(document.getElementById('root')!).render(<SurfaceWorkspaces />);

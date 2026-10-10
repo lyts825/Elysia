@@ -5,6 +5,7 @@ const { mkdirSync, appendFileSync } = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { attachServices } = require('./services.cjs');
 const { allowedLocalNavigation } = require('./navigation.cjs');
+const { createStartupDiagnostics } = require('./startup-diagnostics.cjs');
 const root = path.resolve(__dirname, '../..');
 const iconPath = path.join(
   root,
@@ -21,6 +22,7 @@ app.setAppUserModelId('local.elysia.desktop');
 app.enableSandbox();
 let window,
   backend,
+  diagnostics,
   uiOrigin,
   quitting = false,
   ready = false;
@@ -38,12 +40,24 @@ async function shutdown() {
       else resolve();
     });
   }
+  if (diagnostics)
+    await Promise.race([diagnostics.flush(), new Promise((resolve) => setTimeout(resolve, 500))]);
   app.quit();
 }
 if (!app.requestSingleInstanceLock()) {
   if (process.send) process.send({ type: 'desktop-focused' }, () => app.quit());
   else app.quit();
 } else {
+  let launchMarks;
+  try {
+    launchMarks = JSON.parse((process.env.ELYSIA_LAUNCH_MARKS || '').slice(0, 4096));
+  } catch {}
+  diagnostics = createStartupDiagnostics(data, {
+    id: process.env.ELYSIA_LAUNCH_ID,
+    startedAt: process.env.ELYSIA_LAUNCH_STARTED_AT,
+    build: process.env.ELYSIA_LAUNCH_BUILD,
+    marks: launchMarks,
+  });
   app.on('second-instance', () => {
     if (window) {
       if (window.isMinimized()) window.restore();
@@ -105,7 +119,7 @@ if (!app.requestSingleInstanceLock()) {
       window.webContents.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
         if (!allowed(url, isMainFrame)) event.preventDefault();
       });
-      const desktopService = attachServices(window, data, () => uiOrigin);
+      const desktopService = attachServices(window, data, () => uiOrigin, { diagnostics });
       window.on('close', (event) => {
         if (!quitting) {
           event.preventDefault();
@@ -114,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
       });
       await window.loadFile(path.join(__dirname, 'starting.html'));
       window.show();
+      diagnostics.mark('window-visible');
       const dev = process.env.ELYSIA_DEV === '1';
       backend = spawn(
         process.env.ELYSIA_NODE_BINARY || 'node',
@@ -159,11 +174,13 @@ if (!app.requestSingleInstanceLock()) {
         }
         if (message.type === 'startup-error') return fail(message.message);
         if (message.type !== 'ready') return;
+        diagnostics.mark('backend-ready');
         try {
           const origin = new URL(message.origin).origin;
           uiOrigin = origin;
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
           await window.loadURL(message.bootstrapUrl);
+          diagnostics.mark('web-loaded');
           ready = true;
           window.setTitle(`Elysia · ${message.version}`);
           window.show();

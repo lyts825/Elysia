@@ -6,8 +6,10 @@ import {
   type Operation,
   type RequestRecord,
   type Artifact,
+  type Message,
 } from '../../../packages/contracts/src/index.js';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads.js';
+import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
 import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
 
 type Table = 'runs' | 'requests' | 'tool_operations';
@@ -251,7 +253,7 @@ export class RunReads {
       ).n,
     );
   }
-  list(query: {
+  async list(query: {
     limit: number;
     before?: string;
     query?: string;
@@ -269,10 +271,10 @@ export class RunReads {
     if (query.before && !cursor)
       throw new AppError('RECORD_CURSOR_MISSING', '会话位置已失效，请重新读取列表', false, null, 409);
     const search = query.query?.trim().toLocaleLowerCase();
+    if (search) await this.store.ensureHistorySearch('run');
     if (query.archived !== undefined || query.summary !== 'deferred') this.warmReadModels('runs');
     const conditions: string[] = [];
     const parameters: (string | number)[] = [];
-    let searchMatches: Set<string> | undefined;
     if (query.archived !== undefined) {
       conditions.push(
         "COALESCE(json_extract(data,'$.readModel.archived'),json_extract(data,'$.archived'),0)=?",
@@ -280,15 +282,11 @@ export class RunReads {
       parameters.push(query.archived ? 1 : 0);
     }
     if (search) {
-      // Explicit search keeps matching the full objective, including text beyond the sidebar excerpt.
-      const matched = this.metadata('runs').filter(
-        (row) =>
-          `${row.value.title} ${row.value.objective}`.toLocaleLowerCase().includes(search) ||
-          this.store.require<Run>('runs', row.id).objective.toLocaleLowerCase().includes(search),
+      // Keep exact Unicode substring semantics while reusing the full-objective derived index.
+      conditions.push(
+        "id IN (SELECT record_id FROM history_search_v1 WHERE kind='run' AND instr(normalized,?)>0)",
       );
-      searchMatches = new Set(matched.map((row) => row.id));
-      conditions.push('id IN (SELECT value FROM json_each(?))');
-      parameters.push(JSON.stringify(matched.map((row) => row.id)));
+      parameters.push(search);
     }
     const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
     const total = Number(
@@ -324,7 +322,18 @@ export class RunReads {
         this.store.refreshReadProjection('runs', run);
         value = sidebarRun(run);
       }
-      return searchMatches ? { ...value, matchesQuery: searchMatches.has(row.id) } : value;
+      return search
+        ? {
+            ...value,
+            matchesQuery: Boolean(
+              this.store.db
+                .prepare(
+                  "SELECT 1 FROM history_search_v1 WHERE kind='run' AND record_id=? AND instr(normalized,?)>0",
+                )
+                .get(row.id, search),
+            ),
+          }
+        : value;
     };
     const page: RecordPage = {
       total,
@@ -351,6 +360,68 @@ export class RunReads {
   }
 }
 export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
+  app.get<{ Params: { id: string } }>(
+    '/api/runs/:id/messages/search',
+    async (request): Promise<MessageSearchPage> => {
+      // Validate the parent before any indexed query; another Run's message cursor is never accepted.
+      store.require<Run>('runs', request.params.id);
+      const query = z
+        .object({
+          query: z.string().trim().min(1).max(200),
+          limit: z.coerce.number().int().min(1).max(40).default(20),
+          before: z.string().uuid().optional(),
+        })
+        .strict()
+        .parse(request.query);
+      await store.ensureHistorySearch('message', request.params.id);
+      let position: number | undefined;
+      if (query.before) {
+        const cursor = store.db
+          .prepare('SELECT rowid position FROM messages WHERE id=? AND run_id=?')
+          .get(query.before, request.params.id) as { position: number } | undefined;
+        if (!cursor)
+          throw new AppError('MESSAGE_CURSOR_MISSING', '搜索位置已失效，请重新搜索', false, null, 409);
+        position = cursor.position;
+      }
+      const search = query.query.toLocaleLowerCase();
+      const match =
+        "m.run_id=? AND m.id IN (SELECT record_id FROM history_search_v1 WHERE kind='message' AND run_id=? AND instr(normalized,?)>0)";
+      const params = [request.params.id, request.params.id, search];
+      const total = Number(
+        (store.db.prepare(`SELECT COUNT(*) n FROM messages m WHERE ${match}`).get(...params) as { n: number })
+          .n,
+      );
+      const rows = store.db
+        .prepare(
+          `SELECT m.id FROM messages m WHERE ${match}${position === undefined ? '' : ' AND m.rowid<?'} ORDER BY m.rowid DESC LIMIT ?`,
+        )
+        .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as { id: string }[];
+      const hasMore = rows.length > query.limit;
+      const selected = rows.slice(0, query.limit);
+      return {
+        items: selected.map(({ id: key }) => {
+          const message = store.require<Message>('messages', key);
+          const start = Math.max(0, message.text.toLocaleLowerCase().indexOf(search) - 48);
+          return {
+            messageId: message.id,
+            revision: message.revision,
+            role: message.role,
+            snippet:
+              (start ? '…' : '') +
+              message.text.slice(start, start + 158) +
+              (message.text.length > start + 158 ? '…' : ''),
+          };
+        }),
+        page: {
+          total,
+          limit: query.limit,
+          before: query.before ?? null,
+          hasMore,
+          nextBefore: hasMore ? selected.at(-1)!.id : null,
+        },
+      };
+    },
+  );
   app.get<{ Params: { id: string; recordId: string } }>(
     '/api/runs/:id/records/artifacts/:recordId/log-context',
     (request) => {

@@ -61,6 +61,7 @@ import { registerTerminalLogSearchRoutes } from './terminal-log-search.js';
 import { TerminalControlService, registerTerminalControl, terminalAppCatalog } from './terminal-control.js';
 import { registerCliManagement } from './cli-management.js';
 import { RunReads, registerRunRecordRoutes } from './run-reads.js';
+import { registerTaskCenter } from './task-center.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 const textPageQuery = z.object({
@@ -307,7 +308,7 @@ export function createServer(
       .header(
         'Content-Security-Policy',
         requestPreviewPolicy(url, reply.getHeader('Content-Security-Policy')) ??
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self'; frame-ancestors 'none'; base-uri 'self'",
       );
     return payload;
   });
@@ -805,6 +806,7 @@ export function createServer(
   });
   const runReads = new RunReads(store);
   registerRunRecordRoutes(app, store);
+  registerTaskCenter(app, store);
   registerPreviewLocationRoutes(app, previews);
   app.get('/api/runs', async (request) => {
     const query = z
@@ -1087,6 +1089,7 @@ export function createServer(
       .object({
         messageLimit: z.coerce.number().int().min(40).max(240).optional(),
         beforeMessage: z.string().uuid().optional(),
+        aroundMessage: z.string().uuid().optional(),
         retainedMessages: z.string().max(8880).optional(),
         view: z.literal('conversation').optional(),
         summary: z.literal('deferred').optional(),
@@ -1094,9 +1097,14 @@ export function createServer(
       .strict()
       .parse(request.query);
     invariant(
-      !query.beforeMessage || query.messageLimit !== undefined,
+      !(query.beforeMessage || query.aroundMessage) || query.messageLimit !== undefined,
       'MESSAGE_CURSOR_LIMIT',
       '历史分页须指定消息数量',
+    );
+    invariant(
+      !query.aroundMessage || !query.beforeMessage,
+      'MESSAGE_CURSOR_MODE',
+      '目标定位与历史分页不能同时使用',
     );
     invariant(
       !query.summary || (query.view === 'conversation' && query.messageLimit !== undefined),
@@ -1114,7 +1122,9 @@ export function createServer(
     const history =
       query.messageLimit === undefined
         ? { messages: store.all<Message>('messages', run.id) }
-        : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
+        : query.aroundMessage
+          ? store.messageAroundPage<Message>(run.id, query.messageLimit, query.aroundMessage)
+          : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
     return {
       run,
       eventCursor,

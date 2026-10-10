@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import {
   existsSync,
   readFileSync,
@@ -15,6 +16,15 @@ import { createRequire } from 'node:module';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(import.meta.url);
+const launchStartedAt = performance.timeOrigin + performance.now();
+const launchId = randomUUID(),
+  launchMarks = [];
+const markLaunch = (stage) =>
+  launchMarks.push({
+    stage,
+    status: 'ok',
+    elapsedMs: Math.round((performance.timeOrigin + performance.now() - launchStartedAt) * 10) / 10,
+  });
 process.chdir(root);
 const runtime = path.join(root, '.elysia-runtime');
 mkdirSync(runtime, { recursive: true });
@@ -65,6 +75,7 @@ try {
     readFileSync('node_modules/.pnpm/lock.yaml', 'utf8') !== readFileSync('pnpm-lock.yaml', 'utf8')
   )
     pnpm('install --frozen-lockfile');
+  markLaunch('dependencies-ready');
   const fingerprint = createHash('sha256');
   function add(filename) {
     const stat = readdirSync(filename, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
@@ -81,22 +92,30 @@ try {
     fingerprint.update(readFileSync(name));
   const digest = fingerprint.digest('hex'),
     marker = path.join(runtime, 'build.sha256');
+  markLaunch('fingerprint-ready');
+  let buildMode = 'cached';
   if (
     !existsSync(marker) ||
     readFileSync(marker, 'utf8') !== digest ||
     !existsSync('apps/web/dist/index.html') ||
     !existsSync('apps/server/dist/apps/server/src/index.js')
   ) {
+    buildMode = 'rebuilt';
     console.log('正在构建 Elysia…');
     packageCommand('typescript', 'tsc', ['-p', 'tsconfig.server.json']);
     packageCommand('vite', 'vite', ['build', '--config', 'apps/web/vite.config.ts']);
     writeFileSync(marker, digest);
   }
+  markLaunch('build-ready');
   const electron = require('electron');
   const environment = {
     ...process.env,
     ELYSIA_NODE_BINARY: process.execPath,
     ELYSIA_DEV: process.argv.includes('--dev') ? '1' : '0',
+    ELYSIA_LAUNCH_ID: launchId,
+    ELYSIA_LAUNCH_STARTED_AT: String(launchStartedAt),
+    ELYSIA_LAUNCH_BUILD: buildMode,
+    ELYSIA_LAUNCH_MARKS: JSON.stringify(launchMarks),
   };
   delete environment.ELECTRON_RUN_AS_NODE;
   const output = openSync(path.join(runtime, 'desktop-launch.log'), 'a');

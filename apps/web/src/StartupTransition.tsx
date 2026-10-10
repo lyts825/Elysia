@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { useStartupPreferences, type StartupPreferences } from './StartupPreferences';
+import {
+  readStartupMedia,
+  useStartupPreferences,
+  type StartupPreferences,
+  type StartupMediaUpload,
+} from './StartupPreferences';
+import { markStartupStage } from './StartupDiagnostics';
 import './Startup.css';
 
 function useReducedMotion() {
@@ -31,16 +37,56 @@ export function startupColors(config: StartupPreferences): CSSProperties {
 export function StartupVisual({
   config,
   skipped = false,
+  upload,
+  onError,
+  recordReady = false,
 }: {
   config: StartupPreferences;
   skipped?: boolean;
+  upload?: StartupMediaUpload;
+  onError?: (message: string) => void;
+  recordReady?: boolean;
 }) {
   const reduced = useReducedMotion();
   const video = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [config.media?.dataUrl]);
+  const [source, setSource] = useState('');
+  const errorHandler = useRef(onError);
+  errorHandler.current = onError;
+  useEffect(() => {
+    setFailed(false);
+    setSource('');
+  }, [config.media?.id, upload]);
   const media =
     config.enabled && !skipped && !reduced && !failed && config.style === 'media' ? config.media : undefined;
+  useEffect(() => {
+    let cancelled = false,
+      temporary: string | undefined;
+    setSource('');
+    if (media) {
+      const request =
+        upload?.media.id === media.id
+          ? Promise.resolve(
+              upload.blob ? (temporary = URL.createObjectURL(upload.blob)) : upload.dataUrl || '',
+            )
+          : readStartupMedia(media);
+      void request
+        .then((value) => {
+          if (!cancelled) setSource(value);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFailed(true);
+          errorHandler.current?.('已保存的动画无法读取，请重新导入。');
+          if (recordReady) markStartupStage('media-ready', { status: 'error' });
+        });
+    } else if (recordReady && (!config.enabled || skipped || reduced))
+      markStartupStage('media-ready', { status: 'skipped' });
+    return () => {
+      cancelled = true;
+      if (temporary) URL.revokeObjectURL(temporary);
+    };
+  }, [media?.id, upload, recordReady, config.enabled, skipped, reduced]);
   useEffect(() => {
     const element = video.current;
     return () => {
@@ -48,7 +94,15 @@ export function StartupVisual({
       element?.removeAttribute('src');
       element?.load();
     };
-  }, [media?.dataUrl]);
+  }, [source]);
+  const failure = () => {
+    setFailed(true);
+    errorHandler.current?.('动画无法解码，请换用其他 GIF、MP4 或 WebM 文件。');
+    if (recordReady) markStartupStage('media-ready', { status: 'error' });
+  };
+  const decoded = () => {
+    if (recordReady) markStartupStage('media-ready');
+  };
   const style =
     !config.enabled || skipped || reduced
       ? 'minimal'
@@ -57,20 +111,21 @@ export function StartupVisual({
         : config.style;
   return (
     <div className={`startup-visual startup-${style}`} aria-hidden="true">
-      {media ? (
+      {media && source ? (
         media.mime === 'image/gif' ? (
-          <img className="startup-media-content" src={media.dataUrl} alt="" onError={() => setFailed(true)} />
+          <img className="startup-media-content" src={source} alt="" onError={failure} onLoad={decoded} />
         ) : (
           <video
             ref={video}
             className="startup-media-content"
-            src={media.dataUrl}
+            src={source}
             autoPlay
             loop
             muted
             playsInline
             preload="metadata"
-            onError={() => setFailed(true)}
+            onError={failure}
+            onLoadedData={decoded}
           />
         )
       ) : (
@@ -92,19 +147,19 @@ export function StartupTransition({
   children?: ReactNode;
   className?: string;
 }) {
-  const { config } = useStartupPreferences();
+  const { config, desktopBootShown } = useStartupPreferences();
   const [skipped, setSkipped] = useState(false);
   return (
     <main className={`startup-screen ${className}`} style={startupColors(config)}>
       <div className="startup-content">
-        <StartupVisual config={config} skipped={skipped} />
+        <StartupVisual config={config} skipped={skipped || desktopBootShown} recordReady />
         <h1>{config.title}</h1>
         {config.caption && <p className="startup-caption">{config.caption}</p>}
         <p className="startup-status" role="status">
           <span className="startup-status-dot" />
           正在准备工作台
         </p>
-        {config.enabled && !skipped && (
+        {config.enabled && !skipped && !desktopBootShown && (
           <button className="startup-skip" onClick={() => setSkipped(true)}>
             跳过动画
           </button>

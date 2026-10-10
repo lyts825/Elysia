@@ -6,8 +6,30 @@ import {
   importStartupFile,
   saveStartupPreferences,
   useStartupPreferences,
+  validateStartupMedia,
   type StartupPreferences,
+  type StartupMediaUpload,
 } from './StartupPreferences';
+import {
+  readStartupDiagnostics,
+  type StartupDiagnosticSnapshot,
+  type StartupStage,
+} from './StartupDiagnostics';
+
+const stageLabels: Record<StartupStage, string> = {
+  'launch-entry': '启动入口',
+  'dependencies-ready': '依赖检查',
+  'fingerprint-ready': '构建检查',
+  'build-ready': '构建就绪',
+  'window-visible': '窗口显示',
+  'backend-ready': '本机服务',
+  'web-loaded': '工作台加载',
+  'preferences-ready': '外观偏好',
+  'auth-ready': '登录就绪',
+  'lists-ready': '首批历史',
+  'messages-ready': '首批消息',
+  'media-ready': '动画就绪',
+};
 
 export function StartupSettings({ close }: { close: () => void }) {
   const { config, loaded, error: readError } = useStartupPreferences();
@@ -16,6 +38,9 @@ export function StartupSettings({ close }: { close: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [upload, setUpload] = useState<StartupMediaUpload>();
+  const [diagnostics, setDiagnostics] = useState<StartupDiagnosticSnapshot>();
+  const [diagnosticError, setDiagnosticError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -37,8 +62,14 @@ export function StartupSettings({ close }: { close: () => void }) {
     setBusy(true);
     setError('');
     try {
-      const media = file ? await importStartupFile(file) : await window.elysia?.importStartupMedia?.();
-      if (media && mounted.current) change({ media, style: 'media', enabled: true });
+      const imported = file ? await importStartupFile(file) : await window.elysia?.importStartupMedia?.();
+      if (imported) {
+        await validateStartupMedia(imported.media, imported);
+        if (mounted.current) {
+          setUpload(imported);
+          change({ media: imported.media, style: 'media', enabled: true });
+        }
+      }
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : '导入失败');
     } finally {
@@ -49,10 +80,11 @@ export function StartupSettings({ close }: { close: () => void }) {
     setBusy(true);
     setError('');
     try {
-      await saveStartupPreferences(draft);
+      await saveStartupPreferences(draft, upload);
       if (mounted.current) {
         setDirty(false);
         setSaved(true);
+        setUpload(undefined);
       }
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : '保存失败');
@@ -70,7 +102,7 @@ export function StartupSettings({ close }: { close: () => void }) {
     >
       <div className="startup-settings-body">
         <div className="startup-settings-preview" style={startupColors(draft)}>
-          <StartupVisual config={draft} />
+          <StartupVisual config={draft} upload={upload} onError={setError} />
           <strong>{draft.title || 'Elysia'}</strong>
           <p>{draft.caption}</p>
         </div>
@@ -162,9 +194,10 @@ export function StartupSettings({ close }: { close: () => void }) {
               <button
                 className="secondary"
                 disabled={busy}
-                onClick={() =>
-                  change({ media: undefined, style: draft.style === 'media' ? 'bloom' : draft.style })
-                }
+                onClick={() => {
+                  setUpload(undefined);
+                  change({ media: undefined, style: draft.style === 'media' ? 'bloom' : draft.style });
+                }}
               >
                 移除
               </button>
@@ -185,6 +218,52 @@ export function StartupSettings({ close }: { close: () => void }) {
         <p className="startup-settings-hint">
           GIF、MP4 或 WebM，最大 4 MiB。动画静音播放，工作台就绪后立即进入；减少动态效果时使用静态样式。
         </p>
+        <details
+          className="startup-diagnostics"
+          onToggle={(event) => {
+            if (!event.currentTarget.open) return;
+            setDiagnosticError('');
+            void readStartupDiagnostics()
+              .then((value) => {
+                if (mounted.current) setDiagnostics(value);
+              })
+              .catch(() => {
+                if (mounted.current) setDiagnosticError('暂时无法读取启动耗时');
+              });
+          }}
+        >
+          <summary>启动耗时</summary>
+          <p className="startup-settings-hint">
+            记录最近 20 次启动，仅含阶段和耗时；构建缓存状态不代表操作系统文件缓存。各阶段从本次启动入口计时。
+          </p>
+          {diagnosticError && <p role="alert">{diagnosticError}</p>}
+          {diagnostics?.records.slice(0, 20).map((record) => (
+            <div key={record.id} className="startup-diagnostic-record">
+              <strong>
+                {new Date(record.startedAt).toLocaleString()} ·{' '}
+                {record.environment === 'desktop' ? '桌面' : '浏览器'} ·{' '}
+                {record.build === 'cached'
+                  ? '复用构建'
+                  : record.build === 'rebuilt'
+                    ? '重新构建'
+                    : '构建状态未知'}
+              </strong>
+              <dl>
+                {record.stages.map((mark) => (
+                  <div key={`${mark.stage}:${mark.surface || ''}:${mark.status}`}>
+                    <dt>
+                      {stageLabels[mark.stage]}
+                      {mark.surface ? ` · ${mark.surface === 'terminal' ? '终端' : 'Elysia'}` : ''}
+                      {mark.status === 'skipped' ? '（跳过）' : mark.status === 'error' ? '（失败）' : ''}
+                    </dt>
+                    <dd>{mark.elapsedMs.toFixed(1)} ms</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+          {diagnostics && !diagnostics.records.length && <p>暂无启动记录</p>}
+        </details>
         <footer>
           <button
             className="secondary"
@@ -194,6 +273,7 @@ export function StartupSettings({ close }: { close: () => void }) {
               setDirty(true);
               setSaved(false);
               setError('');
+              setUpload(undefined);
             }}
           >
             恢复默认

@@ -1,9 +1,14 @@
 (() => {
-  const visual = document.getElementById('visual');
-  const skip = document.getElementById('skip');
+  const visual = document.getElementById('visual'),
+    skip = document.getElementById('skip');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let config;
-  let skipped = false;
+  let config,
+    skipped = false,
+    generation = 0;
+  const mark = (stage, status = 'ok') =>
+    void window.elysia
+      ?.markStartupStage?.({ stage, status, atEpoch: performance.timeOrigin + performance.now() })
+      .catch(() => {});
   const replaceVisual = (...elements) => {
     visual.querySelectorAll('video').forEach((element) => {
       element.pause();
@@ -13,26 +18,31 @@
     visual.replaceChildren(...elements);
   };
   const emblem = () => {
-    const mark = document.createElement('div');
-    mark.className = 'startup-emblem';
+    const element = document.createElement('div');
+    element.className = 'startup-emblem';
     const letter = document.createElement('span');
     letter.textContent = 'E';
-    mark.append(
+    element.append(
       letter,
       document.createElement('i'),
       document.createElement('i'),
       document.createElement('i'),
     );
-    return mark;
+    return element;
   };
-  const render = () => {
-    const moving = config?.enabled !== false && !skipped && !reduced.matches;
+  const render = async () => {
+    const current = ++generation,
+      moving = config?.enabled !== false && !skipped && !reduced.matches;
     const style = moving ? config?.style || 'bloom' : 'minimal';
     visual.className = `startup-visual startup-${style}`;
     replaceVisual(emblem());
     skip.hidden = config?.enabled === false || skipped || reduced.matches;
+    if (config && !moving) mark('media-ready', 'skipped');
     const media = moving && style === 'media' ? config?.media : undefined;
-    if (media) {
+    if (!media) return;
+    try {
+      const source = await window.elysia.readStartupMedia(media);
+      if (current !== generation) return;
       const element = document.createElement(media.mime === 'image/gif' ? 'img' : 'video');
       element.className = 'startup-media-content';
       if (element instanceof HTMLVideoElement) {
@@ -40,31 +50,51 @@
         element.loop = true;
         element.muted = true;
         element.playsInline = true;
-        element.preload = 'metadata';
+        element.preload = 'auto';
       } else element.alt = '';
+      element.addEventListener(
+        media.mime === 'image/gif' ? 'load' : 'loadeddata',
+        () => {
+          if (current === generation) mark('media-ready');
+        },
+        { once: true },
+      );
       element.addEventListener(
         'error',
         () => {
+          if (current !== generation) return;
+          mark('media-ready', 'error');
           visual.className = 'startup-visual startup-minimal';
           replaceVisual(emblem());
         },
         { once: true },
       );
-      element.src = media.dataUrl;
+      element.src = source;
       replaceVisual(element);
+    } catch {
+      if (current === generation) {
+        mark('media-ready', 'error');
+        visual.className = 'startup-visual startup-minimal';
+        replaceVisual(emblem());
+      }
     }
   };
   skip.addEventListener('click', () => {
     skipped = true;
-    render();
+    mark('media-ready', 'skipped');
+    void render();
   });
-  reduced.addEventListener('change', render);
-  render();
-  // Reading preferences is independent of backend startup and never gates navigation.
+  reduced.addEventListener('change', () => void render());
+  window.addEventListener('pagehide', () => {
+    ++generation;
+    replaceVisual();
+  });
+  void render();
+  // Preference and media reads never gate backend startup or navigation.
   window.elysia
     ?.readStartup?.()
     .then((value) => {
-      config = value;
+      config = value.config;
       document.getElementById('title').textContent = config.title;
       document.getElementById('caption').textContent = config.caption;
       document.getElementById('caption').hidden = !config.caption;
@@ -79,7 +109,8 @@
         0,
       );
       document.body.style.setProperty('--startup-ink', luminance > 0.179 ? '#000000' : '#ffffff');
-      render();
+      mark('preferences-ready', value.issue ? 'error' : 'ok');
+      void render();
     })
-    .catch(() => {});
+    .catch(() => mark('preferences-ready', 'error'));
 })();

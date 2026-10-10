@@ -250,6 +250,36 @@
   font-size: 0.8rem;
   color: var(--muted, #69746e);
 }
+.startup-diagnostics {
+  border-top: 1px solid var(--border, #e1e5e0);
+  padding-top: 0.75rem;
+  font-size: 0.8rem;
+}
+.startup-diagnostics summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.startup-diagnostic-record {
+  margin-top: 0.75rem;
+}
+.startup-diagnostic-record strong {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.startup-diagnostic-record dl {
+  margin: 0.5rem 0;
+}
+.startup-diagnostic-record dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.15rem 0;
+}
+.startup-diagnostic-record dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 @keyframes startup-breathe {
   from {
     transform: scale(0.97);

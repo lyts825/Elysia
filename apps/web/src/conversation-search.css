@@ -1,0 +1,103 @@
+.conversation-search {
+  position: relative;
+  flex: 0 0 auto;
+}
+.conversation-search-panel {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(580px, calc(100dvh - 130px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  text-align: left;
+  color: var(--text);
+}
+.conversation-search.embedded {
+  min-height: 0;
+  margin: 8px 18px;
+}
+.conversation-search.embedded .conversation-search-panel {
+  position: static;
+  width: 100%;
+  max-height: min(320px, 38dvh);
+  box-shadow: none;
+}
+.conversation-search.embedded .conversation-search-results {
+  max-height: 180px;
+}
+.conversation-search-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.conversation-search-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+}
+.conversation-search-status,
+.conversation-search-results > p,
+.conversation-search-pages small {
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.conversation-search-results {
+  display: grid;
+  gap: 5px;
+  max-height: 330px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.conversation-search-results > button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-hover);
+  text-align: left;
+}
+.conversation-search-results > button[aria-current='true'] {
+  border-color: var(--accent);
+  background: var(--surface-selected);
+}
+.conversation-search-results span {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.conversation-search-results small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.conversation-search-pages,
+.conversation-search-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.conversation-search-pages button,
+.conversation-search-error button {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.conversation-search-error span {
+  flex: 1;
+  min-width: 140px;
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

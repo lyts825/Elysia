@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Message, Operation, Task, ToolCall } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Icon } from './Icon';
@@ -189,17 +189,27 @@ export function ToolActivity({
   operation: summaryOperation,
   taskStatus,
   toolResponse,
+  focused = false,
 }: {
   call: ToolCall;
   operation?: Operation;
   taskStatus?: Task['status'];
   toolResponse?: Message;
+  focused?: boolean;
 }) {
   const { api } = useSurfaceClient();
   const [full, setFull] = useState<Operation | null>(null),
     [readError, setReadError] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false),
     [readAttempt, setReadAttempt] = useState(0);
+  const activity = useRef<HTMLDetailsElement>(null);
+  const details = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    if (!focused) return;
+    if (activity.current) activity.current.open = true;
+    if (details.current) details.current.open = true;
+    setDetailsOpen(true);
+  }, [focused, toolResponse?.id]);
   useEffect(() => {
     setFull(null);
     setReadError('');
@@ -316,7 +326,7 @@ export function ToolActivity({
     !error && tone === 'done' && outcome !== undefined ? resultSummary(call.name, outcome) : '';
   const preview = !error && tone === 'done' ? resultPreview(call.name, outcome) : '';
   return (
-    <details className={`tool-activity ${tone}`}>
+    <details ref={activity} className={`tool-activity ${tone}`} data-history-anchor={toolResponse?.id}>
       <summary>
         <span className="tool-activity-glyph">
           <Icon
@@ -360,6 +370,7 @@ export function ToolActivity({
           </p>
         )}
         <details
+          ref={details}
           className="tool-activity-details"
           onToggle={(event) => {
             setDetailsOpen(event.currentTarget.open);

@@ -96,24 +96,26 @@ function projection(table: Table, entity: any) {
           createdAt: entity.createdAt,
           ...(entity.execution?.kind === 'docker-agent' ? { execution: { kind: 'docker-agent' } } : {}),
         }
-      : table === 'tool_operations'
-        ? { taskId: entity.taskId, toolCallId: entity.toolCallId, name: entity.name, status: entity.status }
-        : table === 'requests'
-          ? {
-              taskId: entity.taskId,
-              status: entity.status,
-              providerId: entity.providerId,
-              usage: entity.usage
-                ? {
-                    inputTotal: entity.usage.inputTotal,
-                    outputTotal: entity.usage.outputTotal,
-                    cost: entity.usage.cost,
-                    cacheRead: entity.usage.cacheRead,
-                    ttftMs: entity.usage.ttftMs,
-                  }
-                : null,
-            }
-          : undefined;
+      : table === 'tasks'
+        ? { status: entity.status, waitReason: entity.waitReason, parentTaskId: entity.parentTaskId }
+        : table === 'tool_operations'
+          ? { taskId: entity.taskId, toolCallId: entity.toolCallId, name: entity.name, status: entity.status }
+          : table === 'requests'
+            ? {
+                taskId: entity.taskId,
+                status: entity.status,
+                providerId: entity.providerId,
+                usage: entity.usage
+                  ? {
+                      inputTotal: entity.usage.inputTotal,
+                      outputTotal: entity.usage.outputTotal,
+                      cost: entity.usage.cost,
+                      cacheRead: entity.usage.cacheRead,
+                      ttftMs: entity.usage.ttftMs,
+                    }
+                  : null,
+              }
+            : undefined;
   return stable({
     id: entity.id,
     runId: entity.runId,
@@ -165,6 +167,7 @@ export class Store {
     );
     try {
       this.migrate();
+      this.historySearchSchema();
     } catch (error) {
       this.db.close();
       throw error;
@@ -350,6 +353,73 @@ export class Store {
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
   }
+  private historySearchSchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS history_search_v1(
+        kind TEXT NOT NULL,record_id TEXT NOT NULL,run_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,normalized TEXT NOT NULL,
+        PRIMARY KEY(kind,record_id)
+      );
+      CREATE INDEX IF NOT EXISTS history_search_run ON history_search_v1(kind,run_id);
+    `);
+    for (const table of ['runs', 'messages'] as const) {
+      const kind = table === 'runs' ? 'run' : 'message';
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS history_search_${table}_update AFTER UPDATE ON ${table}
+        WHEN NEW.revision IS NOT OLD.revision OR NEW.content IS NOT OLD.content
+          OR (NEW.content IS NULL AND NEW.data IS NOT OLD.data)
+        BEGIN DELETE FROM history_search_v1 WHERE kind='${kind}' AND record_id=NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS history_search_${table}_delete AFTER DELETE ON ${table}
+        BEGIN DELETE FROM history_search_v1 WHERE kind='${kind}' AND record_id=OLD.id; END;
+      `);
+    }
+  }
+  private historySearchProjection(table: 'runs' | 'messages', entity: Run | Message) {
+    const isRun = table === 'runs';
+    const text = isRun ? `${(entity as Run).title} ${(entity as Run).objective}` : (entity as Message).text;
+    this.db
+      .prepare(
+        `
+      INSERT INTO history_search_v1(kind,record_id,run_id,revision,normalized)
+      SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ${table} WHERE id=? AND revision=?)
+      ON CONFLICT(kind,record_id) DO UPDATE SET
+        run_id=excluded.run_id,revision=excluded.revision,normalized=excluded.normalized
+    `,
+      )
+      .run(
+        isRun ? 'run' : 'message',
+        entity.id,
+        isRun ? entity.id : entity.runId!,
+        entity.revision,
+        text.toLocaleLowerCase(),
+        entity.id,
+        entity.revision,
+      );
+  }
+  /** Missing legacy indexes are populated only by an explicit search, in yielding small batches. */
+  async ensureHistorySearch(kind: 'run' | 'message', runId?: string) {
+    const table = kind === 'run' ? 'runs' : 'messages';
+    for (;;) {
+      const rows = this.db
+        .prepare(
+          `
+        SELECT e.id FROM ${table} e LEFT JOIN history_search_v1 s
+          ON s.kind=? AND s.record_id=e.id AND s.revision=e.revision
+        WHERE s.record_id IS NULL ${runId ? 'AND e.run_id=?' : ''} ORDER BY e.rowid LIMIT 32
+      `,
+        )
+        .all(kind, ...(runId ? [runId] : [])) as { id: string }[];
+      if (!rows.length) return;
+      for (const { id: key } of rows) {
+        const entity = this.get<Run | Message>(table, key);
+        if (entity) {
+          this.historySearchProjection(table, entity);
+          this.refreshReadProjection(table, entity);
+        }
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
   refreshReadProjection(
     table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'messages',
@@ -448,6 +518,21 @@ export class Store {
       messagePage: { hasMore, nextBefore: hasMore ? selected[0]?.id : null, before: before ?? null, limit },
     };
   }
+  messageAroundPage<T>(runId: string, limit: number, anchor: string) {
+    const target = this.db
+      .prepare('SELECT rowid position FROM messages WHERE id=? AND run_id=?')
+      .get(anchor, runId) as { position: number } | undefined;
+    if (!target) throw new AppError('MESSAGE_CURSOR_MISSING', '目标消息已失效，请重新搜索', false, null, 409);
+    const newer = this.db
+      .prepare('SELECT id FROM messages WHERE run_id=? AND rowid>? ORDER BY rowid LIMIT ?')
+      .all(runId, target.position, Math.floor(limit / 2) + 1) as { id: string }[];
+    const before = newer[Math.floor(limit / 2)]?.id;
+    const result = this.messagePage<T>(runId, limit, before);
+    return {
+      ...result,
+      messagePage: { ...result.messagePage, anchorMessageId: anchor, hasNewer: Boolean(before) },
+    };
+  }
   entityPage<T>(
     table: 'requests' | 'tool_operations' | 'artifacts' | 'runs',
     limit: number,
@@ -542,6 +627,8 @@ export class Store {
         `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
       )
       .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
+    if (table === 'runs' || table === 'messages')
+      this.historySearchProjection(table, next as unknown as Run | Message);
     return next;
   }
   event(

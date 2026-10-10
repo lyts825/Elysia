@@ -3,9 +3,12 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createStartupStore } = require('./startup.cjs');
+const { createTaskNotifications } = require('./task-notifications.cjs');
 
-function attachServices(window, directory, getOrigin) {
+function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
   const startup = createStartupStore(directory);
+  const notifications = createTaskNotifications(window, directory);
+  let bootVisualShown = false;
   const startingUrl = pathToFileURL(path.join(__dirname, 'starting.html')).href;
   const trusted = (event) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
@@ -13,15 +16,58 @@ function attachServices(window, directory, getOrigin) {
     const url = new URL(event.senderFrame.url);
     if (url.origin !== getOrigin() || url.pathname !== '/') throw new Error('页面来源无效');
   };
-  ipcMain.handle('elysia:startup-read', async (event) => {
+  const startupTrusted = (event) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
       throw new Error('不允许子页面调用本机功能');
     if (event.senderFrame.url !== startingUrl) trusted(event);
-    return startup.read();
+  };
+  ipcMain.handle('elysia:startup-read', async (event) => {
+    startupTrusted(event);
+    const config = await startup.read();
+    return { config, issue: startup.issue, bootVisualShown };
   });
-  ipcMain.handle('elysia:startup-save', async (event, value) => {
+  ipcMain.handle('elysia:startup-media', async (event, media) => {
+    startupTrusted(event);
+    return startup.readMedia(media);
+  });
+  ipcMain.handle('elysia:startup-save', async (event, value, upload) => {
     trusted(event);
-    return startup.write(value);
+    return startup.write(value, upload);
+  });
+  ipcMain.handle('elysia:startup-mark', async (event, value) => {
+    startupTrusted(event);
+    const starting = event.senderFrame.url === startingUrl;
+    const allowed = starting
+      ? ['preferences-ready', 'media-ready']
+      : ['preferences-ready', 'auth-ready', 'lists-ready', 'messages-ready', 'media-ready', 'web-loaded'];
+    if (
+      !value ||
+      !allowed.includes(value.stage) ||
+      !['ok', 'error', 'skipped'].includes(value.status) ||
+      typeof value.atEpoch !== 'number' ||
+      !Number.isFinite(value.atEpoch) ||
+      (value.surface !== undefined && !['native', 'terminal'].includes(value.surface))
+    )
+      throw new Error('启动阶段无效');
+    diagnostics?.recordFromRenderer(value);
+    if (starting && value.stage === 'media-ready' && ['ok', 'skipped'].includes(value.status))
+      bootVisualShown = true;
+  });
+  ipcMain.handle('elysia:startup-diagnostics', async (event) => {
+    trusted(event);
+    return diagnostics ? diagnostics.read() : { version: 1, records: [] };
+  });
+  ipcMain.handle('elysia:notifications-read', async (event) => {
+    trusted(event);
+    return notifications.read();
+  });
+  ipcMain.handle('elysia:notifications-set', async (event, value) => {
+    trusted(event);
+    return notifications.set(value);
+  });
+  ipcMain.handle('elysia:notifications-status', async (event, value) => {
+    trusted(event);
+    return notifications.notify(value);
   });
   ipcMain.handle('elysia:startup-import', async (event) => {
     trusted(event);
