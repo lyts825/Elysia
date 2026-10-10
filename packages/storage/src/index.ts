@@ -12,7 +12,26 @@ import {
 import path from 'node:path';
 import os from 'node:os';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { AppError, type Entity, type Event, type Run, type Task } from '../../contracts/src/index.js';
+import {
+  AppError,
+  type Entity,
+  type Event,
+  type Run,
+  type Task,
+  type Message,
+} from '../../contracts/src/index.js';
+export type ConversationMessageLinks = {
+  requestId?: string;
+  callId?: string;
+  calls?: { id: string }[];
+};
+function conversationLinks(message: ConversationMessageLinks): ConversationMessageLinks {
+  return {
+    ...(message.requestId ? { requestId: message.requestId } : {}),
+    ...(message.callId ? { callId: message.callId } : {}),
+    ...(message.calls?.length ? { calls: message.calls.map((call) => ({ id: call.id })) } : {}),
+  };
+}
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
 export function stable(value: unknown): string {
@@ -102,7 +121,13 @@ function projection(table: Table, entity: any) {
     ...(['runs', 'tasks', 'requests', 'tool_operations'].includes(table) ? { status: entity.status } : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
-    ...(table === 'messages' ? { sessionId: entity.sessionId, ordinal: entity.ordinal } : {}),
+    ...(table === 'messages'
+      ? {
+          sessionId: entity.sessionId,
+          ordinal: entity.ordinal,
+          conversationLinks: conversationLinks(entity),
+        }
+      : {}),
     ...(readModel ? { readModelVersion: 1, readModel } : {}),
   });
 }
@@ -326,7 +351,10 @@ export class Store {
     ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
   }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
-  refreshReadProjection(table: 'runs' | 'tasks' | 'requests' | 'tool_operations', entity: Entity) {
+  refreshReadProjection(
+    table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'messages',
+    entity: Entity,
+  ) {
     this.db
       .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
       .run(projection(table, entity), entity.id, entity.revision);
@@ -373,6 +401,22 @@ export class Store {
       tasks: this.stateCandidates<Task>('tasks', ['READY']),
     };
   }
+  /** Return only real message links within this Run, never retained message bodies. */
+  messageConversationLinks(runId: string, identifiers: string[]): ConversationMessageLinks[] {
+    if (identifiers.length > 240) throw new AppError('MESSAGE_LINK_LIMIT', '消息关联读取数量无效');
+    if (!identifiers.length) return [];
+    const rows = this.db
+      .prepare(
+        "SELECT id,json_extract(data,'$.conversationLinks') links FROM messages WHERE run_id=? AND id IN (SELECT value FROM json_each(?)) ORDER BY rowid",
+      )
+      .all(runId, JSON.stringify(identifiers)) as { id: string; links: string | null }[];
+    return rows.map((row) => {
+      if (row.links) return JSON.parse(row.links) as ConversationMessageLinks;
+      const message = this.require<Message>('messages', row.id);
+      this.refreshReadProjection('messages', message);
+      return conversationLinks(message);
+    });
+  }
   messagePage<T>(runId: string, limit: number, before?: string) {
     let boundary: number | undefined;
     if (before) {
@@ -395,9 +439,12 @@ export class Store {
     const hasMore = rows.length > limit;
     const selected = rows.slice(0, limit).reverse();
     return {
-      messages: selected.map(
-        (row) => this.hydrate('messages', row.content ? expand(row.content) : JSON.parse(row.data)) as T,
-      ),
+      messages: selected.map((row) => {
+        const metadata = JSON.parse(row.data);
+        const message = this.hydrate('messages', row.content ? expand(row.content) : metadata) as Message;
+        if (!metadata.conversationLinks) this.refreshReadProjection('messages', message);
+        return message as T;
+      }),
       messagePage: { hasMore, nextBefore: hasMore ? selected[0]?.id : null, before: before ?? null, limit },
     };
   }

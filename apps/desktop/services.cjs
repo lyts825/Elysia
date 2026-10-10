@@ -1,14 +1,37 @@
 const { dialog, ipcMain, safeStorage, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { createStartupStore } = require('./startup.cjs');
 
 function attachServices(window, directory, getOrigin) {
+  const startup = createStartupStore(directory);
+  const startingUrl = pathToFileURL(path.join(__dirname, 'starting.html')).href;
   const trusted = (event) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
       throw new Error('不允许子页面调用本机功能');
     const url = new URL(event.senderFrame.url);
     if (url.origin !== getOrigin() || url.pathname !== '/') throw new Error('页面来源无效');
   };
+  ipcMain.handle('elysia:startup-read', async (event) => {
+    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+      throw new Error('不允许子页面调用本机功能');
+    if (event.senderFrame.url !== startingUrl) trusted(event);
+    return startup.read();
+  });
+  ipcMain.handle('elysia:startup-save', async (event, value) => {
+    trusted(event);
+    return startup.write(value);
+  });
+  ipcMain.handle('elysia:startup-import', async (event) => {
+    trusted(event);
+    const result = await dialog.showOpenDialog(window, {
+      title: '选择开屏动画（最大 4 MiB）',
+      properties: ['openFile'],
+      filters: [{ name: '动画', extensions: ['gif', 'mp4', 'webm'] }],
+    });
+    return result.canceled || !result.filePaths[0] ? null : startup.import(result.filePaths[0]);
+  });
   ipcMain.handle('elysia:choose-directory', async (event) => {
     trusted(event);
     const result = await dialog.showOpenDialog(window, {

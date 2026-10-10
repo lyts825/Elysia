@@ -28,4 +28,8 @@ export type RunListItem = Pick<
   | 'reason'
   | 'archived'
   | 'createdAt'
-> & { execution?: { kind: 'docker-agent' | 'native' } };
+> & {
+  execution?: { kind: 'docker-agent' | 'native' };
+  /** Exact full-objective search membership for retained or selected rows outside the page. */
+  matchesQuery?: boolean;
+};

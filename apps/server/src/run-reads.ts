@@ -3,13 +3,12 @@ import { z } from 'zod';
 import {
   AppError,
   type Run,
-  type Message,
   type Operation,
   type RequestRecord,
   type Artifact,
 } from '../../../packages/contracts/src/index.js';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads.js';
-import { hash, type Store } from '../../../packages/storage/src/index.js';
+import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
 
 type Table = 'runs' | 'requests' | 'tool_operations';
 type Metadata = { id: string; revision: number; rowid: number; value: any };
@@ -87,17 +86,29 @@ export class RunReads {
       .all(runId);
     return hash(JSON.stringify(rows));
   }
-  private metadata(table: Table, runId?: string): Metadata[] {
+  private warmReadModels(table: Table, runId?: string) {
     const rows = this.store.db
       .prepare(
-        `SELECT id,revision,rowid,data FROM ${table}${runId ? ' WHERE run_id=?' : ''} ORDER BY rowid DESC`,
+        `SELECT id FROM ${table} WHERE (json_extract(data,'$.readModelVersion') IS NOT 1 OR json_type(data,'$.readModel') IS NOT 'object')${runId ? ' AND run_id=?' : ''}`,
       )
-      .all(...(runId ? [runId] : [])) as { id: string; revision: number; rowid: number; data: string }[];
+      .all(...(runId ? [runId] : [])) as { id: string }[];
+    for (const row of rows) this.store.refreshReadProjection(table, this.store.require<any>(table, row.id));
+  }
+  private metadata(table: Table, runId?: string): Metadata[] {
+    this.warmReadModels(table, runId);
+    const rows = this.store.db
+      .prepare(
+        `SELECT id,revision,rowid,json_extract(data,'$.readModel') model FROM ${table}${runId ? ' WHERE run_id=?' : ''} ORDER BY rowid DESC`,
+      )
+      .all(...(runId ? [runId] : [])) as {
+      id: string;
+      revision: number;
+      rowid: number;
+      model: string | null;
+    }[];
     return rows.map((row) => {
-      const { data, ...identity } = row;
-      const projected = JSON.parse(data);
-      if (projected.readModelVersion === 1 && projected.readModel)
-        return { ...identity, value: projected.readModel };
+      const { model, ...identity } = row;
+      if (model) return { ...identity, value: JSON.parse(model) };
       const entity = this.store.require<any>(table, row.id);
       const value =
         table === 'runs'
@@ -172,9 +183,7 @@ export class RunReads {
       })),
     };
   }
-  conversation(run: Run, messages: Message[]) {
-    const requests = this.metadata('requests', run.id),
-      operations = this.metadata('tool_operations', run.id);
+  conversation(run: Run, messages: ConversationMessageLinks[], deferred = false) {
     const requestIds = new Set(messages.flatMap((message) => (message.requestId ? [message.requestId] : [])));
     const calls = new Set(
       messages.flatMap((message) => [
@@ -182,13 +191,28 @@ export class RunReads {
         ...(message.callId ? [message.callId] : []),
       ]),
     );
-    const selectedRequests = requests.filter(
-      (row, index) => index < 30 || requestIds.has(row.id) || row.value.status === 'RESERVED',
-    );
-    const selectedOperations = operations.filter(
-      (row, index) =>
-        index < 30 || calls.has(row.value.toolCallId) || ['INTENT', 'UNCERTAIN'].includes(row.value.status),
-    );
+    const select = (table: 'requests' | 'tool_operations', linked: Set<string>, statuses: string[]) => {
+      // Only unknown legacy state or call identity needs expansion for safe filtering.
+      // Old projections with usable state do not make the first message page read every body.
+      const unknown = this.store.db
+        .prepare(
+          `SELECT id FROM ${table} WHERE run_id=? AND (COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IS NULL${table === 'tool_operations' && linked.size ? " OR COALESCE(json_extract(data,'$.readModel.toolCallId'),json_extract(data,'$.toolCallId')) IS NULL" : ''})`,
+        )
+        .all(run.id) as { id: string }[];
+      for (const row of unknown)
+        this.store.refreshReadProjection(table, this.store.require<any>(table, row.id));
+      const match =
+        table === 'requests'
+          ? 'id'
+          : "COALESCE(json_extract(data,'$.readModel.toolCallId'),json_extract(data,'$.toolCallId'))";
+      return this.store.db
+        .prepare(
+          `SELECT id FROM ${table} WHERE run_id=? AND (rowid IN (SELECT rowid FROM ${table} WHERE run_id=? ORDER BY rowid DESC LIMIT 30) OR ${match} IN (SELECT value FROM json_each(?)) OR COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IN (SELECT value FROM json_each(?))) ORDER BY rowid DESC`,
+        )
+        .all(run.id, run.id, JSON.stringify([...linked]), JSON.stringify(statuses)) as { id: string }[];
+    };
+    const selectedRequests = select('requests', requestIds, ['RESERVED']);
+    const selectedOperations = select('tool_operations', calls, ['INTENT', 'UNCERTAIN']);
     const artifacts = this.store.entityPage<Artifact>('artifacts', 60, undefined, run.id);
     return {
       requests: selectedRequests.map((row) =>
@@ -200,19 +224,32 @@ export class RunReads {
       artifacts: artifacts.items.reverse(),
       snapshots: [],
       decisions: [],
-      usageSummary: this.usage(run.id),
-      recordCounts: {
-        requests: requests.length,
-        operations: operations.length,
-        artifacts: artifacts.page.total,
-      },
       recordsLimited: true,
-      recordVersions: {
-        requests: this.recordVersion('requests', run.id),
-        operations: this.recordVersion('tool_operations', run.id),
-        artifacts: this.recordVersion('artifacts', run.id),
-      },
+      ...(deferred
+        ? { summaryDeferred: true as const }
+        : {
+            usageSummary: this.usage(run.id),
+            recordCounts: {
+              requests: this.count('requests', run.id),
+              operations: this.count('tool_operations', run.id),
+              artifacts: artifacts.page.total,
+            },
+            recordVersions: {
+              requests: this.recordVersion('requests', run.id),
+              operations: this.recordVersion('tool_operations', run.id),
+              artifacts: this.recordVersion('artifacts', run.id),
+            },
+          }),
     };
+  }
+  private count(table: Table, runId?: string) {
+    return Number(
+      (
+        this.store.db
+          .prepare(`SELECT COUNT(*) n FROM ${table}${runId ? ' WHERE run_id=?' : ''}`)
+          .get(...(runId ? [runId] : [])) as { n: number }
+      ).n,
+    );
   }
   list(query: {
     limit: number;
@@ -220,40 +257,96 @@ export class RunReads {
     query?: string;
     includeRunId?: string;
     pinned?: string[];
+    retained?: string[];
     archived?: boolean;
+    summary?: 'deferred';
   }) {
-    const all = this.metadata('runs');
-    const cursor = query.before ? all.find((row) => row.id === query.before) : undefined;
+    const cursor = query.before
+      ? (this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
+          | { position: number }
+          | undefined)
+      : undefined;
     if (query.before && !cursor)
       throw new AppError('RECORD_CURSOR_MISSING', '会话位置已失效，请重新读取列表', false, null, 409);
     const search = query.query?.trim().toLocaleLowerCase();
-    const matched = all.filter(
-      (row) =>
-        (query.archived === undefined || row.value.archived === query.archived) &&
-        (!search ||
+    if (query.archived !== undefined || query.summary !== 'deferred') this.warmReadModels('runs');
+    const conditions: string[] = [];
+    const parameters: (string | number)[] = [];
+    let searchMatches: Set<string> | undefined;
+    if (query.archived !== undefined) {
+      conditions.push(
+        "COALESCE(json_extract(data,'$.readModel.archived'),json_extract(data,'$.archived'),0)=?",
+      );
+      parameters.push(query.archived ? 1 : 0);
+    }
+    if (search) {
+      // Explicit search keeps matching the full objective, including text beyond the sidebar excerpt.
+      const matched = this.metadata('runs').filter(
+        (row) =>
           `${row.value.title} ${row.value.objective}`.toLocaleLowerCase().includes(search) ||
-          this.store.require<Run>('runs', row.id).objective.toLocaleLowerCase().includes(search)),
+          this.store.require<Run>('runs', row.id).objective.toLocaleLowerCase().includes(search),
+      );
+      searchMatches = new Set(matched.map((row) => row.id));
+      conditions.push('id IN (SELECT value FROM json_each(?))');
+      parameters.push(JSON.stringify(matched.map((row) => row.id)));
+    }
+    const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+    const total = Number(
+      (this.store.db.prepare(`SELECT COUNT(*) n FROM runs${where}`).get(...parameters) as { n: number }).n,
     );
-    const candidates = matched.filter((row) => !cursor || row.rowid < cursor.rowid);
-    const selected = candidates.slice(0, query.limit);
-    const included = new Set([query.includeRunId, ...(query.pinned ?? []).slice(0, 40)].filter(Boolean));
-    const extra = all.filter((row) => included.has(row.id) && !selected.some((item) => item.id === row.id));
+    const pageConditions = [...conditions, ...(cursor ? ['rowid<?'] : [])];
+    const selected = this.store.db
+      .prepare(
+        `SELECT id FROM runs${pageConditions.length ? ' WHERE ' + pageConditions.join(' AND ') : ''} ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[];
+    const hasMore = selected.length > query.limit;
+    selected.splice(query.limit);
+    const included = new Set(
+      [
+        query.includeRunId,
+        ...(query.pinned ?? []).slice(0, 40),
+        ...(query.retained ?? []).slice(0, 300),
+      ].filter(Boolean),
+    );
+    for (const row of selected) included.delete(row.id);
+    const extra = this.store.db
+      .prepare('SELECT id FROM runs WHERE id IN (SELECT value FROM json_each(?)) ORDER BY rowid DESC')
+      .all(JSON.stringify([...included])) as { id: string }[];
+    const read = (row: { id: string }): RunListItem => {
+      const projection = this.store.db
+        .prepare("SELECT json_extract(data,'$.readModel') model FROM runs WHERE id=?")
+        .get(row.id) as { model: string | null };
+      let value: RunListItem;
+      if (projection.model) value = JSON.parse(projection.model) as RunListItem;
+      else {
+        const run = this.store.require<Run>('runs', row.id);
+        this.store.refreshReadProjection('runs', run);
+        value = sidebarRun(run);
+      }
+      return searchMatches ? { ...value, matchesQuery: searchMatches.has(row.id) } : value;
+    };
     const page: RecordPage = {
-      total: matched.length,
+      total,
       limit: query.limit,
       before: query.before ?? null,
-      hasMore: candidates.length > query.limit,
-      nextBefore: candidates.length > query.limit ? (selected.at(-1)?.id ?? null) : null,
+      hasMore,
+      nextBefore: hasMore ? (selected.at(-1)?.id ?? null) : null,
     };
     const projectCounts: Record<string, number> = {};
-    for (const row of all)
-      if (row.value.projectId)
-        projectCounts[row.value.projectId] = (projectCounts[row.value.projectId] ?? 0) + 1;
+    if (query.summary !== 'deferred') {
+      const counts = this.store.db
+        .prepare(
+          "SELECT COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId')) projectId,COUNT(*) n FROM runs GROUP BY COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId'))",
+        )
+        .all() as { projectId: string | null; n: number }[];
+      for (const row of counts) if (row.projectId) projectCounts[row.projectId] = Number(row.n);
+    }
     return {
-      runs: selected.map((row) => row.value as RunListItem),
-      included: extra.map((row) => row.value as RunListItem),
+      runs: selected.map(read),
+      included: extra.map(read),
       page,
-      projectCounts,
+      ...(query.summary === 'deferred' ? { summaryDeferred: true as const } : { projectCounts }),
     };
   }
 }

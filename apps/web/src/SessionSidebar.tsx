@@ -12,6 +12,7 @@ import { Modal } from './Modal';
 import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
+import { captureHistoryAnchor, historyViewportVisible, restoreHistoryAnchor } from './HistoryScroll';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: RunListItem };
 export type SessionTarget = Target;
@@ -42,6 +43,9 @@ export function SessionSidebar({
   changeListQuery,
   listNavigate,
   projectCounts,
+  listDynamic = false,
+  listError,
+  listWindowLimited = false,
 }: {
   projects: Project[];
   spaces: ProjectSpace[];
@@ -70,6 +74,9 @@ export function SessionSidebar({
   changeListQuery?: (value: string) => void;
   listNavigate?: (direction: 'older' | 'newer' | 'latest') => void;
   projectCounts?: Record<string, number>;
+  listDynamic?: boolean;
+  listError?: string;
+  listWindowLimited?: boolean;
 }) {
   const { surface: localSurface, api } = useSurfaceClient();
   const surfaceRoot = useSurfaceRoot();
@@ -83,6 +90,48 @@ export function SessionSidebar({
   dialogRef.current = dialog;
   const [clipboardError, setClipboardError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const treeAnchor = useRef<ReturnType<typeof captureHistoryAnchor>>(undefined);
+  const lastTreeScroll = useRef(0);
+  const olderRequested = useRef('');
+  const treeIntentUntil = useRef(0);
+  const touchY = useRef(0);
+  const listIdentity = `${spaceId}:${listQuery || ''}`;
+  const previousListIdentity = useRef(listIdentity);
+  const previousListBefore = useRef(listPage?.before);
+  useLayoutEffect(() => {
+    const tree = treeRef.current;
+    if (!tree) return;
+    const resetToLatest = !listPage?.before && !!previousListBefore.current;
+    previousListBefore.current = listPage?.before;
+    if (previousListIdentity.current !== listIdentity || resetToLatest) {
+      previousListIdentity.current = listIdentity;
+      tree.scrollTop = 0;
+      treeAnchor.current = undefined;
+      olderRequested.current = '';
+    } else restoreHistoryAnchor(tree, treeAnchor.current);
+    lastTreeScroll.current = tree.scrollTop;
+    treeAnchor.current = captureHistoryAnchor(tree);
+  }, [runs, projects, listIdentity, listPage?.before]);
+  const requestOlderList = () => {
+    const tree = treeRef.current;
+    const cursor = listPage?.nextBefore;
+    if (
+      !listDynamic ||
+      !listNavigate ||
+      busy ||
+      listBusy ||
+      listError ||
+      listWindowLimited ||
+      !cursor ||
+      olderRequested.current === cursor ||
+      !historyViewportVisible(tree) ||
+      tree!.scrollHeight - tree!.clientHeight - tree!.scrollTop > 120
+    )
+      return;
+    olderRequested.current = cursor;
+    listNavigate('older');
+  };
   const flag = (key: string) => entries[key]?.value === true;
   const terminal = localSurface === 'terminal';
   const readOnlyRun = (run: RunListItem) => !terminal && run.execution?.kind === 'docker-agent';
@@ -91,8 +140,10 @@ export function SessionSidebar({
   const searchValue = changeListQuery ? listQuery || '' : search;
   const query = searchValue.trim().toLocaleLowerCase();
   const matches = (run: RunListItem) =>
-    !!changeListQuery || `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
-  const projectCount = (id: string) => projectCounts?.[id] ?? runs.filter((r) => r.projectId === id).length;
+    changeListQuery
+      ? !('matchesQuery' in run) || run.matchesQuery !== false
+      : `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
+  const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : '—');
   const activeProjects = projects.filter((p) => !p.archived && p.spaceId === spaceId);
   const visibleRuns = runs.filter(
     (r) =>
@@ -308,8 +359,9 @@ export function SessionSidebar({
     document.addEventListener('keydown', hotkey);
     return () => document.removeEventListener('keydown', hotkey);
   });
-  const runRow = (run: RunListItem) => (
+  const runRow = (run: RunListItem, section = 'run') => (
     <div
+      data-history-anchor={`${section}:${run.id}`}
       className={
         'session-row' +
         (run.id === runId ? ' selected' : '') +
@@ -388,11 +440,48 @@ export function SessionSidebar({
             {clipboardError}
           </p>
         )}
-        <div className="session-tree">
+        <div
+          className="session-tree"
+          ref={treeRef}
+          aria-busy={listBusy || undefined}
+          onScroll={(event) => {
+            const tree = event.currentTarget;
+            const downward = tree.scrollTop > lastTreeScroll.current;
+            lastTreeScroll.current = tree.scrollTop;
+            treeAnchor.current = captureHistoryAnchor(tree);
+            if (downward && performance.now() < treeIntentUntil.current) requestOlderList();
+          }}
+          onWheel={(event) => {
+            if (event.deltaY <= 0) return;
+            treeIntentUntil.current = performance.now() + 1000;
+            requestOlderList();
+          }}
+          onPointerDown={() => {
+            treeIntentUntil.current = performance.now() + 2000;
+          }}
+          onTouchStart={(event) => {
+            touchY.current = event.touches[0]?.clientY || 0;
+          }}
+          onTouchMove={(event) => {
+            const next = event.touches[0]?.clientY ?? touchY.current;
+            if (next < touchY.current) {
+              treeIntentUntil.current = performance.now() + 1000;
+              requestOlderList();
+            }
+            touchY.current = next;
+          }}
+          onKeyDown={(event) => {
+            if (!['ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) return;
+            treeIntentUntil.current = performance.now() + 1000;
+            requestOlderList();
+          }}
+        >
           {!!pinned.length && (
             <section>
               {heading('pinned', '置顶', pinned.length)}
-              {(!flag('collapsed:pinned') || query) && <div>{pinned.map(runRow)}</div>}
+              {(!flag('collapsed:pinned') || query) && (
+                <div>{pinned.map((run) => runRow(run, 'pinned'))}</div>
+              )}
             </section>
           )}
           <section>
@@ -421,6 +510,7 @@ export function SessionSidebar({
                   return (
                     <div className="project-group" key={project.id}>
                       <div
+                        data-history-anchor={`project:${project.id}`}
                         className={'project-row' + (project.id === projectId ? ' selected' : '')}
                         onContextMenu={(e) => openMenu(e, { kind: 'project', item: project })}
                       >
@@ -454,7 +544,7 @@ export function SessionSidebar({
                       </div>
                       {!collapsed && (
                         <div className="project-sessions">
-                          {children.map(runRow)}
+                          {children.map((run) => runRow(run))}
                           {!children.length && (
                             <button className="empty-session" onClick={() => create(project.id)}>
                               <Icon name="plus" size={13} />
@@ -486,7 +576,7 @@ export function SessionSidebar({
               )}
               {(!flag('collapsed:chats') || query) && (
                 <div className="history-list">
-                  {chats.map(runRow)}
+                  {chats.map((run) => runRow(run))}
                   {!chats.length && (
                     <p className="sidebar-muted">{query ? '没有匹配的独立对话' : '从一个问题开始对话。'}</p>
                   )}
@@ -503,19 +593,25 @@ export function SessionSidebar({
         {listPage && listNavigate && (
           <nav className="session-pagination" aria-label="会话列表分页">
             <span role="status">
-              {listBusy ? '读取会话…' : `本页 ${runs.length} / 共 ${listPage.total} 个会话`}
+              {listBusy
+                ? '读取会话…'
+                : `${listDynamic ? '已载入' : '本页'} ${runs.length} / 共 ${listPage.total} 个会话`}
             </span>
+            {listError && <span role="alert">{listError}</span>}
+            {listWindowLimited && <span>已达本段上限，可点击加载更早会话继续。</span>}
             <div>
-              <button disabled={busy || listBusy || !listTrail} onClick={() => listNavigate('newer')}>
-                更新会话
-              </button>
+              {!listDynamic && (
+                <button disabled={busy || listBusy || !listTrail} onClick={() => listNavigate('newer')}>
+                  更新会话
+                </button>
+              )}
               <button
                 disabled={busy || listBusy || !listPage.nextBefore}
                 onClick={() => listNavigate('older')}
               >
-                更早会话
+                {listError ? '重试加载' : listDynamic ? '加载更早会话' : '更早会话'}
               </button>
-              {listPage.before && (
+              {(listPage.before || (listDynamic && (listTrail || listWindowLimited))) && (
                 <button disabled={busy || listBusy} onClick={() => listNavigate('latest')}>
                   返回最新
                 </button>
@@ -648,7 +744,7 @@ export function SessionSidebar({
                 {dialog.action === 'delete' && (
                   <p>
                     {dialog.target.kind === 'project'
-                      ? `此项目及其 ${projectCount(dialog.target.item.id)} 个对话、消息和产物登记将被永久删除。`
+                      ? `此项目及${projectCounts ? `其 ${projectCount(dialog.target.item.id)} 个` : '关联'}对话、消息和产物登记将被永久删除。`
                       : '此对话、消息、调用和产物登记将被永久删除。'}
                     无法恢复，原始项目资料目录会保留。
                   </p>

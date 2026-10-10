@@ -60,7 +60,7 @@ export function WorkspaceManager({
     changeListArchive?.(tab === 'archive');
   }, [tab, changeListArchive]);
   const searchValue = changeListQuery ? listQuery || '' : search;
-  const projectCount = (id: string) => projectCounts?.[id] ?? runs.filter((r) => r.projectId === id).length;
+  const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : undefined);
   const perform = async (action: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -107,6 +107,7 @@ export function WorkspaceManager({
   const filteredRuns = runs.filter(
     (r) =>
       r.archived === (tab === 'archive') &&
+      r.matchesQuery !== false &&
       (!!changeListQuery || `${r.title} ${r.objective}`.toLowerCase().includes(searchValue.toLowerCase())),
   );
   const projectRow = (p: Project) => (
@@ -118,7 +119,8 @@ export function WorkspaceManager({
         </strong>
         <small title={p.workspaceRoot}>{p.workspaceRoot}</small>
         <span>
-          {projectCount(p.id)} 个对话 · {spaces.find((s) => s.id === p.spaceId)?.name || '初始项目空间'}
+          {projectCount(p.id) ?? '—'} 个对话 ·{' '}
+          {spaces.find((s) => s.id === p.spaceId)?.name || '初始项目空间'}
         </span>
       </div>
       <div className="management-fields">
@@ -163,7 +165,7 @@ export function WorkspaceManager({
           onClick={() =>
             setConfirmation({
               title: `删除项目「${p.name}」？`,
-              description: `将永久删除此项目及其 ${projectCount(p.id)} 个对话、执行和产物登记数据，无法恢复。原始资料目录 ${p.workspaceRoot} 保留。`,
+              description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。原始资料目录 ${p.workspaceRoot} 保留。`,
               action: async () => {
                 const result = await mutation<{ deletedRunIds: string[] }>(
                   '/projects/' + p.id,

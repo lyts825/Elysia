@@ -1,0 +1,289 @@
+.startup-screen {
+  --startup-accent: #bd8c96;
+  --startup-background: #f8faf5;
+  --startup-ink: #28332e;
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  box-sizing: border-box;
+  background: var(--startup-background);
+  color: var(--startup-ink);
+  font-family: system-ui, 'Microsoft YaHei UI', sans-serif;
+  text-align: center;
+}
+.startup-content {
+  width: min(100%, 36rem);
+}
+.startup-screen h1 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: clamp(1.7rem, 4vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+.startup-caption {
+  opacity: 0.7;
+  margin: 0.4rem 0 1.8rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.startup-visual {
+  display: grid;
+  place-items: center;
+  height: 9rem;
+  position: relative;
+  isolation: isolate;
+}
+.startup-emblem {
+  width: 5.3rem;
+  height: 5.3rem;
+  border-radius: 29%;
+  background: var(--startup-accent);
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.startup-emblem span {
+  color: #fff;
+  font:
+    600 3.1rem/1 Georgia,
+    serif;
+  position: relative;
+  z-index: 1;
+}
+.startup-emblem i {
+  position: absolute;
+  border: 1px solid var(--startup-accent);
+  border-radius: 50%;
+  width: 7rem;
+  height: 7rem;
+  opacity: 0.22;
+}
+.startup-bloom .startup-emblem {
+  animation: startup-breathe 2.2s ease-in-out infinite alternate;
+}
+.startup-bloom .startup-emblem i:nth-of-type(2) {
+  width: 9rem;
+  height: 9rem;
+  opacity: 0.12;
+}
+.startup-bloom .startup-emblem i:nth-of-type(3) {
+  display: none;
+}
+.startup-orbit .startup-emblem i {
+  width: 8rem;
+  height: 8rem;
+  opacity: 0.4;
+  animation: startup-orbit 5s linear infinite;
+}
+.startup-orbit .startup-emblem i:after {
+  content: '';
+  position: absolute;
+  top: -0.25rem;
+  left: calc(50% - 0.25rem);
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--startup-accent);
+}
+.startup-orbit .startup-emblem i:nth-of-type(2) {
+  width: 6.5rem;
+  height: 6.5rem;
+  animation-duration: 7s;
+  animation-direction: reverse;
+  opacity: 0.2;
+}
+.startup-orbit .startup-emblem i:nth-of-type(3),
+.startup-minimal .startup-emblem i {
+  display: none;
+}
+.startup-media-content {
+  max-width: min(100%, 21rem);
+  width: auto;
+  height: 9rem;
+  object-fit: contain;
+  border-radius: 1rem;
+}
+.startup-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+.startup-status-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  background: var(--startup-accent);
+  border-radius: 50%;
+}
+.startup-skip {
+  margin-top: 0.4rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  border-radius: 99px;
+  padding: 0.4rem 0.8rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.startup-skip:hover {
+  opacity: 1;
+}
+.startup-skip:active {
+  transform: scale(0.97);
+}
+.startup-skip:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.startup-actions {
+  margin-top: 1.5rem;
+}
+.startup-actions:empty {
+  display: none;
+}
+.startup-actions .surface-switcher {
+  margin-inline: auto;
+}
+.startup-settings-body {
+  padding: 1rem 1.25rem 1.25rem;
+}
+.startup-settings-preview {
+  border-radius: 1rem;
+  background: var(--startup-background);
+  color: var(--startup-ink);
+  padding: 1.2rem;
+  text-align: center;
+  overflow: hidden;
+}
+.startup-settings-preview strong {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 1.3rem;
+  overflow-wrap: anywhere;
+}
+.startup-settings-preview p {
+  margin: 0.3rem 0 0;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.startup-settings-toggle,
+.startup-settings footer,
+.startup-media-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.startup-settings-toggle {
+  justify-content: space-between;
+  margin: 1.2rem 0 0.8rem;
+}
+.startup-settings-toggle input {
+  width: 1.1rem;
+}
+.startup-styles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+.startup-styles .selected {
+  background: var(--accent-soft, #e8e4ef);
+  border-color: var(--accent, #965d6b);
+}
+.startup-settings-fields {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+.startup-settings-fields label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.startup-color-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.startup-color-fields label {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.startup-color-fields input {
+  padding: 0.1rem;
+  width: 3rem;
+  height: 2rem;
+}
+.startup-media-tools {
+  flex-wrap: wrap;
+}
+.startup-media-tools span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.startup-settings-hint {
+  font-size: 0.8rem;
+  color: var(--muted, #69746e);
+  margin: 0.75rem 0 1rem;
+  line-height: 1.5;
+}
+.startup-settings-error {
+  color: var(--danger, #a44040);
+  font-size: 0.85rem;
+}
+.startup-settings footer {
+  margin-top: 1rem;
+}
+.startup-settings footer span {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--muted, #69746e);
+}
+@keyframes startup-breathe {
+  from {
+    transform: scale(0.97);
+    opacity: 0.88;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes startup-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .startup-visual *,
+  .startup-skip {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (prefers-contrast: more) {
+  .startup-caption,
+  .startup-status,
+  .startup-skip {
+    opacity: 1;
+  }
+}
+@media (max-width: 440px) {
+  .startup-styles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .startup-settings footer {
+    flex-wrap: wrap;
+  }
+}

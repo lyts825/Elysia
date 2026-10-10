@@ -40,6 +40,7 @@
   flex: 1;
   padding-block: 4px 10px;
   scroll-padding-block: 8px;
+  overflow-anchor: none;
 }
 .session-heading {
   padding: 12px 2px 4px;

@@ -806,6 +806,8 @@ export function createServer(
         includeRunId: z.string().uuid().optional(),
         archived: z.enum(['true', 'false']).optional(),
         pinned: z.string().max(1600).optional(),
+        retained: z.string().max(11100).optional(),
+        summary: z.literal('deferred').optional(),
       })
       .strict()
       .parse(request.query);
@@ -814,11 +816,15 @@ export function createServer(
       return store.all<Run>('runs').reverse();
     }
     const pinned = query.pinned ? z.array(z.string().uuid()).max(40).parse(query.pinned.split(',')) : [];
+    const retained = query.retained
+      ? z.array(z.string().uuid()).max(300).parse(query.retained.split(','))
+      : [];
     return runReads.list({
       ...query,
       archived: query.archived === undefined ? undefined : query.archived === 'true',
       limit: query.limit,
       pinned,
+      retained,
     });
   });
   app.post('/api/terminal/check', async (request) => {
@@ -1065,7 +1071,9 @@ export function createServer(
       .object({
         messageLimit: z.coerce.number().int().min(40).max(240).optional(),
         beforeMessage: z.string().uuid().optional(),
+        retainedMessages: z.string().max(8880).optional(),
         view: z.literal('conversation').optional(),
+        summary: z.literal('deferred').optional(),
       })
       .strict()
       .parse(request.query);
@@ -1074,6 +1082,19 @@ export function createServer(
       'MESSAGE_CURSOR_LIMIT',
       '历史分页须指定消息数量',
     );
+    invariant(
+      !query.summary || (query.view === 'conversation' && query.messageLimit !== undefined),
+      'CONVERSATION_SUMMARY_LIMIT',
+      '延后统计须使用分页对话视图',
+    );
+    invariant(
+      !query.retainedMessages || (query.view === 'conversation' && query.messageLimit !== undefined),
+      'CONVERSATION_LINK_LIMIT',
+      '消息关联读取须使用分页对话视图',
+    );
+    const retainedMessages = query.retainedMessages
+      ? z.array(z.string().uuid()).max(240).parse(query.retainedMessages.split(','))
+      : [];
     const history =
       query.messageLimit === undefined
         ? { messages: store.all<Message>('messages', run.id) }
@@ -1096,10 +1117,16 @@ export function createServer(
       tasks: store.all<Task>('tasks', run.id),
       agents: store.all<Agent>('agents', run.id),
       contexts:
-        options.surface === 'terminal' ? [] : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
+        options.surface === 'terminal' || query.summary === 'deferred'
+          ? []
+          : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
       ...history,
       ...(query.view === 'conversation'
-        ? runReads.conversation(run, history.messages)
+        ? runReads.conversation(
+            run,
+            [...history.messages, ...store.messageConversationLinks(run.id, retainedMessages)],
+            query.summary === 'deferred',
+          )
         : {
             artifacts: store.all<Artifact>('artifacts', run.id),
             snapshots: store.all('snapshots', run.id),

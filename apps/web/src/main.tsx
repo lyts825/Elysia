@@ -44,6 +44,9 @@ const ProviderSettings = React.lazy(() =>
 const TerminalControlCenter = React.lazy(() =>
   import('./TerminalControlCenter').then((module) => ({ default: module.TerminalControlCenter })),
 );
+const StartupSettings = React.lazy(() =>
+  import('./StartupSettings').then((module) => ({ default: module.StartupSettings })),
+);
 import type {
   Run,
   Task,
@@ -60,13 +63,22 @@ import type {
   ContextProjection,
 } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
-import { BrandIcon, EmptyArtwork } from './Brand';
+import { EmptyArtwork } from './Brand';
 import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceManager } from './WorkspaceManager';
 import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
 import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
+import {
+  earlierMessages,
+  retainedRuns,
+  runHistoryPageSize,
+  runHistoryWindowLimit,
+  messageHistoryPageSize,
+  messageHistoryWindowLimit,
+} from './HistoryWindow';
+import { StartupTransition } from './StartupTransition';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { ReadCoordinator } from './ReadCoordinator';
@@ -112,6 +124,7 @@ type Detail = {
   usageSummary?: RunUsageSummary;
   recordCounts?: { requests: number; operations: number; artifacts: number };
   recordsLimited?: boolean;
+  summaryDeferred?: boolean;
   recordVersions?: { requests: string; operations: string; artifacts: string };
   terminalRuntime?: { executor: ExecutorRuntimeSnapshot; terminal: TerminalRuntimeSnapshot };
 };
@@ -210,14 +223,30 @@ function App({
     trail: [],
   });
   const [historyLoading, setHistoryLoading] = useState(false);
+  const historyMoving = useRef(false);
+  const historyAppend = useRef(false);
+  const historyPending = useRef<
+    | {
+        target: { runId: string; before: string; trail: string[] };
+        prior: { runId: string; before: string; trail: string[] };
+        priorAppend: boolean;
+        reposition: boolean;
+      }
+    | undefined
+  >(undefined);
+  const [historySegment, setHistorySegment] = useState(0);
+  const fullDetailRequested = useRef(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const detailSnapshot = useRef(detail);
+  detailSnapshot.current = detail;
   const [runListPage, setRunListPage] = useState<RecordPage>({
     total: 0,
-    limit: 100,
+    limit: runHistoryPageSize,
     before: null,
     hasMore: false,
     nextBefore: null,
   });
-  const [projectCounts, setProjectCounts] = useState<Record<string, number>>({});
+  const [projectCounts, setProjectCounts] = useState<Record<string, number>>();
   const [runListQuery, setRunListQuery] = useState('');
   const [runListArchive, setRunListArchive] = useState<boolean | undefined>(undefined);
   const [runListBusy, setRunListBusy] = useState(false);
@@ -228,6 +257,11 @@ function App({
     archived: undefined as boolean | undefined,
   });
   const runListMoving = useRef(false);
+  const runListWindow = useRef({ filter: '', before: '', rows: [] as RunListItem[] });
+  const runListAppend = useRef(false);
+  const [runWindowCount, setRunWindowCount] = useState(0);
+  const runListFullSummary = useRef(false);
+  const lastListFilter = useRef({ query: '', archived: undefined as boolean | undefined });
   const [previewFileTarget, setPreviewFileTarget] = useState<{
     taskId: string;
     path: string;
@@ -530,7 +564,13 @@ function App({
       }
       if (navigation.current.runId !== next.runId) {
         historyPosition.current = { runId: next.runId, before: '', trail: [] };
+        historyAppend.current = false;
+        historyPending.current = undefined;
+        historyMoving.current = false;
+        fullDetailRequested.current = false;
         setHistoryLoading(false);
+        setSummaryLoading(false);
+        setHistorySegment(0);
         closeArtifact();
         setDetail(null);
         setPreviewFileTarget(undefined);
@@ -588,7 +628,15 @@ function App({
       void refreshConfiguration(forceConfiguration);
       const position = runListPosition.current;
       const epoch = navigationEpoch.current;
-      const listQuery = new URLSearchParams({ limit: '100' });
+      const listQuery = new URLSearchParams({ limit: String(runHistoryPageSize) });
+      if (!runListFullSummary.current) listQuery.set('summary', 'deferred');
+      const filter = JSON.stringify([position.query, position.archived]);
+      if (
+        runListWindow.current.filter === filter &&
+        runListWindow.current.rows.length &&
+        (runListWindow.current.before === position.before || runListAppend.current)
+      )
+        listQuery.set('retained', runListWindow.current.rows.map((row) => row.id).join(','));
       if (position.before) listQuery.set('before', position.before);
       if (position.query) listQuery.set('query', position.query);
       if (position.archived !== undefined) listQuery.set('archived', String(position.archived));
@@ -608,7 +656,7 @@ function App({
             runs: RunListItem[];
             included: RunListItem[];
             page: RecordPage;
-            projectCounts: Record<string, number>;
+            projectCounts?: Record<string, number>;
           };
           const readListing = async () => {
             try {
@@ -624,7 +672,10 @@ function App({
                 runListPosition.current === position
               ) {
                 runListPosition.current = { ...position, before: '', trail: [] };
+                runListAppend.current = false;
+                runListWindow.current = { filter, before: '', rows: [] };
                 listQuery.delete('before');
+                listQuery.delete('retained');
                 return api<Listing>('/runs?' + listQuery.toString(), undefined, undefined, signal);
               }
               throw issue;
@@ -654,9 +705,16 @@ function App({
           const listing = listingResult.value;
           const p = listData.current.projects,
             s = listData.current.spaces;
-          const r = [...new Map([...listing.runs, ...listing.included].map((run) => [run.id, run])).values()];
+          const window = runListWindow.current;
+          const retain =
+            window.filter === filter &&
+            (window.before === (listing.page.before || '') || runListAppend.current);
+          const rows = retainedRuns(retain ? window.rows : [], listing.runs, listing.included);
+          runListWindow.current = { filter, before: listing.page.before || '', rows };
+          const r = [...new Map([...rows, ...listing.included].map((run) => [run.id, run])).values()];
           setRunListPage(listing.page);
           setProjectCounts(listing.projectCounts);
+          setRunWindowCount(rows.length);
           setRuns(r);
           listedEntities.current = {
             projects: new Set(p.map((project) => project.id)),
@@ -690,6 +748,7 @@ function App({
   async function changeRunList(direction: 'older' | 'newer' | 'latest') {
     if (runListMoving.current) return;
     const prior = runListPosition.current;
+    const priorAppend = runListAppend.current;
     if (direction === 'older' && !runListPage.nextBefore) return;
     if (direction === 'newer' && !prior.trail.length) return;
     const next =
@@ -699,10 +758,17 @@ function App({
           ? { ...prior, before: prior.trail.at(-1)!, trail: prior.trail.slice(0, -1) }
           : { ...prior, before: '', trail: [] };
     runListPosition.current = next;
+    runListAppend.current =
+      direction === 'older' &&
+      !runListFullSummary.current &&
+      runListWindow.current.rows.length + runHistoryPageSize <= runHistoryWindowLimit;
     runListMoving.current = true;
     setRunListBusy(true);
     try {
-      if ((await refresh()) === false && runListPosition.current === next) runListPosition.current = prior;
+      if ((await refresh()) === false && runListPosition.current === next) {
+        runListPosition.current = prior;
+        runListAppend.current = priorAppend;
+      }
     } finally {
       runListMoving.current = false;
       setRunListBusy(false);
@@ -710,7 +776,12 @@ function App({
   }
   useEffect(() => {
     if (!ready) return;
+    const filter = { query: runListQuery.trim(), archived: runListArchive };
+    if (filter.query === lastListFilter.current.query && filter.archived === lastListFilter.current.archived)
+      return;
     const timer = setTimeout(() => {
+      lastListFilter.current = filter;
+      runListAppend.current = false;
       runListPosition.current = {
         before: '',
         trail: [],
@@ -724,13 +795,29 @@ function App({
   useEffect(() => {
     if (!modal.startsWith('manage:')) setRunListArchive(undefined);
   }, [modal]);
+  useEffect(() => {
+    const full = modal.startsWith('manage:');
+    if (full && !runListFullSummary.current) {
+      runListAppend.current = false;
+      runListWindow.current = { filter: '', before: '', rows: [] };
+    }
+    runListFullSummary.current = full;
+    if (ready && runListFullSummary.current) void refresh();
+  }, [modal, ready, refresh]);
   const refreshDetail = useCallback(
     async (trailing = false) => {
       const wanted = activeRunId.current;
       if (!wanted) return;
-      const before = historyPosition.current.runId === wanted ? historyPosition.current.before : '';
+      const position = historyPosition.current;
+      const before = position.runId === wanted ? position.before : '';
+      const full = fullDetailRequested.current;
+      const append = historyAppend.current;
+      const retained =
+        append && detailSnapshot.current?.run.id === wanted
+          ? detailSnapshot.current.messages.map((message) => message.id)
+          : [];
       return detailReads.current.run(
-        `${wanted}:${before}`,
+        `${wanted}:${before}:${full}:${retained.join(',')}`,
         async (signal) => {
           const request = ++detailRequest.current;
           let result: Detail;
@@ -738,33 +825,47 @@ function App({
             result = await api<Detail>(
               '/runs/' +
                 wanted +
-                '?messageLimit=160&view=conversation' +
-                (before ? '&beforeMessage=' + encodeURIComponent(before) : ''),
+                `?messageLimit=${messageHistoryPageSize}&view=conversation` +
+                (full ? '' : '&summary=deferred') +
+                (before ? '&beforeMessage=' + encodeURIComponent(before) : '') +
+                (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : ''),
               undefined,
               undefined,
               signal,
             );
           } catch (error) {
             if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+              const pending = historyPending.current;
+              if (pending?.target === position) {
+                historyPosition.current = pending.prior;
+                historyAppend.current = pending.priorAppend;
+                historyPending.current = undefined;
+              }
               setReadIssues((old) => ({ ...old, detail: readIssueFor(error, request, wanted) }));
               return false;
             }
             return;
           }
           if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+            const pending = historyPending.current;
+            if (pending?.target === position) {
+              historyPending.current = undefined;
+              if (pending.reposition) setHistorySegment((value) => value + 1);
+            }
             clearReadIssue('detail', request);
             runStream.current.sync(result.requests);
             setStreaming(runStream.current.texts());
             setDetail((old) => {
               if (old?.run.id !== wanted) return result;
+              const messages = append ? earlierMessages(result.messages, old.messages) : result.messages;
               const events = [
                 ...new Map([...result.events, ...old.events].map((event) => [event.seq, event])).values(),
               ]
                 .sort((a, b) => a.seq - b.seq)
                 .slice(-100);
               return old.run.revision > result.run.revision
-                ? { ...old, messages: result.messages, messagePage: result.messagePage, events }
-                : { ...result, events };
+                ? { ...old, messages, messagePage: result.messagePage, events }
+                : { ...result, messages, events };
             });
           }
           return true;
@@ -775,16 +876,45 @@ function App({
     [clearReadIssue],
   );
   async function changeHistory(before: string, trail: string[]) {
-    if (historyLoading) return;
+    if (historyMoving.current) return;
     const wanted = activeRunId.current;
     const prior = historyPosition.current;
-    historyPosition.current = { runId: wanted, before, trail };
+    const priorAppend = historyAppend.current;
+    const append =
+      !!before &&
+      trail.length > prior.trail.length &&
+      (detailSnapshot.current?.messages.length || 0) + messageHistoryPageSize <= messageHistoryWindowLimit;
+    historyMoving.current = true;
+    historyAppend.current = append;
+    const target = { runId: wanted, before, trail };
+    historyPosition.current = target;
+    historyPending.current = { target, prior, priorAppend, reposition: !append };
     setHistoryLoading(true);
-    const loaded = await refreshDetail();
-    if (activeRunId.current === wanted) {
-      if (loaded === false) historyPosition.current = prior;
-      setHistoryLoading(false);
+    try {
+      await refreshDetail();
+    } finally {
+      if (activeRunId.current === wanted) {
+        historyMoving.current = false;
+        setHistoryLoading(false);
+      }
     }
+  }
+  async function loadDetailedSummary() {
+    if (summaryLoading || !activeRunId.current) return false;
+    const wanted = activeRunId.current;
+    fullDetailRequested.current = true;
+    setSummaryLoading(true);
+    try {
+      return (await refreshDetail()) === true && activeRunId.current === wanted;
+    } finally {
+      if (activeRunId.current === wanted) setSummaryLoading(false);
+    }
+  }
+  async function openContext(agentId: string) {
+    if (!detailSnapshot.current?.contexts.some((item) => item.agentId === agentId)) {
+      if (!(await loadDetailedSummary())) return;
+    }
+    if (detailSnapshot.current?.agents.some((agent) => agent.id === agentId)) setModal('context:' + agentId);
   }
   const connect = useCallback(
     async (retry = false, source?: ReadSource, target?: string) => {
@@ -808,17 +938,12 @@ function App({
           navigationStorageKey.current = navigationKey(scope, client);
           savedNavigation.current = readNavigation(navigationStorageKey.current);
           // The authenticated workbench and lists do not depend on each other.
-          const lists = refresh();
-          try {
-            const [, listed] = await Promise.all([cache.load(), lists]);
-            if (listed === true)
-              cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
-          } catch (error) {
-            setReadIssues((old) => ({ ...old, session: readIssueFor(error, request) }));
-            return;
-          }
           sessionReady.current = true;
           setReady(true);
+          // The workbench is usable after authentication. History and persisted
+          // drafts reconcile independently, preserving edits made while loading.
+          void cache.load().catch(() => {});
+          void refresh();
           return;
         }
         if (source === 'detail') {
@@ -1056,6 +1181,8 @@ function App({
       if (epoch !== navigationEpoch.current) return;
       selectRun(target);
       setTab('artifacts');
+      fullDetailRequested.current = true;
+      void refreshDetail();
       setDetailsCollapsed(false);
       setDetailsDrawerOpen(true);
       heldNavigation.current = operationId
@@ -1102,6 +1229,7 @@ function App({
         setDetailsCollapsed(false);
         setDetailsDrawerOpen(true);
         setTab('artifacts');
+        void loadDetailedSummary();
         break;
       case 'plan':
         setPreviewOpen(false);
@@ -1252,11 +1380,9 @@ function App({
   }
   if (!ready)
     return (
-      <div className="auth-screen">
+      <StartupTransition>
         <div className="surface-loading-switcher">{surfaceSwitcher}</div>
-        <BrandIcon />
-        <h1>{terminalSurface ? 'Agent 终端' : 'Elysia'}</h1>
-        <p>{readIssue?.message || (terminalSurface ? '正在连接 Agent 终端…' : '正在连接 Elysia…')}</p>
+        {readIssue && <p role="alert">{readIssue.message}</p>}
         {readIssue?.retryable && (
           <button
             className="secondary"
@@ -1282,7 +1408,7 @@ function App({
             )}
           </div>
         )}
-      </div>
+      </StartupTransition>
     );
   return (
     <div
@@ -1361,6 +1487,9 @@ function App({
           listPage={runListPage}
           listTrail={runListPosition.current.trail.length > 0}
           listBusy={runListBusy}
+          listDynamic
+          listError={readIssues.lists?.message}
+          listWindowLimited={runWindowCount + runHistoryPageSize > runHistoryWindowLimit}
           listQuery={runListQuery}
           changeListQuery={setRunListQuery}
           listNavigate={(direction) => void changeRunList(direction)}
@@ -1389,6 +1518,15 @@ function App({
         <div className="sidebar-bottom">
           <button
             className="nav-item"
+            onClick={() => setModal('appearance')}
+            title="外观与启动"
+            aria-label="外观与启动"
+          >
+            <Icon name="spark" />
+            <span>外观与启动</span>
+          </button>
+          <button
+            className="nav-item"
             onClick={() => setModal('manage:archive')}
             title="项目、对话与归档"
             aria-label="项目、对话与归档"
@@ -1410,9 +1548,16 @@ function App({
             role="status"
             title={cacheState.error || '输入内容按项目和会话自动保存在本机'}
           >
-            {cacheState.status === 'error' ? (
+            {cacheState.status === 'loading' ? (
+              '正在读取草稿与偏好…'
+            ) : cacheState.status === 'error' ? (
               <>
-                保存失败 · 草稿已保留 <button onClick={() => void cache.retry()}>重试保存</button>
+                {cacheState.error.startsWith('读取草稿与偏好失败：')
+                  ? '读取失败 · 本机输入已保留 '
+                  : '保存失败 · 草稿已保留 '}
+                <button onClick={() => void cache.retry()}>
+                  {cacheState.error.startsWith('读取草稿与偏好失败：') ? '重试读取' : '重试保存'}
+                </button>
               </>
             ) : cacheState.status === 'saving' ? (
               '正在保存草稿与偏好…'
@@ -1567,6 +1712,12 @@ function App({
                     setPreviewOpen(false);
                     if (compactLayout) setDetailsDrawerOpen(!detailsVisible);
                     else setDetailsCollapsed(detailsVisible);
+                    if (
+                      !detailsVisible &&
+                      detail.summaryDeferred &&
+                      ['agents', 'artifacts', 'usage'].includes(tab)
+                    )
+                      void loadDetailedSummary();
                   }}
                 >
                   <Icon name="panel" size={14} />
@@ -1677,8 +1828,24 @@ function App({
             >
               <section className="conversation" inert={detailsOverlayOpen}>
                 <ConversationScroll
-                  positionKey={detail.run.id + ':' + (detail.messagePage?.before || '')}
+                  positionKey={detail.run.id + ':' + historySegment}
                   startAtLatest={!detail.messagePage?.before}
+                  olderCursor={
+                    detail.messages.length + messageHistoryPageSize <= messageHistoryWindowLimit
+                      ? detail.messagePage?.nextBefore
+                      : undefined
+                  }
+                  olderLoading={historyLoading}
+                  olderError={
+                    readIssues.detail?.runId === detail.run.id ? readIssues.detail.message : undefined
+                  }
+                  onLoadOlder={() =>
+                    detail.messagePage?.nextBefore &&
+                    void changeHistory(detail.messagePage.nextBefore, [
+                      ...historyPosition.current.trail,
+                      historyPosition.current.before,
+                    ])
+                  }
                 >
                   {(detail.messagePage?.hasMore || detail.messagePage?.before) && (
                     <nav className="conversation-pages" aria-label="对话历史分页">
@@ -1692,13 +1859,15 @@ function App({
                           ])
                         }
                       >
-                        更早消息
+                        {detail.messages.length + messageHistoryPageSize > messageHistoryWindowLimit
+                          ? '继续更早消息'
+                          : '更早消息'}
                       </button>
                       <span role="status">
                         {historyLoading
                           ? '读取历史…'
                           : detail.messagePage?.before
-                            ? '正在查看历史'
+                            ? `已加载 ${detail.messages.length} 条历史${detail.messages.length + messageHistoryPageSize > messageHistoryWindowLimit ? ' · 继续将切换历史段落' : ''}`
                             : '最近消息'}
                       </span>
                       {detail.messagePage?.before && (
@@ -1768,7 +1937,7 @@ function App({
                   {visibleMessages.map((m) => {
                     if (m.purpose === 'model_handoff')
                       return (
-                        <div className="system-note model-handoff" key={m.id}>
+                        <div className="system-note model-handoff" key={m.id} data-history-anchor={m.id}>
                           <Icon name="history" size={14} />
                           <details>
                             <summary>模型已切换，已保留对话交接</summary>
@@ -1782,7 +1951,7 @@ function App({
                       messageIndex.agents.get(request?.taskId || '');
                     const task = messageIndex.tasks.get(agent?.taskId || '');
                     return (
-                      <div className={'message ' + m.role} key={m.id}>
+                      <div className={'message ' + m.role} key={m.id} data-history-anchor={m.id}>
                         <div className={'message-avatar ' + m.role}>
                           {m.role === 'user' ? (
                             '你'
@@ -2093,6 +2262,9 @@ function App({
                         }
                         setPreviewOpen(false);
                         setTab('artifacts');
+                        setDetailsCollapsed(false);
+                        setDetailsDrawerOpen(true);
+                        void loadDetailedSummary();
                       }}
                     >
                       {isChat ? '新建独立对话' : '查看产物'}
@@ -2168,8 +2340,8 @@ function App({
                           <ContextMeter
                             projection={rootContext}
                             showStreaming
-                            disabled={!rootContext || busy}
-                            open={() => rootContext && setModal('context:' + rootContext.agentId)}
+                            disabled={!rootAgent || busy || summaryLoading}
+                            open={() => rootAgent && void openContext(rootAgent.id)}
                           />
                         )}
                         <span className="reply-hint">
@@ -2289,7 +2461,11 @@ function App({
                         key={t.key}
                         className={tab === t.key ? 'active' : ''}
                         aria-pressed={tab === t.key}
-                        onClick={() => setTab(t.key)}
+                        onClick={() => {
+                          setTab(t.key);
+                          if (['agents', 'artifacts', 'usage'].includes(t.key) && detail.summaryDeferred)
+                            void loadDetailedSummary();
+                        }}
                       >
                         <Icon name={t.icon} size={15} />
                         {t.title}
@@ -2416,12 +2592,8 @@ function App({
                                 <small>独立会话 {a.sessionId.slice(0, 8)}</small>
                                 <ContextMeter
                                   projection={detail.contexts?.find((item) => item.agentId === a.id)}
-                                  disabled={
-                                    busy ||
-                                    runReadOnly ||
-                                    !detail.contexts?.some((item) => item.agentId === a.id)
-                                  }
-                                  open={() => setModal('context:' + a.id)}
+                                  disabled={busy || runReadOnly || summaryLoading}
+                                  open={() => void openContext(a.id)}
                                 />
                                 <button
                                   className="agent-preview-button"
@@ -2476,7 +2648,10 @@ function App({
                       <>
                         <div className="panel-heading">
                           <h3>版本化产物</h3>
-                          <span>{detail.recordCounts?.artifacts ?? detail.artifacts.length} 个</span>
+                          <span>
+                            {detail.summaryDeferred ? '已加载 ' : ''}
+                            {detail.recordCounts?.artifacts ?? detail.artifacts.length} 个
+                          </span>
                         </div>
                         {detail.artifacts.map((a) => (
                           <button className="artifact-card" key={a.id} onClick={() => void openArtifact(a)}>
@@ -2496,7 +2671,7 @@ function App({
                         {!detail.artifacts.length && (
                           <Empty title="产物将在这里交付" text="报告、附件和 Git diff 会保留版本与来源。" />
                         )}
-                        {detail.recordsLimited && (
+                        {detail.recordsLimited && !detail.summaryDeferred && (
                           <RecordHistory
                             runId={detail.run.id}
                             kind="artifacts"
@@ -2539,7 +2714,7 @@ function App({
                         {!detail.operations.some((o) => o.status === 'UNCERTAIN') && (
                           <p className="muted small">当前没有待核验副作用</p>
                         )}
-                        {detail.recordsLimited && (
+                        {detail.recordsLimited && !detail.summaryDeferred && (
                           <RecordHistory
                             runId={detail.run.id}
                             kind="operations"
@@ -2554,6 +2729,8 @@ function App({
                       <UsagePanel
                         detail={detail}
                         totalTokens={totalTokens}
+                        summaryLoading={summaryLoading}
+                        loadSummary={() => void loadDetailedSummary()}
                         configureContext={(projection) => setModal('context:' + projection.agentId)}
                       />
                     )}
@@ -2571,6 +2748,17 @@ function App({
         )}
       </main>
       <ModalErrorContext.Provider value={error || readIssue?.message || ''}>
+        {modal === 'appearance' && (
+          <React.Suspense
+            fallback={
+              <Modal title="外观与启动" close={() => setModal('')}>
+                <p role="status">正在准备设置…</p>
+              </Modal>
+            }
+          >
+            <StartupSettings close={() => setModal('')} />
+          </React.Suspense>
+        )}
         <Presence>
           {modal ? (
             <React.Fragment key={modal}>
@@ -2926,10 +3114,14 @@ function UsagePanel({
   detail,
   totalTokens,
   configureContext,
+  summaryLoading,
+  loadSummary,
 }: {
   detail: Detail;
   totalTokens: number;
   configureContext: (projection: ContextProjection) => void;
+  summaryLoading: boolean;
+  loadSummary: () => void;
 }) {
   if (detail.run.execution?.kind === 'docker-agent') {
     const resources = terminalResourceRequirement(detail.run.execution.profile.resourcePreset);
@@ -2949,6 +3141,15 @@ function UsagePanel({
       </div>
     );
   }
+  if (detail.summaryDeferred)
+    return (
+      <div className="info-note">
+        <p>详细用量与上下文按需读取。</p>
+        <button className="secondary" disabled={summaryLoading} onClick={loadSummary}>
+          {summaryLoading ? '正在读取…' : '读取完整统计'}
+        </button>
+      </div>
+    );
   const settled = detail.requests.filter((r) => r.status === 'SETTLED'),
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);

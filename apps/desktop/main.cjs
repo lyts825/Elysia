@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, Menu } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { mkdirSync, appendFileSync } = require('node:fs');
+const { pathToFileURL } = require('node:url');
 const { attachServices } = require('./services.cjs');
 const { allowedLocalNavigation } = require('./navigation.cjs');
 const root = path.resolve(__dirname, '../..');
@@ -93,6 +94,17 @@ if (!app.requestSingleInstanceLock()) {
       window.webContents.session.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+      const startingUrl = pathToFileURL(path.join(__dirname, 'starting.html')).href;
+      const allowed = (url, main) =>
+        uiOrigin
+          ? allowedLocalNavigation(url, window.webContents.getURL(), uiOrigin, main)
+          : main && url === startingUrl;
+      window.webContents.on('will-frame-navigate', (event) => {
+        if (!allowed(event.url, event.isMainFrame)) event.preventDefault();
+      });
+      window.webContents.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
+        if (!allowed(url, isMainFrame)) event.preventDefault();
+      });
       const desktopService = attachServices(window, data, () => uiOrigin);
       window.on('close', (event) => {
         if (!quitting) {
@@ -151,14 +163,6 @@ if (!app.requestSingleInstanceLock()) {
           const origin = new URL(message.origin).origin;
           uiOrigin = origin;
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
-          const allowed = (url, main) =>
-            allowedLocalNavigation(url, window.webContents.getURL(), origin, main);
-          window.webContents.on('will-frame-navigate', (event) => {
-            if (!allowed(event.url, event.isMainFrame)) event.preventDefault();
-          });
-          window.webContents.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
-            if (!allowed(url, isMainFrame)) event.preventDefault();
-          });
           await window.loadURL(message.bootstrapUrl);
           ready = true;
           window.setTitle(`Elysia · ${message.version}`);

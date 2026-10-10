@@ -38,7 +38,7 @@ export function ContextMeter({
         title={
           projection
             ? `输入空间占用${used == null ? '尚未估算' : `约 ${used}%`}；已分配 ${count(projection.windowTokens)} Token。点击查看或调整。`
-            : '上下文数据正在读取。'
+            : '点击读取上下文窗口。'
         }
         onClick={open}
       >

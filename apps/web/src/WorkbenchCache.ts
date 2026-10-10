@@ -34,6 +34,7 @@ export class WorkbenchCache {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private running = false;
   private loading = false;
+  private readFailed = false;
   private retrying = false;
   private stopped = false;
   private status: Snapshot['status'] = 'loading';
@@ -64,6 +65,7 @@ export class WorkbenchCache {
         '/workbench',
       );
       this.scope = result.scope;
+      this.readFailed = false;
       const previous = this.entries;
       this.entries = { ...result.entries };
       let recovered: { entries?: Record<string, CacheEntry>; pending?: string[]; conflicts?: string[] } = {};
@@ -101,6 +103,13 @@ export class WorkbenchCache {
       this.backup();
       this.publish();
       if (this.dirty.size) this.schedule();
+    } catch (error) {
+      this.readFailed = true;
+      this.error = '读取草稿与偏好失败：' + (error instanceof Error ? error.message : '本机读取失败');
+      this.status = 'error';
+      this.backup();
+      this.publish();
+      throw error;
     } finally {
       this.loading = false;
     }
@@ -112,7 +121,7 @@ export class WorkbenchCache {
     if (this.entries[key]?.value === value) return;
     this.entries[key] = { value, revision: this.entries[key]?.revision || 0 };
     this.dirty.add(key);
-    if (!this.conflicts.size) {
+    if (!this.conflicts.size && !this.readFailed && this.scope) {
       this.status = 'saving';
       this.error = '';
     }
@@ -126,7 +135,7 @@ export class WorkbenchCache {
       this.dirty.delete(key);
       this.conflicts.delete(key);
     }
-    if (!this.dirty.size) {
+    if (!this.dirty.size && !this.readFailed) {
       this.status = 'saved';
       this.error = '';
     }
@@ -152,7 +161,7 @@ export class WorkbenchCache {
   }
   async flush() {
     clearTimeout(this.timer);
-    if (this.running || this.loading || this.stopped || !this.scope) return;
+    if (this.running || this.loading || this.readFailed || this.stopped || !this.scope) return;
     this.running = true;
     try {
       while (this.dirty.size && !this.stopped) {

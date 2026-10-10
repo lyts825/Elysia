@@ -4,5 +4,8 @@ if (process.isMainFrame) {
   contextBridge.exposeInMainWorld('elysia', {
     chooseDirectory: () => ipcRenderer.invoke('elysia:choose-directory'),
     openUsage: () => ipcRenderer.invoke('elysia:open-usage'),
+    readStartup: () => ipcRenderer.invoke('elysia:startup-read'),
+    saveStartup: (value) => ipcRenderer.invoke('elysia:startup-save', value),
+    importStartupMedia: () => ipcRenderer.invoke('elysia:startup-import'),
   });
 }

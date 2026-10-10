@@ -2,88 +2,24 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"
+      content="default-src 'none'; img-src data:; media-src data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
     />
     <title>Elysia</title>
-    <style>
-      body {
-        margin: 0;
-        height: 100vh;
-        display: grid;
-        place-content: center;
-        text-align: center;
-        color: #2e3935;
-        background: radial-gradient(ellipse at 50% 38%, #f0ded4 0, #f8f8ec 45%, #f8faf5 75%);
-        font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
-      }
-      h1 {
-        font-size: 34px;
-        letter-spacing: -1px;
-        font-weight: 650;
-        margin: 22px 0 6px;
-      }
-      p {
-        color: #68736b;
-        font-size: 13px;
-        margin: 8px 0;
-      }
-      .mark {
-        width: 112px;
-        height: 112px;
-        margin: auto;
-        filter: drop-shadow(0 10px 16px #965d6b18);
-        animation: arrive 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-      }
-      h1,
-      p {
-        animation: arrive 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-      }
-      @keyframes arrive {
-        from {
-          opacity: 0;
-          transform: translateY(6px);
-        }
-        to {
-          opacity: 1;
-          transform: none;
-        }
-      }
-      .line {
-        height: 3px;
-        width: 136px;
-        background: #dce2d4;
-        border-radius: 9px;
-        overflow: hidden;
-        margin: 28px auto 16px;
-      }
-      .line:after {
-        content: '';
-        display: block;
-        width: 48px;
-        height: 3px;
-        background: #bd8c96;
-        animation: move 1.4s ease-in-out infinite alternate;
-      }
-      @keyframes move {
-        to {
-          transform: translateX(88px);
-        }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        .line:after {
-          animation: none;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="../web/src/Startup.css" />
   </head>
-  <body>
-    <img class="mark" src="../../assets/brand/app-icon.svg" width="112" height="112" alt="" />
-    <h1>Elysia</h1>
-    <p>把想法，慢慢做成喜欢的日常。</p>
-    <div class="line" role="progressbar" aria-label="正在准备工作台"></div>
-    <p role="status">正在连接本机服务</p>
+  <body class="startup-screen">
+    <main class="startup-content">
+      <div id="visual" class="startup-visual startup-bloom" aria-hidden="true">
+        <div class="startup-emblem"><span>E</span><i></i><i></i><i></i></div>
+      </div>
+      <h1 id="title">Elysia</h1>
+      <p id="caption" class="startup-caption">把想法，慢慢做成喜欢的日常。</p>
+      <p class="startup-status" role="status"><span class="startup-status-dot"></span>正在连接本机服务</p>
+      <button id="skip" class="startup-skip" type="button">跳过动画</button>
+    </main>
+    <script src="starting.js"></script>
   </body>
 </html>
