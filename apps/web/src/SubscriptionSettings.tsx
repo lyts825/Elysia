@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, mutation } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import { manageUsage } from './desktop';
 import { catalogIssue, initialTextModel, supportsText, type CatalogModel } from './ModelCatalog';
 
@@ -28,6 +28,7 @@ export function SubscriptionSettings({
   change: (values: { subscriptionAccountId?: string; model?: string }) => void;
   ready?: (valid: boolean) => void;
 }) {
+  const { api, mutation } = useSurfaceClient();
   const [status, setStatus] = useState<State>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');

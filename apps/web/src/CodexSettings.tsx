@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
-import { api, mutation } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import { manageUsage } from './desktop';
 import {
   catalogIssue,
@@ -29,6 +29,7 @@ export function CodexSettings({
   change: (patch: Partial<ProviderConfig>) => void;
   ready?: (valid: boolean) => void;
 }) {
+  const { api, mutation } = useSurfaceClient();
   const [source, setSource] = useState(
     config.subscriptionAccountId?.startsWith('codex-elysia-') ? 'elysia' : 'local',
   );

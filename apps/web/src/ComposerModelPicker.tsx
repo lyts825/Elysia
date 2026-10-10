@@ -1,3 +1,4 @@
+import { useSurfaceRoot } from './SurfaceClientContext';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
@@ -18,6 +19,7 @@ export function ComposerModelPicker({
   disabled: boolean;
   settings: () => void;
 }) {
+  const surfaceRoot = useSurfaceRoot();
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -47,7 +49,10 @@ export function ComposerModelPicker({
       }
     };
     node.addEventListener('toggle', toggled);
-    return () => node.removeEventListener('toggle', toggled);
+    return () => {
+      node.removeEventListener('toggle', toggled);
+      node.hidePopover();
+    };
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -124,7 +129,7 @@ export function ComposerModelPicker({
             </button>
           </div>
         </div>,
-        document.body,
+        surfaceRoot?.current || document.body,
       )}
     </>
   );

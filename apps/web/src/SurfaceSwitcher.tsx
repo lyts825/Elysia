@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { localSurface } from './api';
+import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import { BrandIcon } from './Brand';
 import { Icon } from './Icon';
 import './surface.css';
@@ -19,6 +19,8 @@ export function SurfaceSwitcher({
   switching: boolean;
   change: (surface: 'native' | 'terminal') => void;
 }) {
+  const { surface: localSurface } = useSurfaceClient();
+  const surfaceRoot = useSurfaceRoot();
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -126,7 +128,7 @@ export function SurfaceSwitcher({
               <p role="status">{switching ? '正在切换…' : '当前操作完成后可切换'}</p>
             )}
           </div>,
-          document.body,
+          surfaceRoot?.current || document.body,
         )}
     </>
   );

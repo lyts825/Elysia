@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 import { Modal } from './Modal';
 import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
-import { localSurface } from './api';
+import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: Run };
 export type SessionTarget = Target;
@@ -51,6 +51,8 @@ export function SessionSidebar({
     remove?: boolean,
   ) => Promise<SessionUpdateResult>;
 }) {
+  const { surface: localSurface } = useSurfaceClient();
+  const surfaceRoot = useSurfaceRoot();
   const [search, setSearch] = useState('');
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number; trigger: HTMLElement } | null>(
     null,
@@ -224,7 +226,9 @@ export function SessionSidebar({
         busy ||
         dialog ||
         event.isComposing ||
-        document.querySelector('[role="dialog"]') ||
+        [...(surfaceRoot?.current || document).querySelectorAll<HTMLElement>('[role="dialog"]')].some(
+          (node) => node.getClientRects().length && !node.closest('[inert]'),
+        ) ||
         (event.target as HTMLElement)?.closest('input, textarea, select, [contenteditable="true"]')
       )
         return;
@@ -500,7 +504,7 @@ export function SessionSidebar({
               </button>
             ))}
           </div>,
-          document.body,
+          surfaceRoot?.current || document.body,
         )}
       {dialog &&
         createPortal(
@@ -600,7 +604,7 @@ export function SessionSidebar({
               </footer>
             </form>
           </Modal>,
-          document.body,
+          surfaceRoot?.current || document.body,
         )}
     </>
   );

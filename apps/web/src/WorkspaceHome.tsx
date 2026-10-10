@@ -65,7 +65,7 @@ export function WorkspaceHome({
               <Icon name="folder" size={16} /> 打开项目
             </button>
             <button type="button" className="secondary" disabled={busy} onClick={openSettings}>
-              终端与设置
+              终端管理
             </button>
           </div>
         ) : (
@@ -114,7 +114,7 @@ export function WorkspaceHome({
                     <button
                       type="button"
                       className="icon-button"
-                      aria-label="终端与设置"
+                      aria-label="终端管理"
                       disabled={busy}
                       onClick={openSettings}
                     >

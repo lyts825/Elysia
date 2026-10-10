@@ -1,5 +1,7 @@
 import { z } from 'zod';
-export const VERSION = '0.14.0-preview.1';
+import { TerminalConnectionBinding } from './terminal-control.js';
+export * from './terminal-control.js';
+export const VERSION = '0.15.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -254,7 +256,7 @@ export type ModelChoice = z.infer<typeof ModelChoice>;
 export const AgentTerminalProfile = z.object({
   id: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
-  agent: z.enum(['codex', 'claude', 'dsh', 'custom']),
+  agent: z.enum(['codex', 'claude', 'dsh', 'gemini', 'custom']),
   image: z
     .string()
     .trim()
@@ -262,7 +264,9 @@ export const AgentTerminalProfile = z.object({
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
   command: z.array(z.string().min(1).max(2000)).min(1).max(40),
-  protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'text']),
+  protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'gemini-stream-json', 'text']),
+  connectionId: z.string().uuid().nullable().optional(),
+  connection: TerminalConnectionBinding.optional(),
   environment: z
     .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
     .max(12)

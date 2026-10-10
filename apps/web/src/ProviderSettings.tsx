@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
-import { api, mutation } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import { CodexSettings } from './CodexSettings';
 import { SubscriptionSettings } from './SubscriptionSettings';
 import { Modal } from './Modal';
@@ -74,6 +74,7 @@ export function ProviderSettings({
   close: () => void;
   updated: () => Promise<unknown>;
 }) {
+  const { api, mutation } = useSurfaceClient();
   const [config, setConfig] = useState<Provider | undefined>(
     providers.find((p) => p.authMode === 'codex') || providers[0],
   );

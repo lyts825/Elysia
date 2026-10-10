@@ -3,11 +3,10 @@ import type { Artifact } from '../../../packages/contracts/src/index';
 import { ArtifactFilePreview } from './ArtifactFilePreview';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
-import { apiUrl, surfaceStorageKey } from './api';
+import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import './preview-dock.css';
 
-const ratioKey = surfaceStorageKey('elysia.preview.split-ratio');
-function savedRatio() {
+function savedRatio(ratioKey: string) {
   try {
     const value = Number(localStorage.getItem(ratioKey));
     if (Number.isFinite(value) && value > 0 && value < 1) return value;
@@ -32,9 +31,12 @@ export function PreviewDock({
   selectArtifact: (artifact: Artifact | null) => void;
   close: () => void;
 }) {
+  const { apiUrl, surfaceStorageKey, surface } = useSurfaceClient();
+  const surfaceRoot = useSurfaceRoot();
+  const ratioKey = surfaceStorageKey('elysia.preview.split-ratio');
   const panel = useRef<HTMLElement>(null);
   const present = usePresenceMotion(panel, 'panel');
-  const [ratio, setRatio] = useState(savedRatio);
+  const [ratio, setRatio] = useState(() => savedRatio(ratioKey));
   const [available, setAvailable] = useState(0);
   const [wide, setWide] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -75,7 +77,11 @@ export function PreviewDock({
     panel.current!.querySelector<HTMLButtonElement>('[data-preview-close]')?.focus({ preventScroll: true });
     return () => {
       if (conversation) conversation.inert = wasInert || false;
-      if (previous?.isConnected && !previous.closest('[inert]') && !document.querySelector('.overlay'))
+      if (
+        previous?.isConnected &&
+        !previous.closest('[inert]') &&
+        !surfaceRoot?.current?.querySelector('.overlay')
+      )
         previous.focus({ preventScroll: true });
     };
   }, [single, wide, present]);
@@ -107,7 +113,7 @@ export function PreviewDock({
   };
   const dismiss = () => {
     close();
-    document.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
+    surfaceRoot?.current?.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
   };
   return (
     <>
@@ -116,7 +122,7 @@ export function PreviewDock({
         role="separator"
         aria-label="调整对话与预览宽度"
         aria-orientation="vertical"
-        aria-controls="run-preview"
+        aria-controls={surface + '-run-preview'}
         aria-valuemin={minimum}
         aria-valuemax={Math.round(maximum)}
         aria-valuenow={Math.round(width)}
@@ -168,7 +174,7 @@ export function PreviewDock({
       />
       <aside
         ref={panel}
-        id="run-preview"
+        id={surface + '-run-preview'}
         className={'preview-dock' + (wide ? ' preview-expanded' : '')}
         style={{ width: single || wide ? '100%' : width }}
         aria-label="分屏预览"

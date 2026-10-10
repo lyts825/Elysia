@@ -1,19 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Activity, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import './motion.css';
 import {
-  api,
-  apiUrl,
-  mutation,
-  initializeSession,
   ApiError,
   canRetryConnection,
   localSurface,
   surfaceLocation,
+  createSurfaceClient,
+  defaultSurfaceClient,
+  type SurfaceClient,
 } from './api';
+import { SurfaceClientContext, SurfaceRootContext, useSurfaceClient } from './SurfaceClientContext';
 import { SurfaceSwitcher } from './SurfaceSwitcher';
-import { TerminalSettings } from './TerminalSettings';
 import { PreviewPanel } from './PreviewPanel';
 import { PreviewDock } from './PreviewDock';
 import { ProjectFiles } from './ProjectFiles';
@@ -24,11 +23,17 @@ import {
   minimumContextWindowTokens,
   AgentTerminalProfile,
   SurfaceTerminalSettings,
+  type TerminalControlOverview,
+  type TerminalProjectPreferences,
+  type TerminalConnectionView,
 } from '../../../packages/contracts/src/index';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import { TerminalRecovery } from './TerminalRecovery';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
+);
+const TerminalControlCenter = React.lazy(() =>
+  import('./TerminalControlCenter').then((module) => ({ default: module.TerminalControlCenter })),
 );
 import type {
   Run,
@@ -141,7 +146,15 @@ function Badge({ status }: { status: string }) {
     </span>
   );
 }
-function App() {
+function App({
+  changeSurface,
+  registerCache,
+}: {
+  changeSurface: (surface: 'native' | 'terminal') => void;
+  registerCache: (surface: 'native' | 'terminal', cache: WorkbenchCache) => void;
+}) {
+  const client = useSurfaceClient();
+  const { api, apiUrl, mutation, initializeSession, surface: localSurface } = client;
   const terminalSurface = localSurface === 'terminal';
   const [ready, setReady] = useState(false),
     [error, setError] = useState(''),
@@ -153,8 +166,12 @@ function App() {
     [runs, setRuns] = useState<Run[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
     [terminalSettings, setTerminalSettings] = useState<SurfaceTerminalSettings | null>(null),
+    [terminalControl, setTerminalControl] = useState<TerminalControlOverview | null>(null),
+    [terminalPreferences, setTerminalPreferences] = useState<{
+      projectId: string;
+      value: TerminalProjectPreferences;
+    } | null>(null),
     [sessionInitializing, setSessionInitializing] = useState(true),
-    [switchingSurface, setSwitchingSurface] = useState(false),
     [detail, setDetail] = useState<Detail | null>(null),
     [tab, setTab] = useState('tasks'),
     [previewOpen, setPreviewOpen] = useState(false),
@@ -168,7 +185,11 @@ function App() {
     status: 'loading' | 'saved' | 'saving' | 'error';
     error: string;
   }>({ entries: {}, status: 'loading', error: '' });
-  const [cache] = useState(() => new WorkbenchCache(setCacheState));
+  const [cache] = useState(() => {
+    const instance = new WorkbenchCache(setCacheState, client);
+    registerCache(localSurface, instance);
+    return instance;
+  });
   const [selection, setSelection] = useState(initialNavigation);
   const { spaceId, projectId, runId } = selection;
   const draftKey = newDraftKey(projectId);
@@ -200,10 +221,35 @@ function App() {
     [homeModelKey],
   );
   const homeModelValid = homeModelReady.key === homeModelKey && homeModelReady.valid;
-  const terminalProfileId = cacheState.entries['settings:selected-terminal-profile']?.value;
-  const terminalProfile =
-    terminalSettings?.profiles.find((profile) => profile.id === terminalProfileId) ||
-    terminalSettings?.profiles.find((profile) => profile.id === terminalSettings.defaultProfileId);
+  const profileSelectionKey = `settings:selected-terminal-profile:${projectId || 'home'}`;
+  const terminalProfileId = cacheState.entries[profileSelectionKey]?.value;
+  const projectPreferences = terminalPreferences?.projectId === projectId ? terminalPreferences.value : null;
+  const terminalProfiles =
+    terminalSettings?.profiles.filter(
+      (profile) =>
+        !terminalControl ||
+        terminalControl.apps.entries.some((entry) => entry.id === profile.agent && entry.visible),
+    ) || [];
+  const chosenTerminalProfile =
+    terminalProfiles.find((profile) => profile.id === terminalProfileId) ||
+    terminalProfiles.find((profile) => profile.id === projectPreferences?.defaultProfileId) ||
+    terminalProfiles.find((profile) => profile.agent === terminalControl?.apps.defaultAppId) ||
+    terminalProfiles.find((profile) => profile.id === terminalSettings?.defaultProfileId) ||
+    terminalProfiles[0];
+  const inheritedConnection = terminalControl?.connections.find(
+    (connection) => connection.id === projectPreferences?.connectionId,
+  );
+  const compatibleProjectConnection =
+    inheritedConnection &&
+    terminalControl?.catalog
+      .find((entry) => entry.id === chosenTerminalProfile?.agent)
+      ?.protocols.includes(inheritedConnection.protocol);
+  const terminalProfile = chosenTerminalProfile
+    ? {
+        ...chosenTerminalProfile,
+        ...(compatibleProjectConnection ? { connectionId: inheritedConnection!.id } : {}),
+      }
+    : undefined;
   const [homeContexts, setHomeContexts] = useState<Record<string, ContextPolicy>>({});
   const homeContext = homeContexts[draftKey] || { mode: 'managed' as const };
   const homeContextValid = validContextPolicy(
@@ -321,15 +367,16 @@ function App() {
   const activeRunId = useRef('');
   const detailRequest = useRef(0);
   const runStream = useRef(new RunStream());
+  const streamRun = useRef('');
   const [connection, setConnection] = useState('connecting');
   const actionPending = useRef(false);
-  const surfaceChanging = useRef(false);
   const navigation = useRef(initialNavigation);
   const navigationEpoch = useRef(0);
   const navigationStorageKey = useRef<string | undefined>(undefined);
   const savedNavigation = useRef<NavigationState | undefined>(undefined);
   const navigationInitialized = useRef(false);
   const listRequest = useRef(0);
+  const listedEntities = useRef({ projects: new Set<string>(), runs: new Set<string>() });
   const sessionReady = useRef(false);
   const connectPending = useRef(false);
   const sessionRequest = useRef(0);
@@ -348,7 +395,9 @@ function App() {
     return () => {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden);
-      cache.stop();
+      // Activity hides a workspace without unmounting its state. Keep draft
+      // persistence alive; only the outer host stops caches on actual teardown.
+      void cache.flush();
     };
   }, [cache]);
   const closeArtifact = useCallback(() => {
@@ -391,14 +440,20 @@ function App() {
   const refresh = useCallback(async () => {
     const request = ++listRequest.current;
     const epoch = navigationEpoch.current;
-    let p: Project[], r: Run[], v: Provider[], s: ProjectSpace[], settings: SurfaceTerminalSettings | null;
+    let p: Project[],
+      r: Run[],
+      v: Provider[],
+      s: ProjectSpace[],
+      settings: SurfaceTerminalSettings | null,
+      control: TerminalControlOverview | null;
     try {
-      [p, r, v, s, settings] = await Promise.all([
+      [p, r, v, s, settings, control] = await Promise.all([
         api<Project[]>('/projects'),
         api<Run[]>('/runs'),
         terminalSurface ? Promise.resolve([]) : api<Provider[]>('/providers'),
         api<ProjectSpace[]>('/spaces'),
         terminalSurface ? api<SurfaceTerminalSettings>('/terminal/settings') : Promise.resolve(null),
+        terminalSurface ? api<TerminalControlOverview>('/terminal/control') : Promise.resolve(null),
       ]);
     } catch (error) {
       if (request === listRequest.current)
@@ -411,8 +466,13 @@ function App() {
     setRuns(r);
     setProviders(v);
     setTerminalSettings(settings);
+    setTerminalControl(control);
     setSpaces(s);
-    cache.prune(new Set(p.map((project) => project.id)), new Set(r.map((run) => run.id)));
+    listedEntities.current = {
+      projects: new Set(p.map((project) => project.id)),
+      runs: new Set(r.map((run) => run.id)),
+    };
+    cache.prune(listedEntities.current.projects, listedEntities.current.runs);
     if (epoch !== navigationEpoch.current) return;
     const restoring = !navigationInitialized.current;
     const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
@@ -464,16 +524,20 @@ function App() {
             return;
           }
           clearReadIssue('session', request);
+          navigationStorageKey.current = navigationKey(scope, client);
+          savedNavigation.current = readNavigation(navigationStorageKey.current);
+          // The authenticated workbench and lists do not depend on each other.
+          const lists = refresh();
           try {
-            await cache.load();
+            const [, listed] = await Promise.all([cache.load(), lists]);
+            if (listed === true) cache.prune(listedEntities.current.projects, listedEntities.current.runs);
           } catch (error) {
             setReadIssues((old) => ({ ...old, session: readIssueFor(error, request) }));
             return;
           }
-          navigationStorageKey.current = navigationKey(scope);
-          savedNavigation.current = readNavigation(navigationStorageKey.current);
           sessionReady.current = true;
           setReady(true);
+          return;
         }
         if (source === 'detail') {
           if (target === activeRunId.current) await refreshDetail();
@@ -493,14 +557,40 @@ function App() {
     void connect();
   }, [connect]);
   useEffect(() => {
+    if (!terminalSurface || !ready || !projectId) {
+      setTerminalPreferences(null);
+      return;
+    }
+    const controller = new AbortController();
+    void api<TerminalProjectPreferences>(
+      `/terminal/control/projects/${projectId}/preferences`,
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((value) => {
+        if (!controller.signal.aborted) setTerminalPreferences({ projectId, value });
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted)
+          setError(issue instanceof Error ? issue.message : '无法读取项目默认配置');
+      });
+    return () => controller.abort();
+  }, [projectId, ready, terminalSurface, api]);
+  useEffect(() => {
     if (!ready) return;
     const timer = setInterval(() => void refresh().catch(() => {}), 5000);
     return () => clearInterval(timer);
   }, [ready, refresh]);
   useEffect(() => {
-    setDetail(null);
-    runStream.current.clear();
-    setStreaming({});
+    if (streamRun.current !== runId) {
+      streamRun.current = runId;
+      runStream.current.clear();
+      setStreaming({});
+    }
+    // Preserve the last task view on a hot return while reconciling it with the
+    // server. A different run was already cleared by navigate().
+    setDetail((old) => (old?.run.id === runId ? old : null));
     setConnection('connecting');
     if (!ready || !runId) return;
     void refreshDetail();
@@ -571,7 +661,7 @@ function App() {
   }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
   async function act(fn: () => Promise<unknown>) {
-    if (actionPending.current || surfaceChanging.current) return false;
+    if (actionPending.current) return false;
     actionPending.current = true;
     setBusy(true);
     setError('');
@@ -589,7 +679,7 @@ function App() {
     }
   }
   const startConversation = () => {
-    if (terminalSurface && (!project || !terminalProfile)) return;
+    if (terminalSurface && (!project || !terminalProfile || !projectPreferences)) return;
     if (busy || (!project && (!homeModelValid || !homeContextValid)) || !draft.trim() || project?.archived)
       return;
     if (project) {
@@ -782,19 +872,12 @@ function App() {
           mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
         );
   const switchSurface = (surface: 'native' | 'terminal') => {
-    if (surface === localSurface || actionPending.current || surfaceChanging.current || sessionInitializing)
-      return;
-    surfaceChanging.current = true;
-    setSwitchingSurface(true);
+    if (surface === localSurface || actionPending.current || sessionInitializing) return;
     void cache.flush();
-    location.assign(surfaceLocation(surface));
+    changeSurface(surface);
   };
   const surfaceSwitcher = (
-    <SurfaceSwitcher
-      disabled={busy || sessionInitializing}
-      switching={switchingSurface}
-      change={switchSurface}
-    />
+    <SurfaceSwitcher disabled={busy || sessionInitializing} switching={false} change={switchSurface} />
   );
   function openArtifact(a: ArtifactTarget) {
     if (a.runId !== activeRunId.current) return;
@@ -849,7 +932,7 @@ function App() {
       )}
       <aside
         className="sidebar"
-        id="session-navigation"
+        id={localSurface + '-session-navigation'}
         ref={sidebarRef}
         role={navigationDrawerOpen ? 'dialog' : undefined}
         aria-modal={navigationDrawerOpen || undefined}
@@ -881,10 +964,10 @@ function App() {
           <span>{terminalSurface ? '新建终端任务' : '新建独立对话'}</span>
         </button>
         <div className="space-selector">
-          <label htmlFor="sidebar-space">项目空间</label>
+          <label htmlFor={localSurface + '-sidebar-space'}>项目空间</label>
           <div>
             <select
-              id="sidebar-space"
+              id={localSurface + '-sidebar-space'}
               value={spaceId}
               onChange={(e) => {
                 navigate({ spaceId: e.target.value, projectId: '', runId: '' }, true);
@@ -944,11 +1027,11 @@ function App() {
           <button
             className="nav-item"
             onClick={() => setModal('settings')}
-            aria-label={terminalSurface ? '终端与设置' : '模型与设置'}
-            title={terminalSurface ? '终端与设置' : '模型与设置'}
+            aria-label={terminalSurface ? '终端管理' : '模型与设置'}
+            title={terminalSurface ? '终端管理' : '模型与设置'}
           >
             <Icon name="settings" />
-            <span>{terminalSurface ? '终端与设置' : '模型与设置'}</span>
+            <span>{terminalSurface ? '终端管理' : '模型与设置'}</span>
           </button>
           <div
             className="cache-state"
@@ -983,7 +1066,7 @@ function App() {
               }
               aria-label={narrowLayout ? '打开会话导航' : sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
               aria-expanded={narrowLayout ? navigationOpen : !sidebarCollapsed}
-              aria-controls="session-navigation"
+              aria-controls={localSurface + '-session-navigation'}
               title={narrowLayout ? '打开会话导航' : sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
             >
               <Icon name="panel" />
@@ -1060,7 +1143,11 @@ function App() {
             providers={providers}
             modelChoice={homeModel}
             changeModel={changeHomeModel}
-            modelReady={terminalSurface ? !!terminalProfile : !!project || homeModelValid}
+            modelReady={
+              terminalSurface
+                ? !!terminalProfile && (!project || !!projectPreferences)
+                : !!project || homeModelValid
+            }
             setModelReady={updateHomeModelReady}
             contextReady={!!project || homeContextValid}
             contextControl={
@@ -1080,9 +1167,9 @@ function App() {
             openSettings={() => setModal('settings')}
             start={startConversation}
             terminal={terminalSurface}
-            terminalProfiles={terminalSettings?.profiles || []}
+            terminalProfiles={terminalProfiles}
             terminalProfileId={terminalProfile?.id}
-            changeTerminalProfile={(id) => cache.set('settings:selected-terminal-profile', id)}
+            changeTerminalProfile={(id) => cache.set(profileSelectionKey, id)}
             openProject={() => setModal('project')}
           />
         ) : detail ? (
@@ -1103,7 +1190,7 @@ function App() {
                 <button
                   className="quiet-button details-toggle"
                   aria-expanded={detailsVisible}
-                  aria-controls="run-details"
+                  aria-controls={localSurface + '-run-details'}
                   onClick={() => {
                     setPreviewOpen(false);
                     if (compactLayout) setDetailsDrawerOpen(!detailsVisible);
@@ -1121,7 +1208,7 @@ function App() {
                   className="quiet-button preview-toggle"
                   aria-pressed={previewOpen}
                   aria-expanded={previewOpen}
-                  aria-controls="run-preview"
+                  aria-controls={localSurface + '-run-preview'}
                   onClick={() => setPreviewOpen(!previewOpen)}
                 >
                   <Icon name="panel" size={14} />
@@ -1364,7 +1451,7 @@ function App() {
                     <div
                       className="question-card"
                       key={question.eventId}
-                      id={`question-${question.taskId}`}
+                      id={`${localSurface}-question-${question.taskId}`}
                       ref={index === 0 ? questionRef : undefined}
                       tabIndex={-1}
                     >
@@ -1677,7 +1764,7 @@ function App() {
               {detailsVisible && (
                 <aside
                   className={'details-panel' + (compactLayout ? ' details-drawer' : '')}
-                  id="run-details"
+                  id={localSurface + '-run-details'}
                   ref={detailsRef}
                   role={detailsOverlayOpen ? 'dialog' : undefined}
                   aria-modal={detailsOverlayOpen || undefined}
@@ -2017,6 +2104,7 @@ function App() {
                   modelChoice={homeModel}
                   contextPolicy={homeContext}
                   terminalTemplate={terminalProfile}
+                  terminalConnections={terminalControl?.connections || []}
                   initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
                   close={() => {
                     setRunSetup(null);
@@ -2047,22 +2135,46 @@ function App() {
               {(modal === 'settings' || modal === 'run-settings') &&
                 terminalSurface &&
                 (terminalSettings ? (
-                  <TerminalSettings
-                    initial={terminalSettings}
-                    close={() => setModal(modal === 'run-settings' ? 'run' : '')}
-                    updated={(settings) => {
-                      if (settings.defaultProfileId !== terminalSettings.defaultProfileId)
-                        cache.set('settings:selected-terminal-profile', settings.defaultProfileId);
-                      setTerminalSettings(settings);
-                      void refresh();
-                    }}
-                    activity={(pending) => {
-                      actionPending.current = pending;
-                      setBusy(pending);
-                    }}
-                  />
+                  <React.Suspense
+                    fallback={
+                      <Modal title="终端管理" close={() => setModal('')}>
+                        <div className="form-body" role="status">
+                          正在加载终端管理…
+                        </div>
+                      </Modal>
+                    }
+                  >
+                    <TerminalControlCenter
+                      initial={terminalSettings}
+                      project={project}
+                      close={() => setModal(modal === 'run-settings' ? 'run' : '')}
+                      updated={(settings) => {
+                        if (settings.defaultProfileId !== terminalSettings.defaultProfileId)
+                          cache.set(profileSelectionKey, settings.defaultProfileId);
+                        setTerminalSettings(settings);
+                        void refresh();
+                      }}
+                      controlUpdated={(overview, preferences) => {
+                        if (
+                          terminalControl &&
+                          overview.apps.defaultAppId !== terminalControl.apps.defaultAppId
+                        )
+                          cache.set(profileSelectionKey, '');
+                        setTerminalControl(overview);
+                        if (preferences && project) {
+                          if (projectPreferences && preferences.revision !== projectPreferences.revision)
+                            cache.set(profileSelectionKey, '');
+                          setTerminalPreferences({ projectId: project.id, value: preferences });
+                        }
+                      }}
+                      activity={(pending) => {
+                        actionPending.current = pending;
+                        setBusy(pending);
+                      }}
+                    />
+                  </React.Suspense>
                 ) : (
-                  <Modal title="终端与设置" close={() => setModal('')}>
+                  <Modal title="终端管理" close={() => setModal('')}>
                     <div className="form-body" role="status">
                       {readIssue ? readIssue.message : '正在读取终端模板…'}
                       <button
@@ -2439,6 +2551,7 @@ function ProjectModal({
   busy: boolean;
   submit: (body: any) => void;
 }) {
+  const { api } = useSurfaceClient();
   const [name, setName] = useState(''),
     [root, setRoot] = useState(''),
     [baseline, setBaseline] = useState('HEAD'),
@@ -2717,6 +2830,7 @@ function RunModal({
   modelChoice,
   contextPolicy,
   terminalTemplate,
+  terminalConnections = [],
 }: {
   providers: Provider[];
   objective: string;
@@ -2730,7 +2844,9 @@ function RunModal({
   modelChoice: ModelChoice;
   contextPolicy: ContextPolicy;
   terminalTemplate?: AgentTerminalProfile;
+  terminalConnections?: TerminalConnectionView[];
 }) {
+  const { surface: localSurface } = useSurfaceClient();
   const executionKind = localSurface === 'terminal' ? 'docker-agent' : 'native';
   const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
     [planMode, setPlanMode] = useState(initial?.planMode ?? true),
@@ -2825,7 +2941,52 @@ function RunModal({
             </>
           )}
           {terminal ? (
-            <TerminalSetup value={terminalProfile} change={setTerminalProfile} disabled={busy} />
+            <>
+              <label>
+                API 连接
+                <select
+                  aria-label="任务 API 连接"
+                  value={
+                    terminalProfile.connectionId === null ? 'environment' : terminalProfile.connectionId || ''
+                  }
+                  disabled={busy}
+                  onChange={(event) => {
+                    const { connection: _frozen, connectionId: _old, ...clean } = terminalProfile;
+                    setTerminalProfile({
+                      ...clean,
+                      ...(event.target.value
+                        ? { connectionId: event.target.value === 'environment' ? null : event.target.value }
+                        : {}),
+                    });
+                  }}
+                >
+                  <option value="">使用默认连接</option>
+                  <option value="environment">仅使用模板环境变量</option>
+                  {terminalConnections
+                    .filter(
+                      (connection) =>
+                        terminalProfile.agent === 'custom' ||
+                        (terminalProfile.agent === 'codex'
+                          ? connection.protocol === 'openai-responses'
+                          : terminalProfile.agent === 'gemini'
+                            ? connection.protocol === 'gemini'
+                            : connection.protocol === 'anthropic-messages'),
+                    )
+                    .map((connection) => (
+                      <option key={connection.id} value={connection.id}>
+                        {connection.name} · {connection.model}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="field-help">
+                连接在创建任务时固定。CLI 安装、API 连接和项目默认配置可在终端管理中调整。
+              </p>
+              <details>
+                <summary>终端参数</summary>
+                <TerminalSetup value={terminalProfile} change={setTerminalProfile} disabled={busy} />
+              </details>
+            </>
           ) : (
             <>
               <ModelPicker
@@ -3178,4 +3339,82 @@ function DecisionModal({
     </Modal>
   );
 }
-createRoot(document.getElementById('root')!).render(<App />);
+function SurfaceEntry({
+  client,
+  active,
+  changeSurface,
+  registerCache,
+}: {
+  client: SurfaceClient;
+  active: boolean;
+  changeSurface: (surface: 'native' | 'terminal') => void;
+  registerCache: (surface: 'native' | 'terminal', cache: WorkbenchCache) => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={root}
+      data-workspace-surface={client.surface}
+      data-surface-active={active}
+      hidden={!active}
+      inert={!active}
+    >
+      <SurfaceClientContext.Provider value={client}>
+        <SurfaceRootContext.Provider value={root}>
+          <Activity name={client.surface} mode={active ? 'visible' : 'hidden'}>
+            <App changeSurface={changeSurface} registerCache={registerCache} />
+          </Activity>
+        </SurfaceRootContext.Provider>
+      </SurfaceClientContext.Provider>
+    </div>
+  );
+}
+
+function SurfaceWorkspaces() {
+  const [current, setCurrent] = useState(localSurface);
+  const [visited, setVisited] = useState(() => new Set([localSurface]));
+  const [clients] = useState(() => ({
+    native: localSurface === 'native' ? defaultSurfaceClient : createSurfaceClient('native'),
+    terminal: localSurface === 'terminal' ? defaultSurfaceClient : createSurfaceClient('terminal'),
+  }));
+  const caches = useRef(new Map<'native' | 'terminal', WorkbenchCache>());
+  const registerCache = useCallback((surface: 'native' | 'terminal', cache: WorkbenchCache) => {
+    caches.current.set(surface, cache);
+  }, []);
+  useEffect(
+    () => () => {
+      for (const cache of caches.current.values()) cache.stop();
+    },
+    [],
+  );
+  const changeSurface = useCallback((surface: 'native' | 'terminal') => {
+    history.replaceState(null, '', surfaceLocation(surface));
+    setVisited((old) => new Set([...old, surface]));
+    setCurrent(surface);
+  }, []);
+  useEffect(() => {
+    const restore = () =>
+      changeSurface(
+        new URLSearchParams(location.search).get('surface') === 'terminal' ? 'terminal' : 'native',
+      );
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, [changeSurface]);
+  return (
+    <>
+      {(['native', 'terminal'] as const).map(
+        (surface) =>
+          visited.has(surface) && (
+            <SurfaceEntry
+              key={surface}
+              client={clients[surface]}
+              active={current === surface}
+              changeSurface={changeSurface}
+              registerCache={registerCache}
+            />
+          ),
+      )}
+    </>
+  );
+}
+createRoot(document.getElementById('root')!).render(<SurfaceWorkspaces />);

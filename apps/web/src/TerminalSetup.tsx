@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { AgentTerminalProfile } from '../../../packages/contracts/src/index';
-import { api } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 
 export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): AgentTerminalProfile {
   const choices = {
@@ -34,6 +34,19 @@ export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): Ag
       protocol: 'claude-stream-json',
       environment: ['ANTHROPIC_API_KEY'],
     },
+    gemini: {
+      command: [
+        'gemini',
+        '-p',
+        'Complete the task supplied through standard input.',
+        '--output-format',
+        'stream-json',
+        '--approval-mode',
+        'yolo',
+      ],
+      protocol: 'gemini-stream-json',
+      environment: ['GEMINI_API_KEY'],
+    },
     custom: { command: ['agent'], protocol: 'text', environment: [] },
   } as const;
   return {
@@ -59,6 +72,7 @@ export function TerminalSetup({
   change: (profile: AgentTerminalProfile) => void;
   disabled: boolean;
 }) {
+  const { api } = useSurfaceClient();
   const [argv, setArgv] = useState(() => JSON.stringify(value.command)),
     [issue, setIssue] = useState(''),
     [checking, setChecking] = useState(false),
@@ -96,6 +110,8 @@ export function TerminalSetup({
           >
             <option value="dsh">DeepSeek Harness（DSH）</option>
             <option value="codex">Codex CLI</option>
+            <option value="claude">Claude Code</option>
+            <option value="gemini">Gemini CLI</option>
             <option value="custom">自定义 Agent</option>
           </select>
         </label>
@@ -139,6 +155,7 @@ export function TerminalSetup({
             <option value="dsh-jsonl">DSH JSONL</option>
             <option value="codex-jsonl">Codex JSONL</option>
             <option value="claude-stream-json">Claude Stream JSON</option>
+            <option value="gemini-stream-json">Gemini Stream JSON</option>
             <option value="text">普通文本</option>
           </select>
         </label>
@@ -152,8 +169,8 @@ export function TerminalSetup({
           />
         </label>
         <p className="field-help">
-          只传入列出的本机服务环境变量。不会复用 API 设置中的加密密钥或宿主 Agent 登录目录。请在启动 Elysia
-          前配置对应凭据；镜像需预先安装所选 Agent。
+          未选择管理中心的 API 连接时，读取这里列出的服务环境变量；选择连接后使用该连接的配置。 不会映射宿主
+          Agent 登录目录。CLI 可在终端管理中安装，或使用已有镜像。
         </p>
         <div className="form-columns">
           <label>

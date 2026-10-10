@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
-import { ApiError, mutation } from './api';
+import { ApiError } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 
@@ -21,6 +22,7 @@ export function WorkspaceManager({
   updated: (deleted?: { kind: 'project' | 'run' | 'space'; id: string }) => Promise<void | boolean>;
   selectRun: (run: Run) => void;
 }) {
+  const { mutation } = useSurfaceClient();
   const [tab, setTab] = useState(initial),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),

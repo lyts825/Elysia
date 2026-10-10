@@ -1,11 +1,11 @@
 import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
-import { surfaceStorageKey } from './api';
+import { defaultSurfaceClient, type SurfaceClient } from './api';
 
 export type NavigationState = { spaceId: string; projectId: string; runId: string };
 export const initialNavigation: NavigationState = { spaceId: 'default', projectId: '', runId: '' };
 
-export function navigationKey(scope: string | undefined) {
-  return scope ? surfaceStorageKey(`elysia.navigation.v1:${scope}`) : undefined;
+export function navigationKey(scope: string | undefined, client: SurfaceClient = defaultSurfaceClient) {
+  return scope ? client.surfaceStorageKey(`elysia.navigation.v1:${scope}`) : undefined;
 }
 
 export function readNavigation(key: string | undefined): NavigationState | undefined {

@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
-import { api } from './api';
+import type { SurfaceClient } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import {
   catalogIssue,
   initialEffort,
@@ -17,13 +18,22 @@ export type ModelChoice = {
   reasoningEffort?: ProviderConfig['reasoningEffort'];
 };
 export type SelectableProvider = ProviderConfig & { keyConfigured: boolean };
-const catalogs = new Map<string, { time: number; promise: Promise<CatalogModel[]> }>();
-function catalog(provider: SelectableProvider, fresh = false) {
+const catalogCaches = new WeakMap<
+  SurfaceClient,
+  Map<string, { time: number; promise: Promise<CatalogModel[]> }>
+>();
+function catalog(client: SurfaceClient, provider: SelectableProvider, fresh = false) {
+  let catalogs = catalogCaches.get(client);
+  if (!catalogs) {
+    catalogs = new Map();
+    catalogCaches.set(client, catalogs);
+  }
+  const cache = catalogs;
   const key = `${provider.id}:${provider.revision}`;
   const existing = catalogs.get(key);
   if (!fresh && existing && Date.now() - existing.time < 30000) return existing.promise;
-  const promise = api<CatalogModel[]>('/providers/' + provider.id + '/models').catch((error) => {
-    catalogs.delete(key);
+  const promise = client.api<CatalogModel[]>('/providers/' + provider.id + '/models').catch((error) => {
+    cache.delete(key);
     throw error;
   });
   catalogs.set(key, { time: Date.now(), promise });
@@ -55,6 +65,7 @@ export function ModelPicker({
   disabled?: boolean;
   label?: string;
 }) {
+  const client = useSurfaceClient();
   const id = useId();
   const selected = providers.find((p) => p.id === value.providerId);
   const subscription = ['chatgpt', 'codex'].includes(selected?.authMode || '');
@@ -79,7 +90,7 @@ export function ModelPicker({
       return;
     }
     setLoading(true);
-    catalog(selected, refresh > 0)
+    catalog(client, selected, refresh > 0)
       .then((rows) => {
         if (active) {
           setModels(rows);

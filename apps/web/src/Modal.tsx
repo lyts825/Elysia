@@ -1,3 +1,4 @@
+import { useSurfaceRoot } from './SurfaceClientContext';
 import { createContext, useContext, useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
@@ -21,6 +22,7 @@ export function Modal({
   className?: string;
   busy?: boolean;
 }) {
+  const surfaceRoot = useSurfaceRoot();
   const ref = useRef<HTMLElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const present = usePresenceMotion(ref, 'dialog');
@@ -36,8 +38,8 @@ export function Modal({
     if (!present) return;
     const previous = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
-    const shell = document.querySelector<HTMLElement>('.main');
-    const sidebar = document.querySelector<HTMLElement>('.sidebar');
+    const shell = (surfaceRoot?.current || document).querySelector<HTMLElement>('.main');
+    const sidebar = (surfaceRoot?.current || document).querySelector<HTMLElement>('.sidebar');
     const targets = [shell, sidebar].filter((node): node is HTMLElement => !!node);
     const inert = targets.map((node) => node.inert);
     targets.forEach((node) => {
@@ -45,7 +47,7 @@ export function Modal({
     });
     dialog.focus();
     const keydown = (event: KeyboardEvent) => {
-      const dialogs = document.querySelectorAll('[role="dialog"]');
+      const dialogs = (surfaceRoot?.current || document).querySelectorAll('[role="dialog"]');
       if (dialogs[dialogs.length - 1] !== dialog) return;
       if (event.key === 'Escape' && !event.isComposing) {
         event.preventDefault();

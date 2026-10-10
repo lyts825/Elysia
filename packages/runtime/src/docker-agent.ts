@@ -21,10 +21,13 @@ import {
   type Project,
   type Run,
   type Task,
+  type TerminalConnectionBinding,
 } from '../../contracts/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
 import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
+import { DockerCliManager } from './cli-manager.js';
+import { terminalConnectionConfiguration } from './terminal-connection.js';
 
 export interface DockerCommandOptions {
   cwd: string;
@@ -128,6 +131,16 @@ export const defaultAgentCommand = (agent: AgentTerminalProfile['agent']): strin
       'none',
     ];
   if (agent === 'dsh') return ['dsh', '--profile', 'headless', '--json', '-'];
+  if (agent === 'gemini')
+    return [
+      'gemini',
+      '-p',
+      'Complete the task supplied through standard input.',
+      '--output-format',
+      'stream-json',
+      '--approval-mode',
+      'yolo',
+    ];
   return [];
 };
 
@@ -235,6 +248,20 @@ export class TerminalProjection {
           this.append(event.result + '\n');
         }
       }
+    } else if (this.protocol === 'gemini-stream-json') {
+      if (event.type === 'init' && typeof event.session_id === 'string') this.sessionId = event.session_id;
+      if (event.type === 'message' && event.role === 'assistant' && typeof event.content === 'string')
+        this.append(event.content);
+      if (event.type === 'tool_use')
+        this.append(
+          `[tool · ${typeof event.tool_name === 'string' ? event.tool_name.slice(0, 100) : '已记录'}]\n`,
+        );
+      if (event.type === 'result') {
+        this.completed = event.status === 'success';
+        this.failed ||= !this.completed;
+        this.summary = this.output + this.redactionPending;
+      }
+      if (event.type === 'error' && event.severity !== 'warning') this.failed = true;
     } else {
       if (event.type === 'session' && typeof event.sessionId === 'string') this.sessionId = event.sessionId;
       if (event.type === 'text' && typeof event.text === 'string') this.append(event.text);
@@ -329,15 +356,23 @@ export interface DockerAgentCheck {
 /** External agent execution beside the native API loop; scheduling remains in NativeExecutor. */
 export class DockerAgentService {
   private transport: DockerTransport;
+  public cliManager: DockerCliManager;
   private active = new Map<string, { task: Task; operation: Operation; stopping?: Promise<void> }>();
   private owner: string;
   private environment: (names: string[]) => Record<string, string>;
+  private resolveConnection?: (binding: TerminalConnectionBinding) => Promise<string>;
   constructor(
     public kernel: Kernel,
     public gateway: ToolGateway,
-    options: { transport?: DockerTransport; environment?: (names: string[]) => Record<string, string> } = {},
+    options: {
+      transport?: DockerTransport;
+      environment?: (names: string[]) => Record<string, string>;
+      resolveConnection?: (binding: TerminalConnectionBinding) => Promise<string>;
+    } = {},
   ) {
     this.transport = options.transport ?? new DockerCliTransport();
+    this.cliManager = new DockerCliManager(kernel.store.directory, { transport: this.transport });
+    this.resolveConnection = options.resolveConnection;
     this.environment =
       options.environment ??
       ((names) =>
@@ -351,6 +386,15 @@ export class DockerAgentService {
   }
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.transport.run(args, { cwd: this.store.directory, ...options });
+  }
+  private async connectionConfiguration(profile: AgentTerminalProfile) {
+    if (!profile.connection) return undefined;
+    invariant(this.resolveConnection, 'TERMINAL_CREDENTIAL_UNAVAILABLE', '当前服务无法读取终端连接凭据');
+    return terminalConnectionConfiguration(
+      profile,
+      profile.connection,
+      await this.resolveConnection(profile.connection),
+    );
   }
   private async workspaceManifest(directory: string, signal: AbortSignal): Promise<WorkspaceManifest> {
     const root = await fs.realpath(directory),
@@ -642,8 +686,9 @@ export class DockerAgentService {
             code: 'DOCKER_IMAGE_MISSING',
             message: '尚未安装指定 Agent 镜像，请先构建或导入镜像；不会自动拉取',
           };
-        const values = this.environment(profile.environment);
-        const missingEnvironment = profile.environment.filter((name) => !values[name]);
+        const configuration = await this.connectionConfiguration(profile);
+        const values = configuration?.environment ?? this.environment(profile.environment);
+        const missingEnvironment = configuration ? [] : profile.environment.filter((name) => !values[name]);
         if (missingEnvironment.length)
           return {
             available: false,
@@ -846,6 +891,15 @@ export class DockerAgentService {
       });
       return;
     }
+    // Resolve only the immutable reference selected at creation. A revoked key fails before claiming work.
+    const configuration = await this.connectionConfiguration(profile);
+    const values = configuration?.environment ?? this.environment(profile.environment);
+    invariant(
+      Object.values(values).every((value) => !!value && !/[\r\n\0]/.test(value)) &&
+        (configuration || profile.environment.every((name) => !!values[name])),
+      'TERMINAL_ENVIRONMENT',
+      '终端环境变量缺失或包含无效换行，请检查配置',
+    );
     const attempt = this.kernel.claim(task.id);
     task = await this.gateway.prepare(this.store.require<Task>('tasks', task.id), signal);
     await this.prepareInitialSnapshot(task, signal);
@@ -870,16 +924,10 @@ export class DockerAgentService {
     const home = path.join(state, 'home');
     const guard = path.join(state, 'git-hidden');
     const envFile = path.join(state, 'environment');
-    const values = this.environment(profile.environment);
-    invariant(
-      profile.environment.every((name) => !!values[name] && !/[\r\n\0]/.test(values[name])),
-      'TERMINAL_ENVIRONMENT',
-      '终端环境变量缺失或包含无效换行，请检查配置',
-    );
     const projection = new TerminalProjection(
       profile.protocol,
       profile.outputLimit,
-      Object.values(values),
+      configuration?.secrets ?? Object.values(values),
       (text) =>
         this.kernel.event(
           run.id,
@@ -921,11 +969,19 @@ export class DockerAgentService {
       await fs.mkdir(state, { mode: 0o700 });
       ownedState = true;
       await fs.mkdir(home, { mode: 0o700 });
+      for (const file of configuration?.files ?? [])
+        await fs.writeFile(path.join(home, file.path), file.content, { mode: 0o600, flag: 'wx' });
       await fs.writeFile(guard, 'gitdir: /elysia-hidden-git\n', { mode: 0o600 });
       // The durable operation exists before any temporary credential file.
-      await fs.writeFile(envFile, profile.environment.map((name) => `${name}=${values[name]}`).join('\n'), {
-        mode: 0o600,
-      });
+      await fs.writeFile(
+        envFile,
+        Object.entries(values)
+          .map(([name, value]) => `${name}=${value}`)
+          .join('\n'),
+        {
+          mode: 0o600,
+        },
+      );
       const args = [
         'create',
         '--interactive',
@@ -970,7 +1026,7 @@ export class DockerAgentService {
       // Worktree .git points at the host. A read-only file mask hides that pointer;
       // git diff and integration continue exclusively through the host gateway.
       if (task.baseline) args.push('--mount', `type=bind,source=${guard},target=/workspace/.git,readonly`);
-      args.push(profile.image, ...profile.command);
+      args.push(profile.image, ...(configuration?.command ?? profile.command));
       const created = await this.command(args, { signal });
       await this.clearEnvironmentFile(operation);
       invariant(

@@ -35,7 +35,11 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    proxy: { '/api': 'http://127.0.0.1:' + (process.env.ELYSIA_PORT || '4317') },
+    proxy: {
+      '/api': 'http://127.0.0.1:' + (process.env.ELYSIA_PORT || '4317'),
+      '/terminal': 'http://127.0.0.1:' + (process.env.ELYSIA_PORT || '4317'),
+      '/preview': 'http://127.0.0.1:' + (process.env.ELYSIA_PORT || '4317'),
+    },
   },
   build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },
 });

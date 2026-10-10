@@ -1,0 +1,419 @@
+.terminal-control-center.modal {
+  width: min(1060px, calc(100vw - 40px));
+}
+.terminal-control-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminal-control-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-weight: 600;
+}
+.terminal-control-tabs button[aria-selected='true'] {
+  color: var(--accent);
+  background: var(--accent-pale);
+}
+.terminal-control-tabs button:active,
+.cli-app-actions button:active {
+  transform: scale(0.97);
+}
+.terminal-control-content {
+  padding: 22px;
+  overflow: auto;
+  min-height: 0;
+}
+.terminal-control-content.with-templates {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.terminal-control-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.terminal-control-heading h3,
+.cli-app-title h4 {
+  margin: 0;
+}
+.terminal-control-heading p,
+.cli-app-info p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+.terminal-control-tag {
+  color: var(--accent);
+  background: var(--accent-pale);
+  border-radius: 7px;
+  font-size: 11px;
+  padding: 4px 7px;
+  flex-shrink: 0;
+}
+.cli-app-list {
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  overflow: hidden;
+}
+.cli-app-row {
+  display: grid;
+  grid-template-columns: 42px minmax(160px, 1fr) minmax(120px, 175px) 138px 46px;
+  gap: 14px;
+  align-items: center;
+  padding: 20px 18px;
+}
+.cli-app-row + .cli-app-row {
+  border-top: 1px solid var(--border);
+}
+.cli-app-glyph {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  font-size: 24px;
+  color: var(--text);
+  font-weight: 600;
+}
+.cli-app-glyph.dsh {
+  background: #eef3ff;
+  color: #526cdd;
+  font-size: 21px;
+}
+.cli-app-glyph.claude {
+  background: #fff1e8;
+  color: #c97652;
+}
+.cli-app-glyph.gemini {
+  background: #f0edff;
+  color: #8064d6;
+}
+.cli-app-glyph.custom {
+  color: var(--muted);
+  font-size: 17px;
+}
+.cli-app-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.cli-app-title h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cli-api-binding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cli-api-binding select {
+  min-width: 0;
+  max-width: 230px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.cli-app-version {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cli-app-version .connected {
+  color: var(--success);
+}
+.cli-app-version small {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  font-size: 11px;
+}
+.cli-app-error {
+  color: var(--danger);
+}
+.cli-app-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.cli-app-actions .secondary {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.cli-app-actions .text-button {
+  grid-column: 1/-1;
+  text-align: center;
+  font-size: 11px;
+}
+.cli-visibility {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.cli-visibility input {
+  appearance: none;
+  width: 34px;
+  height: 21px;
+  border-radius: 20px;
+  border: 0;
+  background: #a8a6ad;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+  transition: background 0.15s ease;
+}
+.cli-visibility input::after {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: white;
+  left: 3px;
+  top: 3px;
+  transition: transform 0.15s ease;
+}
+.cli-visibility input:checked {
+  background: var(--accent);
+}
+.cli-visibility input:checked::after {
+  transform: translateX(13px);
+}
+.cli-visibility input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cli-install-options {
+  margin-top: 18px;
+  font-size: 13px;
+}
+.cli-install-options summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.cli-install-options .form-columns {
+  margin-top: 12px;
+}
+.terminal-control-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--success);
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+.terminal-control-loading {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--muted);
+}
+.terminal-connection-layout {
+  display: grid;
+  grid-template-columns: 235px minmax(0, 1fr);
+  gap: 26px;
+  min-height: 380px;
+}
+.terminal-connection-list {
+  border-right: 1px solid var(--border);
+  padding-right: 20px;
+}
+.terminal-connection-list .terminal-control-heading {
+  margin-bottom: 10px;
+}
+.terminal-connection-list > button {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+.terminal-connection-list > button[aria-current='true'] {
+  background: var(--accent-pale);
+  color: var(--accent);
+}
+.terminal-connection-list strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.terminal-connection-list small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.terminal-connection-editor {
+  gap: 15px !important;
+  overflow: visible !important;
+}
+.terminal-connection-editor label,
+.terminal-project-defaults label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.terminal-control-center input,
+.terminal-control-center select {
+  border-radius: 9px;
+}
+.terminal-control-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.terminal-delete-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 12px;
+}
+.terminal-delete-confirm span {
+  flex: 1 1 180px;
+}
+.terminal-connection-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 35px 15px;
+  gap: 15px;
+  color: var(--muted);
+}
+.terminal-connection-empty h3,
+.terminal-connection-empty p {
+  margin: 0;
+}
+.terminal-connection-empty h3 {
+  color: var(--text);
+  font-size: 17px;
+}
+.terminal-connection-empty p {
+  font-size: 13px;
+}
+.terminal-project-defaults {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 10px 0 25px;
+  gap: 22px !important;
+  overflow: visible !important;
+}
+.terminal-project-defaults > .primary {
+  align-self: flex-start;
+}
+.terminal-control-center .modal-footer > span {
+  margin-right: auto;
+}
+@media (max-width: 760px) {
+  .terminal-control-center.modal {
+    width: calc(100vw - 20px);
+  }
+  .terminal-control-content {
+    padding: 16px;
+  }
+  .terminal-control-tabs {
+    padding: 10px 12px;
+    gap: 2px;
+  }
+  .terminal-control-tabs button {
+    padding: 8px 9px;
+    font-size: 12px;
+  }
+  .cli-app-row {
+    grid-template-columns: 34px minmax(0, 1fr) 40px;
+    gap: 12px;
+    padding: 16px;
+  }
+  .cli-app-glyph {
+    width: 32px;
+    height: 32px;
+  }
+  .cli-visibility {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .cli-app-version {
+    grid-column: 2;
+  }
+  .cli-app-actions {
+    grid-column: 2/4;
+    grid-template-columns: max-content max-content 1fr;
+  }
+  .cli-app-actions .text-button {
+    grid-column: auto;
+  }
+  .cli-api-binding {
+    flex-wrap: wrap;
+  }
+  .terminal-connection-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .terminal-connection-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cli-visibility input,
+  .cli-visibility input::after {
+    transition: none;
+  }
+  .terminal-control-tabs button:active,
+  .cli-app-actions button:active {
+    transform: none;
+  }
+}
+
+.terminal-control-read-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.terminal-control-read-error .inline-warning {
+  flex: 1 1 240px;
+  margin: 0;
+}
+.terminal-control-conflict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.terminal-control-conflict span {
+  flex: 1 1 160px;
+}

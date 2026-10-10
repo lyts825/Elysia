@@ -3,7 +3,14 @@ import { AppError } from '../../../packages/contracts/src/index.js';
 
 export interface DesktopServices {
   request(
-    operation: 'vault-read' | 'vault-write' | 'key-vault-read' | 'key-vault-write' | 'open-auth',
+    operation:
+      | 'vault-read'
+      | 'vault-write'
+      | 'key-vault-read'
+      | 'key-vault-write'
+      | 'terminal-key-vault-read'
+      | 'terminal-key-vault-write'
+      | 'open-auth',
     value?: unknown,
   ): Promise<any>;
 }

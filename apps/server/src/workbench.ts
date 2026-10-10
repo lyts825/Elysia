@@ -20,10 +20,14 @@ const fixedKeys = new Set([
   'settings:selected-terminal-profile',
 ]);
 const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):([^:\s/\\]+)$/;
+const terminalSelectionKey = /^settings:selected-terminal-profile:([^:\s/\\]+)$/;
 const keySchema = z
   .string()
   .max(240)
-  .refine((key) => fixedKeys.has(key) || entityKey.test(key), '工作台缓存键无效');
+  .refine(
+    (key) => fixedKeys.has(key) || entityKey.test(key) || terminalSelectionKey.test(key),
+    '工作台缓存键无效',
+  );
 const valueSchema = z.union([z.string().max(200000), z.boolean()]);
 const storedEntry = z
   .object({ value: valueSchema, revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
@@ -42,20 +46,27 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const selection = terminalSelectionKey.exec(key);
+  if (selection && selection[1] !== 'home') return { table: 'projects', id: selection[1] };
   const match = entityKey.exec(key);
   if (!match) return;
   return { table: match[1].endsWith('project') ? 'projects' : 'runs', id: match[3] };
 }
 
 function assertValue(key: string, value: string | boolean) {
-  const text = key.startsWith('draft:') || key === 'settings:selected-terminal-profile';
+  const profile = key === 'settings:selected-terminal-profile' || terminalSelectionKey.test(key);
+  const text = key.startsWith('draft:') || profile;
   invariant(
     typeof value === (text ? 'string' : 'boolean'),
     'WORKBENCH_VALUE',
     text ? '草稿和模板选择必须是文本' : '工作台显示选项必须是布尔值',
   );
-  if (key === 'settings:selected-terminal-profile')
-    invariant(z.string().uuid().safeParse(value).success, 'WORKBENCH_VALUE', '终端模板选择无效');
+  if (profile)
+    invariant(
+      value === '' || z.string().uuid().safeParse(value).success,
+      'WORKBENCH_VALUE',
+      '终端模板选择无效',
+    );
 }
 
 function decode(row: Row): { entry: Entry; bytes: number } {

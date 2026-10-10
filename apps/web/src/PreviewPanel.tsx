@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { ApiError } from './api';
+import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type {
   PreviewFile,
@@ -56,6 +57,8 @@ export function PreviewPanel({
   selectTask,
   close,
 }: Props) {
+  const { api, surface } = useSurfaceClient();
+  const surfaceRoot = useSurfaceRoot();
   const panel = useRef<HTMLElement>(null);
   const present = usePresenceMotion(panel, 'panel');
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
@@ -155,15 +158,24 @@ export function PreviewPanel({
     },
     [chooseFile],
   );
-  useEffect(() => setHtmlPermission(''), [context]);
+  const permissionContext = useRef(context);
   useEffect(() => {
+    if (permissionContext.current === context) return;
+    permissionContext.current = context;
+    setHtmlPermission('');
+  }, [context]);
+  const previewScope = JSON.stringify([runId, taskId]);
+  const resetScope = useRef(previewScope);
+  useEffect(() => {
+    if (resetScope.current === previewScope) return;
+    resetScope.current = previewScope;
     setSnapshot(null);
     setContent(null);
     setSnapshotError('');
     setFileError('');
     setUpdated('');
     setFileNotice('');
-  }, [runId, taskId]);
+  }, [previewScope]);
   useEffect(() => {
     if (!taskId) return;
     const controller = new AbortController();
@@ -378,7 +390,9 @@ export function PreviewPanel({
             <button
               className="icon-button"
               onClick={() => {
-                document.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });
+                surfaceRoot?.current
+                  ?.querySelector<HTMLElement>('.preview-toggle')
+                  ?.focus({ preventScroll: true });
                 close();
               }}
               aria-label="关闭预览"
@@ -389,8 +403,8 @@ export function PreviewPanel({
         </header>
       )}
       <div className="preview-agent-picker">
-        <label htmlFor="preview-agent">代理</label>
-        <select id="preview-agent" value={taskId} onChange={(e) => selectTask(e.target.value)}>
+        <label htmlFor={surface + '-preview-agent'}>代理</label>
+        <select id={surface + '-preview-agent'} value={taskId} onChange={(e) => selectTask(e.target.value)}>
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
               {'　'.repeat(t.depth)}

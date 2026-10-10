@@ -19,6 +19,7 @@ export function registerManagement(
   kernel: Kernel,
   executor: NativeExecutor,
   closeStreams: (runId: string) => void,
+  deletedProject?: (projectId: string) => void,
 ) {
   const deleting = new Set<string>();
   const assertMutable = (runId?: string | null, projectId?: string | null) => {
@@ -187,6 +188,7 @@ export function registerManagement(
           store.deleteRun(run.id);
         }
         store.delete('projects', request.params.id);
+        deletedProject?.(request.params.id);
         return { ok: true };
       },
     );

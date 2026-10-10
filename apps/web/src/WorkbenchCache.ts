@@ -1,4 +1,4 @@
-import { api, surfaceStorageKey } from './api';
+import { defaultSurfaceClient, type SurfaceClient } from './api';
 
 export type CacheEntry = { value: string | boolean; revision: number };
 type Snapshot = {
@@ -11,17 +11,23 @@ type Snapshot = {
 // Only unsaved values override the server when reopening; old saved copies never do.
 export class WorkbenchCache {
   private scope = '';
-  private recoverySlot = (() => {
-    try {
-      const saved = sessionStorage.getItem(surfaceStorageKey('elysia.workbench.window'));
-      if (saved) return saved;
-      const slot = crypto.randomUUID();
-      sessionStorage.setItem(surfaceStorageKey('elysia.workbench.window'), slot);
-      return slot;
-    } catch {
-      return 'single-window';
-    }
-  })();
+  private recoverySlot: string;
+  constructor(
+    private changed: (snapshot: Snapshot) => void,
+    private client: SurfaceClient = defaultSurfaceClient,
+  ) {
+    this.recoverySlot = (() => {
+      try {
+        const saved = sessionStorage.getItem(client.surfaceStorageKey('elysia.workbench.window'));
+        if (saved) return saved;
+        const slot = crypto.randomUUID();
+        sessionStorage.setItem(client.surfaceStorageKey('elysia.workbench.window'), slot);
+        return slot;
+      } catch {
+        return 'single-window';
+      }
+    })();
+  }
   private entries: Record<string, CacheEntry> = {};
   private dirty = new Set<string>();
   private conflicts = new Set<string>();
@@ -32,7 +38,6 @@ export class WorkbenchCache {
   private stopped = false;
   private status: Snapshot['status'] = 'loading';
   private error = '';
-  constructor(private changed: (snapshot: Snapshot) => void) {}
 
   private publish() {
     this.changed({ entries: { ...this.entries }, status: this.status, error: this.error });
@@ -55,7 +60,9 @@ export class WorkbenchCache {
   async load(overwrite = false) {
     this.loading = true;
     try {
-      const result = await api<{ scope: string; entries: Record<string, CacheEntry> }>('/workbench');
+      const result = await this.client.api<{ scope: string; entries: Record<string, CacheEntry> }>(
+        '/workbench',
+      );
       this.scope = result.scope;
       const previous = this.entries;
       this.entries = { ...result.entries };
@@ -128,6 +135,8 @@ export class WorkbenchCache {
   }
   prune(projectIds: Set<string>, runIds: Set<string>) {
     const obsolete = Object.keys(this.entries).filter((key) => {
+      const selection = /^settings:selected-terminal-profile:(.+)$/.exec(key);
+      if (selection) return selection[1] !== 'home' && !projectIds.has(selection[1]);
       const match = /^(?:draft|collapsed):project:(.+)$/.exec(key);
       if (match) return !projectIds.has(match[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
@@ -149,7 +158,7 @@ export class WorkbenchCache {
         if (!key) break;
         const sent = this.entries[key];
         try {
-          const saved = await api<CacheEntry>(
+          const saved = await this.client.api<CacheEntry>(
             `/workbench/${encodeURIComponent(key)}`,
             {
               value: sent.value,

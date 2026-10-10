@@ -24,8 +24,9 @@ function attachServices(window, directory, getOrigin) {
   return async (message) => {
     const file = path.join(
       directory,
+      ...(message.operation.startsWith('terminal-key-vault-') ? ['surfaces', 'terminal'] : []),
       'credentials',
-      message.operation.startsWith('key-vault-') ? 'api-keys.bin' : 'chatgpt.bin',
+      message.operation.includes('key-vault-') ? 'api-keys.bin' : 'chatgpt.bin',
     );
     if (message.operation === 'open-auth') {
       const url = new URL(message.value);
@@ -44,7 +45,11 @@ function attachServices(window, directory, getOrigin) {
       (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
     )
       throw new Error('系统加密存储不可用，请使用 API Key 或启用系统密钥环');
-    if (message.operation === 'vault-read' || message.operation === 'key-vault-read') {
+    if (
+      message.operation === 'vault-read' ||
+      message.operation === 'key-vault-read' ||
+      message.operation === 'terminal-key-vault-read'
+    ) {
       try {
         return JSON.parse(safeStorage.decryptString(await fs.readFile(file)));
       } catch (error) {
@@ -52,7 +57,11 @@ function attachServices(window, directory, getOrigin) {
         throw new Error('无法解密订阅凭据，请在原系统账号中启动');
       }
     }
-    if (message.operation === 'vault-write' || message.operation === 'key-vault-write') {
+    if (
+      message.operation === 'vault-write' ||
+      message.operation === 'key-vault-write' ||
+      message.operation === 'terminal-key-vault-write'
+    ) {
       const json = JSON.stringify(message.value);
       if (json.length > 2 * 1024 * 1024) throw new Error('凭据数据超过限制');
       await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { ApiError } from './api';
+import { useSurfaceClient } from './SurfaceClientContext';
 import type { PreviewFile } from '../../../packages/contracts/src/preview';
 
 export type FilePreviewContent = Pick<
@@ -21,6 +22,7 @@ const start = (scope: string) => ({
 });
 
 export function useFilePage(endpoint: string, encoding: string, refresh: number) {
+  const { api } = useSurfaceClient();
   const scope = JSON.stringify([endpoint, encoding, refresh]);
   const [position, setPosition] = useState(() => start(scope));
   const current = position.scope === scope ? position : start(scope);

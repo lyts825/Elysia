@@ -37,7 +37,7 @@ import { terminalBinding } from './terminal-binding.js';
 import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
-import { desktopServices } from './desktop.js';
+import { desktopServices, type DesktopServices } from './desktop.js';
 import {
   inspectFolder,
   projectFiles,
@@ -56,6 +56,8 @@ import { availableModels, resolveModelChoice } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
 import { createSurfaceAuth, type SurfaceAuth, type WorkbenchSurface } from './surfaces.js';
 import { registerTerminalSettings } from './terminal-settings.js';
+import { TerminalControlService, registerTerminalControl, terminalAppCatalog } from './terminal-control.js';
+import { registerCliManagement } from './cli-management.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -138,6 +140,7 @@ export function createServer(
     codex?: CodexSubscription;
     keys?: ProviderKeys;
     terminal?: ConstructorParameters<typeof DockerAgentService>[2];
+    terminalDesktop?: DesktopServices;
     app?: FastifyInstance;
     prefix?: '' | '/terminal';
     surface?: WorkbenchSurface;
@@ -163,7 +166,29 @@ export function createServer(
       : options.surface === 'terminal'
         ? run.execution?.kind === 'docker-agent'
         : true;
-  const terminal = new DockerAgentService(kernel, executor.gateway, options.terminal);
+  const terminalControl =
+    options.surface === 'terminal'
+      ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
+      : undefined;
+  const terminal = new DockerAgentService(kernel, executor.gateway, {
+    ...options.terminal,
+    ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
+  });
+  const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
+    if (!terminalControl) return profile;
+    if (profile.connectionId === undefined && projectId) {
+      const selected = terminalControl.preferences(projectId).connectionId;
+      const connection = terminalControl.connections().find((entry) => entry.id === selected);
+      if (
+        connection &&
+        terminalAppCatalog()
+          .find((entry) => entry.id === profile.agent)
+          ?.protocols.includes(connection.protocol)
+      )
+        return terminalControl.bindProfile(profile, connection.id);
+    }
+    return terminalControl.bindProfile(profile);
+  };
   executor.terminalRunner = (task, signal) => terminal.run(task, signal);
   executor.terminalInterrupt = (runId, taskId) => terminal.interrupt(runId, taskId);
   executor.terminalDispose = () => terminal.dispose();
@@ -350,6 +375,10 @@ export function createServer(
   }));
   registerWorkbench(app, store);
   if (options.surface !== 'native') registerTerminalSettings(app, store);
+  if (terminalControl) {
+    registerTerminalControl(app, terminalControl);
+    registerCliManagement(app, store, terminal.cliManager);
+  }
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path?: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview',
     async (request) =>
@@ -746,7 +775,7 @@ export function createServer(
   app.get('/api/runs', async () => store.all<Run>('runs').reverse());
   app.post('/api/terminal/check', async (request) => {
     const body = z.object({ profile: AgentTerminalProfile.optional() }).parse(request.body);
-    return terminal.check(body.profile);
+    return terminal.check(body.profile ? boundTerminalProfile(body.profile) : undefined);
   });
   const assertTerminalMutable = (runId: string) => {
     const run = store.require<Run>('runs', runId);
@@ -853,9 +882,16 @@ export function createServer(
       return command(body, '/runs', () => {
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
       });
-    const provider =
+    const execution =
       body.execution.kind === 'docker-agent'
-        ? terminalBinding(body.execution.profile)
+        ? {
+            kind: 'docker-agent' as const,
+            profile: boundTerminalProfile(body.execution.profile, body.projectId),
+          }
+        : body.execution;
+    const provider =
+      execution.kind === 'docker-agent'
+        ? terminalBinding(execution.profile)
         : await resolveModelChoice(store, subscription, codex, ModelChoice.parse(body), apiCatalog);
     return command(body, '/runs', () => {
       invariant(
@@ -890,7 +926,7 @@ export function createServer(
         body.kind,
         body.contextPolicy,
         body.planMode,
-        body.execution,
+        execution,
       );
     });
   });
@@ -1246,10 +1282,17 @@ export function createServer(
     });
   });
   const streams = new Map<string, Set<any>>();
-  const management = registerManagement(app, store, kernel, executor, (runId) => {
-    for (const stream of streams.get(runId) ?? []) stream.end();
-    streams.delete(runId);
-  });
+  const management = registerManagement(
+    app,
+    store,
+    kernel,
+    executor,
+    (runId) => {
+      for (const stream of streams.get(runId) ?? []) stream.end();
+      streams.delete(runId);
+    },
+    (projectId) => terminalControl?.removeProjectPreferences(projectId),
+  );
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
       stream.write(
