@@ -6,6 +6,7 @@ import { SubscriptionSettings } from './SubscriptionSettings';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { MotionContent } from './Motion';
+import { contextWindowSizeLabel } from './ContextLabel';
 import './providers.css';
 import {
   officialDeepSeek,
@@ -650,10 +651,10 @@ export function ProviderSettings({
                   {selectedModel && (
                     <p className="model-capacity">
                       {selectedModel.contextWindow
-                        ? `模型上下文 ${(selectedModel.contextWindow / 1024).toLocaleString()}K`
+                        ? `模型上下文 ${contextWindowSizeLabel(selectedModel.contextWindow)}`
                         : ''}
                       {selectedModel.maxOutputTokens
-                        ? ` · 单次输出能力 ${(selectedModel.maxOutputTokens / 1024).toLocaleString()}K`
+                        ? ` · 单次输出能力 ${contextWindowSizeLabel(selectedModel.maxOutputTokens)}`
                         : ''}
                       {selectedModel.contextWindow || selectedModel.maxOutputTokens
                         ? ' · 实际请求仍受下方预算限制'

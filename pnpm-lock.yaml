@@ -29,6 +29,12 @@ importers:
       remark-gfm:
         specifier: 4.0.1
         version: 4.0.1
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -44,7 +50,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: 6.1.2
-        version: 6.1.2(vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15))
+        version: 6.1.2(vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       electron:
         specifier: 44.6.0
         version: 44.6.0
@@ -59,7 +65,7 @@ importers:
         version: 7.0.2
       vite:
         specifier: 8.3.3
-        version: 8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)
+        version: 8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
 
   apps/desktop: {}
 
@@ -1140,6 +1146,10 @@ packages:
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
 
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
+
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
 
@@ -1276,6 +1286,11 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
@@ -1572,10 +1587,10 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-react@6.1.2(vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15))':
+  '@vitejs/plugin-react@6.1.2(vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)
+      vite: 8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
 
   abstract-logging@2.0.1: {}
 
@@ -2405,6 +2420,8 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
+  smol-toml@1.9.1: {}
+
   sonic-boom@4.2.1:
     dependencies:
       atomic-sleep: 1.0.0
@@ -2530,7 +2547,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15):
+  vite@8.3.3(@types/node@24.10.1)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -2542,6 +2559,9 @@ snapshots:
       esbuild: 0.28.2
       fsevents: 2.3.3
       tsx: 4.23.15
+      yaml: 2.9.1
+
+  yaml@2.9.1: {}
 
   zod@4.6.5: {}
 

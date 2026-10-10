@@ -62,6 +62,10 @@ const TerminalControlCenter = React.lazy(() =>
 const StartupSettings = React.lazy(() =>
   import('./StartupSettings').then((module) => ({ default: module.StartupSettings })),
 );
+const LocalAgentSettings = deferredPanel(
+  () => import('./LocalAgentSettings').then((module) => module.LocalAgentSettings),
+  '本机能力',
+);
 import type {
   Run,
   Task,
@@ -1857,6 +1861,17 @@ function App({
           update={updateSession}
         />
         <div className="sidebar-bottom">
+          {!terminalSurface && (
+            <button
+              className="nav-item"
+              onClick={() => setModal('local-agents')}
+              title="Skills、记忆与 MCP"
+              aria-label="Skills、记忆与 MCP"
+            >
+              <Icon name="tree" />
+              <span>Skills、记忆与 MCP</span>
+            </button>
+          )}
           <button
             className="nav-item"
             onClick={() => setModal('appearance')}
@@ -3190,6 +3205,7 @@ function App({
             <StartupSettings close={() => setModal('')} />
           </React.Suspense>
         )}
+        {modal === 'local-agents' && <LocalAgentSettings close={() => setModal('')} />}
         <Presence>
           {modal ? (
             <React.Fragment key={modal}>

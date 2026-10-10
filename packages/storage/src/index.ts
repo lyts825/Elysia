@@ -1126,6 +1126,10 @@ export class Store {
   }
   private collectObjects() {
     const retained = new Set<string>();
+    const library = this.db.prepare("SELECT value FROM storage_meta WHERE key='local-agents:v1'").get() as
+      | { value: string }
+      | undefined;
+    if (library) objectRefs(JSON.parse(library.value), retained);
     for (const table of tables)
       for (const row of this.db.prepare(`SELECT content FROM ${table}`).all() as any[])
         objectRefs(expand(row.content), retained);

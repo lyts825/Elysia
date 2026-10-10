@@ -1,6 +1,6 @@
 # Elysia 首版执行文档
 
-文档版本：0.22.0　日期：2026-10-11　最近本地隔离验收构建：v0.22.0-preview.1　本机待实机验收源码：v0.22.0-preview.1（隔离验收通过，正式窗口未重载）　稳定版目标：v0.22.0
+文档版本：0.23.0　日期：2026-10-11　最近本地隔离验收构建：v0.23.0-preview.1　本机待实机验收源码：v0.23.0-preview.1（隔离验收通过，正式窗口未重载）　稳定版目标：v0.23.0
 
 本文是施工规格及验收记录。已实现本地多 Agent、独立桌面预览、文件夹建项、官方 Codex 订阅和提供商配置中心。当前界面采用 Elysia 玫瑰色强调、柔和背景、原色白花品牌资源及克制动效，消息与底部输入框居中对齐，工作区和产物可在右侧分屏预览。本机 ChatGPT 订阅及单代理资料产物闭环已通过真实调用；两家 API、完整多代理与缓存验收仍待完成，稳定版未发布。项目和任务不再分 Code / Work，文件修改与办公产物使用统一上下文、权限、预算内核及模型按需加载的技能。
 
@@ -24,6 +24,8 @@ M2已完成49组必要隔离验证：读取/搜索/上下文后端7组、实际�
 
 ## 一 首版范围
 
+本轮 v0.22.0-preview.1 → v0.23.0-preview.1：上下文采用十进制1M/512K/256K档位与整数K自定义；原生入口增加Codex、Claude Code、DSH的选择同步、技能按需加载、公开文字记忆回查及受控MCP连接。主代理负责UI/API、GC引用保护、集成与版本；上下文代理负责档位、历史兼容和目录预算；同步代理负责来源格式、哈希冲突及不可变库；MCP代理负责协议、分页及子进程回收。验收标准是新窗口不超过1,000,000 Token及模型容量，来源不写入、旧会话不重写、目录读取有界、MCP显式启用且不扩大任务权限。仅使用隔离数据、合成MCP和隐藏Electron验证，正式应用和真实凭据不参与。
+
 本轮 v0.21.0 → v0.21.1 → v0.22.0 分两阶段完成上下文实时预览、紧凑模型切换和上一轮只读优化。M1 修复摘要补建中断、闲置调度读取、分批加载、通知有界重试、CLI 版本核验和搜索阅读热返回；M2 增加独立上下文轻量投影、输入区浮层、任务直达及按需界面模块。主代理负责整合、通知、任务中心及版本；历史后端负责摘要、调度投影、搜索和上下文读接口；历史前端负责阅读、搜索和模型浮层；终端代理负责安装版本与诊断。验收须保留原权限、预算、冻结绑定及不确定副作用核验，估算和实际 Token 分开显示。测试只用隔离数据与替身，真实容器和供应商验收缺口保留。
 
 | 必须交付 | 首版边界 |
@@ -42,7 +44,7 @@ M2已完成49组必要隔离验证：读取/搜索/上下文后端7组、实际�
 | 界面优化 | 统一字号、对比度、导航与控件；精简首页目标输入，侧栏统一项目/模型/会话入口；可折叠侧栏、代理预览、小窗口适配与弹窗键盘导航 |
 | 双入口终端管理 | 左上角切换原生工作台与独立终端工作台；各自存储、项目/会话、设置、草稿、任务、日志和预览，终端模板快照及双入口维护 |
 
-Codex App Server 继续作为原生通道的官方认证及单步模型连接，工具由 Elysia 执行。新增 Docker 通道由 DSH/Codex CLI 在独立任务目录调度，终端结果需人工验收，暂不投影外部子代理树或提供计划阶段。办公技能配置面向当前文件与命令工具；格式库及渲染器先检测，有缺口则明确报告。后续可扩展完整外部执行器接口、Claude Agent SDK、DSH SDK、本地推理服务、MCP、云端办公工具、浏览器操作和自动搜索。云端、多用户、插件市场、语义答案缓存和自动缓存保温不纳入首版。
+Codex App Server 继续作为原生通道的官方认证及单步模型连接，工具由 Elysia 执行。新增 Docker 通道由 DSH/Codex CLI 在独立任务目录调度，终端结果需人工验收，暂不投影外部子代理树或提供计划阶段。办公技能配置面向当前文件与命令工具；格式库及渲染器先检测，有缺口则明确报告。后续可扩展完整外部执行器接口、Claude Agent SDK、DSH SDK、本地推理服务、云端办公工具、浏览器操作和自动搜索。云端、多用户、插件市场、语义答案缓存和自动缓存保温不纳入首版。
 
 有界递归和基础恢复提前纳入首版，以覆盖最初需求。复杂恢复、自动模型路由与缓存调度优化后置。各代理共用同一技能目录，加载指令不会改变权限或按文件类型限制任务能力。
 
@@ -198,7 +200,7 @@ H   本实例按规则追加的消息与工具结果
 
 上述是逻辑顺序，适配器负责实际的 system、developer、tools、messages 布局。模型不支持的角色或工具特性必须有明确映射或拒绝原因。工具按任务阶段、角色、用户授权和可用 Git 基线提供；load_skill 只读取受控技能指令，规划和只读任务也能加载，不会开放写入或命令权限。
 
-每个Agent可配置contextPolicy（manual/managed及windowTokens）。旧Agent未配置时兼容为managed/冻结模型容量。windowTokens是单代理单请求总容量，各代理独立，不从上级扣除一个共享容量池；输入额度为窗口减outputLimit和2048安全余量，Codex额外16384运行预留计入输入。手动容量仅用户修改；托管子代理通过TaskSpec.contextWindowTokens或直属上级allocate_context指定，未指定时继承上级容量并受自身模型上限夹取，总代理无上级时沿用模型容量。用户接受计划可逐代理覆盖模式和窗口；已存在代理仅在安全检查点调整，拒绝运行/验证中、未结算/待核验请求或操作、未闭合工具调用、归档和完成记录。配置采用Run与Agent双revision及commandId幂等，父模型分配采用子Task revision；策略revision避免旧指标在改回旧配置后复活。手动窗口不适合新模型时拒绝切换，托管按新模型容量调整，不改变累计预算或授权。
+每个Agent可配置contextPolicy（manual/managed及windowTokens）。旧Agent未配置时兼容为managed/冻结模型容量，实际请求最高1M。新手动窗口提供1M/512K/256K预设或整数K自定义，1K=1000 Token、1M=1000K=1,000,000 Token，最高1M且受真实模型容量限制；历史非整K及超过1M的原始配置仍可读取，不静默改写，用户调整时须明确采用新规格。windowTokens是单代理单请求总容量，各代理独立，不从上级扣除一个共享容量池；输入额度为窗口减outputLimit和2048安全余量，Codex额外16384运行预留计入输入。手动容量仅用户修改；托管子代理通过TaskSpec.contextWindowTokens或直属上级allocate_context指定，未指定时继承上级容量并受自身模型上限夹取，总代理无上级时取模型容量与1M较小值。用户接受计划可逐代理覆盖模式和窗口；已存在代理仅在安全检查点调整，拒绝运行/验证中、未结算/待核验请求或操作、未闭合工具调用、归档和完成记录。配置采用Run与Agent双revision及commandId幂等，父模型分配采用子Task revision；策略revision避免旧指标在改回旧配置后复活。手动窗口不适合新模型时拒绝切换，托管按新模型容量调整，不改变累计预算或授权。
 
 compileContext生成ContextRuntimeMetrics，运行时将compiled、streaming、settled或blocked投影持久写入request manifest及context.updated事件。流式最多每500ms更新一次，最终结算强制刷新；超限时在预算预留和适配器调用前记录blocked。GET /api/runs/:id/context-preview?agentId=UUID提供单代理只读轻量指标，不扫描完整请求、操作或历史，不核验配置资格；SSE指标更新不触发完整详情重读。新事件保留有界派生投影，旧事件最多扫描64项有界载荷，跨会话/策略/冻结绑定或非法指标不作为有效用量。GET/POST /api/runs/:id/context及详情contexts保留完整查看和配置，输入区仅显式打开窗口详情才读取完整设置。界面输入区、代理卡片及用量页显示窗口/输入占比/剩余空间/生成量/实际用量。输入和生成均为保守UTF-8字节估算（Codex双倍编码预留），不是模型tokenizer结果；生成只计可见文本，不含隐藏思考。供应商实际输入输出仅来自有效usage，缺失保持null。输出预留不再与实时生成重复加到输入占比。
 
@@ -260,6 +262,10 @@ compileContext生成ContextRuntimeMetrics，运行时将compiled、streaming、s
 | POST /runs/:id/decisions | 提交权限或待核验结果的用户决定，绑定具体请求及版本 |
 | GET /runs/:id/events?after=seq | SSE 增量事件，支持断线续接与序号去重 |
 | GET /artifacts/:id | 校验访问范围后流式下载产物；仅使用已登记引用，核验完整哈希 |
+| GET /local-agents；POST /local-agents/scan | 原生入口的已导入元数据目录及显式有界扫描，不自动读取来源 |
+| POST /local-agents/sync；POST /local-agents/items/:id | 选择同步、启停、移除及安全MCP配置编辑；revision与commandId保护 |
+| GET /local-agents/items/:id?offset&limit&query | 不可变导入正文分页预览，核对哈希与Unicode边界 |
+| POST /local-agents/mcp/:id/check | 用户显式检查已启用MCP连接，不执行tools/call |
 | GET /artifacts/:id/preview?encoding&offset&limit&version | 产物文本分页或二进制元数据；磁盘对象及 SQLite 压缩对象均有界读取 |
 | GET /projects/:id/files?path&encoding&offset&limit&version | 项目目录及文本分页；字符边界完整，文件版本冲突返回 FILE_CHANGED |
 | GET /projects/:id/resources/* | 登录与项目范围校验后的本地资源流；图片/PDF 支持单段 Range |
@@ -1152,11 +1158,29 @@ M2共64组必要隔离验收通过：搜索/任务摘要SQLite/API7组、阅读�
 
 数据库schema3、旧完整详情和工作台接口兼容，新索引按需构建，不改变正文和业务revision；回退旧源码仍使用升级前备份。v1启动配置保留，v2资产独立保存，回退旧版不使用新版偏好。v0.20.1-preview.1与v0.21.0-preview.1分别定位M1/M2本地提交，未推送、发布或部署，正式窗口未重载。失用正式草稿已清理，测试材料仅留忽略目录；自动审批以“blocked by policy”拒绝清理旧验收目录，未删除或绕过。真实Docker Linux引擎管道仍不可用，CLI/供应商实机闭环待引擎就绪后继续。
 
+### v0.23.0-preview.1 十进制窗口与本机 Agent 能力同步（隔离验收）
+
+2026-10-11，v0.22.0-preview.1 → v0.23.0-preview.1，以4855e72为基线，分支codex/initial-build。上下文档位固定1M/512K/256K，自定义使用整数K，1K=1000 Token、1M=1000K=1,000,000 Token。模型目录容量也使用同一十进制标签，非整K容量显示原始Token，避免混用1024换算。新配置与上级分配最高1M，仍核对模型真实容量、输出/安全/运行预留；托管取适用上限，手动不由模型改写。旧非整K或超1M配置保留可读，不重写旧数据库，实际请求最高1M，显式调整使用新规格。旧手动父任务新建子代理时仅将新子窗口向下取整到整数K，不修改父记录，也不扩大父/子模型容量。已有实时估算/供应商实际用量、压缩和累计预算规则保持。
+
+原生Elysia新增按需加载的Skills、记忆与MCP面板，按分类搜索、预览、启停和显式移除。选择Codex、Claude Code或DSH及默认/自定义目录后扫描，勾选所需条目同步；overview仅取已导入元数据，不启动扫描、MCP或模型。再次扫描导入更新，来源hash与library revision/commandId核对，409保留选择与配置文本；来源文件不修改。前端初始读取取消及迟到响应保护，忙碌时禁分类切换，配置版本不一致禁止保存。技能frontmatter单独显示说明，正文使用共享Markdown；窄屏及短窗口有界滚动。
+
+技能使用完整YAML解析，支持目录SKILL.md及DSH扁平技能，参考文本复制为不可变对象，仅按需load_skill_file；遵守来源disable-model-invocation，UI标记禁止模型调用，不提供强制手动调用。成功load_skill的实际正文、版本与hash捕获保留，不因来源更新、禁用或移除而替换已加载历史。文字记忆支持Codex/Claude JSONL及Markdown、DSH JSONL/Zstandard最新世代，只导入公开user/assistant文字，排除工具、推理、原生私有项与可识别凭据，损坏的新世代不回退旧资料。记忆作为不可信参考按query/offset回查，不作为授权、系统指令或跨agent会话续接。
+
+storage_meta保存版本化目录，正文与资源使用压缩对象及hash，GC保留导入库引用，删其他Run不会丢失技能/记忆。库上限500项/16MiB，普通UTF-8文件512KiB；JSONL取最近512KiB完整记录，Zstandard压缩输入4MiB/解压32MiB/尾部512KiB，扫描有条数、深度、读量及路径/junction守卫。Codex配置使用完整TOML解析，DSH Cordis使用YAML解析；新依赖锁定yaml2.9.1、smol-toml1.9.1。schema3不变，回退旧源码仍需升级前备份。此库仅用于原生执行器，不自动写入Docker CLI或完整迁移其他agent历史，不自动后台同步。
+
+技能、记忆与MCP目录共用min(扣运行预留的输入额度×8%,2048)估算Token预算，按UTF-8及当前模型估算系数限长并保留完整JSON，按类轮流提供条目；余项通过list_skills/list_local_memories/list_mcp_servers分页发现。模型目录工具的小页采用实例窗口及Codex估算系数折算的字节上限，query始终匹配完整字段；首条放不下省说明并标记，仍须前进或返回明确错误。MCP工具目录最高16KB，超大schema按schemaTool/schemaOffset读取（文本最多8000字符且同样受页预算约束，schemaHash变更需重读），避免最近工具消息被巨大目录撑爆。完整已加载技能及既有固定约束仍按原规则保留，必要内容超窗时明确阻止请求。
+
+MCP默认关闭，显式启用/检查后原生项目执行阶段通过网关调用。支持stdio、Streamable HTTP(JSON/SSE)、版本协商、初始化及工具目录，保留工具allow/deny；配置只保存环境变量名称和安全参数，禁止导入字面密钥，环境值在调用时读取，不回显。调用需exec+write，HTTP还需精确URL授权，不采用readOnly注释放宽权限；reviewer和独立聊天不开放调用。初始化/参数/明确remote error为可靠FAILED，发出tools/call后超时、取消、断线及无效结果进入UNCERTAIN，已有toolCallId不重播。30秒、4MiB总响应、256KiB参数、500工具/20页、4并发上限；Windows使用Job Object挂起创建后入job再恢复，服务器早退/取消/期限/宿主突然结束均回收子树；标准npm/npx/pnpm/yarn shim直接Node入口，不以字符串shell执行任意cmd。OAuth、旧HTTP+SSE、sampling和elicitation暂未实现。
+
+有效隔离验证包括上下文契约/内核6组、旧手动窗口实际spawn兼容1组、实际编辑器6组、原生库/网关9组；三来源同步28组；MCP协议及Windows回收17组；目录窗口预算7组；大型MCP/本机目录分页5组；最终实际Electron界面5组；核心回归16组，共100组。32K组合目录编译21938<27904，目录2005<=2048估算Token；3.801MB/500工具目录、80,110字符schema和长本机目录连续四组工具结果均可编译在32K内，schema完整重组通过。类型、构建、格式、差异、统一版本与双SQLite完整性通过；主包408.33kB，本机能力面板分包12.20kB。证据在被忽略的.local-tests/.local-qa，主要结果为context-presets-v0230-AJlKOw、context-legacy-spawn-v0230-s6Vhxv、context-presets-ui-v0230-NqouNr、local-library-gateway-v0230-YfDcbm、local-agent-sync-v0230-Y93NqP、local-agent-extra-v0230-QJoB7h、mcp-runtime-v0230-FgJZjG、context-catalog-budget-v0230-JTeUfj、mcp-catalog-page-v0230-eNrip0、local-agents-ui-v0230-RKoq1Q、acceptance-UyCzM7。所有模型、正式凭据/数据库、实际来源配置、用户MCP和真实容器均未使用，只有隔离协议服务器；真实接入闭环仍待实机验收。正式服务/窗口未重载，未推送或发布，本地v0.23.0-preview.1标签定位交付提交。
+
+一次性MCP调试脚本已清理，有用验收脚本及成功材料保留。自动审批以blocked by policy拒绝删除已核对的21个失用/失败测试目录（上下文2、同步4、MCP7、UI8），未给出更具体原因；这些目录保留在.local-qa并被Git忽略，未换机制重试，正式文件与用户材料未清空。
+
 ## 十二 版本管理与参考依据
 
-工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐，`v0.10.0-preview.1`标签定位上下文窗口及分层压缩，`v0.10.1-preview.1`标签定位导航和输入区优化，`v0.11.0-preview.1`标签定位Codex风格界面、共享Markdown与有界文件预览，`v0.11.1-preview.1`标签定位补丁文本及预览恢复，`v0.12.0-preview.1`标签定位品牌配色、输入区与右侧分屏的隔离验收提交；`v0.13.0-preview.1`标签定位DeepSeek迁移、计划开关与Docker Agent通道的隔离验收提交；v0.14.0-preview.1标签定位双入口隔离，v0.15.0-preview.1标签定位集成终端管理与热切换的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.22.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
+工程版本以根 `package.json` 为准，各包采用统一版本。已有 `v0.7.0-preview.1` 本地标签定位会话管理与持久输入的隔离验收提交；v0.7.1 管理冲突、v0.7.2 侧栏确认和 v0.7.3 维护快照修复以普通提交保存源码进展。`v0.8.0-preview.1`标签定位布局与DeepSeek的隔离验收，`v0.8.1-preview.1`标签定位精简首页，`v0.8.2-preview.1`标签定位API凭据与目录读取修复，`v0.9.0-preview.1`标签定位模型输入和按需计划对齐，`v0.10.0-preview.1`标签定位上下文窗口及分层压缩，`v0.10.1-preview.1`标签定位导航和输入区优化，`v0.11.0-preview.1`标签定位Codex风格界面、共享Markdown与有界文件预览，`v0.11.1-preview.1`标签定位补丁文本及预览恢复，`v0.12.0-preview.1`标签定位品牌配色、输入区与右侧分屏的隔离验收提交；`v0.13.0-preview.1`标签定位DeepSeek迁移、计划开关与Docker Agent通道的隔离验收提交；v0.14.0-preview.1标签定位双入口隔离，v0.15.0-preview.1标签定位集成终端管理与热切换的隔离验收提交。真人实机及真实供应商验收仍待完成，此前缺口不因新预览标签关闭。标签不代表稳定版发布或部署，未推送或发布。完成M6后才创建稳定版标签。本文版本单独维护为0.23.0，历史标签保留。正式文档、代码、配置和资源入Git；本机数据、测试材料、缓存与密钥按精确路径排除。
 
-`v0.13.1-preview.1`本地标签定位工具返回精简的隔离验收提交；`v0.14.0-preview.1`定位双入口与独立终端管理；`v0.16.0-preview.1`定位终端配置一致性、安装恢复与编辑保护的隔离验收提交；`v0.17.0-preview.1`定位终端诊断、日志、阅读状态及显式CLI续接的隔离验收提交。v0.18.0-preview.1定位持续使用、读取性能与保守维护的隔离验收提交。v0.18.1-preview.1定位读取、诊断及异步维护修复；v0.19.0-preview.1定位同窗口阅读恢复、连接健康、快照管理和冻结资源规格。v0.20.0-preview.1定位启动外观、历史动态加载及读取恢复；v0.20.1-preview.1定位草稿/读取/SSE稳定性，v0.21.0-preview.1定位搜索/阅读/任务中心及启动减负。v0.21.1-preview.1定位摘要/通知/CLI及阅读可靠性修复；v0.22.0-preview.1定位实时上下文/模型入口、任务直达、搜索减负与按需分包。当前文档版本0.22.0，历史记录保留。
+`v0.13.1-preview.1`本地标签定位工具返回精简的隔离验收提交；`v0.14.0-preview.1`定位双入口与独立终端管理；`v0.16.0-preview.1`定位终端配置一致性、安装恢复与编辑保护的隔离验收提交；`v0.17.0-preview.1`定位终端诊断、日志、阅读状态及显式CLI续接的隔离验收提交。v0.18.0-preview.1定位持续使用、读取性能与保守维护的隔离验收提交。v0.18.1-preview.1定位读取、诊断及异步维护修复；v0.19.0-preview.1定位同窗口阅读恢复、连接健康、快照管理和冻结资源规格。v0.20.0-preview.1定位启动外观、历史动态加载及读取恢复；v0.20.1-preview.1定位草稿/读取/SSE稳定性，v0.21.0-preview.1定位搜索/阅读/任务中心及启动减负。v0.21.1-preview.1定位摘要/通知/CLI及阅读可靠性修复；v0.22.0-preview.1定位实时上下文/模型入口、任务直达、搜索减负与按需分包。当前文档版本0.23.0，历史记录保留。
 
 交付前核对差异、链接和版本，删除本次产生且已无用途的临时文件；产物、用户文件和仍用于验收的本地材料保留。版本记录只写日期、范围、验证结论和对应标签，提交通过标签定位。
 
@@ -1218,11 +1242,14 @@ M2共64组必要隔离验收通过：搜索/任务摘要SQLite/API7组、阅读�
 | 2026-10-10 | 0.21.0 | 0.20.1-preview.1 → 0.21.0-preview.1：全文搜索/阅读恢复、独立任务中心/显式通知、启动媒体分离及有界耗时；schema3与旧读取接口兼容，无新依赖 | 64组必要隔离验证及类型/构建/格式/差异/版本通过；双库完整性ok、测试模型/外部/凭据/执行/容器0；正式窗口未重载，Docker/CLI/供应商实机待验收 | v0.21.0-preview.1 |
 | 2026-10-11 | 0.21.1 | 0.21.0-preview.1 → 0.21.1-preview.1：摘要与闲置调度、分批加载/通知、CLI版本核验及阅读可靠性修复；schema3兼容 | 52组必要隔离验证及类型/构建/格式/差异/版本通过，SQLite完整性正常；真实容器/模型未调用，正式窗口未重载 | v0.21.1-preview.1（a28810b） |
 | 2026-10-11 | 0.22.0 | 0.21.1-preview.1 → 0.22.0-preview.1：实时上下文预览与受控模型切换、任务及通知直达、搜索增量/取消/单飞、CLI安全分类、可选界面分包；schema3及旧接口兼容，无新依赖 | 49组必要隔离验证及类型/构建/格式/差异/版本通过，主包407.95kB、双库完整性正常；独立审查P2已修复，真实Docker/CLI/供应商和系统通知展示待实机验收，正式窗口未重载 | v0.22.0-preview.1 |
+| 2026-10-11 | 0.23.0 | 0.22.0-preview.1 → 0.23.0-preview.1：十进制窗口档位、整数K自定义、本机三agent技能/公开文字记忆/MCP选择同步、按需目录与受控调用；schema3兼容 | 100组隔离验证及类型/构建/格式/差异/版本通过，双库完整性ok，主包408.33kB；正式应用和真实agent/MCP未接入，未发布 | v0.23.0-preview.1 |
 
 | 参考 | 采用的设计依据 |
 | --- | --- |
 | [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window/) / [Security](https://www.electronjs.org/docs/latest/tutorial/security/) | 独立窗口、contextIsolation、sandbox、禁用 Node 和外部导航 |
 | [remark-gfm](https://github.com/remarkjs/remark-gfm) | 2026-10-09核对并锁定4.0.1；为共享Markdown加入表格、任务列表、删除线、自动链接及脚注语法 |
+| [MCP生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) / [传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) / [工具](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) | 2026-10-11核对初始化、版本协商、stdio/Streamable HTTP与工具目录/调用；Elysia另加任务授权、分页及不确定结果保护 |
+| [DSH技能](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/skill/skill-filesystem/README.md) / [配置目录](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/config-catalog.md) / [会话持久化](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/session/session-persistence-jsonl/README.md) | 2026-10-11核对扁平/目录技能、调用标志、Cordis MCP配置及JSONL/Zstandard世代；本版仅选择导入公开文字记忆与能力，不续接DSH原会话 |
 | [DeepSeek Harness 架构](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/docs/architecture.md) | 生命周期、事件记录与上下文投影；首版不耦合其完整插件树 |
 | [DSH 客户端模块](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/README.md) / [卸载流程](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/client/modules/src/client/entry-lifecycle.ts) | 计划对齐借鉴按需加载、pending共享、过期保护及异步清理；Elysia使用自己的固定模块契约 |
 | [DSH 工具结果裁剪](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction-tool-result-pruner/README.md) / [压缩契约](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/compaction/compaction/README.md) | 2026-10-09核对，参考先裁剪工具大输出、原文留存、完整调用边界与历史资料角色；8192/4096/1024码点借鉴其默认值，75%/60%为Elysia默认值 |

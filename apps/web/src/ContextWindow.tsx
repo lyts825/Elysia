@@ -3,14 +3,10 @@ import type { ContextPolicy, ContextProjection, ProviderConfig } from '../../../
 import { minimumContextWindowTokens } from '../../../packages/contracts/src/index';
 import { ContextPolicyEditor, validContextPolicy } from './ContextPolicyEditor';
 import { Modal } from './Modal';
+import { contextPolicyLabel, contextWindowSizeLabel } from './ContextLabel';
 import './context-window.css';
 
-export const contextPolicyLabel = (policy: ContextPolicy, child = false) =>
-  policy.mode === 'manual'
-    ? `手动 · ${(policy.windowTokens || 0).toLocaleString()} Token`
-    : child
-      ? '托管 · 上级分配'
-      : '托管 · 模型容量';
+export { contextPolicyLabel } from './ContextLabel';
 const count = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
 const percentage = (projection?: ContextProjection) =>
   projection?.usageRatio == null ? null : Math.round(projection.usageRatio * 100);
@@ -83,7 +79,8 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
         <div>
           <dt>已分配窗口 / 模型容量</dt>
           <dd>
-            {count(projection.windowTokens)} / {count(projection.providerLimit)}
+            {contextWindowSizeLabel(projection.windowTokens)} /{' '}
+            {contextWindowSizeLabel(projection.providerLimit)}
           </dd>
         </div>
         <div>

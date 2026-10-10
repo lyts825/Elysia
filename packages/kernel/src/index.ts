@@ -9,6 +9,8 @@ import {
   minimumContextWindowTokens,
   effectiveContextWindowTokens,
   CONTEXT_SAFETY_TOKENS,
+  CONTEXT_MAX_WINDOW_TOKENS,
+  CONTEXT_TOKEN_UNIT,
   invariant,
   type Run,
   type Task,
@@ -164,7 +166,7 @@ export class Kernel {
   }
   validateContextPolicy(provider: ProviderConfig, raw: unknown, minimum = 0): ContextPolicy {
     const policy = ContextPolicy.parse(raw);
-    const window = policy.windowTokens ?? provider.contextLimit;
+    const window = policy.windowTokens ?? Math.min(provider.contextLimit, CONTEXT_MAX_WINDOW_TOKENS);
     invariant(
       window <= provider.contextLimit,
       'CONTEXT_WINDOW_LIMIT',
@@ -179,7 +181,8 @@ export class Kernel {
   }
   childContextPolicy(parent: Task, provider: ProviderConfig, requested?: number, override?: ContextPolicy) {
     const parentAgent = this.store.require<Agent>('agents', parent.agentId);
-    const inherited = Math.min(effectiveContextWindowTokens(parentAgent), provider.contextLimit);
+    const parentWindow = effectiveContextWindowTokens(parentAgent);
+    const inherited = Math.min(parentWindow, provider.contextLimit);
     if (override)
       return this.validateContextPolicy(
         provider,
@@ -188,12 +191,15 @@ export class Kernel {
           : override,
       );
     const mode = parentAgent.contextPolicy?.mode ?? 'managed';
+    // New manually inherited windows use whole K without rewriting a legacy parent policy.
+    const manualInherited =
+      mode === 'manual' ? Math.floor(inherited / CONTEXT_TOKEN_UNIT) * CONTEXT_TOKEN_UNIT : inherited;
     invariant(
-      mode !== 'manual' || requested === undefined || requested === inherited,
+      mode !== 'manual' || requested === undefined || requested === manualInherited,
       'CONTEXT_MANUAL_LOCKED',
       '上级采用手动窗口，模型不能改写子代理继承的手动窗口；请由用户在计划分配或上下文设置中调整',
     );
-    return this.validateContextPolicy(provider, { mode, windowTokens: requested ?? inherited });
+    return this.validateContextPolicy(provider, { mode, windowTokens: requested ?? manualInherited });
   }
   setContextPolicy(
     runId: string,
@@ -1057,7 +1063,7 @@ export class Kernel {
               ...currentPolicy,
               windowTokens: Math.max(
                 minimumContextWindowTokens(binding),
-                Math.min(currentPolicy.windowTokens, binding.contextLimit),
+                Math.min(currentPolicy.windowTokens, binding.contextLimit, CONTEXT_MAX_WINDOW_TOKENS),
               ),
             }
           : currentPolicy,

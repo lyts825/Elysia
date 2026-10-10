@@ -3,7 +3,7 @@ import { TerminalConnectionBinding } from './terminal-control.js';
 import { terminalResourcePresets } from './terminal-runtime.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '0.22.0-preview.1';
+export const VERSION = '0.23.0-preview.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -55,7 +55,15 @@ export const Contract = z.object({
   assumptions: z.array(z.string()),
 });
 export type Contract = z.infer<typeof Contract>;
-export const ContextPolicy = z
+export const CONTEXT_TOKEN_UNIT = 1000;
+export const CONTEXT_MAX_WINDOW_TOKENS = 1000 * CONTEXT_TOKEN_UNIT;
+export const CONTEXT_WINDOW_PRESETS = [
+  CONTEXT_MAX_WINDOW_TOKENS,
+  512 * CONTEXT_TOKEN_UNIT,
+  256 * CONTEXT_TOKEN_UNIT,
+] as const;
+// Existing policies remain readable; new input is validated by ContextPolicy below.
+const StoredContextPolicy = z
   .object({
     mode: z.enum(['manual', 'managed']),
     windowTokens: z.number().int().min(4096).optional(),
@@ -64,6 +72,13 @@ export const ContextPolicy = z
     message: '手动模式必须指定上下文窗口大小',
     path: ['windowTokens'],
   });
+export const ContextPolicy = StoredContextPolicy.refine(
+  (policy) => policy.windowTokens === undefined || policy.windowTokens <= CONTEXT_MAX_WINDOW_TOKENS,
+  { message: '上下文窗口最高支持 1M（1000K）', path: ['windowTokens'] },
+).refine((policy) => policy.mode !== 'manual' || (policy.windowTokens ?? 0) % CONTEXT_TOKEN_UNIT === 0, {
+  message: '手动窗口大小须为整数 K（1K = 1000 Token）',
+  path: ['windowTokens'],
+});
 export type ContextPolicy = z.infer<typeof ContextPolicy>;
 export const CONTEXT_SAFETY_TOKENS = 2048;
 export const CONTEXT_MIN_INPUT_TOKENS = 1024;
@@ -84,6 +99,7 @@ export function effectiveContextWindowTokens(agent: {
   return Math.min(
     agent.contextPolicy?.windowTokens ?? agent.providerBinding.contextLimit,
     agent.providerBinding.contextLimit,
+    CONTEXT_MAX_WINDOW_TOKENS,
   );
 }
 export const ContextRuntimeMetrics = z.object({
@@ -91,7 +107,7 @@ export const ContextRuntimeMetrics = z.object({
   taskId: z.string(),
   sessionId: z.string(),
   agentRevision: z.number().int().nonnegative(),
-  policy: ContextPolicy,
+  policy: StoredContextPolicy,
   windowTokens: z.number().int().positive(),
   providerLimit: z.number().int().positive(),
   outputReserveTokens: z.number().int().nonnegative(),
@@ -166,7 +182,7 @@ export const TaskSpec = z.object({
   acceptanceCriteria: z.array(z.string()).min(1),
   required: z.boolean().default(true),
   budget: Budget.optional(),
-  contextWindowTokens: z.number().int().min(4096).optional(),
+  contextWindowTokens: z.number().int().min(4096).max(CONTEXT_MAX_WINDOW_TOKENS).optional(),
 });
 export type TaskSpec = z.infer<typeof TaskSpec>;
 export const Plan = z.object({

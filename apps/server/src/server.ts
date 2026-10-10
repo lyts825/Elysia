@@ -63,6 +63,7 @@ import { registerCliManagement } from './cli-management.js';
 import { RunReads, registerRunRecordRoutes } from './run-reads.js';
 import { registerTaskCenter } from './task-center.js';
 import { registerContextPreview } from './context-preview.js';
+import { registerLocalAgentRoutes } from './local-agents.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 const textPageQuery = z.object({
@@ -355,6 +356,7 @@ export function createServer(
         details: e instanceof AppError ? e.details : null,
       });
   });
+  if (options.surface !== 'terminal') registerLocalAgentRoutes(app, store, executor.gateway, prefix);
   const command = <T>(body: unknown, route: string, fn: (b: any) => T) => {
     const b = Command.parse(body);
     return store.command(b.commandId, { route, body }, () => fn(body));
