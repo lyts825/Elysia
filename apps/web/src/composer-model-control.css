@@ -1,0 +1,272 @@
+.composer-model-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.composer-model-chip,
+.composer-context-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.composer-model-chip {
+  min-width: 0;
+  max-width: min(280px, calc(100vw - 170px));
+}
+.composer-model-chip:hover:not(:disabled),
+.composer-context-chip:hover:not(:disabled),
+.composer-context-chip[aria-expanded='true'] {
+  background: var(--surface-hover);
+}
+.composer-model-chip:active:not(:disabled),
+.composer-context-chip:active:not(:disabled) {
+  background: var(--surface-selected);
+}
+.composer-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-model-effort {
+  flex: none;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-model-chip svg,
+.composer-context-chip {
+  flex: none;
+}
+.composer-context-chip {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.composer-context-ring {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--composer-context-fill), var(--border) 0);
+}
+.composer-context-ring::after {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  content: '';
+  background: var(--surface);
+}
+.composer-context-ring[data-known='false'] {
+  border: 2px dashed var(--border-strong);
+  background: transparent;
+}
+.composer-context-ring[data-known='false']::after {
+  display: none;
+}
+.composer-context-chip[data-pressure='high'] .composer-context-ring {
+  background: conic-gradient(var(--danger) var(--composer-context-fill), var(--border) 0);
+}
+.composer-context-popover {
+  position: fixed;
+  z-index: 45;
+  width: min(350px, calc(100vw - 16px));
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  transform-origin: bottom right;
+  animation: composer-context-enter 120ms ease-out;
+}
+.composer-context-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.composer-context-heading > div {
+  min-width: 0;
+}
+.composer-context-heading h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.composer-context-heading small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-context-heading .icon-button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.composer-context-percent {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.composer-context-percent > strong {
+  color: var(--text);
+  font-size: 25px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.composer-context-percent > span {
+  color: var(--secondary);
+}
+.composer-context-percent small {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.composer-context-progress {
+  height: 5px;
+  margin: 12px 0 9px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--border);
+}
+.composer-context-progress > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 120ms ease-out;
+}
+.composer-context-progress[data-known='false'] {
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 3px, transparent 3px 6px);
+}
+.composer-context-usage[data-pressure='high'] .composer-context-progress > i {
+  background: var(--danger);
+}
+.composer-context-usage > p {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--secondary);
+  font-size: 11px;
+}
+.composer-context-usage > p > strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.composer-context-metrics {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.composer-context-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.composer-context-metrics dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-context-metrics dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.composer-context-updated {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.composer-context-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.composer-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+.composer-context-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 0;
+  font-size: 11px;
+}
+@keyframes composer-context-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 480px) {
+  .composer-model-control {
+    gap: 3px;
+  }
+  .composer-model-chip {
+    max-width: min(210px, calc(100vw - 155px));
+    padding: 5px;
+  }
+  .composer-context-chip {
+    padding: 5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-context-popover {
+    animation: none;
+  }
+  .composer-context-progress > i {
+    transition: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .composer-context-popover {
+    border-color: var(--secondary);
+  }
+  .composer-context-progress[data-known='false'] {
+    background-color: var(--border);
+  }
+}

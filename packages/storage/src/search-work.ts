@@ -1,0 +1,63 @@
+import { AppError } from '../../contracts/src/index.js';
+
+export function searchCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) throw new AppError('SEARCH_CANCELLED', '搜索已取消', false, null, 499);
+}
+
+/** Share in-flight reads, while cancelling work only after its last subscriber leaves. */
+export class SearchWork {
+  private jobs = new Map<
+    string,
+    { controller: AbortController; promise: Promise<unknown>; subscribers: number }
+  >();
+  run<T>(key: string, read: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    searchCancelled(signal);
+    let entry = this.jobs.get(key);
+    if (!entry) {
+      if (this.jobs.size >= 16) throw new AppError('SEARCH_BUSY', '搜索较繁忙，请稍后重试', true, null, 429);
+      const controller = new AbortController();
+      entry = {
+        controller,
+        subscribers: 0,
+        promise: Promise.resolve().then(() => {
+          searchCancelled(controller.signal);
+          return read(controller.signal);
+        }),
+      };
+      this.jobs.set(key, entry);
+      const current = entry;
+      const clear = () => {
+        if (this.jobs.get(key) === current) this.jobs.delete(key);
+      };
+      entry.promise.then(clear, clear);
+    }
+    const current = entry;
+    current.subscribers++;
+    return new Promise<T>((resolve, reject) => {
+      let finished = false;
+      const finish = (error: unknown, value?: unknown) => {
+        if (finished) return;
+        finished = true;
+        signal?.removeEventListener('abort', abort);
+        current.subscribers--;
+        if (!current.subscribers) {
+          current.controller.abort();
+          if (this.jobs.get(key) === current) this.jobs.delete(key);
+        }
+        if (error) reject(error);
+        else resolve(value as T);
+      };
+      const abort = () => finish(new AppError('SEARCH_CANCELLED', '搜索已取消', false, null, 499));
+      signal?.addEventListener('abort', abort, { once: true });
+      current.promise.then(
+        (value) => finish(null, value),
+        (error) => finish(error),
+      );
+      if (signal?.aborted) abort();
+    });
+  }
+  close() {
+    for (const entry of this.jobs.values()) entry.controller.abort();
+    this.jobs.clear();
+  }
+}

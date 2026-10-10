@@ -13,10 +13,14 @@ import {
 } from './api';
 import { SurfaceClientContext, SurfaceRootContext, useSurfaceClient } from './SurfaceClientContext';
 import { SurfaceSwitcher } from './SurfaceSwitcher';
-import { PreviewPanel } from './PreviewPanel';
-import { PreviewDock } from './PreviewDock';
-import { ProjectFiles } from './ProjectFiles';
-import { MarkdownDocument } from './MarkdownDocument';
+import { deferredPanel } from './DeferredPanel';
+const PreviewPanel = deferredPanel(() => import('./PreviewPanel').then((m) => m.PreviewPanel), '预览');
+const PreviewDock = deferredPanel(() => import('./PreviewDock').then((m) => m.PreviewDock), '预览分屏');
+const ProjectFiles = deferredPanel(() => import('./ProjectFiles').then((m) => m.ProjectFiles), '项目文件');
+const MarkdownDocument = deferredPanel(
+  () => import('./MarkdownDocument').then((m) => m.MarkdownDocument),
+  '正文',
+);
 import { manageUsage } from './desktop';
 import {
   VERSION,
@@ -28,16 +32,27 @@ import {
   type TerminalProjectPreferences,
   type TerminalConnectionView,
 } from '../../../packages/contracts/src/index';
-import { TerminalSetup, terminalPreset } from './TerminalSetup';
-import { TerminalRecovery } from './TerminalRecovery';
-import { TerminalContinuation, readContinuationDraft } from './TerminalContinuation';
+import { terminalPreset } from './TerminalPreset';
+const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
+const TerminalRecovery = deferredPanel(
+  () => import('./TerminalRecovery').then((m) => m.TerminalRecovery),
+  '终端恢复',
+);
+const TerminalContinuation = deferredPanel(
+  () => import('./TerminalContinuation').then((m) => m.TerminalContinuation),
+  '终端续接',
+);
+import { readContinuationDraft } from './ContinuationDraft';
 import { RecordHistory } from './RecordHistory';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
 import type {
   ExecutorRuntimeSnapshot,
   TerminalRuntimeSnapshot,
 } from '../../../packages/contracts/src/terminal-runtime';
-import { TerminalRuntimePanel } from './TerminalRuntimePanel';
+const TerminalRuntimePanel = deferredPanel(
+  () => import('./TerminalRuntimePanel').then((m) => m.TerminalRuntimePanel),
+  '运行状态',
+);
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -61,12 +76,16 @@ import type {
   ProviderConfig,
   ContextPolicy,
   ContextProjection,
+  ContextSnapshot,
 } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
 import { EmptyArtwork } from './Brand';
 import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
-import { WorkspaceManager } from './WorkspaceManager';
+const WorkspaceManager = deferredPanel(
+  () => import('./WorkspaceManager').then((m) => m.WorkspaceManager),
+  '工作区管理',
+);
 import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
 import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
@@ -105,17 +124,30 @@ import {
   type NavigationState,
 } from './NavigationState';
 import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
-import { ModelSwitchModal, modelSwitchReason, modelTaskCanContinue } from './ModelSwitchModal';
+import { modelSwitchReason, modelTaskCanContinue } from './ModelSwitchGuards';
+const ModelSwitchModal = deferredPanel(
+  () => import('./ModelSwitchModal').then((m) => m.ModelSwitchModal),
+  '模型选择',
+);
+import { ComposerModelControl } from './ComposerModelControl';
+import { useContextPreview } from './useContextPreview';
 import { PlanAlignmentLoader } from './PlanAlignmentLoader';
-import {
-  ContextMeter,
-  ContextOverview,
-  ContextWindowModal,
-  NewContextWindowModal,
-  contextPolicyLabel,
-} from './ContextWindow';
+const ContextMeter = deferredPanel(() => import('./ContextWindow').then((m) => m.ContextMeter), '上下文');
+const ContextOverview = deferredPanel(
+  () => import('./ContextWindow').then((m) => m.ContextOverview),
+  '上下文',
+);
+const ContextWindowModal = deferredPanel(
+  () => import('./ContextWindow').then((m) => m.ContextWindowModal),
+  '上下文设置',
+);
+const NewContextWindowModal = deferredPanel(
+  () => import('./ContextWindow').then((m) => m.NewContextWindowModal),
+  '上下文设置',
+);
+import { contextPolicyLabel } from './ContextLabel';
 import { ContextPolicyEditor, validContextPolicy } from './ContextPolicyEditor';
-import { TaskGraph } from './TaskGraph';
+const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
@@ -200,6 +232,7 @@ function App({
   changeSurface,
   registerCache,
   registerSession,
+  notificationTarget,
 }: {
   changeSurface: (surface: 'native' | 'terminal') => void;
   registerCache: (
@@ -208,6 +241,7 @@ function App({
     reading: ConversationHistoryState,
   ) => void;
   registerSession: (surface: 'native' | 'terminal') => void;
+  notificationTarget?: { taskId: string; sequence: number };
 }) {
   const client = useSurfaceClient();
   const { api, apiUrl, mutation, initializeSession, surface: localSurface } = client;
@@ -481,6 +515,9 @@ function App({
       : '';
   const planRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
+  const terminalRecoveryRefs = useRef(new Map<string, HTMLDivElement>());
+  const [taskCenterTarget, setTaskCenterTarget] = useState<{ id: string; category: string; epoch: number }>();
+  const notificationSequence = useRef(0);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<
     Record<string, Record<string, ModelChoice & { contextPolicy?: ContextPolicy }>>
@@ -496,10 +533,35 @@ function App({
     : undefined;
   const switchTask = detail?.tasks.find((task) => task.id === switchAgent?.taskId);
   const rootAgent = detail?.agents.find((agent) => agent.taskId === detail.run.rootTaskId);
-  const rootContext = detail?.contexts?.find((item) => item.agentId === rootAgent?.id);
-  const contextAgent = modal.startsWith('context:')
-    ? detail?.contexts?.find((item) => item.agentId === modal.slice(8))
+  const liveContext = useContextPreview(
+    client,
+    runId,
+    rootAgent,
+    ready && !!detail && detail.run.execution?.kind !== 'docker-agent',
+  );
+  const [contextSnapshot, setContextSnapshot] = useState<ContextSnapshot>();
+  const [contextReading, setContextReading] = useState(false);
+  const contextReadController = useRef<AbortController | undefined>(undefined);
+  const contextReadAgent = modal.startsWith('context:')
+    ? contextSnapshot?.runId === runId
+      ? contextSnapshot.agents.find((item) => item.agentId === modal.slice(8))
+      : undefined
     : undefined;
+  const contextReadStale =
+    !!contextReadAgent &&
+    !!contextSnapshot &&
+    !!detail &&
+    (detail.run.revision > contextSnapshot.runRevision ||
+      (detail.agents.find((agent) => agent.id === contextReadAgent.agentId)?.revision || 0) >
+        contextReadAgent.agentRevision);
+  const contextAgent =
+    contextReadAgent && contextReadStale
+      ? { ...contextReadAgent, safeToConfigure: false, configureReason: '会话已更新，请重新读取上下文设置。' }
+      : contextReadAgent;
+  useEffect(() => () => contextReadController.current?.abort(), [runId]);
+  useEffect(() => {
+    if (!modal.startsWith('context:')) contextReadController.current?.abort();
+  }, [modal]);
   const rootModelReason = legacyTerminal
     ? '旧终端记录仅供查看。'
     : detail && rootAgent
@@ -541,8 +603,7 @@ function App({
   const detailsVisible =
     !!runId && !!detail && !previewOpen && (compactLayout ? detailsDrawerOpen : !detailsCollapsed);
   const detailsOverlayOpen = compactLayout && detailsVisible;
-  summaryDemand.current =
-    (detailsVisible && ['agents', 'artifacts', 'usage'].includes(tab)) || modal.startsWith('context:');
+  summaryDemand.current = detailsVisible && ['agents', 'artifacts', 'usage'].includes(tab);
   useDrawerFocus(sidebarRef, navigationDrawerOpen, () => setNavigationOpen(false));
   useDrawerFocus(detailsRef, detailsOverlayOpen, () => setDetailsDrawerOpen(false));
   useEffect(() => {
@@ -1060,10 +1121,34 @@ function App({
     }
   }
   async function openContext(agentId: string) {
-    if (!detailSnapshot.current?.contexts.some((item) => item.agentId === agentId)) {
-      if (!(await loadDetailedSummary())) return;
+    const target = detailSnapshot.current;
+    if (!target?.agents.some((agent) => agent.id === agentId)) return;
+    contextReadController.current?.abort();
+    const controller = new AbortController();
+    contextReadController.current = controller;
+    if (contextSnapshot?.runId !== target.run.id || modalCurrent.current !== 'context:' + agentId)
+      setContextSnapshot(undefined);
+    setContextReading(true);
+    setModal('context:' + agentId);
+    try {
+      const snapshot = await api<ContextSnapshot>(
+        '/runs/' + target.run.id + '/context',
+        undefined,
+        undefined,
+        controller.signal,
+      );
+      if (
+        !controller.signal.aborted &&
+        activeRunId.current === target.run.id &&
+        modalCurrent.current === 'context:' + agentId
+      )
+        setContextSnapshot(snapshot);
+    } catch (issue) {
+      if (!controller.signal.aborted && activeRunId.current === target.run.id)
+        setError(issue instanceof Error ? issue.message : '上下文读取失败，请重试。');
+    } finally {
+      if (!controller.signal.aborted && activeRunId.current === target.run.id) setContextReading(false);
     }
-    if (detailSnapshot.current?.agents.some((agent) => agent.id === agentId)) setModal('context:' + agentId);
   }
   const connect = useCallback(
     async (retry = false, source?: ReadSource, target?: string) => {
@@ -1209,6 +1294,7 @@ function App({
         if (disposed) return;
         setConnection('connected');
         reload();
+        void liveContext.request();
       });
       source.addEventListener('error', (event) => {
         if (!disposed && !(event instanceof MessageEvent)) setConnection('reconnecting');
@@ -1238,6 +1324,11 @@ function App({
       for (const event of events)
         source.addEventListener(event, (e) => {
           if (disposed) return;
+          if (event === 'context.updated') {
+            const data = JSON.parse((e as MessageEvent).data);
+            if (data.runId === runId) liveContext.update(data.payload);
+            return;
+          }
           if (event === 'terminal.output') {
             const data = JSON.parse((e as MessageEvent).data);
             setDetail((old) =>
@@ -1281,7 +1372,7 @@ function App({
       if (timer) clearTimeout(timer);
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [ready, runId, refreshDetail, refresh]);
+  }, [ready, runId, refreshDetail, refresh, liveContext.request, liveContext.update]);
   useEffect(() => {
     setAssignmentReady({});
   }, [assignmentKey]);
@@ -1366,6 +1457,61 @@ function App({
     setPreviewOpen(false);
     setTab(run.kind === 'chat' ? 'agents' : 'tasks');
   };
+  const openVerification = (operation: Operation, ownerRunId: string, epoch = navigationEpoch.current) => {
+    if (operation.name !== 'terminal_agent') {
+      setModal('decision:' + operation.id);
+      return;
+    }
+    setModal('');
+    requestAnimationFrame(() => {
+      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch) return;
+      const recovery = terminalRecoveryRefs.current.get(operation.id);
+      if (recovery) {
+        recovery.scrollIntoView({ block: 'start' });
+        recovery.focus({ preventScroll: true });
+      } else replyRef.current?.focus();
+    });
+  };
+  useEffect(() => {
+    const target = taskCenterTarget;
+    if (!target || !detail || detail.run.id !== target.id) return;
+    setTaskCenterTarget(undefined);
+    if (target.epoch !== navigationEpoch.current) return;
+    if (target.category === 'verification') {
+      const operation = detail.operations.find(
+        (item) =>
+          item.status === 'UNCERTAIN' &&
+          (detail.run.execution?.kind !== 'docker-agent' || item.name === 'terminal_agent'),
+      );
+      if (operation) openVerification(operation, target.id, target.epoch);
+      else replyRef.current?.focus();
+    } else if (target.category === 'waiting') {
+      requestAnimationFrame(() => {
+        if (activeRunId.current !== target.id) return;
+        if (questionRef.current) {
+          questionRef.current.scrollIntoView({ block: 'start' });
+          questionRef.current.focus({ preventScroll: true });
+        } else replyRef.current?.focus();
+      });
+    }
+  }, [detail, taskCenterTarget]);
+  useEffect(() => {
+    if (!ready || !notificationTarget || notificationTarget.sequence <= notificationSequence.current) return;
+    notificationSequence.current = notificationTarget.sequence;
+    const controller = new AbortController(),
+      epoch = navigationEpoch.current;
+    void api<Run>('/runs/' + notificationTarget.taskId + '/header', undefined, undefined, controller.signal)
+      .then((target) => {
+        if (controller.signal.aborted || navigationEpoch.current !== epoch) return;
+        selectRun(target);
+        setModal('');
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted)
+          setError(issue instanceof Error ? issue.message : '无法打开通知对应的任务。');
+      });
+    return () => controller.abort();
+  }, [ready, notificationTarget?.sequence, api]);
   const openResourceOwner = async (ownerRunId: string, operationId?: string) => {
     if (actionPending.current) return;
     const epoch = navigationEpoch.current;
@@ -1381,12 +1527,13 @@ function App({
       heldNavigation.current = operationId
         ? { runId: ownerRunId, operationId, epoch: navigationEpoch.current }
         : undefined;
-      if (
-        detail?.run.id === ownerRunId &&
-        detail.operations.some((row) => row.id === operationId && row.status === 'UNCERTAIN')
-      ) {
+      const operation =
+        detail?.run.id === ownerRunId
+          ? detail.operations.find((row) => row.id === operationId && row.status === 'UNCERTAIN')
+          : undefined;
+      if (operation) {
         heldNavigation.current = undefined;
-        setModal('decision:' + operationId);
+        openVerification(operation, ownerRunId);
       }
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : '无法打开资源所属对话');
@@ -1402,7 +1549,7 @@ function App({
     if (detail?.run.id !== target.runId) return;
     const operation = detail.operations.find((row) => row.id === target.operationId);
     heldNavigation.current = undefined;
-    if (operation?.status === 'UNCERTAIN') setModal('decision:' + operation.id);
+    if (operation?.status === 'UNCERTAIN') openVerification(operation, target.runId, target.epoch);
   }, [detail]);
   const newRun = () => {
     navigate({ ...navigation.current, runId: '' }, true);
@@ -2457,35 +2604,44 @@ function App({
                           operation.name === 'terminal_agent' && operation.status === 'UNCERTAIN',
                       )
                       .map((operation) => (
-                        <TerminalRecovery
+                        <div
                           key={operation.id}
-                          disabled={busy || runReadOnly}
-                          note={
-                            typeof cacheState.entries[
-                              `draft:terminal-recovery:${detail.run.id}:${operation.id}`
-                            ]?.value === 'string'
-                              ? (cacheState.entries[
-                                  `draft:terminal-recovery:${detail.run.id}:${operation.id}`
-                                ].value as string)
-                              : ''
-                          }
-                          changeNote={(note) =>
-                            cache.set(`draft:terminal-recovery:${detail.run.id}:${operation.id}`, note)
-                          }
-                          submit={(outcome, note) =>
-                            void act(async () => {
-                              const key = `draft:terminal-recovery:${detail.run.id}:${operation.id}`;
-                              const sent = cache.get(key);
-                              await mutation('/runs/' + detail.run.id + '/terminal/verify', {
-                                expectedRevision: detail.run.revision,
-                                operationId: operation.id,
-                                outcome,
-                                note,
-                              });
-                              if (cache.get(key) === sent) cache.set(key, '');
-                            })
-                          }
-                        />
+                          ref={(element) => {
+                            if (element) terminalRecoveryRefs.current.set(operation.id, element);
+                            else terminalRecoveryRefs.current.delete(operation.id);
+                          }}
+                          tabIndex={-1}
+                          aria-label="终端操作核验"
+                        >
+                          <TerminalRecovery
+                            disabled={busy || runReadOnly}
+                            note={
+                              typeof cacheState.entries[
+                                `draft:terminal-recovery:${detail.run.id}:${operation.id}`
+                              ]?.value === 'string'
+                                ? (cacheState.entries[
+                                    `draft:terminal-recovery:${detail.run.id}:${operation.id}`
+                                  ].value as string)
+                                : ''
+                            }
+                            changeNote={(note) =>
+                              cache.set(`draft:terminal-recovery:${detail.run.id}:${operation.id}`, note)
+                            }
+                            submit={(outcome, note) =>
+                              void act(async () => {
+                                const key = `draft:terminal-recovery:${detail.run.id}:${operation.id}`;
+                                const sent = cache.get(key);
+                                await mutation('/runs/' + detail.run.id + '/terminal/verify', {
+                                  expectedRevision: detail.run.revision,
+                                  operationId: operation.id,
+                                  outcome,
+                                  note,
+                                });
+                                if (cache.get(key) === sent) cache.set(key, '');
+                              })
+                            }
+                          />
+                        </div>
                       ))}
                   {!isChat && detail.run.status === 'DONE' && (
                     <div className="delivery-card">
@@ -2569,35 +2725,32 @@ function App({
                       )}
                     <div>
                       <div className="reply-model-controls">
-                        <button
-                          type="button"
-                          className="composer-model"
-                          aria-label={`切换${isChat ? '会话' : '总代理'}模型`}
-                          disabled={
-                            busy ||
-                            !rootAgent ||
-                            !!rootModelReason ||
+                        <ComposerModelControl
+                          key={runId}
+                          modelLabel={
                             detail.run.execution?.kind === 'docker-agent'
-                          }
-                          title={rootModelReason || rootAgent?.providerBinding.label}
-                          onClick={() => rootAgent && setModal('model:' + rootAgent.id)}
-                        >
-                          <Icon name="spark" size={15} />
-                          <span>
-                            {detail.run.execution?.kind === 'docker-agent'
                               ? detail.run.execution.profile.agent.toUpperCase()
-                              : rootAgent?.providerBinding.model || '模型准备中…'}
-                          </span>
-                          <Icon name="chevron" size={12} />
-                        </button>
-                        {detail.run.execution?.kind !== 'docker-agent' && (
-                          <ContextMeter
-                            projection={rootContext}
-                            showStreaming
-                            disabled={!rootAgent || busy || summaryLoading}
-                            open={() => rootAgent && void openContext(rootAgent.id)}
-                          />
-                        )}
+                              : rootAgent?.providerBinding.model || '模型准备中…'
+                          }
+                          providerLabel={rootAgent?.providerBinding.label}
+                          reasoningEffort={rootAgent?.providerBinding.reasoningEffort}
+                          modelDisabledReason={
+                            detail.run.execution?.kind === 'docker-agent'
+                              ? '此任务使用冻结的终端模板。'
+                              : rootModelReason
+                          }
+                          onOpenModel={
+                            rootAgent && detail.run.execution?.kind !== 'docker-agent'
+                              ? () => setModal('model:' + rootAgent.id)
+                              : undefined
+                          }
+                          projection={liveContext.projection}
+                          contextLoading={liveContext.loading}
+                          contextError={liveContext.error}
+                          onRequestContext={() => void liveContext.request()}
+                          onOpenContext={() => rootAgent && void openContext(rootAgent.id)}
+                          contextDisabled={!rootAgent || detail.run.execution?.kind === 'docker-agent'}
+                        />
                         <span className="reply-hint">
                           {busy
                             ? '正在提交…'
@@ -2959,7 +3112,7 @@ function App({
                               <button
                                 className="secondary"
                                 disabled={busy || !!decisionDisabledReason(o)}
-                                onClick={() => setModal('decision:' + o.id)}
+                                onClick={() => openVerification(o, detail.run.id)}
                               >
                                 提交核验决定
                               </button>
@@ -3015,11 +3168,12 @@ function App({
               changeState={setTaskCenterState}
               projects={projects}
               close={() => setModal('')}
-              openRun={async (id) => {
+              openRun={async (id, category) => {
                 const epoch = navigationEpoch.current;
                 const target = await api<Run>('/runs/' + id + '/header');
                 if (epoch !== navigationEpoch.current || modalCurrent.current !== 'task-center') return;
                 selectRun(target);
+                setTaskCenterTarget({ id, category, epoch: navigationEpoch.current });
                 setModal('');
               }}
             />
@@ -3225,14 +3379,23 @@ function App({
               )}
               {modal.startsWith('context:') && detail && contextAgent && (
                 <ContextWindowModal
-                  key={detail.run.id + ':' + contextAgent.agentId}
+                  key={
+                    detail.run.id +
+                    ':' +
+                    contextAgent.agentId +
+                    ':' +
+                    contextSnapshot!.runRevision +
+                    ':' +
+                    contextAgent.agentRevision
+                  }
                   projection={contextAgent}
                   title={
                     detail.tasks.find((task) => task.id === contextAgent.taskId)?.spec.title || '当前会话'
                   }
-                  runRevision={detail.run.revision}
-                  busy={busy}
+                  runRevision={contextSnapshot!.runRevision}
+                  busy={busy || contextReading}
                   close={() => setModal('')}
+                  refresh={() => void openContext(contextAgent.agentId)}
                   submit={(policy, expectedAgentRevision, expectedRevision) =>
                     void act(async () => {
                       await mutation('/runs/' + detail.run.id + '/context', {
@@ -3245,6 +3408,18 @@ function App({
                     })
                   }
                 />
+              )}
+              {modal.startsWith('context:') && detail && !contextAgent && (
+                <Modal title="上下文设置" close={() => setModal('')}>
+                  <p className="field-help" role="status">
+                    {contextReading ? '正在读取上下文…' : '上下文暂时不可用。'}
+                  </p>
+                  {!contextReading && (
+                    <button className="secondary" onClick={() => void openContext(modal.slice(8))}>
+                      重试
+                    </button>
+                  )}
+                </Modal>
               )}
               {modal === 'contract' && detail && (
                 <ContractModal
@@ -4363,6 +4538,7 @@ function SurfaceEntry({
   changeSurface,
   registerCache,
   registerSession,
+  notificationTarget,
 }: {
   client: SurfaceClient;
   active: boolean;
@@ -4373,6 +4549,7 @@ function SurfaceEntry({
     reading: ConversationHistoryState,
   ) => void;
   registerSession: (surface: 'native' | 'terminal') => void;
+  notificationTarget?: { taskId: string; sequence: number };
 }) {
   const root = useRef<HTMLDivElement>(null);
   return (
@@ -4390,6 +4567,7 @@ function SurfaceEntry({
               changeSurface={changeSurface}
               registerCache={registerCache}
               registerSession={registerSession}
+              notificationTarget={notificationTarget}
             />
           </Activity>
         </SurfaceRootContext.Provider>
@@ -4401,6 +4579,11 @@ function SurfaceEntry({
 function SurfaceWorkspaces() {
   const [current, setCurrent] = useState(localSurface);
   const [visited, setVisited] = useState(() => new Set([localSurface]));
+  const [notificationTarget, setNotificationTarget] = useState<{
+    surface: 'native' | 'terminal';
+    taskId: string;
+    sequence: number;
+  }>();
   const [clients] = useState(() => ({
     native: localSurface === 'native' ? defaultSurfaceClient : createSurfaceClient('native'),
     terminal: localSurface === 'terminal' ? defaultSurfaceClient : createSurfaceClient('terminal'),
@@ -4430,6 +4613,19 @@ function SurfaceWorkspaces() {
     setVisited((old) => new Set([...old, surface]));
     setCurrent(surface);
   }, []);
+  useEffect(
+    () =>
+      window.elysia?.onTaskNotification?.((value) => {
+        if (
+          !['native', 'terminal'].includes(value.surface) ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.taskId)
+        )
+          return;
+        changeSurface(value.surface);
+        setNotificationTarget((old) => ({ ...value, sequence: (old?.sequence || 0) + 1 }));
+      }),
+    [changeSurface],
+  );
   useEffect(() => {
     const restore = () =>
       changeSurface(
@@ -4450,6 +4646,7 @@ function SurfaceWorkspaces() {
               changeSurface={changeSurface}
               registerCache={registerCache}
               registerSession={registerSession}
+              notificationTarget={notificationTarget?.surface === surface ? notificationTarget : undefined}
             />
           ),
       )}

@@ -14,12 +14,14 @@ import os from 'node:os';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import {
   AppError,
+  ContextRuntimeMetrics,
   type Entity,
   type Event,
   type Run,
   type Task,
   type Message,
 } from '../../contracts/src/index.js';
+import { SearchWork, searchCancelled } from './search-work.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -172,6 +174,7 @@ export class Store {
   db: DatabaseSync;
   directory: string;
   private depth = 0;
+  private searchWork = new SearchWork();
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
     this.directory = realpathSync(directory);
@@ -189,6 +192,9 @@ export class Store {
           COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status')));`);
       this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_inbox_pending ON inbox(run_id)
         WHERE json_extract(data,'$.status') IS NULL OR json_extract(data,'$.status')='PENDING';`);
+      this.db.exec(
+        'CREATE INDEX IF NOT EXISTS context_event_preview ON events(run_id,task_id,type,seq DESC);',
+      );
     } catch (error) {
       this.db.close();
       throw error;
@@ -382,9 +388,25 @@ export class Store {
         PRIMARY KEY(kind,record_id)
       );
       CREATE INDEX IF NOT EXISTS history_search_run ON history_search_v1(kind,run_id);
+      CREATE TABLE IF NOT EXISTS history_search_pending_v2(
+        kind TEXT NOT NULL,record_id TEXT NOT NULL,run_id TEXT NOT NULL,
+        PRIMARY KEY(kind,record_id)
+      );
+      CREATE INDEX IF NOT EXISTS history_search_pending_scope ON history_search_pending_v2(kind,run_id);
+      CREATE TABLE IF NOT EXISTS history_search_epochs_v2(
+        kind TEXT NOT NULL,scope TEXT NOT NULL,revision INTEGER NOT NULL,
+        PRIMARY KEY(kind,scope)
+      );
     `);
     for (const table of ['runs', 'messages'] as const) {
       const kind = table === 'runs' ? 'run' : 'message';
+      const scope = table === 'runs' ? "'global'" : 'NEW.run_id';
+      const oldScope = table === 'runs' ? "'global'" : 'OLD.run_id';
+      const enqueue = `INSERT INTO history_search_pending_v2(kind,record_id,run_id)
+        VALUES('${kind}',NEW.id,${table === 'runs' ? 'NEW.id' : 'NEW.run_id'})
+        ON CONFLICT(kind,record_id) DO UPDATE SET run_id=excluded.run_id;
+        INSERT INTO history_search_epochs_v2(kind,scope,revision) VALUES('${kind}',${scope},1)
+        ON CONFLICT(kind,scope) DO UPDATE SET revision=revision+1;`;
       this.db.exec(`
         CREATE TRIGGER IF NOT EXISTS history_search_${table}_update AFTER UPDATE ON ${table}
         WHEN NEW.revision IS NOT OLD.revision OR NEW.content IS NOT OLD.content
@@ -392,13 +414,27 @@ export class Store {
         BEGIN DELETE FROM history_search_v1 WHERE kind='${kind}' AND record_id=NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS history_search_${table}_delete AFTER DELETE ON ${table}
         BEGIN DELETE FROM history_search_v1 WHERE kind='${kind}' AND record_id=OLD.id; END;
+        CREATE TRIGGER IF NOT EXISTS history_search_${table}_queue_insert AFTER INSERT ON ${table}
+        BEGIN ${enqueue} END;
+        CREATE TRIGGER IF NOT EXISTS history_search_${table}_queue_update AFTER UPDATE ON ${table}
+        WHEN NEW.revision IS NOT OLD.revision OR NEW.content IS NOT OLD.content
+          OR (NEW.content IS NULL AND NEW.data IS NOT OLD.data)
+        BEGIN ${enqueue}
+          ${table === 'messages' ? `INSERT INTO history_search_epochs_v2(kind,scope,revision) SELECT 'message',OLD.run_id,1 WHERE OLD.run_id IS NOT NEW.run_id ON CONFLICT(kind,scope) DO UPDATE SET revision=revision+1;` : ''}
+        END;
+        CREATE TRIGGER IF NOT EXISTS history_search_${table}_queue_delete AFTER DELETE ON ${table}
+        BEGIN DELETE FROM history_search_pending_v2 WHERE kind='${kind}' AND record_id=OLD.id;
+          INSERT INTO history_search_epochs_v2(kind,scope,revision) VALUES('${kind}',${oldScope},1)
+          ON CONFLICT(kind,scope) DO UPDATE SET revision=revision+1;
+          ${table === 'runs' ? "DELETE FROM history_search_epochs_v2 WHERE kind='message' AND scope=OLD.id; DELETE FROM storage_meta WHERE key IN ('history-search-bootstrap:message:'||OLD.id,'history-search-progress:message:'||OLD.id);" : ''}
+        END;
       `);
     }
   }
   private historySearchProjection(table: 'runs' | 'messages', entity: Run | Message) {
     const isRun = table === 'runs';
     const text = isRun ? `${(entity as Run).title} ${(entity as Run).objective}` : (entity as Message).text;
-    this.db
+    const result = this.db
       .prepare(
         `
       INSERT INTO history_search_v1(kind,record_id,run_id,revision,normalized)
@@ -416,30 +452,186 @@ export class Store {
         entity.id,
         entity.revision,
       );
+    if (result.changes)
+      this.db
+        .prepare('DELETE FROM history_search_pending_v2 WHERE kind=? AND record_id=?')
+        .run(isRun ? 'run' : 'message', entity.id);
   }
   /** Missing legacy indexes are populated only by an explicit search, in yielding small batches. */
-  async ensureHistorySearch(kind: 'run' | 'message', runId?: string) {
+  async ensureHistorySearch(kind: 'run' | 'message', runId?: string, signal?: AbortSignal): Promise<number> {
     const table = kind === 'run' ? 'runs' : 'messages';
-    for (;;) {
-      const rows = this.db
-        .prepare(
-          `
-        SELECT e.id FROM ${table} e LEFT JOIN history_search_v1 s
-          ON s.kind=? AND s.record_id=e.id AND s.revision=e.revision
-        WHERE s.record_id IS NULL ${runId ? 'AND e.run_id=?' : ''} ORDER BY e.rowid LIMIT 32
-      `,
-        )
-        .all(kind, ...(runId ? [runId] : [])) as { id: string }[];
-      if (!rows.length) return;
-      for (const { id: key } of rows) {
-        const entity = this.get<Run | Message>(table, key);
-        if (entity) {
-          this.historySearchProjection(table, entity);
-          this.refreshReadProjection(table, entity);
+    return this.searchWork.run(
+      `warm:${kind}:${runId ?? 'global'}`,
+      async (workSignal) => {
+        const marker = `history-search-bootstrap:${kind}:${runId ?? 'global'}`;
+        const progress = `history-search-progress:${kind}:${runId ?? 'global'}`;
+        if (!this.db.prepare('SELECT 1 FROM storage_meta WHERE key=?').get(marker)) {
+          let position = Number(
+            (
+              this.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(progress) as
+                | { value: string }
+                | undefined
+            )?.value ?? 0,
+          );
+          for (;;) {
+            searchCancelled(workSignal);
+            const rows = this.db
+              .prepare(
+                `SELECT e.id,e.rowid position,s.record_id indexed_id FROM ${table} e
+            LEFT JOIN history_search_v1 s ON s.kind=? AND s.record_id=e.id AND s.revision=e.revision
+            WHERE e.rowid>? ${runId ? 'AND e.run_id=?' : ''} ORDER BY e.rowid LIMIT 32`,
+              )
+              .all(kind, position, ...(runId ? [runId] : [])) as {
+              id: string;
+              position: number;
+              indexed_id: string | null;
+            }[];
+            if (!rows.length) break;
+            for (const row of rows)
+              if (!row.indexed_id) {
+                const entity = this.get<Run | Message>(table, row.id);
+                if (entity) {
+                  this.historySearchProjection(table, entity);
+                  this.refreshReadProjection(table, entity);
+                }
+              }
+            position = rows.at(-1)!.position;
+            this.db
+              .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
+              .run(progress, String(position));
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
+          this.tx(() => {
+            this.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(marker, '1');
+            this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(progress);
+          });
         }
-      }
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
+        for (;;) {
+          searchCancelled(workSignal);
+          const pending = this.db
+            .prepare(
+              `SELECT record_id id FROM history_search_pending_v2 WHERE kind=? ${runId ? 'AND run_id=?' : ''} LIMIT 32`,
+            )
+            .all(kind, ...(runId ? [runId] : [])) as { id: string }[];
+          if (!pending.length) {
+            const ready = this.tx(() =>
+              this.db
+                .prepare(
+                  `SELECT 1 FROM history_search_pending_v2 WHERE kind=? ${runId ? 'AND run_id=?' : ''} LIMIT 1`,
+                )
+                .get(kind, ...(runId ? [runId] : []))
+                ? undefined
+                : this.historySearchEpoch(kind, runId),
+            );
+            if (ready !== undefined) return ready;
+            continue;
+          }
+          for (const row of pending) {
+            const entity = this.get<Run | Message>(table, row.id);
+            if (entity) this.historySearchProjection(table, entity);
+            else
+              this.db
+                .prepare('DELETE FROM history_search_pending_v2 WHERE kind=? AND record_id=?')
+                .run(kind, row.id);
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      },
+      signal,
+    );
+  }
+  private historySearchEpoch(kind: 'run' | 'message', runId?: string) {
+    return Number(
+      (
+        this.db
+          .prepare('SELECT revision FROM history_search_epochs_v2 WHERE kind=? AND scope=?')
+          .get(kind, runId ?? 'global') as { revision: number } | undefined
+      )?.revision ?? 0,
+    );
+  }
+  /** Exact Unicode substring search with bounded result memory and yielding scans. */
+  async historySearch(
+    kind: 'run' | 'message',
+    query: {
+      search: string;
+      limit: number;
+      before?: string;
+      runId?: string;
+      archived?: boolean;
+      included?: string[];
+    },
+    signal?: AbortSignal,
+  ) {
+    return this.searchWork.run(
+      `search:${kind}:${stable(query)}`,
+      async (workSignal) => {
+        const table = kind === 'run' ? 'runs' : 'messages';
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const epoch = await this.ensureHistorySearch(kind, query.runId, workSignal);
+          searchCancelled(workSignal);
+          if (epoch !== this.historySearchEpoch(kind, query.runId)) continue;
+          const cursor = query.before
+            ? (this.db
+                .prepare(
+                  `SELECT rowid position FROM ${table} WHERE id=? ${query.runId ? 'AND run_id=?' : ''}`,
+                )
+                .get(query.before, ...(query.runId ? [query.runId] : [])) as { position: number } | undefined)
+            : undefined;
+          if (query.before && !cursor)
+            throw new AppError(
+              kind === 'run' ? 'RECORD_CURSOR_MISSING' : 'MESSAGE_CURSOR_MISSING',
+              '搜索位置已失效，请重新搜索',
+              false,
+              null,
+              409,
+            );
+          const included = new Set(query.included ?? []),
+            matchedIncluded: string[] = [],
+            ids: string[] = [];
+          let total = 0,
+            position = Number.MAX_SAFE_INTEGER,
+            changed = false;
+          for (;;) {
+            searchCancelled(workSignal);
+            const rows = this.db
+              .prepare(
+                `SELECT e.id,e.rowid position,instr(s.normalized,?) matched,
+            ${kind === 'run' ? "COALESCE(json_extract(e.data,'$.readModel.archived'),json_extract(e.data,'$.archived'),0)" : '0'} archived
+            FROM ${table} e JOIN history_search_v1 s ON s.kind=? AND s.record_id=e.id AND s.revision=e.revision
+            WHERE e.rowid<? ${query.runId ? 'AND e.run_id=?' : ''} ORDER BY e.rowid DESC LIMIT 32`,
+              )
+              .all(query.search, kind, position, ...(query.runId ? [query.runId] : [])) as {
+              id: string;
+              position: number;
+              matched: number;
+              archived: number;
+            }[];
+            for (const row of rows)
+              if (row.matched) {
+                if (included.has(row.id)) matchedIncluded.push(row.id);
+                if (query.archived === undefined || Boolean(row.archived) === query.archived) {
+                  total++;
+                  if ((!cursor || row.position < cursor.position) && ids.length <= query.limit)
+                    ids.push(row.id);
+                }
+              }
+            if (!rows.length) break;
+            position = rows.at(-1)!.position;
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            if (epoch !== this.historySearchEpoch(kind, query.runId)) {
+              changed = true;
+              break;
+            }
+          }
+          if (changed || epoch !== this.historySearchEpoch(kind, query.runId)) continue;
+          const hasMore = ids.length > query.limit;
+          ids.splice(query.limit);
+          return { ids, total, matchedIncluded, hasMore, nextBefore: hasMore ? (ids.at(-1) ?? null) : null };
+        }
+        throw new AppError('SEARCH_CHANGED', '搜索期间记录持续更新，请重试', true, null, 409);
+      },
+      signal,
+    );
   }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
   refreshReadProjection(
@@ -737,11 +929,23 @@ export class Store {
       (this.db.prepare('SELECT COALESCE(MAX(seq),0)+1 n FROM events WHERE run_id=?').get(runId) as any).n,
     );
     const e = { runId, seq, eventId: id(), type, taskId, attemptId, payload, occurredAt: now() };
+    const metrics = type === 'context.updated' ? ContextRuntimeMetrics.safeParse(payload) : undefined;
+    const preview = metrics?.success ? stable({ contextPreviewVersion: 1, metrics: metrics.data }) : '{}';
     this.db
       .prepare(
         'INSERT INTO events(run_id,seq,event_id,type,task_id,attempt_id,payload,occurred_at,content) VALUES(?,?,?,?,?,?,?,?,?)',
       )
-      .run(runId, seq, e.eventId, type, taskId, attemptId, '{}', e.occurredAt, compress(payload));
+      .run(
+        runId,
+        seq,
+        e.eventId,
+        type,
+        taskId,
+        attemptId,
+        Buffer.byteLength(preview) <= 16384 ? preview : '{}',
+        e.occurredAt,
+        compress(payload),
+      );
     return e;
   }
   events(runId: string, after = 0, filter: { taskId?: string; type?: string; limit?: number } = {}): Event[] {
@@ -992,6 +1196,7 @@ export class Store {
     return data;
   }
   close() {
+    this.searchWork.close();
     this.db.close();
   }
 }

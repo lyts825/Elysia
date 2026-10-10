@@ -146,6 +146,22 @@
 .cli-app-error {
   color: var(--danger);
 }
+.terminal-install-failure {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.terminal-install-repairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+}
+.terminal-install-repairs .text-button {
+  padding: 2px 0;
+  font-size: 11px;
+}
 .cli-app-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

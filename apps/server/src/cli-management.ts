@@ -9,6 +9,7 @@ import { type Store, now, stable } from '../../../packages/storage/src/index.js'
 import type { DockerCliManager } from '../../../packages/runtime/src/cli-manager.js';
 import { terminalAppCatalog, terminalAppForProfile } from './terminal-control.js';
 import { terminalSettings, writeTerminalProfileImage } from './terminal-settings.js';
+import { terminalCliInstallFailure } from '../../../packages/contracts/src/cli-installation.js';
 
 const jobsKey = 'surface:terminal:control:installations:v1';
 const version = z
@@ -45,7 +46,16 @@ export class TerminalCliManagement {
     const row = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(jobsKey) as
       | { value: string }
       | undefined;
-    return row ? z.array(TerminalCliInstallationJob).parse(JSON.parse(row.value)) : [];
+    return row
+      ? z
+          .array(TerminalCliInstallationJob)
+          .parse(JSON.parse(row.value))
+          .map((job) => {
+            if (job.status !== 'failed') return job;
+            const failure = terminalCliInstallFailure(job.code, job.message);
+            return { ...job, code: failure.code, message: failure.message };
+          })
+      : [];
   }
   job(id: string) {
     const job = this.jobs().find((entry) => entry.id === id);
@@ -276,18 +286,18 @@ export class TerminalCliManagement {
           message: 'CLI 镜像已安装，保存模板后供新任务使用',
         });
       } catch (error) {
-        this.update(job.id, {
-          status: 'failed',
-          code: controller.signal.aborted
+        const failure = terminalCliInstallFailure(
+          controller.signal.aborted
             ? 'TERMINAL_CLI_INTERRUPTED'
             : error instanceof AppError
               ? error.code
-              : 'TERMINAL_CLI_INSTALL',
-          message: controller.signal.aborted
-            ? '安装已中断，请重新安装'
-            : error instanceof AppError
-              ? error.message
-              : 'CLI 安装未完成，请检查 Docker 和网络后重试',
+              : undefined,
+          error instanceof AppError ? error.details : undefined,
+        );
+        this.update(job.id, {
+          status: 'failed',
+          code: failure.code,
+          message: failure.message,
         });
       } finally {
         this.active.delete(job.id);

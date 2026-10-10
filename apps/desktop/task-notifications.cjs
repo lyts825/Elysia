@@ -94,6 +94,11 @@ function createTaskNotifications(window, directory) {
         if (window.isMinimized()) window.restore();
         window.show();
         window.focus();
+        if (!window.webContents.isDestroyed())
+          window.webContents.send('elysia:notification-open', {
+            surface: value.surface,
+            taskId: value.taskId,
+          });
       });
       notice.on('close', () => active.delete(notice));
       try {

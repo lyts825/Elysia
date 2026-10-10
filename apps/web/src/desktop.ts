@@ -28,6 +28,9 @@ declare global {
         status: 'DONE' | 'WAITING' | 'FAILED' | 'UNCERTAIN';
         revision: number;
       }): Promise<boolean>;
+      onTaskNotification?(
+        callback: (value: { surface: 'native' | 'terminal'; taskId: string }) => void,
+      ): () => void;
     };
   }
 }

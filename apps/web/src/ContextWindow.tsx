@@ -174,6 +174,7 @@ export function ContextWindowModal({
   busy,
   close,
   submit,
+  refresh,
 }: {
   projection: ContextProjection;
   title: string;
@@ -181,6 +182,7 @@ export function ContextWindowModal({
   busy: boolean;
   close: () => void;
   submit: (policy: ContextPolicy, expectedAgentRevision: number, expectedRevision: number) => void;
+  refresh?: () => void;
 }) {
   const [policy, setPolicy] = useState(projection.policy);
   const [revision] = useState({ agent: projection.agentRevision, run: runRevision });
@@ -227,6 +229,11 @@ export function ContextWindowModal({
           <button type="button" className="secondary" disabled={busy} onClick={close}>
             关闭
           </button>
+          {refresh && (!projection.safeToConfigure || stale) && (
+            <button type="button" className="secondary" disabled={busy} onClick={refresh}>
+              重新读取设置
+            </button>
+          )}
           <button type="submit" className="primary" disabled={disabled || !changed || !valid}>
             {busy ? '正在保存…' : '保存分配'}
           </button>

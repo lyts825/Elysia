@@ -5,6 +5,8 @@ import type {
   TerminalCliInstallationJob,
 } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
+import { TerminalInstallFailure } from './TerminalInstallFailure';
+import type { TerminalCliInstallRepair } from '../../../packages/contracts/src/cli-installation';
 
 type Page = { items: TerminalCliInstallationJob[]; total: number; nextCursor: string | null };
 const statuses = { completed: '已安装', failed: '失败', running: '安装中', cancelled: '已取消' };
@@ -39,6 +41,7 @@ export function TerminalInstallHistory({
   disabled,
   perform,
   saved,
+  repair,
 }: {
   appId: TerminalAppId;
   settings: SurfaceTerminalSettings;
@@ -46,6 +49,7 @@ export function TerminalInstallHistory({
   disabled: boolean;
   perform: (action: () => Promise<unknown>) => Promise<unknown>;
   saved: (settings: SurfaceTerminalSettings) => void;
+  repair?: (job: TerminalCliInstallationJob, action: TerminalCliInstallRepair) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [open, setOpen] = useState(false),
@@ -142,7 +146,7 @@ export function TerminalInstallHistory({
                 {job.profileId && !profile && <small>原模板已删除</small>}
               </>
             )}
-            {job.status === 'failed' && <small className="cli-app-error">{job.message}</small>}
+            <TerminalInstallFailure job={job} disabled={disabled} repair={repair} />
           </div>
         );
       })}

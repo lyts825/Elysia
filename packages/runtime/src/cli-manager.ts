@@ -7,6 +7,7 @@ import { TerminalResourcePool } from './terminal-resources.js';
 import type { TerminalCliCapability } from '../../contracts/src/terminal-runtime.js';
 import type { Store } from '../../storage/src/index.js';
 import { z } from 'zod';
+import { terminalCliInstallFailure } from '../../contracts/src/cli-installation.js';
 
 const ProbeRecord = z
   .object({
@@ -41,6 +42,27 @@ function detectedCliVersion(banner: string | undefined): string | undefined {
   ];
   const version = matches.length === 1 ? matches[0][1] : undefined;
   return version && version.length <= 80 && VERSION.test(version) ? version : undefined;
+}
+function buildFailure(result: DockerCommandResult): AppError {
+  // Only inspect the already bounded capture; never return or persist any part of it.
+  const output = `${result.stderr.slice(0, 20000)}\n${result.stdout.slice(0, 20000)}`.slice(0, 20000);
+  const code = result.timedOut
+    ? 'TERMINAL_CLI_INSTALL_TIMEOUT'
+    : /\b(?:ENOSPC|no space left on device|disk quota exceeded)\b/i.test(output)
+      ? 'TERMINAL_CLI_INSTALL_STORAGE'
+      : /\b(?:ETARGET|E404)\b|No matching version found|not in this registry/i.test(output)
+        ? 'TERMINAL_CLI_INSTALL_PACKAGE_VERSION'
+        : /\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|CERT_HAS_EXPIRED|UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN)\b|TLS handshake timeout|certificate signed by unknown authority/i.test(
+              output,
+            )
+          ? 'TERMINAL_CLI_INSTALL_NETWORK'
+          : /Cannot connect to the Docker daemon|error during connect|daemon is not running|failed to dial|rpc error: code = Unavailable/i.test(
+                output,
+              )
+            ? 'TERMINAL_CLI_INSTALL_ENGINE'
+            : 'TERMINAL_CLI_INSTALL';
+  const failure = terminalCliInstallFailure(code);
+  return new AppError(failure.code, failure.message);
 }
 
 export interface TerminalCliStatus {
@@ -544,15 +566,11 @@ export class DockerCliManager {
         timeoutMs: 600000,
         outputLimit: 20000,
       });
-      invariant(
-        result.exitCode === 0 && !result.timedOut,
-        'TERMINAL_CLI_INSTALL',
-        'CLI 镜像安装未完成，请检查 Docker 和网络后重试',
-      );
+      if (result.exitCode !== 0 || result.timedOut) throw buildFailure(result);
       signal?.throwIfAborted();
       onPhase?.('verify');
       const image = await this.image(imageTag, signal);
-      invariant(image, 'TERMINAL_CLI_INSTALL', '构建完成后无法确认镜像，请重新检测');
+      invariant(image, 'TERMINAL_CLI_VERIFY', '构建完成后无法确认镜像，请重新检测');
       this.options.resources?.release(reservationId);
       const verified = await this.check(
         appId,
@@ -575,11 +593,11 @@ export class DockerCliManager {
       );
       const actualVersion = detectedCliVersion(verified.version);
       invariant(actualVersion, 'TERMINAL_CLI_VERSION', '安装后的 CLI 未返回可确定的版本号，请重新检测或安装');
-      invariant(
-        actualVersion === version,
-        'TERMINAL_CLI_VERSION_MISMATCH',
-        `实际 CLI 版本 ${actualVersion} 与请求版本 ${version} 不一致，请重新安装；未应用镜像`,
-      );
+      if (actualVersion !== version) {
+        const details = { actualVersion, requestedVersion: version };
+        const failure = terminalCliInstallFailure('TERMINAL_CLI_VERSION_MISMATCH', details);
+        throw new AppError(failure.code, failure.message, false, details);
+      }
       onPhase?.('complete');
       return { image, imageTag, version: actualVersion };
     } finally {

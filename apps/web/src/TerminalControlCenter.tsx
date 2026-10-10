@@ -20,6 +20,8 @@ import { TerminalDiagnostics, type TerminalDiagnosticRepair } from './TerminalDi
 import { TerminalInstallHistory, installationPhase, InstallationElapsed } from './TerminalInstallHistory';
 import { TerminalDataMaintenance } from './TerminalDataMaintenance';
 import type { TerminalCliCapability } from '../../../packages/contracts/src/terminal-runtime';
+import type { TerminalCliInstallRepair } from '../../../packages/contracts/src/cli-installation';
+import { TerminalInstallFailure } from './TerminalInstallFailure';
 import './terminal-control.css';
 
 type CliStatus = { available: boolean; installed: boolean | null; version?: string; message: string };
@@ -366,6 +368,33 @@ export function TerminalControlCenter({
     setError('');
     setNotice('');
   }
+  function repairInstallation(job: TerminalCliInstallationJob, action: TerminalCliInstallRepair) {
+    if (busy || running) return;
+    if (action === 'template') {
+      const profile =
+        settings.profiles.find((value) => value.id === job.profileId && value.agent === job.appId) ||
+        appProfile(settings, job.appId);
+      if (profile) repairDiagnostic({ kind: 'template', profileId: profile.id, appId: job.appId }, 'apps');
+      else selectTab('templates');
+      return;
+    }
+    const row = content.current?.querySelector<HTMLElement>(`[data-app="${job.appId}"]`);
+    if (action === 'version') {
+      const options = content.current?.querySelector<HTMLDetailsElement>('.cli-install-options');
+      if (options) options.open = true;
+      const field = options?.querySelector<HTMLInputElement>(`[data-cli-version="${job.appId}"]`);
+      field?.scrollIntoView({ block: 'center' });
+      field?.focus();
+    } else if (action === 'check') {
+      const check = row?.querySelector<HTMLButtonElement>('[data-cli-check]');
+      if (check && !check.disabled) check.click();
+    } else {
+      const install = row?.querySelector<HTMLButtonElement>('[data-cli-install]');
+      row?.scrollIntoView({ block: 'center' });
+      install?.focus();
+      setNotice('请检查网络和 Docker 后，点击该应用的安装或更新按钮重试。');
+    }
+  }
   function repairDiagnostic(target: TerminalDiagnosticRepair, origin: 'apps' | 'project') {
     setRepairTarget({ target, origin, request: Date.now() });
     if (target.kind === 'connection') {
@@ -707,6 +736,7 @@ export function TerminalControlCenter({
                           finishRepair('install');
                           setNotice('历史镜像已恢复，供新任务使用。');
                         }}
+                        repair={repairInstallation}
                       />
                     </div>
                     <div className="cli-app-version">
@@ -721,7 +751,13 @@ export function TerminalControlCenter({
                       {status && <small>{status.message}</small>}
                       {job?.status === 'running' && <InstallationElapsed job={job} />}
                       {job?.status === 'cancelled' && <small>安装已取消</small>}
-                      {job?.status === 'failed' && <small className="cli-app-error">{job.message}</small>}
+                      {job?.status === 'failed' && (
+                        <TerminalInstallFailure
+                          job={job}
+                          disabled={busy || running}
+                          repair={repairInstallation}
+                        />
+                      )}
                       {job?.status === 'completed' && !applied && (
                         <>
                           {!job.profileId && (
@@ -770,6 +806,7 @@ export function TerminalControlCenter({
                     <div className="cli-app-actions">
                       <button
                         className="secondary"
+                        data-cli-check={item.id}
                         disabled={busy || !!checking || job?.status === 'running'}
                         onClick={async () => {
                           setChecking(item.id);
@@ -796,6 +833,7 @@ export function TerminalControlCenter({
                       {item.id !== 'custom' && (
                         <button
                           className="secondary"
+                          data-cli-install={item.id}
                           disabled={busy || running || !reads.installations.loaded}
                           onClick={() =>
                             void perform(async () => {
@@ -897,6 +935,7 @@ export function TerminalControlCenter({
                       {item.label} 版本
                       <input
                         placeholder="内置版本"
+                        data-cli-version={item.id}
                         value={versions[item.id] || ''}
                         disabled={busy || running}
                         onChange={(event) =>

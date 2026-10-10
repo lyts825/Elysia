@@ -266,6 +266,7 @@ export class TaskCenterReads {
     limit: number;
     before?: string;
     projectId?: string;
+    query?: string;
   }): Promise<TaskCenterPage> {
     await this.warm();
     let position: number | undefined;
@@ -282,10 +283,12 @@ export class TaskCenterReads {
       'archived=0',
       ...(query.filter === 'all' ? [] : ['category=?']),
       ...(query.projectId ? ['project_id=?'] : []),
+      ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
     ];
     const params = [
       ...(query.filter === 'all' ? [] : [query.filter]),
       ...(query.projectId ? [query.projectId] : []),
+      ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
     ];
     const total = Number(
       (
@@ -368,6 +371,7 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
           limit: z.coerce.number().int().min(1).max(100).default(40),
           before: z.string().uuid().optional(),
           projectId: z.string().uuid().optional(),
+          query: z.string().max(200).optional(),
         })
         .strict()
         .parse(request.query),

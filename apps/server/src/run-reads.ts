@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
   AppError,
@@ -253,16 +253,19 @@ export class RunReads {
       ).n,
     );
   }
-  async list(query: {
-    limit: number;
-    before?: string;
-    query?: string;
-    includeRunId?: string;
-    pinned?: string[];
-    retained?: string[];
-    archived?: boolean;
-    summary?: 'deferred';
-  }) {
+  async list(
+    query: {
+      limit: number;
+      before?: string;
+      query?: string;
+      includeRunId?: string;
+      pinned?: string[];
+      retained?: string[];
+      archived?: boolean;
+      summary?: 'deferred';
+    },
+    signal?: AbortSignal,
+  ) {
     const cursor = query.before
       ? (this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
           | { position: number }
@@ -271,7 +274,23 @@ export class RunReads {
     if (query.before && !cursor)
       throw new AppError('RECORD_CURSOR_MISSING', '会话位置已失效，请重新读取列表', false, null, 409);
     const search = query.query?.trim().toLocaleLowerCase();
-    if (search) await this.store.ensureHistorySearch('run');
+    const result = search
+      ? await this.store.historySearch(
+          'run',
+          {
+            search,
+            limit: query.limit,
+            before: query.before,
+            archived: query.archived,
+            included: [
+              query.includeRunId,
+              ...(query.pinned ?? []).slice(0, 40),
+              ...(query.retained ?? []).slice(0, 300),
+            ].filter((value): value is string => Boolean(value)),
+          },
+          signal,
+        )
+      : undefined;
     if (query.archived !== undefined || query.summary !== 'deferred') this.warmReadModels('runs');
     const conditions: string[] = [];
     const parameters: (string | number)[] = [];
@@ -281,24 +300,21 @@ export class RunReads {
       );
       parameters.push(query.archived ? 1 : 0);
     }
-    if (search) {
-      // Keep exact Unicode substring semantics while reusing the full-objective derived index.
-      conditions.push(
-        "id IN (SELECT record_id FROM history_search_v1 WHERE kind='run' AND instr(normalized,?)>0)",
-      );
-      parameters.push(search);
-    }
     const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
-    const total = Number(
-      (this.store.db.prepare(`SELECT COUNT(*) n FROM runs${where}`).get(...parameters) as { n: number }).n,
-    );
+    const total =
+      result?.total ??
+      Number(
+        (this.store.db.prepare(`SELECT COUNT(*) n FROM runs${where}`).get(...parameters) as { n: number }).n,
+      );
     const pageConditions = [...conditions, ...(cursor ? ['rowid<?'] : [])];
-    const selected = this.store.db
-      .prepare(
-        `SELECT id FROM runs${pageConditions.length ? ' WHERE ' + pageConditions.join(' AND ') : ''} ORDER BY rowid DESC LIMIT ?`,
-      )
-      .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[];
-    const hasMore = selected.length > query.limit;
+    const selected = result
+      ? result.ids.map((id) => ({ id }))
+      : (this.store.db
+          .prepare(
+            `SELECT id FROM runs${pageConditions.length ? ' WHERE ' + pageConditions.join(' AND ') : ''} ORDER BY rowid DESC LIMIT ?`,
+          )
+          .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[]);
+    const hasMore = result?.hasMore ?? selected.length > query.limit;
     selected.splice(query.limit);
     const included = new Set(
       [
@@ -325,13 +341,7 @@ export class RunReads {
       return search
         ? {
             ...value,
-            matchesQuery: Boolean(
-              this.store.db
-                .prepare(
-                  "SELECT 1 FROM history_search_v1 WHERE kind='run' AND record_id=? AND instr(normalized,?)>0",
-                )
-                .get(row.id, search),
-            ),
+            matchesQuery: result!.ids.includes(row.id) || result!.matchedIncluded.includes(row.id),
           }
         : value;
     };
@@ -360,9 +370,20 @@ export class RunReads {
   }
 }
 export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
+  const requestSignal = (request: FastifyRequest, reply: FastifyReply) => {
+    const controller = new AbortController(),
+      abort = () => controller.abort();
+    request.raw.once('aborted', abort);
+    reply.raw.once('close', () => {
+      if (!reply.raw.writableEnded) abort();
+      request.raw.removeListener('aborted', abort);
+    });
+    if (request.raw.aborted) abort();
+    return controller.signal;
+  };
   app.get<{ Params: { id: string } }>(
     '/api/runs/:id/messages/search',
-    async (request): Promise<MessageSearchPage> => {
+    async (request, reply): Promise<MessageSearchPage> => {
       // Validate the parent before any indexed query; another Run's message cursor is never accepted.
       store.require<Run>('runs', request.params.id);
       const query = z
@@ -373,33 +394,20 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
         })
         .strict()
         .parse(request.query);
-      await store.ensureHistorySearch('message', request.params.id);
-      let position: number | undefined;
-      if (query.before) {
-        const cursor = store.db
-          .prepare('SELECT rowid position FROM messages WHERE id=? AND run_id=?')
-          .get(query.before, request.params.id) as { position: number } | undefined;
-        if (!cursor)
-          throw new AppError('MESSAGE_CURSOR_MISSING', '搜索位置已失效，请重新搜索', false, null, 409);
-        position = cursor.position;
-      }
       const search = query.query.toLocaleLowerCase();
-      const match =
-        "m.run_id=? AND m.id IN (SELECT record_id FROM history_search_v1 WHERE kind='message' AND run_id=? AND instr(normalized,?)>0)";
-      const params = [request.params.id, request.params.id, search];
-      const total = Number(
-        (store.db.prepare(`SELECT COUNT(*) n FROM messages m WHERE ${match}`).get(...params) as { n: number })
-          .n,
+      const result = await store.historySearch(
+        'message',
+        {
+          search,
+          limit: query.limit,
+          before: query.before,
+          runId: request.params.id,
+        },
+        requestSignal(request, reply),
       );
-      const rows = store.db
-        .prepare(
-          `SELECT m.id FROM messages m WHERE ${match}${position === undefined ? '' : ' AND m.rowid<?'} ORDER BY m.rowid DESC LIMIT ?`,
-        )
-        .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as { id: string }[];
-      const hasMore = rows.length > query.limit;
-      const selected = rows.slice(0, query.limit);
+      const selected = result.ids;
       return {
-        items: selected.map(({ id: key }) => {
+        items: selected.map((key) => {
           const message = store.require<Message>('messages', key);
           const start = Math.max(0, message.text.toLocaleLowerCase().indexOf(search) - 48);
           return {
@@ -413,11 +421,11 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
           };
         }),
         page: {
-          total,
+          total: result.total,
           limit: query.limit,
           before: query.before ?? null,
-          hasMore,
-          nextBefore: hasMore ? selected.at(-1)!.id : null,
+          hasMore: result.hasMore,
+          nextBefore: result.nextBefore,
         },
       };
     },

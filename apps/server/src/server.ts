@@ -62,6 +62,7 @@ import { TerminalControlService, registerTerminalControl, terminalAppCatalog } f
 import { registerCliManagement } from './cli-management.js';
 import { RunReads, registerRunRecordRoutes } from './run-reads.js';
 import { registerTaskCenter } from './task-center.js';
+import { registerContextPreview } from './context-preview.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 const textPageQuery = z.object({
@@ -807,8 +808,9 @@ export function createServer(
   const runReads = new RunReads(store);
   registerRunRecordRoutes(app, store);
   registerTaskCenter(app, store);
+  registerContextPreview(app, store);
   registerPreviewLocationRoutes(app, previews);
-  app.get('/api/runs', async (request) => {
+  app.get('/api/runs', async (request, reply) => {
     const query = z
       .object({
         limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -830,13 +832,16 @@ export function createServer(
     const retained = query.retained
       ? z.array(z.string().uuid()).max(300).parse(query.retained.split(','))
       : [];
-    return runReads.list({
-      ...query,
-      archived: query.archived === undefined ? undefined : query.archived === 'true',
-      limit: query.limit,
-      pinned,
-      retained,
-    });
+    return runReads.list(
+      {
+        ...query,
+        archived: query.archived === undefined ? undefined : query.archived === 'true',
+        limit: query.limit,
+        pinned,
+        retained,
+      },
+      fileRequestSignal(request, reply),
+    );
   });
   app.post('/api/terminal/check', async (request) => {
     const body = z

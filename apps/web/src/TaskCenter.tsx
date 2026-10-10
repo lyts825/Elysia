@@ -13,7 +13,13 @@ import {
 } from './TaskNotifications';
 import './task-center.css';
 
-export type TaskCenterState = { filter: 'all' | TaskCenterCategory; before: string; trail: string[] };
+export type TaskCenterState = {
+  filter: 'all' | TaskCenterCategory;
+  before: string;
+  trail: string[];
+  projectId?: string;
+  query?: string;
+};
 const labels: Record<'all' | TaskCenterCategory, string> = {
   all: '全部',
   running: '执行中',
@@ -33,7 +39,7 @@ export function TaskCenter({
   state: TaskCenterState;
   changeState: (state: TaskCenterState) => void;
   projects: Project[];
-  openRun: (id: string) => Promise<void>;
+  openRun: (id: string, category: TaskCenterCategory) => Promise<void>;
   close: () => void;
 }) {
   const client = useSurfaceClient();
@@ -82,6 +88,8 @@ export function TaskCenter({
       setLoading(true);
       try {
         const query = new URLSearchParams({ filter: state.filter, limit: '40' });
+        if (state.projectId) query.set('projectId', state.projectId);
+        if (state.query?.trim()) query.set('query', state.query.trim());
         if (state.before) query.set('before', state.before);
         const value = await api<TaskCenterPage>(
           '/task-center?' + query,
@@ -104,11 +112,12 @@ export function TaskCenter({
         if (!controller.signal.aborted) setLoading(false);
       }
     };
-    void read();
+    const start = setTimeout(() => void read(), state.query ? 200 : 0);
     const timer = setInterval(() => void read(), 5000);
     return () => {
       controller.abort();
       clearInterval(timer);
+      clearTimeout(start);
     };
   }, [api, state, changeState, retry]);
   return (
@@ -126,12 +135,43 @@ export function TaskCenter({
               key={filter}
               className="quiet-button"
               aria-pressed={filter === state.filter}
-              onClick={() => changeState({ filter, before: '', trail: [] })}
+              onClick={() => changeState({ ...state, filter, before: '', trail: [] })}
             >
               {labels[filter]}
             </button>
           ))}
         </nav>
+        <div className="task-center-search">
+          <input
+            type="search"
+            aria-label="搜索任务"
+            placeholder="搜索任务…"
+            maxLength={200}
+            value={state.query || ''}
+            onChange={(event) => changeState({ ...state, query: event.target.value, before: '', trail: [] })}
+          />
+          <select
+            aria-label="筛选任务项目"
+            value={state.projectId || ''}
+            onChange={(event) =>
+              changeState({ ...state, projectId: event.target.value, before: '', trail: [] })
+            }
+          >
+            <option value="">全部项目</option>
+            {!!state.projectId && !projects.some((project) => project.id === state.projectId) && (
+              <option value={state.projectId} disabled>
+                原项目不可用
+              </option>
+            )}
+            {projects
+              .filter((project) => !project.archived)
+              .map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+          </select>
+        </div>
         <div className="task-center-options">
           <label>
             <input
@@ -193,10 +233,18 @@ export function TaskCenter({
             <button
               key={item.id}
               className="task-center-row"
+              aria-label={
+                item.title +
+                (item.category === 'waiting'
+                  ? '，回答问题'
+                  : item.category === 'verification'
+                    ? '，核验操作'
+                    : '，打开对话')
+              }
               disabled={!!opening}
               onClick={() => {
                 setOpening(item.id);
-                void openRun(item.id)
+                void openRun(item.id, item.category)
                   .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
                   .finally(() => setOpening(''));
               }}
@@ -211,6 +259,9 @@ export function TaskCenter({
                     (item.kind === 'chat' ? '独立对话' : '项目任务')}
                 </small>
               </span>
+              {['waiting', 'verification'].includes(item.category) && (
+                <span className="task-center-action">{item.category === 'waiting' ? '回答' : '核验'}</span>
+              )}
               <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
             </button>
           ))}

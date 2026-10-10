@@ -13,5 +13,20 @@ if (process.isMainFrame) {
     readTaskNotifications: () => ipcRenderer.invoke('elysia:notifications-read'),
     setTaskNotifications: (value) => ipcRenderer.invoke('elysia:notifications-set', value),
     notifyTaskStatus: (value) => ipcRenderer.invoke('elysia:notifications-status', value),
+    onTaskNotification: (callback) => {
+      const receive = (_event, value) => {
+        if (
+          typeof callback !== 'function' ||
+          !value ||
+          !['native', 'terminal'].includes(value.surface) ||
+          typeof value.taskId !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.taskId)
+        )
+          return;
+        callback({ surface: value.surface, taskId: value.taskId });
+      };
+      ipcRenderer.on('elysia:notification-open', receive);
+      return () => ipcRenderer.removeListener('elysia:notification-open', receive);
+    },
   });
 }
