@@ -21,6 +21,7 @@
 .session-search:focus-within {
   border-color: var(--border-strong);
   background: var(--surface);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 .session-search input {
   min-width: 0;
@@ -221,6 +222,8 @@
 }
 .session-context-menu > button > span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .session-context-menu kbd {
   color: var(--muted);
@@ -298,9 +301,11 @@
   display: grid;
   gap: 8px;
   padding: 10px 6px;
-  border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--muted);
+}
+.session-pagination > div:empty {
+  display: none;
 }
 .session-pagination > div {
   display: flex;

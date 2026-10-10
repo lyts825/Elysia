@@ -603,7 +603,7 @@ export function SessionSidebar({
               <p className="sidebar-muted">没有匹配的项目或会话。</p>
             )}
         </div>
-        {listPage && listNavigate && (
+        {listPage && listNavigate && (listPage.total > 0 || listBusy || listError) && (
           <nav className="session-pagination" aria-label="会话列表分页">
             <span role="status">
               {listBusy
@@ -618,12 +618,14 @@ export function SessionSidebar({
                   更新会话
                 </button>
               )}
-              <button
-                disabled={busy || listBusy || !listPage.nextBefore}
-                onClick={() => listNavigate('older')}
-              >
-                {listError ? '重试加载' : listDynamic ? '加载更早会话' : '更早会话'}
-              </button>
+              {(!listDynamic || listPage.nextBefore || listError || listBusy) && (
+                <button
+                  disabled={busy || listBusy || !listPage.nextBefore}
+                  onClick={() => listNavigate('older')}
+                >
+                  {listError ? '重试加载' : listDynamic ? '加载更早会话' : '更早会话'}
+                </button>
+              )}
               {(listPage.before || (listDynamic && (listTrail || listWindowLimited))) && (
                 <button disabled={busy || listBusy} onClick={() => listNavigate('latest')}>
                   返回最新

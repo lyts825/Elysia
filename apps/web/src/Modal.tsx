@@ -106,7 +106,11 @@ export function Modal({
         <header>
           <div>
             <h2 id={titleId}>{title}</h2>
-            {subtitle && <p id={descriptionId}>{subtitle}</p>}
+            {subtitle && (
+              <p id={descriptionId} title={subtitle}>
+                {subtitle}
+              </p>
+            )}
           </div>
           <button
             className="icon-button"

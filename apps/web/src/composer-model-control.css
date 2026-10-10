@@ -4,6 +4,7 @@
   gap: 6px;
   min-width: 0;
   max-width: 100%;
+  flex: 0 1 auto;
 }
 .composer-model-chip,
 .composer-context-chip {
@@ -22,7 +23,8 @@
 }
 .composer-model-chip {
   min-width: 0;
-  max-width: min(280px, calc(100vw - 170px));
+  max-width: min(280px, 100%);
+  flex: 0 1 auto;
 }
 .composer-model-chip:hover:not(:disabled),
 .composer-context-chip:hover:not(:disabled),
@@ -104,6 +106,9 @@
 }
 .composer-context-heading > div {
   min-width: 0;
+}
+.composer-context-heading > .icon-button {
+  flex: none;
 }
 .composer-context-heading h3 {
   margin: 0 0 3px;
@@ -205,6 +210,9 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
+  text-align: right;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .composer-context-updated {
   margin: 0;
@@ -247,11 +255,23 @@
     gap: 3px;
   }
   .composer-model-chip {
-    max-width: min(210px, calc(100vw - 155px));
+    max-width: min(210px, 100%);
     padding: 5px;
   }
   .composer-context-chip {
     padding: 5px;
+  }
+}
+@container (max-width: 500px) {
+  .composer-model-control {
+    flex: 1 1 0;
+  }
+  .composer-model-chip {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
+  .composer-model-effort {
+    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

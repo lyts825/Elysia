@@ -43,8 +43,7 @@ export function ContextMeter({
           aria-hidden="true"
           style={{ '--context-fill': `${Math.min(100, used ?? 0)}%` } as CSSProperties}
         />
-        <span>输入空间 {used == null ? '—' : `${used}%`}</span>
-        {used != null && <small>估算</small>}
+        <span>上下文 {used == null ? '—' : `≈${used}%`}</span>
       </button>
       {showStreaming && projection?.metrics?.phase === 'streaming' && (
         <span
@@ -63,6 +62,17 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
   const compression = projection.compression;
   return (
     <div className="context-window-details">
+      <div className="context-usage-summary">
+        <div>
+          <span className="context-usage-label">输入占用 · 估算</span>
+          <strong>{used == null ? '—' : `${used}%`}</strong>
+        </div>
+        <div className="context-remaining">
+          <span className="context-usage-label">剩余输入 · 估算</span>
+          <strong>{count(projection.remainingInputTokens)}</strong>
+          <span className="context-token-unit">Token</span>
+        </div>
+      </div>
       <div
         className="context-progress"
         data-pressure={used != null && used >= 75 ? 'high' : 'normal'}
@@ -75,40 +85,22 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
       >
         <i style={{ transform: `scaleX(${Math.min(1, Math.max(0, projection.usageRatio ?? 0))})` }} />
       </div>
-      <dl className="context-breakdown">
+      <dl className="context-capacity">
         <div>
-          <dt>已分配窗口 / 模型容量</dt>
-          <dd>
-            {contextWindowSizeLabel(projection.windowTokens)} /{' '}
-            {contextWindowSizeLabel(projection.providerLimit)}
-          </dd>
+          <dt>分配窗口</dt>
+          <dd>{contextWindowSizeLabel(projection.windowTokens)}</dd>
         </div>
         <div>
-          <dt>估算输入 / 输入额度</dt>
-          <dd>
-            {count(projection.estimatedInputTokens)} / {count(projection.inputBudgetTokens)}
-          </dd>
-        </div>
-        <div>
-          <dt>本次生成（字节估算）</dt>
-          <dd>{projection.metrics ? count(projection.streamingOutputTokens) : '—'}</dd>
-        </div>
-        <div>
-          <dt>剩余输入空间（估算）</dt>
-          <dd>{count(projection.remainingInputTokens)}</dd>
-        </div>
-        <div>
-          <dt>最近供应商输入（实际）</dt>
-          <dd>{count(projection.observedInputTokens)}</dd>
-        </div>
-        <div>
-          <dt>最近供应商输出（实际）</dt>
-          <dd>{count(projection.observedOutputTokens)}</dd>
+          <dt>模型容量</dt>
+          <dd>{contextWindowSizeLabel(projection.providerLimit)}</dd>
         </div>
       </dl>
+      <p className="context-input-line">
+        <span>估算输入 {count(projection.estimatedInputTokens)}</span>
+        <span>输入额度 {count(projection.inputBudgetTokens)} Token</span>
+      </p>
       <p className="context-status-note">
-        {projection.metrics ? '窗口占用随编译与生成更新，数值为本机估算。' : '尚未编译上下文，当前用量未知。'}
-        供应商实际用量来自最近一次返回，累计调用预算另行统计。 生成估算只包含可见文本，不含隐藏思考。
+        {projection.metrics ? '占用随编译与生成更新，为本机估算。' : '尚未编译上下文，当前用量未知。'}
       </p>
       {compression?.status === 'completed' && (
         <p className="context-status-note" role="status">
@@ -121,8 +113,28 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
           当前必要内容仍超出窗口，请扩大分配或减少资料。
         </p>
       )}
+      <details className="context-usage-details">
+        <summary>生成与实际用量</summary>
+        <dl className="context-breakdown">
+          <div>
+            <dt>本次生成 · 字节估算</dt>
+            <dd>{projection.metrics ? count(projection.streamingOutputTokens) : '—'}</dd>
+          </div>
+          <div>
+            <dt>最近供应商输入 · 实际</dt>
+            <dd>{count(projection.observedInputTokens)}</dd>
+          </div>
+          <div>
+            <dt>最近供应商输出 · 实际</dt>
+            <dd>{count(projection.observedOutputTokens)}</dd>
+          </div>
+        </dl>
+        <p className="context-status-note">
+          生成估算仅含可见文本，不含隐藏思考。实际用量来自最近一次供应商返回；累计调用预算单独统计。
+        </p>
+      </details>
       <details className="context-reserves">
-        <summary>查看输出与运行预留</summary>
+        <summary>输出与运行预留</summary>
         <p className="context-status-note">
           输出 {count(projection.outputReserveTokens)} · 安全余量 {count(projection.safetyReserveTokens)} ·
           运行指令 {count(projection.runtimeReserveTokens)} Token。
@@ -189,7 +201,7 @@ export function ContextWindowModal({
     policy.mode !== projection.policy.mode || policy.windowTokens !== projection.policy.windowTokens;
   const valid = validContextPolicy(policy, projection.minimumWindowTokens, projection.providerLimit);
   return (
-    <Modal title="上下文窗口" subtitle={title} close={close} busy={busy}>
+    <Modal title="上下文窗口" subtitle={title} close={close} busy={busy} className="context-window-modal">
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -263,6 +275,7 @@ export function NewContextWindowModal({
       subtitle={provider ? `${provider.label} · ${provider.model}` : '新会话'}
       close={close}
       busy={busy}
+      className="context-window-modal"
     >
       <form
         onSubmit={(event) => {
@@ -278,7 +291,7 @@ export function NewContextWindowModal({
             providerLimit={limit}
             disabled={busy || !provider}
           />
-          <p className="field-help">此设置用于新会话的总代理，窗口容量不增加累计调用预算。</p>
+          <p className="field-help">用于新会话的总代理。窗口容量与累计调用预算独立。</p>
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" disabled={busy} onClick={close}>

@@ -60,7 +60,7 @@ export function ContextPolicyEditor({
   const valid = validContextPolicy(value, minimumWindowTokens, providerLimit);
   return (
     <div className="context-policy-editor">
-      <label htmlFor={id + '-mode'}>上下文窗口分配</label>
+      <label htmlFor={id + '-mode'}>分配方式</label>
       <select
         id={id + '-mode'}
         value={value.mode}
@@ -127,6 +127,7 @@ export function ContextPolicyEditor({
                 <input
                   id={id + '-tokens'}
                   type="number"
+                  inputMode="numeric"
                   min={minimumK}
                   max={maximumK}
                   step={1}
@@ -150,7 +151,7 @@ export function ContextPolicyEditor({
           )}
           <p className="field-help" id={id + '-range'}>
             {maximumK >= minimumK
-              ? `可分配 ${minimumK}–${maximumK}K，最高 1M（1000K）。1K = 1000 Token，包含输入与输出预留。`
+              ? `可分配 ${minimumK}–${maximumK}K，含输入与输出预留。1K = 1000 Token · 1M = 1000K。`
               : '当前模型容量无法容纳整数 K 的窗口及必要指令与输出预留。'}
           </p>
           {fractionalLegacy && (
@@ -162,11 +163,16 @@ export function ContextPolicyEditor({
         </>
       )}
       {value.mode === 'managed' && (
-        <p className="field-help">
-          {child
-            ? `${value.windowTokens ? `上级已建议 ${contextWindowSizeLabel(value.windowTokens)}（${value.windowTokens.toLocaleString()} Token）。` : ''}直属上级模型按任务需要分配此代理的独立窗口，最高为 1M 与模型真实上限中的较小值；手动设置后，上级不会覆盖。`
-            : `使用模型真实容量，最高 1M（1000K）。当前可用 ${contextWindowSizeLabel(limit)}；子代理由各自直属上级分配窗口。`}
-        </p>
+        <div className="context-policy-hint">
+          <span>当前可用</span>
+          <strong>{contextWindowSizeLabel(limit)}</strong>
+          <p className="field-help">
+            {child
+              ? `${value.windowTokens ? `上级已建议 ${contextWindowSizeLabel(value.windowTokens)}（${value.windowTokens.toLocaleString()} Token）。` : ''}直属上级按任务分配；手动设置后，上级不会覆盖。`
+              : '使用模型真实容量；子代理由各自直属上级分配。'}
+            最高 1M（1000K）。
+          </p>
+        </div>
       )}
       {!valid && !fractionalLegacy && (
         <p className="inline-warning" role="status">

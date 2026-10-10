@@ -53,6 +53,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   const pending = useRef(false);
   const request = useRef<AbortController | null>(null);
   const viewSequence = useRef(0);
+  const preview = useRef<HTMLElement | null>(null);
   const reload = async (signal?: AbortSignal) => {
     const value = await api<Overview>('/local-agents', undefined, undefined, signal);
     if (alive.current && !signal?.aborted) setOverview(value);
@@ -76,6 +77,9 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       viewSequence.current++;
     };
   }, []);
+  useEffect(() => {
+    if (view || tools) preview.current?.scrollIntoView({ block: 'nearest' });
+  }, [view?.item.id, tools?.id]);
   const act = async (label: string, operation: (signal: AbortSignal) => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -126,6 +130,8 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const currentTab = tabs.find(([key]) => key === tab)!;
+  const total = overview?.items.filter((item) => item.kind === tab).length ?? 0;
   return (
     <Modal
       title="Skills、记忆与 MCP"
@@ -156,17 +162,32 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
-        <p className="field-help">
-          {tab === 'skill'
-            ? '仅加载技能名称和说明；模型按任务需要读取正文与参考文件。'
-            : tab === 'memory'
-              ? '选中的记忆作为参考资料保存，按需搜索和回查，不整份塞入对话。'
-              : '同步配置后默认关闭。启用后可检查连接，调用遵守任务的命令、写入与 URL 权限。'}
-        </p>
+        <div className="local-agent-intro">
+          <p className="field-help">
+            {tab === 'skill'
+              ? '技能按任务需要加载。'
+              : tab === 'memory'
+                ? '记忆按需搜索与回查。'
+                : '连接同步后默认关闭。'}
+          </p>
+          <details className="local-agent-guidance">
+            <summary>使用说明</summary>
+            <p className="field-help">
+              {tab === 'skill'
+                ? '目录只加载名称和说明；模型按任务需要读取技能正文与参考文件。'
+                : tab === 'memory'
+                  ? '选中的记忆作为参考资料保存，按需搜索和回查，不整份加入对话。'
+                  : '启用后可检查连接。调用遵守任务的命令、写入与 URL 权限。'}
+            </p>
+          </details>
+        </div>
         <details className="local-agent-sync">
           <summary>
-            <Icon name="plus" size={16} />
-            同步本机 Agent
+            <span className="local-agent-summary-label">
+              <Icon name="plus" size={16} />
+              同步本机 Agent
+            </span>
+            <Icon name="chevron" size={15} />
           </summary>
           <form
             onSubmit={(event) => {
@@ -237,6 +258,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                     type="button"
                     disabled={!!busy}
                     key={directory}
+                    title={directory}
                     onClick={() => {
                       setRoot(directory);
                       setScan(undefined);
@@ -257,6 +279,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                   type="button"
                   disabled={!!busy}
                   key={source.id}
+                  title={`${source.name} · ${source.root}`}
                   onClick={() => {
                     setKind(source.kind);
                     setRoot(source.root);
@@ -271,6 +294,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           )}
           {scan && (
             <div className="local-agent-candidates">
+              <div className="local-agent-scan-heading">
+                <strong>扫描结果</strong>
+                <small>{scan.candidates.length} 个条目</small>
+              </div>
               <small className="local-agent-path">{scan.source.root}</small>
               {scan.warnings.map((warning, index) => (
                 <p className="field-help" key={index}>
@@ -336,6 +363,9 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                   </button>
                 </>
               )}
+              {!scan.candidates.length && (
+                <p className="field-help local-agent-scan-empty">未发现条目，可调整来源目录后重新扫描。</p>
+              )}
             </div>
           )}
         </details>
@@ -353,6 +383,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
             className="quiet-button"
             disabled={!!busy}
             aria-label="刷新本机能力"
+            title="刷新目录"
             onClick={() =>
               void act('读取', async (signal) => {
                 await reload(signal);
@@ -373,23 +404,45 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </p>
         )}
         {!overview && !error && <p role="status">正在读取本机能力…</p>}
+        {overview && (
+          <div className="local-agent-section-heading">
+            <h3>已同步{currentTab[1] === 'Skills' ? ' Skills' : currentTab[1]}</h3>
+            <span>{search ? `${rows.length} / ${total}` : total}</span>
+          </div>
+        )}
         {overview && !rows.length && (
           <div className="local-agent-empty">
-            {search ? '没有匹配的条目。' : `尚未同步${tabs.find(([key]) => key === tab)?.[1]}。`}
+            <span className="local-agent-empty-icon">
+              <Icon name={search ? 'search' : currentTab[2]} size={21} />
+            </span>
+            <strong>{search ? '没有匹配的条目' : `尚未同步${currentTab[1]}`}</strong>
+            <p>{search ? '试试其他名称或说明。' : '展开上方同步入口，选择本机 Agent 的条目。'}</p>
           </div>
         )}
         <ul className="local-agent-list">
           {rows.map((entry) => (
-            <li key={entry.id}>
+            <li
+              key={entry.id}
+              data-previewing={view?.item.id === entry.id || tools?.id === entry.id || undefined}
+            >
               <div className="local-agent-entry">
-                <Icon name={tabs.find(([key]) => key === entry.kind)?.[2] || 'file'} size={19} />
-                <button className="local-agent-title" disabled={!!busy} onClick={() => inspect(entry)}>
+                <span className="local-agent-entry-icon">
+                  <Icon name={tabs.find(([key]) => key === entry.kind)?.[2] || 'file'} size={18} />
+                </span>
+                <button
+                  className="local-agent-title"
+                  disabled={!!busy}
+                  title={entry.path}
+                  onClick={() => inspect(entry)}
+                >
                   <strong>{entry.name}</strong>
                   <span>{entry.description || entry.path || ''}</span>
                   <small>
-                    {sources.find(([key]) => key === entry.sourceKind)?.[1] || '本机'} ·{' '}
-                    {entry.enabled ? '已启用' : '已关闭'}
-                    {entry.kind === 'skill' && entry.modelInvocable === false && ' · 禁止模型调用'}
+                    <span>{sources.find(([key]) => key === entry.sourceKind)?.[1] || '本机'}</span>
+                    <span className="local-agent-state" data-enabled={!!entry.enabled}>
+                      {entry.enabled ? '已启用' : '已关闭'}
+                    </span>
+                    {entry.kind === 'skill' && entry.modelInvocable === false && <span>禁止模型调用</span>}
                   </small>
                 </button>
               </div>
@@ -512,10 +565,14 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                   }}
                 >
                   <label htmlFor="local-mcp-config">连接配置</label>
-                  <p className="field-help">
-                    envNames、headerEnv 与 bearerTokenEnv 只填写环境变量名称，不填写密钥。核对命令或 URL
-                    后，将 needsConfiguration 改为 false。此修改只保存到 Elysia。
-                  </p>
+                  <p className="field-help">仅填写环境变量名称来引用密钥。</p>
+                  <details className="local-agent-config-help">
+                    <summary>配置字段说明</summary>
+                    <p className="field-help">
+                      envNames、headerEnv 与 bearerTokenEnv 使用环境变量名称。核对命令或 URL 后，将
+                      needsConfiguration 改为 false。修改仅保存到 Elysia。
+                    </p>
+                  </details>
                   <textarea
                     id="local-mcp-config"
                     spellCheck={false}
@@ -560,9 +617,12 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </details>
         )}
         {view && (
-          <section className="local-agent-preview" aria-label="同步内容预览">
+          <section ref={preview} className="local-agent-preview" aria-label="同步内容预览">
             <header>
-              <strong>{view.item.name}</strong>
+              <div>
+                <small>内容预览</small>
+                <strong>{view.item.name}</strong>
+              </div>
               <button
                 className="quiet-button"
                 aria-label="关闭内容预览"
@@ -572,6 +632,9 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 <Icon name="close" size={16} />
               </button>
             </header>
+            <p className="local-agent-preview-source" title={view.item.path}>
+              {sources.find(([key]) => key === view.item.sourceKind)?.[1] || '本机'} · {view.item.path}
+            </p>
             {view.item.kind === 'skill' ? (
               <>
                 <p className="field-help">{view.item.description}</p>
@@ -581,26 +644,33 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
               <pre>{view.pages}</pre>
             )}
             {view.nextOffset != null && (
-              <button className="secondary" disabled={!!busy} onClick={() => inspect(view.item, true)}>
-                读取下一段
-              </button>
+              <div className="local-agent-preview-more">
+                <span>分段加载</span>
+                <button className="secondary" disabled={!!busy} onClick={() => inspect(view.item, true)}>
+                  读取下一段
+                </button>
+              </div>
             )}
           </section>
         )}
         {tools && (
-          <section className="local-agent-preview" aria-label="MCP 工具目录">
+          <section ref={preview} className="local-agent-preview local-agent-tools" aria-label="MCP 工具目录">
             <header>
-              <strong>可用工具（{tools.tools.length}）</strong>
+              <div>
+                <small>MCP 工具目录</small>
+                <strong>可用工具（{tools.tools.length}）</strong>
+              </div>
               <button className="quiet-button" aria-label="关闭工具目录" onClick={() => setTools(undefined)}>
                 <Icon name="close" size={16} />
               </button>
             </header>
             {tools.tools.map((tool) => (
-              <div key={tool.name}>
+              <div className="local-agent-tool" key={tool.name}>
                 <strong>{tool.name}</strong>
                 <p className="field-help">{tool.description}</p>
               </div>
             ))}
+            {!tools.tools.length && <p className="field-help">此连接暂未提供工具。</p>}
           </section>
         )}
       </div>

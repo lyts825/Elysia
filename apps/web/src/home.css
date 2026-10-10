@@ -16,15 +16,16 @@
 }
 .home-heading h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
   letter-spacing: -0.025em;
 }
 .home-heading p {
   margin-top: 8px;
   color: var(--muted);
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 .composer {
   overflow: hidden;
@@ -44,7 +45,7 @@
   display: block;
   width: 100%;
   field-sizing: content;
-  min-height: 88px;
+  min-height: 72px;
   max-height: min(40vh, 280px);
   padding: 16px 16px 10px;
   border: 0;
@@ -63,7 +64,7 @@
 }
 .composer-bottom {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
   padding: 6px 10px 10px;
@@ -171,7 +172,7 @@
 }
 .composer-actions .primary {
   min-width: 76px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 7px 12px;
 }
 .home-connection {
@@ -206,7 +207,18 @@
   }
   .composer-actions .primary,
   .composer-model {
-    min-height: 36px;
+    min-height: 40px;
+  }
+}
+@media (max-height: 480px) {
+  .welcome-content {
+    padding-block: 20px;
+  }
+  .home-heading {
+    margin-bottom: 14px;
+  }
+  .composer textarea {
+    min-height: 64px;
   }
 }
 @media (max-width: 420px) {

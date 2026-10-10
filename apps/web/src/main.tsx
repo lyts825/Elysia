@@ -1867,9 +1867,11 @@ function App({
               onClick={() => setModal('local-agents')}
               title="Skills、记忆与 MCP"
               aria-label="Skills、记忆与 MCP"
+              aria-haspopup="dialog"
+              aria-expanded={modal === 'local-agents'}
             >
               <Icon name="tree" />
-              <span>Skills、记忆与 MCP</span>
+              <span>本机能力</span>
             </button>
           )}
           <button
@@ -1877,6 +1879,8 @@ function App({
             onClick={() => setModal('appearance')}
             title="外观与启动"
             aria-label="外观与启动"
+            aria-haspopup="dialog"
+            aria-expanded={modal === 'appearance'}
           >
             <Icon name="spark" />
             <span>外观与启动</span>
@@ -1886,15 +1890,19 @@ function App({
             onClick={() => setModal('manage:archive')}
             title="项目、对话与归档"
             aria-label="项目、对话与归档"
+            aria-haspopup="dialog"
+            aria-expanded={modal.startsWith('manage:')}
           >
             <Icon name="history" />
-            <span>项目、对话与归档</span>
+            <span>项目与归档</span>
           </button>
           <button
             className="nav-item"
             onClick={() => setModal('settings')}
             aria-label={terminalSurface ? '终端管理' : '模型与设置'}
             title={terminalSurface ? '终端管理' : '模型与设置'}
+            aria-haspopup="dialog"
+            aria-expanded={modal === 'settings'}
           >
             <Icon name="settings" />
             <span>{terminalSurface ? '终端管理' : '模型与设置'}</span>
@@ -1902,6 +1910,7 @@ function App({
           <div
             className="cache-state"
             role="status"
+            data-state={cacheState.status}
             title={cacheState.error || '输入内容按项目和会话自动保存在本机'}
           >
             {cacheState.status === 'loading' ? (
@@ -1975,7 +1984,7 @@ function App({
             </button>
             <span className="local-chip port-chip" title={location.origin}>
               <Icon name="lock" size={12} />
-              本机 · {location.port}
+              本机
             </span>
             <button
               className="icon-button"
