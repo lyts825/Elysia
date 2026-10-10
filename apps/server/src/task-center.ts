@@ -148,7 +148,8 @@ export class TaskCenterReads {
         this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-warm:v1'").get() as {
           value: string;
         }
-      ).value !== '1'
+      ).value !== '1' &&
+      this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-complete:v2'").get()
     )
       return;
     const pending = this.warmBatches();
@@ -160,8 +161,10 @@ export class TaskCenterReads {
     }
   }
   private async warmBatches() {
+    // Older builds cleared this marker before their first batch. A separate completion
+    // marker makes their partial rebuilds recoverable, without scanning on every read.
+    this.store.db.prepare("UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'").run();
     for (;;) {
-      this.store.db.prepare("UPDATE storage_meta SET value='0' WHERE key='task-center-warm:v1'").run();
       for (const table of ['runs', 'tasks', 'requests', 'tool_operations'] as const) {
         const where =
           table === 'runs' || table === 'tasks'
@@ -186,7 +189,7 @@ export class TaskCenterReads {
       for (;;) {
         const missing = this.store.db
           .prepare(
-            'SELECT id FROM runs WHERE id NOT IN(SELECT run_id FROM task_center_changes_v1 WHERE deleted=0) ORDER BY rowid LIMIT 32',
+            'SELECT id FROM runs r WHERE NOT EXISTS(SELECT 1 FROM task_center_changes_v1 c WHERE c.run_id=r.id AND c.deleted=0) ORDER BY rowid LIMIT 32',
           )
           .all() as { id: string }[];
         if (!missing.length) break;
@@ -195,16 +198,28 @@ export class TaskCenterReads {
         });
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
-      if (
-        (
-          this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-warm:v1'").get() as {
-            value: string;
-          }
-        ).value !== '1'
-      )
-        break;
+      // A legacy writer can change an earlier table while a later batch yields.
+      // Check all projections once more before atomically marking this build complete.
+      const pending = ['runs', 'tasks', 'requests', 'tool_operations'].some((table) => {
+        const where =
+          table === 'runs' || table === 'tasks'
+            ? "json_type(data,'$.readModel') IS NOT 'object' OR json_extract(data,'$.readModelVersion') IS NOT 1"
+            : `${state(table)} IS NULL`;
+        return this.store.db
+          .prepare(`SELECT 1 FROM ${table} WHERE content IS NOT NULL AND (${where}) LIMIT 1`)
+          .get();
+      });
+      if (!pending) {
+        this.store.tx(() => {
+          this.prune();
+          this.store.db.prepare("UPDATE storage_meta SET value='0' WHERE key='task-center-warm:v1'").run();
+          this.store.db
+            .prepare("INSERT OR REPLACE INTO storage_meta(key,value) VALUES('task-center-complete:v2','1')")
+            .run();
+        });
+        return;
+      }
     }
-    this.store.tx(() => this.prune());
   }
   private prune() {
     const old = this.store.db
@@ -297,6 +312,14 @@ export class TaskCenterReads {
       },
     };
   }
+  /** Verify one queued notification against current state without expanding its Run. */
+  async itemById(runId: string): Promise<{ item: TaskCenterItem | null }> {
+    await this.warm();
+    const row = this.store.db
+      .prepare('SELECT * FROM task_center_changes_v1 WHERE run_id=? AND deleted=0 AND archived=0')
+      .get(runId) as Row | undefined;
+    return { item: row ? this.item(row) : null };
+  }
   async changes(after: number | undefined, limit: number): Promise<TaskCenterChanges> {
     await this.warm();
     this.store.tx(() => this.prune());
@@ -359,5 +382,9 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
       .strict()
       .parse(request.query);
     return reads.changes(query.after, query.limit);
+  });
+  app.get('/api/task-center/:id', (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return reads.itemById(id);
   });
 }

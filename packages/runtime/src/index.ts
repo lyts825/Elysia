@@ -107,7 +107,7 @@ export class NativeExecutor implements ExecutorAdapter {
   }
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
-    for (const task of this.kernel.store.schedulerCandidates().tasks) {
+    for (const task of this.kernel.store.stateCandidates<Task>('tasks', ['READY'])) {
       if (task.status !== 'READY' || this.active.has(task.id)) continue;
       const run = this.kernel.store.require<Run>('runs', task.runId);
       if (this.schedulableRun(run))
@@ -176,10 +176,11 @@ export class NativeExecutor implements ExecutorAdapter {
     this.ticking = true;
     try {
       for (let run of this.kernel.store
-        .stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true })
+        .schedulerRunCandidates()
         .filter((r) => this.acceptRun(r) && !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if (
+          this.kernel.store.hasPendingInbox(run.id) &&
           ![...this.active.values()].some((a) => a.runId === run.id) &&
           (run.kind === 'chat' ||
             (!this.kernel.store
@@ -662,7 +663,11 @@ export class NativeExecutor implements ExecutorAdapter {
         (run.projectId && store.require<Project>('projects', run.projectId).archived)
       )
         return;
-      for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], { runId: run.id })) {
+      for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], {
+        runId: run.id,
+        waitReasons: ['rate_limit'],
+        resumeBefore: Date.now(),
+      })) {
         const resumeAt = this.rateLimitResumeAt(task);
         if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
         if (task.status === 'WAITING' && task.waitReason === 'rate_limit')
@@ -671,16 +676,20 @@ export class NativeExecutor implements ExecutorAdapter {
       if (
         run.status === 'WAITING' &&
         run.reason === 'rate_limit' &&
-        store.stateCandidates<Task>('tasks', ['READY'], { runId: run.id }).some((task) => {
-          const resumeAt = this.rateLimitResumeAt(task);
-          return (
-            task.status === 'READY' &&
-            resumeAt !== undefined &&
-            resumeAt <= Date.now() &&
-            !this.active.has(task.id) &&
-            this.kernel.dependencies(task).every((key) => store.require<Task>('tasks', key).status === 'DONE')
-          );
-        })
+        store
+          .stateCandidates<Task>('tasks', ['READY'], { runId: run.id, resumeBefore: Date.now() })
+          .some((task) => {
+            const resumeAt = this.rateLimitResumeAt(task);
+            return (
+              task.status === 'READY' &&
+              resumeAt !== undefined &&
+              resumeAt <= Date.now() &&
+              !this.active.has(task.id) &&
+              this.kernel
+                .dependencies(task)
+                .every((key) => store.require<Task>('tasks', key).status === 'DONE')
+            );
+          })
       )
         this.kernel.updateRun(run, { status: 'READY', reason: undefined });
     });

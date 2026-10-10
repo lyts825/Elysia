@@ -659,22 +659,33 @@ function App({
         'configuration',
         async (signal) => {
           const request = ++configurationRequest.current;
+          const current = () => !signal.aborted && request === configurationRequest.current;
           const result = await Promise.allSettled([
             terminalSurface
               ? Promise.resolve([] as Provider[])
-              : api<Provider[]>('/providers', undefined, undefined, signal),
+              : api<Provider[]>('/providers', undefined, undefined, signal).then((value) => {
+                  if (current()) setProviders(value);
+                  return value;
+                }),
             terminalSurface
-              ? api<SurfaceTerminalSettings>('/terminal/settings', undefined, undefined, signal)
+              ? api<SurfaceTerminalSettings>('/terminal/settings', undefined, undefined, signal).then(
+                  (value) => {
+                    if (current()) setTerminalSettings(value);
+                    return value;
+                  },
+                )
               : Promise.resolve(null),
             terminalSurface
-              ? api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal)
+              ? api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal).then(
+                  (value) => {
+                    if (current()) setTerminalControl(value);
+                    return value;
+                  },
+                )
               : Promise.resolve(null),
           ] as const);
-          if (signal.aborted) return false;
+          if (!current()) return false;
           configurationAt.current = Date.now();
-          if (result[0].status === 'fulfilled') setProviders(result[0].value);
-          if (result[1].status === 'fulfilled') setTerminalSettings(result[1].value);
-          if (result[2].status === 'fulfilled') setTerminalControl(result[2].value);
           const failure = result.find((entry) => entry.status === 'rejected');
           if (failure?.status === 'rejected')
             setReadIssues((old) => ({ ...old, configuration: readIssueFor(failure.reason, request) }));
@@ -744,20 +755,47 @@ function App({
               throw issue;
             }
           };
+          const current = () => !signal.aborted && request === listRequest.current;
+          const publishListing = (listing: Listing) => {
+            if (!current()) return;
+            const window = runListWindow.current;
+            const retain =
+              window.filter === filter &&
+              (window.before === (listing.page.before || '') || runListAppend.current);
+            const rows = retainedRuns(retain ? window.rows : [], listing.runs, listing.included);
+            runListWindow.current = { filter, before: listing.page.before || '', rows };
+            const runs = [...new Map([...rows, ...listing.included].map((run) => [run.id, run])).values()];
+            setRunListPage(listing.page);
+            setProjectCounts(listing.projectCounts);
+            setRunWindowCount(rows.length);
+            setRuns(runs);
+            listedEntities.current.runs = new Set(runs.map((run) => run.id));
+            if (!startupMeasured.current.lists) {
+              startupMeasured.current.lists = true;
+              markStartupStage('lists-ready', { surface: localSurface, status: 'ok' });
+            }
+          };
           const [projectResult, listingResult, spaceResult] = await Promise.allSettled([
-            api<Project[]>('/projects', undefined, undefined, signal),
-            readListing(),
-            api<ProjectSpace[]>('/spaces', undefined, undefined, signal),
+            api<Project[]>('/projects', undefined, undefined, signal).then((value) => {
+              if (current()) {
+                listData.current.projects = value;
+                setProjects(value);
+              }
+              return value;
+            }),
+            readListing().then((value) => {
+              publishListing(value);
+              return value;
+            }),
+            api<ProjectSpace[]>('/spaces', undefined, undefined, signal).then((value) => {
+              if (current()) {
+                listData.current.spaces = value;
+                setSpaces(value);
+              }
+              return value;
+            }),
           ] as const);
-          if (signal.aborted || request !== listRequest.current) return;
-          if (projectResult.status === 'fulfilled') {
-            listData.current.projects = projectResult.value;
-            setProjects(projectResult.value);
-          }
-          if (spaceResult.status === 'fulfilled') {
-            listData.current.spaces = spaceResult.value;
-            setSpaces(spaceResult.value);
-          }
+          if (!current()) return;
           const failure = [projectResult, listingResult, spaceResult].find(
             (entry) => entry.status === 'rejected',
           );
@@ -772,17 +810,8 @@ function App({
           const listing = listingResult.value;
           const p = listData.current.projects,
             s = listData.current.spaces;
-          const window = runListWindow.current;
-          const retain =
-            window.filter === filter &&
-            (window.before === (listing.page.before || '') || runListAppend.current);
-          const rows = retainedRuns(retain ? window.rows : [], listing.runs, listing.included);
-          runListWindow.current = { filter, before: listing.page.before || '', rows };
+          const rows = runListWindow.current.rows;
           const r = [...new Map([...rows, ...listing.included].map((run) => [run.id, run])).values()];
-          setRunListPage(listing.page);
-          setProjectCounts(listing.projectCounts);
-          setRunWindowCount(rows.length);
-          setRuns(r);
           listedEntities.current = {
             projects: new Set(p.map((project) => project.id)),
             runs: new Set(r.map((run) => run.id)),
@@ -4334,7 +4363,6 @@ function SurfaceEntry({
   changeSurface,
   registerCache,
   registerSession,
-  ready,
 }: {
   client: SurfaceClient;
   active: boolean;
@@ -4345,7 +4373,6 @@ function SurfaceEntry({
     reading: ConversationHistoryState,
   ) => void;
   registerSession: (surface: 'native' | 'terminal') => void;
-  ready: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   return (
@@ -4365,7 +4392,6 @@ function SurfaceEntry({
               registerSession={registerSession}
             />
           </Activity>
-          <TaskNotifications client={client} ready={ready} />
         </SurfaceRootContext.Provider>
       </SurfaceClientContext.Provider>
     </div>
@@ -4424,10 +4450,16 @@ function SurfaceWorkspaces() {
               changeSurface={changeSurface}
               registerCache={registerCache}
               registerSession={registerSession}
-              ready={sessions.has(surface)}
             />
           ),
       )}
+      {(['native', 'terminal'] as const).map((surface) => (
+        <TaskNotifications
+          key={'notifications:' + surface}
+          client={clients[surface]}
+          ready={sessions.size > 0}
+        />
+      ))}
     </>
   );
 }

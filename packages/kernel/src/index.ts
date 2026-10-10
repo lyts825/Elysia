@@ -1299,7 +1299,7 @@ export class Kernel {
     return this.store.tx(() => {
       let run = this.store.require<Run>('runs', runId);
       if (run.archived) return;
-      const incoming = this.store.all<any>('inbox', runId).filter((m) => m.status === 'PENDING');
+      const incoming = this.store.stateCandidates<any>('inbox', ['PENDING'], { runId });
       if (!incoming.length) return;
       // 收件箱只在工具配对闭合后应用。
       const tasks = this.store
@@ -1383,9 +1383,10 @@ export class Kernel {
   }
   wakeChildren(runId: string) {
     this.store.tx(() => {
-      for (const task of this.store
-        .all<Task>('tasks', runId)
-        .filter((t) => t.status === 'WAITING' && t.waitReason === 'children')) {
+      for (const task of this.store.stateCandidates<Task>('tasks', ['WAITING'], {
+        runId,
+        waitReasons: ['children'],
+      })) {
         const children = task.waitingFor.map((key) => this.store.require<Task>('tasks', key));
         if (children.every((c) => ['DONE', 'FAILED', 'CANCELLED'].includes(c.status))) {
           this.appendMessage(

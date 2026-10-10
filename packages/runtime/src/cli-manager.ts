@@ -34,6 +34,14 @@ const digest = (value: string) => /^sha256:[a-f0-9]{64}$/.test(value.trim());
 const complete = (result: DockerCommandResult) =>
   result.exitCode === 0 && !result.timedOut && !result.truncated;
 const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$/;
+function detectedCliVersion(banner: string | undefined): string | undefined {
+  if (!banner || banner.length > 200) return;
+  const matches = [
+    ...banner.matchAll(/(?:^|[ \t(])v?([0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]*)?)(?=$|[ \t)])/g),
+  ];
+  const version = matches.length === 1 ? matches[0][1] : undefined;
+  return version && version.length <= 80 && VERSION.test(version) ? version : undefined;
+}
 
 export interface TerminalCliStatus {
   available: boolean;
@@ -425,8 +433,8 @@ export class DockerCliManager {
           code: 'TERMINAL_CLI_UNAVAILABLE',
           message: '镜像中的 CLI 不可用或版本检测未完成',
         };
-      const version = result.stdout.trim().split(/\r?\n/)[0]?.slice(0, 200);
-      if (!version || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(version))
+      const version = result.stdout.trim().split(/\r?\n/)[0];
+      if (!version || version.length > 200 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(version))
         return {
           available: false,
           engineAvailable,
@@ -565,8 +573,15 @@ export class DockerCliManager {
         verified.code ?? 'TERMINAL_CLI_INSTALL',
         verified.message,
       );
+      const actualVersion = detectedCliVersion(verified.version);
+      invariant(actualVersion, 'TERMINAL_CLI_VERSION', '安装后的 CLI 未返回可确定的版本号，请重新检测或安装');
+      invariant(
+        actualVersion === version,
+        'TERMINAL_CLI_VERSION_MISMATCH',
+        `实际 CLI 版本 ${actualVersion} 与请求版本 ${version} 不一致，请重新安装；未应用镜像`,
+      );
       onPhase?.('complete');
-      return { image, imageTag, version };
+      return { image, imageTag, version: actualVersion };
     } finally {
       this.options.resources?.release(reservationId);
       this.busy = false;

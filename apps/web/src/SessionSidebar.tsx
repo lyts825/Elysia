@@ -154,6 +154,11 @@ export function SessionSidebar({
   const ordered = (list: RunListItem[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pinned = ordered(visibleRuns.filter((r) => flag(`pinned:run:${r.id}`) && matches(r)));
   const chats = ordered(visibleRuns.filter((r) => r.kind === 'chat' && matches(r)));
+  const pendingProjectRuns = ordered(
+    runs.filter(
+      (r) => !r.archived && r.kind === 'task' && !projects.some((p) => p.id === r.projectId) && matches(r),
+    ),
+  );
   const closeMenu = (restore = false) => {
     if (restore && menu?.trigger.isConnected) menu.trigger.focus({ preventScroll: true });
     setMenu(null);
@@ -564,6 +569,14 @@ export function SessionSidebar({
               </nav>
             )}
           </section>
+          {pendingProjectRuns.length > 0 && (
+            <section aria-label="项目对话">
+              {heading('pending-projects', '项目对话', pendingProjectRuns.length)}
+              {(!flag('collapsed:pending-projects') || query) && (
+                <div className="history-list">{pendingProjectRuns.map((run) => runRow(run))}</div>
+              )}
+            </section>
+          )}
           {!terminal && (
             <section>
               {heading(

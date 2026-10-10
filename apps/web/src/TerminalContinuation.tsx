@@ -56,14 +56,11 @@ export function TerminalContinuation({
       });
     return () => controller.abort();
   }, [run.id, run.revision, api, readAttempt]);
-  useEffect(() => {
-    if (session && mode === 'resume' && !session.canResume) changeDraft({ text, mode: 'new-session' });
-  }, [session, mode, text, changeDraft]);
   return (
     <details className="terminal-continuation">
       <summary>补充需求并继续</summary>
       <p className="field-help">{issue || session?.reason || '正在检查会话能力…'}</p>
-      {issue && (
+      {(issue || (session && !session.canResume)) && (
         <button
           type="button"
           className="text-button"

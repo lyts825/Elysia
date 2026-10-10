@@ -41,6 +41,7 @@ export function ConversationSearch({
   const activeQuery = useRef('');
   const loadedQuery = useRef('');
   const lastRead = useRef<{ before?: string | null; append: boolean }>({ append: false });
+  const binding = useRef({ runId, embedded });
   const context = useRef({ runId, query: query.trim(), open });
   context.current = { runId, query: query.trim(), open };
   const panelId = useId();
@@ -79,6 +80,8 @@ export function ConversationSearch({
     }
   };
   useEffect(() => {
+    if (binding.current.runId === runId && binding.current.embedded === embedded) return;
+    binding.current = { runId, embedded };
     request.current?.abort();
     sequence.current++;
     setOpen(embedded);

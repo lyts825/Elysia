@@ -1,6 +1,11 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { captureHistoryAnchor, historyViewportVisible, restoreHistoryAnchor } from './HistoryScroll';
+import {
+  captureHistoryAnchor,
+  HistoryAnchorIndex,
+  historyViewportVisible,
+  restoreHistoryAnchor,
+} from './HistoryScroll';
 import type { HistoryAnchor } from './HistoryScroll';
 
 export function ConversationScroll({
@@ -38,21 +43,27 @@ export function ConversationScroll({
   const touchY = useRef(0);
   const pendingOlder = useRef<{ cursor: string; top: number; height: number } | undefined>(undefined);
   const restoring = useRef(false);
-  const captureAnchor = (node: HTMLDivElement) => {
-    const preferred = anchor.current;
-    if (preferred) {
-      const bounds = node.getBoundingClientRect();
-      const target = [...node.querySelectorAll<HTMLElement>('[data-history-anchor]')].find(
-        (item) => item.dataset.historyAnchor === preferred.id,
-      );
-      const rect = target?.getBoundingClientRect();
-      // A visible tool card has its own anchor inside an assistant message.
-      // Preserve the selected card until the reader scrolls past it.
-      if (rect && rect.bottom > bounds.top && rect.top < bounds.bottom)
-        return { id: preferred.id, offset: rect.top - bounds.top };
-    }
-    return captureHistoryAnchor(node);
-  };
+  const index = useRef<HistoryAnchorIndex | undefined>(undefined);
+  const frame = useRef<number | undefined>(undefined);
+  const queuedSync = useRef(false);
+  const scrolled = useRef(false);
+  const geometry = useRef('');
+  const checkpointRef = useRef(onCheckpoint);
+  checkpointRef.current = onCheckpoint;
+  const captureAnchor = (node: HTMLDivElement) => captureHistoryAnchor(node, index.current, anchor.current);
+  useLayoutEffect(() => {
+    const anchors = new HistoryAnchorIndex(viewport.current!);
+    index.current = anchors;
+    geometry.current = '';
+    return () => {
+      anchors.disconnect();
+      index.current = undefined;
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+      queuedSync.current = false;
+      scrolled.current = false;
+    };
+  }, []);
   useLayoutEffect(() => {
     const key = JSON.stringify([positionKey]);
     if (positioned.current === key) return;
@@ -62,10 +73,15 @@ export function ConversationScroll({
     restoring.current = !!initialAnchor;
     requestedOlder.current = '';
     pendingOlder.current = undefined;
+    geometry.current = '';
+    scrolled.current = false;
+    queuedSync.current = false;
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = undefined;
     const node = viewport.current;
     if (node) {
       node.scrollTop = following.current ? node.scrollHeight : 0;
-      if (restoreHistoryAnchor(node, initialAnchor)) restoring.current = false;
+      if (restoreHistoryAnchor(node, initialAnchor, index.current)) restoring.current = false;
       lastScroll.current = node.scrollTop;
       if (!restoring.current) anchor.current = captureAnchor(node);
     }
@@ -73,8 +89,16 @@ export function ConversationScroll({
   const sync = () => {
     const node = viewport.current;
     if (!node) return;
-    if (following.current) node.scrollTop = node.scrollHeight;
-    else if (restoreHistoryAnchor(node, anchor.current)) restoring.current = false;
+    const nextGeometry = `${node.scrollHeight}:${node.clientHeight}:${node.clientWidth}:${index.current?.version()}:${olderCursor}:${olderLoading}`;
+    if (!queuedSync.current && !scrolled.current && !restoring.current && geometry.current === nextGeometry)
+      return;
+    geometry.current = nextGeometry;
+    queuedSync.current = false;
+    // Native scrolling establishes a new reading position; never restore the
+    // preceding frame's anchor over the user's movement.
+    if (scrolled.current) scrolled.current = false;
+    else if (following.current) node.scrollTop = node.scrollHeight;
+    else if (restoreHistoryAnchor(node, anchor.current, index.current)) restoring.current = false;
     else if (!restoring.current) {
       const pending = pendingOlder.current;
       if (pending && pending.cursor !== olderCursor)
@@ -83,15 +107,27 @@ export function ConversationScroll({
     if (pendingOlder.current && !olderLoading) pendingOlder.current = undefined;
     lastScroll.current = node.scrollTop;
     if (!restoring.current) anchor.current = captureAnchor(node);
-    setAway(node.scrollHeight - node.clientHeight - node.scrollTop > 96);
-    if (!restoring.current && historyViewportVisible(node))
-      onCheckpoint?.({ anchor: anchor.current, following: following.current });
+    setAway(!following.current || node.scrollHeight - node.clientHeight - node.scrollTop > 96);
+    scheduleFrame();
   };
   const syncRef = useRef(sync);
   syncRef.current = sync;
+  const scheduleFrame = () => {
+    if (frame.current !== undefined) return;
+    frame.current = requestAnimationFrame(() => {
+      if (queuedSync.current) syncRef.current();
+      const node = viewport.current;
+      if (node && !restoring.current && historyViewportVisible(node))
+        checkpointRef.current?.({ anchor: anchor.current, following: following.current });
+      frame.current = undefined;
+    });
+  };
   useLayoutEffect(sync, [children, olderCursor, olderLoading]);
   useLayoutEffect(() => {
-    const observer = new ResizeObserver(() => syncRef.current());
+    const observer = new ResizeObserver(() => {
+      queuedSync.current = true;
+      scheduleFrame();
+    });
     observer.observe(viewport.current!);
     observer.observe(content.current!);
     return () => observer.disconnect();
@@ -110,6 +146,7 @@ export function ConversationScroll({
       return;
     following.current = false;
     anchor.current = captureAnchor(node!);
+    scrolled.current = false;
     pendingOlder.current = { cursor: olderCursor, top: node!.scrollTop, height: node!.scrollHeight };
     requestedOlder.current = olderCursor;
     onLoadOlder();
@@ -127,10 +164,9 @@ export function ConversationScroll({
           if (restoring.current && performance.now() >= intentUntil.current) return;
           restoring.current = false;
           following.current = startAtLatest && node.scrollHeight - node.clientHeight - node.scrollTop <= 96;
-          anchor.current = captureAnchor(node);
-          setAway(!following.current);
-          if (historyViewportVisible(node))
-            onCheckpoint?.({ anchor: anchor.current, following: following.current });
+          scrolled.current = true;
+          queuedSync.current = true;
+          scheduleFrame();
           if (upward && performance.now() < intentUntil.current) requestOlder();
         }}
         onWheel={(event) => {

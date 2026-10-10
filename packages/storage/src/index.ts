@@ -79,6 +79,13 @@ const legacyObjectPattern = /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/;
 const sqliteObjectPattern = /^sqlite:[a-f0-9]{64}$/;
 const compress = (value: unknown) => gzipSync(Buffer.from(stable(value)), { level: 6 });
 const expand = (value: Uint8Array) => JSON.parse(gunzipSync(value).toString('utf8'));
+function rateResumeAt(task: Task) {
+  const value =
+    task.rateLimit === undefined
+      ? (task.result as { resumeAt?: unknown } | undefined)?.resumeAt
+      : task.rateLimit?.resumeAt;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
 function projection(table: Table, entity: any) {
   const readModel =
     table === 'runs'
@@ -97,7 +104,13 @@ function projection(table: Table, entity: any) {
           ...(entity.execution?.kind === 'docker-agent' ? { execution: { kind: 'docker-agent' } } : {}),
         }
       : table === 'tasks'
-        ? { status: entity.status, waitReason: entity.waitReason, parentTaskId: entity.parentTaskId }
+        ? {
+            status: entity.status,
+            waitReason: entity.waitReason,
+            parentTaskId: entity.parentTaskId,
+            waitingFor: entity.waitingFor,
+            rateResumeAt: rateResumeAt(entity),
+          }
         : table === 'tool_operations'
           ? { taskId: entity.taskId, toolCallId: entity.toolCallId, name: entity.name, status: entity.status }
           : table === 'requests'
@@ -120,7 +133,10 @@ function projection(table: Table, entity: any) {
     id: entity.id,
     runId: entity.runId,
     revision: entity.revision,
-    ...(['runs', 'tasks', 'requests', 'tool_operations'].includes(table) ? { status: entity.status } : {}),
+    ...(['runs', 'tasks', 'requests', 'tool_operations', 'inbox'].includes(table)
+      ? { status: entity.status }
+      : {}),
+    ...(table === 'tasks' ? { schedulerVersion: 1 } : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages'
@@ -168,6 +184,11 @@ export class Store {
     try {
       this.migrate();
       this.historySearchSchema();
+      for (const table of ['runs', 'tasks', 'inbox'])
+        this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_${table}_state ON ${table}(
+          COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status')));`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_inbox_pending ON inbox(run_id)
+        WHERE json_extract(data,'$.status') IS NULL OR json_extract(data,'$.status')='PENDING';`);
     } catch (error) {
       this.db.close();
       throw error;
@@ -422,7 +443,7 @@ export class Store {
   }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
   refreshReadProjection(
-    table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'messages',
+    table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
     entity: Entity,
   ) {
     this.db
@@ -431,9 +452,15 @@ export class Store {
   }
   /** Filter redundant state before expanding bodies. Legacy projections are warmed once. */
   stateCandidates<T extends Entity>(
-    table: 'runs' | 'tasks' | 'requests' | 'tool_operations',
+    table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'inbox',
     statuses: string[],
-    options: { runId?: string; exclude?: boolean; unarchived?: boolean } = {},
+    options: {
+      runId?: string;
+      exclude?: boolean;
+      unarchived?: boolean;
+      waitReasons?: string[];
+      resumeBefore?: number;
+    } = {},
   ): T[] {
     if (!statuses.length) return [];
     const state = `COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))`;
@@ -443,10 +470,25 @@ export class Store {
       ...(options.unarchived
         ? [`COALESCE(json_extract(data,'$.archived'),json_extract(data,'$.readModel.archived'),0)=0`]
         : []),
+      ...(table === 'tasks' && options.waitReasons?.length
+        ? [
+            `(COALESCE(json_extract(data,'$.readModel.waitReason'),json_extract(data,'$.waitReason')) IS NULL OR COALESCE(json_extract(data,'$.readModel.waitReason'),json_extract(data,'$.waitReason')) IN (${options.waitReasons.map(() => '?').join(',')}))`,
+          ]
+        : []),
+      ...(table === 'tasks' && options.resumeBefore !== undefined
+        ? [
+            `(json_extract(data,'$.schedulerVersion') IS NOT 1 OR json_extract(data,'$.readModel.rateResumeAt')<=?)`,
+          ]
+        : []),
     ];
     const rows = this.db
       .prepare(`SELECT id,data,content FROM ${table} WHERE ${clauses.join(' AND ')} ORDER BY rowid`)
-      .all(...statuses, ...(options.runId ? [options.runId] : [])) as {
+      .all(
+        ...statuses,
+        ...(options.runId ? [options.runId] : []),
+        ...(table === 'tasks' ? (options.waitReasons ?? []) : []),
+        ...(table === 'tasks' && options.resumeBefore !== undefined ? [options.resumeBefore] : []),
+      ) as {
       id: string;
       data: string;
       content: Uint8Array;
@@ -458,9 +500,13 @@ export class Store {
         status?: string;
         archived?: boolean;
       };
-      if (metadata.status === undefined) this.refreshReadProjection(table, entity);
+      if (metadata.status === undefined || (table === 'tasks' && metadata.schedulerVersion !== 1))
+        this.refreshReadProjection(table, entity);
       return (options.exclude ? !wanted.has(entity.status || '') : wanted.has(entity.status || '')) &&
-        (!options.unarchived || !entity.archived)
+        (!options.unarchived || !entity.archived) &&
+        (table !== 'tasks' ||
+          !options.waitReasons?.length ||
+          options.waitReasons.includes((entity as unknown as Task).waitReason || ''))
         ? [entity]
         : [];
     });
@@ -470,6 +516,55 @@ export class Store {
       runs: this.stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true }),
       tasks: this.stateCandidates<Task>('tasks', ['READY']),
     };
+  }
+  /** Pick maintenance work from redundant metadata before expanding any idle history. */
+  schedulerRunCandidates(at = Date.now()): Run[] {
+    const status = (alias: string) =>
+      `COALESCE(json_extract(${alias}.data,'$.status'),json_extract(${alias}.data,'$.readModel.status'))`;
+    const reason =
+      "COALESCE(json_extract(t.data,'$.readModel.waitReason'),json_extract(t.data,'$.waitReason'))";
+    const waitingFor =
+      "COALESCE(json_extract(t.data,'$.readModel.waitingFor'),json_extract(t.data,'$.waitingFor'))";
+    const rows = this.db
+      .prepare(
+        `SELECT r.id,json_extract(r.data,'$.readModelVersion') projection_version FROM runs r WHERE
+        COALESCE(json_extract(r.data,'$.archived'),json_extract(r.data,'$.readModel.archived'),0)=0
+        AND (${status('r')} IS NULL OR (${status('r')} NOT IN ('DONE','CANCELLED') AND (
+          (${status('r')} IN ('READY','RUNNING') AND EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id
+            AND (${status('t')} IS NULL OR ${status('t')} IN ('READY','RUNNING','VERIFYING'))))
+          OR EXISTS(SELECT 1 FROM inbox i WHERE i.run_id=r.id AND (json_extract(i.data,'$.status') IS NULL OR json_extract(i.data,'$.status')='PENDING'))
+          OR EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id AND (
+            ${status('t')} IS NULL OR (${status('t')}='WAITING' AND (
+              (${reason}='children' AND (json_extract(t.data,'$.schedulerVersion') IS NOT 1 OR
+                NOT EXISTS(SELECT 1 FROM json_each(${waitingFor}) w LEFT JOIN tasks c ON c.id=w.value
+                  WHERE c.id IS NULL OR ${status('c')} IS NULL OR ${status('c')} NOT IN ('DONE','FAILED','CANCELLED'))))
+              OR (${reason}='rate_limit' AND (json_extract(t.data,'$.schedulerVersion') IS NOT 1
+                OR json_extract(t.data,'$.readModel.rateResumeAt')<=?))
+              OR (${reason} IS NULL AND json_extract(t.data,'$.schedulerVersion') IS NOT 1)
+            )) OR (${status('t')}='READY' AND (
+              json_extract(t.data,'$.readModel.rateResumeAt')<=? OR
+              (json_extract(t.data,'$.schedulerVersion') IS NOT 1 AND
+                COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))='rate_limit')
+            ))
+          ))
+        ))) ORDER BY r.rowid`,
+      )
+      .all(at, at) as { id: string; projection_version: number | null }[];
+    return rows.flatMap(({ id: key, projection_version }) => {
+      const run = this.get<Run>('runs', key);
+      if (!run) return [];
+      if (projection_version !== 1) this.refreshReadProjection('runs', run);
+      return !run.archived && !['DONE', 'CANCELLED'].includes(run.status) ? [run] : [];
+    });
+  }
+  hasPendingInbox(runId: string) {
+    return Boolean(
+      this.db
+        .prepare(
+          "SELECT 1 FROM inbox WHERE run_id=? AND (json_extract(data,'$.status') IS NULL OR json_extract(data,'$.status')='PENDING') LIMIT 1",
+        )
+        .get(runId),
+    );
   }
   /** Return only real message links within this Run, never retained message bodies. */
   messageConversationLinks(runId: string, identifiers: string[]): ConversationMessageLinks[] {

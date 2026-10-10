@@ -5,7 +5,12 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
-import { readTaskNotificationSettings, setTaskNotificationPreference } from './TaskNotifications';
+import {
+  dismissTaskNotificationFailures,
+  readNotificationHealth,
+  readTaskNotificationSettings,
+  setTaskNotificationPreference,
+} from './TaskNotifications';
 import './task-center.css';
 
 export type TaskCenterState = { filter: 'all' | TaskCenterCategory; before: string; trail: string[] };
@@ -31,7 +36,8 @@ export function TaskCenter({
   openRun: (id: string) => Promise<void>;
   close: () => void;
 }) {
-  const { api, surface } = useSurfaceClient();
+  const client = useSurfaceClient();
+  const { api, surface } = client;
   const [result, setResult] = useState<TaskCenterPage>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +46,7 @@ export function TaskCenter({
   const [notifications, setNotifications] = useState<boolean>();
   const [notifySupported, setNotifySupported] = useState(false);
   const [notificationError, setNotificationError] = useState('');
+  const [notificationHealth, setNotificationHealth] = useState(() => readNotificationHealth(client));
   const [savingNotifications, setSavingNotifications] = useState(false);
   useEffect(() => {
     let live = true;
@@ -60,11 +67,11 @@ export function TaskCenter({
   useEffect(() => {
     const receive = (event: Event) => {
       if ((event as CustomEvent).detail?.surface === surface)
-        setNotificationError('系统通知发送失败，可检查系统通知权限。');
+        setNotificationHealth(readNotificationHealth(client));
     };
     window.addEventListener('elysia.task-notification-error', receive);
     return () => window.removeEventListener('elysia.task-notification-error', receive);
-  }, [surface]);
+  }, [client, surface]);
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
@@ -158,6 +165,19 @@ export function TaskCenter({
         {notificationError && (
           <p role="alert" className="field-error">
             {notificationError}
+          </p>
+        )}
+        {notificationHealth.failed > 0 && (
+          <p role="status" className="field-error">
+            {notificationHealth.failed} 项状态通知未送达，可检查系统通知权限。
+            <button className="quiet-button" onClick={() => dismissTaskNotificationFailures(client)}>
+              知道了
+            </button>
+          </p>
+        )}
+        {notificationHealth.pending > 0 && (
+          <p role="status" className="task-center-empty">
+            {notificationHealth.pending} 项状态通知正在重试…
           </p>
         )}
         {error && (
