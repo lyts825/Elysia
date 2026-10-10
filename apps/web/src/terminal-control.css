@@ -588,3 +588,30 @@
   gap: 8px;
   padding: 12px 0;
 }
+
+.terminal-maintenance-scan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.terminal-maintenance-scan > span {
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}
+.terminal-pending-cleanup {
+  margin: 18px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.terminal-pending-cleanup > div + div {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}

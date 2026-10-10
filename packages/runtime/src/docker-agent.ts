@@ -406,6 +406,7 @@ export class DockerAgentService {
     this.cliManager = new DockerCliManager(kernel.store.directory, {
       transport: this.transport,
       resources: this.resources,
+      store: kernel.store,
     });
     this.resolveConnection = options.resolveConnection;
     this.environment =
@@ -436,7 +437,7 @@ export class DockerAgentService {
       .snapshot()
       .reservations.some(
         (entry) =>
-          (!runId && entry.kind === 'installation') ||
+          (!runId && entry.kind !== 'task') ||
           (entry.held && (!runId || this.store.get<Task>('tasks', entry.id)?.runId === runId)),
       );
   }
@@ -448,6 +449,38 @@ export class DockerAgentService {
       .map((row) => JSON.parse(row.value) as TerminalTaskRuntime)
       .filter((entry) => !!this.store.get('tasks', entry.taskId));
     const resources = this.resources.snapshot();
+    resources.reservations = resources.reservations.map((entry) => {
+      if (!entry.held || entry.kind !== 'task') return entry;
+      const task = this.store.get<Task>('tasks', entry.id);
+      if (!task) return entry;
+      const run = this.store.get<Run>('runs', task.runId);
+      if (!run) return entry;
+      const uncertain = this.store
+        .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: run.id })
+        .filter((op) => op.taskId === task.id && op.name === 'terminal_agent')
+        .at(-1);
+      const operationId =
+        this.active.get(task.id)?.operation.id ?? tasks.find((item) => item.taskId === task.id)?.operationId;
+      const known = operationId ? this.store.get<Operation>('tool_operations', operationId) : undefined;
+      const operation =
+        uncertain ??
+        (known?.runId === run.id && known.taskId === task.id && known.name === 'terminal_agent'
+          ? known
+          : undefined);
+      return {
+        ...entry,
+        owner: {
+          runId: run.id,
+          taskId: task.id,
+          ...(operation ? { operationId: operation.id } : {}),
+          runTitle: run.title || run.objective.slice(0, 240),
+          taskTitle: task.spec.title,
+          reason: operation
+            ? '终端停止状态尚未确认；请核验原操作后释放资源'
+            : '终端停止状态尚未确认；请打开原对话核验',
+        },
+      };
+    });
     const serialized = stable({ tasks, resources });
     if (serialized !== this.runtimeLast) {
       this.runtimeLast = serialized;
@@ -750,7 +783,11 @@ export class DockerAgentService {
       throw new AppError('TERMINAL_WORKSPACE_CHECK', '工作区正在变化，请等待文件写入完成后重试');
     }
   }
-  async check(raw?: AgentTerminalProfile, signal?: AbortSignal): Promise<DockerAgentCheck> {
+  async check(
+    raw?: AgentTerminalProfile,
+    signal?: AbortSignal,
+    sponsorId?: string,
+  ): Promise<DockerAgentCheck> {
     const profile = raw ? AgentTerminalProfile.parse(raw) : undefined;
     const stages: DockerAgentCheck['stages'] = {
       engine: { status: 'unknown', message: '尚未检测 Docker Linux 引擎' },
@@ -770,6 +807,7 @@ export class DockerAgentService {
           profile.agent === 'gemini' ? 'gemini' : profile.agent,
           profile,
           signal,
+          sponsorId,
         );
         imageAvailable = cli.imageAvailable;
         imageId = cli.imageId;
@@ -978,6 +1016,7 @@ export class DockerAgentService {
   }
   async dispose() {
     this.closed = true;
+    await this.cliManager.dispose();
     await Promise.all(
       [...new Set([...this.active.values()].map((entry) => entry.task.runId))].map((runId) =>
         this.interrupt(runId),
@@ -1582,7 +1621,7 @@ export class DockerAgentService {
     );
     if (pending?.mode === 'resume') this.sessionHome(session!, true);
     this.runtimePhase(task, 'preparing');
-    const check = await this.check({ ...profile, image: session?.imageId ?? profile.image }, signal);
+    const check = await this.check({ ...profile, image: session?.imageId ?? profile.image }, signal, task.id);
     signal.throwIfAborted();
     task = this.store.require<Task>('tasks', task.id);
     if (task.status !== 'READY') return;

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Run, RunListItem } from '../../../packages/contracts/src/index';
 import type {
   TerminalMaintenanceOverview,
   TerminalMaintenancePlan,
+  TerminalMaintenanceScan,
   TerminalSessionBackupView,
 } from '../../../packages/contracts/src/terminal-maintenance';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -25,50 +26,143 @@ export function TerminalDataMaintenance({
     [plan, setPlan] = useState<TerminalMaintenancePlan | null>(null),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const [scan, setScan] = useState<TerminalMaintenanceScan | null>(null);
+  const controllerRef = useRef<AbortController | null>(null),
+    scanIdRef = useRef<string | null>(null);
+  const scanning = scan?.status === 'running';
+  function failedScan(controller: AbortController, issue: unknown, fallback: string) {
+    if (controller.signal.aborted) return;
+    const scanId = scanIdRef.current;
+    controller.abort();
+    scanIdRef.current = null;
+    if (scanId) void api(endpoint + '/scans/' + scanId + '/cancel', {}).catch(() => {});
+    setScan((current) => (current ? { ...current, status: 'failed' } : null));
+    setError(issue instanceof Error ? issue.message : fallback);
+  }
+  async function scanRequest(body: Record<string, unknown>, signal: AbortSignal) {
+    let current = await api<TerminalMaintenanceScan>(endpoint + '/scans', body, undefined, signal);
+    scanIdRef.current = current.id;
+    if (signal.aborted) {
+      void api(endpoint + '/scans/' + current.id + '/cancel', {}).catch(() => {});
+      throw new DOMException('已取消', 'AbortError');
+    }
+    setScan(current);
+    while (current.status === 'running') {
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          clearTimeout(timer);
+          reject(new DOMException('已取消', 'AbortError'));
+        };
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', abort);
+          resolve();
+        }, 250);
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      });
+      current = await api<TerminalMaintenanceScan>(
+        endpoint + '/scans/' + current.id,
+        undefined,
+        undefined,
+        signal,
+      );
+      if (signal.aborted) throw new DOMException('已取消', 'AbortError');
+      setScan(current);
+    }
+    scanIdRef.current = null;
+    if (current.status !== 'completed') throw new Error(current.message || '维护扫描未完成');
+    return current;
+  }
+  function beginScan() {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setScan({
+      id: '',
+      kind: 'overview',
+      status: 'running',
+      phase: 'references',
+      filesVisited: 0,
+      bytesProcessed: 0,
+      groupsCompleted: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    setError('');
+    setNotice('');
+    setPlan(null);
+    return controller;
+  }
   async function load(signal?: AbortSignal) {
-    const [next, history, conversations] = await Promise.all([
-      api<TerminalMaintenanceOverview>(endpoint, undefined, undefined, signal),
-      api<TerminalSessionBackupView[]>(endpoint + '/backups', undefined, undefined, signal),
-      api<{ runs: RunListItem[] }>('/runs?limit=100', undefined, undefined, signal),
-    ]);
-    if (signal?.aborted) return;
-    setOverview(next);
-    setBackups(history);
-    setRuns(conversations.runs);
+    const controller = beginScan(),
+      abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    try {
+      const [next, history, conversations] = await Promise.all([
+        scanRequest({ kind: 'overview' }, controller.signal),
+        api<TerminalSessionBackupView[]>(endpoint + '/backups', undefined, undefined, controller.signal),
+        api<{ runs: RunListItem[] }>('/runs?limit=100', undefined, undefined, controller.signal),
+      ]);
+      if (controller.signal.aborted) return;
+      setOverview(next.overview!);
+      setBackups(history);
+      setRuns(conversations.runs);
+    } catch (issue) {
+      failedScan(controller, issue, '无法读取数据占用');
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      if (controllerRef.current === controller) controllerRef.current = null;
+    }
+  }
+  async function cancelScan() {
+    const scanId = scanIdRef.current;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    scanIdRef.current = null;
+    setScan((current) => (current ? { ...current, status: 'cancelled' } : null));
+    setNotice('扫描已取消，未生成计划或修改文件。');
+    if (scanId)
+      await api(endpoint + '/scans/' + scanId + '/cancel', {}).catch(() =>
+        setError('取消请求未确认；请刷新后检查扫描状态'),
+      );
   }
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal).catch((issue) => {
-      if (!controller.signal.aborted) setError(issue instanceof Error ? issue.message : '无法读取数据占用');
-    });
-    return () => controller.abort();
+    void load(controller.signal);
+    return () => {
+      controller.abort();
+      controllerRef.current?.abort();
+      const scanId = scanIdRef.current;
+      if (scanId) void api(endpoint + '/scans/' + scanId + '/cancel', {}).catch(() => {});
+    };
   }, [api]);
-  async function preview(kind: TerminalMaintenancePlan['kind']) {
-    await perform(async () => {
-      setError('');
-      setNotice('');
-      setPlan(null);
-      const backup = backups.find((b) => b.id === backupId);
-      const selectedId = kind === 'backup' ? runId : backup?.runId;
-      const selected = kind === 'cleanup' ? null : await api<Run>('/runs/' + selectedId + '/header');
-      const body =
+  async function preview(
+    kind: TerminalMaintenancePlan['kind'],
+    retry?: TerminalMaintenanceOverview['pendingCleanup'][number],
+  ) {
+    const controller = beginScan();
+    try {
+      const backup = backups.find((b) => b.id === backupId),
+        selectedId = kind === 'backup' ? runId : backup?.runId;
+      const selected =
         kind === 'cleanup'
-          ? {}
+          ? null
+          : await api<Run>('/runs/' + selectedId + '/header', undefined, undefined, controller.signal);
+      const body = retry
+        ? { kind: 'retry', retryId: retry.id, expectedRevision: retry.revision }
+        : kind === 'cleanup'
+          ? { kind }
           : kind === 'backup'
-            ? { runId, expectedRevision: selected!.revision }
-            : { backupId, expectedRevision: selected!.revision };
-      setPlan(
-        await api<TerminalMaintenancePlan>(
-          endpoint +
-            (kind === 'cleanup'
-              ? '/cleanup/plan'
-              : kind === 'backup'
-                ? '/backups/plan'
-                : '/backups/restore/plan'),
-          body,
-        ),
-      );
-    });
+            ? { kind, runId, expectedRevision: selected!.revision }
+            : { kind, backupId, expectedRevision: selected!.revision };
+      const result = await scanRequest(body, controller.signal);
+      if (!controller.signal.aborted) setPlan(result.plan!);
+    } catch (issue) {
+      failedScan(controller, issue, '无法生成维护计划');
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null;
+    }
   }
   async function apply() {
     if (!plan) return;
@@ -76,7 +170,9 @@ export function TerminalDataMaintenance({
       const result = await mutation<{ message?: string }>(
         endpoint +
           (plan.kind === 'cleanup'
-            ? '/cleanup/apply'
+            ? plan.retryId
+              ? '/cleanup/retries/' + plan.retryId + '/apply'
+              : '/cleanup/apply'
             : plan.kind === 'backup'
               ? '/backups/create'
               : '/backups/restore'),
@@ -94,19 +190,34 @@ export function TerminalDataMaintenance({
           <h3>终端数据维护</h3>
           <p>只操作本入口的已停止会话。工作区、冻结镜像及未知数据不参与清理。</p>
         </div>
-        <button
-          className="secondary"
-          disabled={disabled}
-          onClick={() =>
-            void perform(async () => {
-              setPlan(null);
-              await load();
-            })
-          }
-        >
+        <button className="secondary" disabled={disabled || scanning} onClick={() => void load()}>
           刷新占用
         </button>
       </div>
+      {scanning && scan && (
+        <div className="terminal-maintenance-scan" role="status" aria-label="维护扫描进度">
+          <span>
+            {
+              (
+                {
+                  references: '检查引用',
+                  sessions: '扫描会话',
+                  storage: '扫描占用',
+                  ownership: '核对归属',
+                  hashing: '校验文件摘要',
+                  verification: '复核版本',
+                  complete: '已完成',
+                } as const
+              )[scan.phase]
+            }{' '}
+            · {scan.filesVisited} 个文件
+            {scan.bytesProcessed > 0 ? ' · 已读取 ' + size(scan.bytesProcessed) : ''}
+          </span>
+          <button type="button" className="secondary" onClick={() => void cancelScan()}>
+            取消扫描
+          </button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="cli-app-error">
           {error}
@@ -123,22 +234,56 @@ export function TerminalDataMaintenance({
             {overview.groups.map((group) => (
               <div key={group.id}>
                 <strong>{group.label}</strong>
-                <span>{size(group.bytes)}</span>
-                <small>{group.files} 个文件</small>
+                <span>
+                  {group.coverage === 'unknown'
+                    ? '占用未知'
+                    : (group.coverage === 'partial' ? '至少 ' : '') + size(group.bytes)}
+                </span>
+                <small>
+                  {group.coverage === 'complete'
+                    ? '完整计入'
+                    : group.coverage === 'partial'
+                      ? '部分计入'
+                      : '未计入'}
+                  {group.coverage !== 'unknown' ? ' · ' + group.files + ' 个文件' : ''}
+                </small>
+                {group.measurementReason && <small>{group.measurementReason}</small>}
               </div>
             ))}
           </div>
           <p className="field-help">
-            已计入 {size(overview.totalBytes)}。凭据库只保留，不读取内容；大目录或链接占用可能未计入。
+            {overview.coverage === 'complete' ? '维护范围已完整计入' : '占用仅为已计入部分'}{' '}
+            {size(overview.totalBytes)}。凭据库只保留，不读取内容；未知占用未计入合计。
           </p>
           <button
             type="button"
             className="secondary"
-            disabled={disabled}
+            disabled={disabled || scanning}
             onClick={() => void preview('cleanup')}
           >
             预览可清理项
           </button>
+          {overview.pendingCleanup.length > 0 && (
+            <div className="terminal-pending-cleanup">
+              <h4>待完成的暂存清理</h4>
+              {overview.pendingCleanup.map((item) => (
+                <div key={item.id}>
+                  <p>
+                    {new Date(item.createdAt).toLocaleString()} · {item.items} 项 · {size(item.bytes)}
+                  </p>
+                  <p className="field-help">{item.message}</p>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={disabled || scanning}
+                    onClick={() => void preview('cleanup', item)}
+                  >
+                    预览重试清理
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <details className="terminal-data-references">
             <summary>会话归属与保留原因（{overview.sessions.length}）</summary>
             {overview.sessions.map((session) => (
@@ -149,7 +294,10 @@ export function TerminalDataMaintenance({
                     session.taskId}
                 </strong>
                 <span>
-                  {size(session.bytes)} · {session.reason}
+                  {session.coverage === 'unknown'
+                    ? '占用未知'
+                    : (session.coverage === 'partial' ? '至少 ' : '') + size(session.bytes)}{' '}
+                  · {session.reason}
                 </span>
               </p>
             ))}
@@ -172,7 +320,7 @@ export function TerminalDataMaintenance({
               <select
                 aria-label="备份终端会话"
                 value={runId}
-                disabled={disabled}
+                disabled={disabled || scanning}
                 onChange={(e) => {
                   setRunId(e.target.value);
                   setPlan(null);
@@ -193,7 +341,7 @@ export function TerminalDataMaintenance({
             <button
               type="button"
               className="secondary"
-              disabled={disabled || !runId}
+              disabled={disabled || scanning || !runId}
               onClick={() => void preview('backup')}
             >
               预览备份
@@ -203,7 +351,7 @@ export function TerminalDataMaintenance({
               <select
                 aria-label="恢复终端快照"
                 value={backupId}
-                disabled={disabled}
+                disabled={disabled || scanning}
                 onChange={(e) => {
                   setBackupId(e.target.value);
                   setPlan(null);
@@ -222,7 +370,7 @@ export function TerminalDataMaintenance({
             <button
               type="button"
               className="secondary"
-              disabled={disabled || !backups.find((b) => b.id === backupId)?.consistent}
+              disabled={disabled || scanning || !backups.find((b) => b.id === backupId)?.consistent}
               onClick={() => void preview('restore')}
             >
               预览恢复
@@ -233,8 +381,14 @@ export function TerminalDataMaintenance({
       {plan && (
         <div className="terminal-maintenance-plan" role="region" aria-label="维护计划预览">
           <h4>
-            {plan.kind === 'cleanup' ? '清理计划' : plan.kind === 'backup' ? '备份计划' : '恢复计划'} ·{' '}
-            {size(plan.bytes)}
+            {plan.kind === 'cleanup'
+              ? plan.retryId
+                ? '暂存重试计划'
+                : '清理计划'
+              : plan.kind === 'backup'
+                ? '备份计划'
+                : '恢复计划'}{' '}
+            · {size(plan.bytes)}
           </h4>
           {plan.items.map((item) => (
             <p key={item.kind + item.ref}>
@@ -249,13 +403,18 @@ export function TerminalDataMaintenance({
             </p>
           ))}
           <div className="terminal-control-form-actions">
-            <button className="secondary" type="button" disabled={disabled} onClick={() => setPlan(null)}>
+            <button
+              className="secondary"
+              type="button"
+              disabled={disabled || scanning}
+              onClick={() => setPlan(null)}
+            >
               取消计划
             </button>
             <button
               className="primary"
               type="button"
-              disabled={disabled || (!plan.items.length && plan.kind === 'cleanup')}
+              disabled={disabled || scanning || (!plan.items.length && plan.kind === 'cleanup')}
               onClick={() => void apply()}
             >
               {plan.kind === 'cleanup'

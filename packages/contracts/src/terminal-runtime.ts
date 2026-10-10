@@ -43,8 +43,22 @@ export interface TerminalResourceSnapshot {
   message: string;
   capacity: { sessions: number; cpus: number; memoryMiB: number };
   reserved: { sessions: number; cpus: number; memoryMiB: number };
-  reservations: { id: string; kind: 'task' | 'installation'; held: boolean }[];
+  reservations: {
+    id: string;
+    kind: 'task' | 'installation' | 'probe';
+    held: boolean;
+    reason?: string;
+    owner?: {
+      runId: string;
+      taskId: string;
+      operationId?: string;
+      runTitle: string;
+      taskTitle: string;
+      reason: string;
+    };
+  }[];
   waitingInstallations: number;
+  waitingProbes: number;
   /** Docker build admission is coordinated here; this is not a BuildKit memory hard limit. */
   installationHardLimit: false;
 }

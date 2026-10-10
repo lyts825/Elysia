@@ -39,6 +39,8 @@ const terminalActions = [
   'terminal-inspect',
   'terminal-cleanup-plan',
   'terminal-cleanup',
+  'terminal-cleanup-retry-plan',
+  'terminal-cleanup-retry',
   'terminal-session-backup-plan',
   'terminal-session-backup',
   'terminal-session-restore-plan',
@@ -103,16 +105,29 @@ async function terminalMaintenance(directory: string) {
       throw new Error('维护输入须为不超过 1 MiB 的普通 JSON 文件');
     return JSON.parse(readFileSync(filename, 'utf8'));
   }
+  const controller = new AbortController(),
+    cancel = () => controller.abort();
+  process.once('SIGINT', cancel);
+  process.once('SIGTERM', cancel);
+  const scanOptions = { signal: controller.signal };
   try {
     if (action === 'terminal-inspect')
-      return { overview: maintenance.overview(), backups: maintenance.backups() };
+      return { overview: await maintenance.overview(scanOptions), backups: maintenance.backups() };
     if (action.endsWith('-plan')) {
       const plan =
         action === 'terminal-cleanup-plan'
-          ? maintenance.cleanupPlan()
-          : action === 'terminal-session-backup-plan'
-            ? await maintenance.backupPlan(input())
-            : await maintenance.restorePlan(input());
+          ? await maintenance.cleanupPlan(scanOptions)
+          : action === 'terminal-cleanup-retry-plan'
+            ? await (() => {
+                const body = z
+                  .object({ retryId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
+                  .strict()
+                  .parse(input());
+                return maintenance.retryCleanupPlan(body.retryId, body.expectedRevision, scanOptions);
+              })()
+            : action === 'terminal-session-backup-plan'
+              ? await maintenance.backupPlan(input(), scanOptions)
+              : await maintenance.restorePlan(input(), scanOptions);
       return { commandId: id(), plan };
     }
     const supplied = input(),
@@ -120,8 +135,11 @@ async function terminalMaintenance(directory: string) {
         .object({ commandId: z.string().uuid(), plan: TerminalMaintenancePlan })
         .strict()
         .parse(supplied);
-    const expectedKind =
-      action === 'terminal-cleanup' ? 'cleanup' : action === 'terminal-session-backup' ? 'backup' : 'restore';
+    const expectedKind = ['terminal-cleanup', 'terminal-cleanup-retry'].includes(action)
+      ? 'cleanup'
+      : action === 'terminal-session-backup'
+        ? 'backup'
+        : 'restore';
     if (envelope.plan.kind !== expectedKind) throw new Error('维护计划与当前操作不一致');
     // A committed command is replayed using its original payload before revalidating an expired plan.
     if (!store.db.prepare('SELECT id FROM commands WHERE id=?').get(envelope.commandId))
@@ -131,12 +149,19 @@ async function terminalMaintenance(directory: string) {
       planId: envelope.plan.id,
       expectedRevision: envelope.plan.revision,
     };
+    if (action === 'terminal-cleanup-retry') {
+      if (!envelope.plan.retryId) throw new Error('重试计划缺少暂存记录');
+      return maintenance.retryCleanup(envelope.plan.retryId, body);
+    }
     return action === 'terminal-cleanup'
       ? maintenance.cleanup(body)
       : action === 'terminal-session-backup'
         ? await maintenance.createBackup(body)
         : await maintenance.restore(body);
   } finally {
+    process.off('SIGINT', cancel);
+    process.off('SIGTERM', cancel);
+    maintenance.close();
     await gateway.dispose();
     store.close();
   }

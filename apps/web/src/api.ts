@@ -1,4 +1,5 @@
 import type { WorkspaceSurface } from '../../../packages/contracts/src/index';
+import { ReadDeadline } from './ReadCoordinator';
 
 export const localSurface: WorkspaceSurface = (() => {
   const requested = new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get(
@@ -47,12 +48,14 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     method?: string,
     signal?: AbortSignal,
   ): Promise<T> {
+    const verb = method || (body ? 'POST' : 'GET');
+    const deadline = verb === 'GET' ? new ReadDeadline(signal) : undefined;
     const request: RequestInit = {
-      method: method || (body ? 'POST' : 'GET'),
+      method: verb,
       credentials: 'same-origin',
       headers: { ...(body ? { 'Content-Type': 'application/json', 'X-Elysia-Csrf': csrf } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      signal,
+      signal: deadline?.signal ?? signal,
     };
     let response: Response;
     let text: string;
@@ -60,8 +63,12 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
       response = await fetch(apiUrl(path), request);
       text = await response.text();
     } catch (error) {
+      if (deadline?.expired)
+        throw new ApiError('读取本机服务超时，请重试。', 'network', undefined, 'READ_TIMEOUT');
       if (signal && (signal.aborted || (error instanceof Error && error.name === 'AbortError'))) throw error;
       throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
+    } finally {
+      deadline?.clear();
     }
     const failed = `本机请求失败（HTTP ${response.status}），请重试。`;
     let result: any;
@@ -84,10 +91,18 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     return result;
   }
   async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+    const deadline = new ReadDeadline(signal);
     let response: Response;
     try {
-      response = await fetch(apiUrl(path), { method: 'GET', credentials: 'same-origin', signal });
+      response = await fetch(apiUrl(path), {
+        method: 'GET',
+        credentials: 'same-origin',
+        signal: deadline.signal,
+      });
     } catch (error) {
+      deadline.clear();
+      if (deadline.expired)
+        throw new ApiError('读取本机服务超时，请重试。', 'network', undefined, 'READ_TIMEOUT');
       if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
       throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
     }
@@ -109,6 +124,8 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
         typeof result?.code === 'string' ? result.code : undefined,
       );
     } catch (error) {
+      if (deadline.expired)
+        throw new ApiError('读取本机服务超时，请重试。', 'network', undefined, 'READ_TIMEOUT');
       if (
         signal?.aborted ||
         (error instanceof Error && error.name === 'AbortError') ||
@@ -116,6 +133,8 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
       )
         throw error;
       throw new ApiError('无法连接本机服务，请确认 Elysia 已启动后重试。', 'network');
+    } finally {
+      deadline.clear();
     }
   }
   const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>

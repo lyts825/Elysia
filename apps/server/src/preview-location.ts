@@ -17,6 +17,29 @@ const querySchema = z.object({
     .optional(),
 });
 export function registerPreviewLocationRoutes(app: FastifyInstance, previews: PreviewService) {
+  app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
+    '/api/runs/:runId/tasks/:taskId/preview/entry',
+    async (request, reply) => {
+      const { path } = z
+        .object({ path: z.string().min(1).max(1000) })
+        .strict()
+        .parse(request.query);
+      const controller = new AbortController(),
+        abort = () => controller.abort();
+      const disconnect = () => {
+        if (!reply.raw.writableEnded) abort();
+      };
+      request.raw.once('aborted', abort);
+      reply.raw.once('close', disconnect);
+      reply.header('Cache-Control', 'no-store');
+      try {
+        return await previews.entry(request.params.runId, request.params.taskId, path, controller.signal);
+      } finally {
+        request.raw.off('aborted', abort);
+        reply.raw.off('close', disconnect);
+      }
+    },
+  );
   app.get<{
     Params: { runId: string; taskId: string };
     Querystring: { path: string; anchor: string; encoding?: string; version?: string; cursor?: string };

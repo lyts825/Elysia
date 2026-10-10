@@ -3,6 +3,7 @@ import { ApiError } from './api';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import type { Agent, Artifact, Message, Operation, Task } from '../../../packages/contracts/src/index';
 import type {
+  PreviewEntry,
   PreviewFile,
   PreviewResourceIssue,
   PreviewSnapshot,
@@ -108,7 +109,6 @@ export function PreviewPanel({
   const [filesByTask, setFilesByTask] = useState<Record<string, string>>(
     () => readingCheckpoint<Record<string, string>>(client, selectionKey) || {},
   );
-  const requestedFile = useRef<(PreviewFileTarget & { runId: string }) | null>(null);
   const handledTarget = useRef(
     readingCheckpoint<{ requestId: string }>(client, selectionKey + ':target')?.requestId || '',
   );
@@ -155,7 +155,60 @@ export function PreviewPanel({
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const current = snapshot?.runId === runId && snapshot.taskId === taskId ? snapshot : null;
-  const selectedEntry = current?.files.find((file) => file.path === selected);
+  const [unlistedEntry, setUnlistedEntry] = useState<{
+    key: string;
+    value?: PreviewEntry;
+    error?: string;
+    pending: boolean;
+  } | null>(null);
+  const entryLoad = useRef<{
+    key: string;
+    controller: AbortController;
+    promise: Promise<void>;
+  } | null>(null);
+  const entryKey = JSON.stringify([runId, taskId, selected, current?.workspace, current?.baseline]);
+  const listedEntry = current?.files.find((file) => file.path === selected);
+  const currentUnlistedEntry = unlistedEntry?.key === entryKey ? unlistedEntry : null;
+  const selectedEntry = listedEntry || currentUnlistedEntry?.value;
+  const readEntry = useCallback(
+    (next: PreviewSnapshot, name: string) => {
+      if (!next.workspace || !name || next.taskId !== taskId) return Promise.resolve();
+      const key = JSON.stringify([runId, taskId, name, next.workspace, next.baseline]);
+      if (entryLoad.current?.key === key && !entryLoad.current.controller.signal.aborted)
+        return entryLoad.current.promise;
+      entryLoad.current?.controller.abort();
+      const request = { key, controller: new AbortController(), promise: Promise.resolve() };
+      entryLoad.current = request;
+      setUnlistedEntry((old) => (old?.key === key ? { ...old, pending: true } : { key, pending: true }));
+      request.promise = api<PreviewEntry>(
+        `/runs/${runId}/tasks/${taskId}/preview/entry?` + new URLSearchParams({ path: name }),
+        undefined,
+        undefined,
+        request.controller.signal,
+      )
+        .then((value) => {
+          if (!request.controller.signal.aborted && selectedRef.current === name)
+            setUnlistedEntry({ key, value, pending: false });
+        })
+        .catch((issue) => {
+          if (!request.controller.signal.aborted && selectedRef.current === name)
+            setUnlistedEntry({
+              key,
+              error: issue instanceof Error ? issue.message : '无法核对文件',
+              pending: false,
+            });
+        })
+        .finally(() => {
+          if (entryLoad.current === request) entryLoad.current = null;
+        });
+      return request.promise;
+    },
+    [api, runId, taskId],
+  );
+  useEffect(() => {
+    if (current && selected && !listedEntry) void readEntry(current, selected);
+    return () => entryLoad.current?.controller.abort();
+  }, [readEntry, selected, listedEntry?.path, current?.workspace, current?.baseline]);
   const resourceIssues = selectedEntry?.renderIssues?.slice(0, 10) || [];
   const resourceIssueCount = selectedEntry?.renderIssueCount ?? selectedEntry?.renderIssues?.length ?? 0;
   const context = JSON.stringify([
@@ -227,7 +280,6 @@ export function PreviewPanel({
   };
   const chooseFile = useCallback(
     (path: string, anchor = '') => {
-      requestedFile.current = null;
       selectedRef.current = path;
       setFilesByTask((old) => ({ ...old, [taskId]: path }));
       setPendingAnchor(anchor ? { taskId, path, anchor, requestId: crypto.randomUUID() } : null);
@@ -275,7 +327,6 @@ export function PreviewPanel({
     handledTarget.current = fileTarget.requestId;
     saveReadingCheckpoint(client, selectionKey + ':target', { requestId: fileTarget.requestId });
     chooseFile(fileTarget.path, fileTarget.anchor);
-    requestedFile.current = { ...fileTarget, runId };
     setFilter('');
     setView('page');
     setFileNotice('');
@@ -371,10 +422,7 @@ export function PreviewPanel({
             : { ...next, runId },
         );
         setFilesByTask((old) => {
-          if (next.files.some((f) => f.path === old[taskId])) return old;
-          const requested = requestedFile.current;
-          if (requested?.runId === runId && requested.taskId === taskId && requested.path === old[taskId])
-            return old;
+          if (old[taskId]) return old;
           const first =
             next.files.find((f) => f.change !== 'D' && /(?:dist|build|out)\/index\.html?$/.test(f.path)) ||
             next.files.find((f) => f.change !== 'D' && /(^|\/)index\.html?$/.test(f.path)) ||
@@ -382,14 +430,9 @@ export function PreviewPanel({
             next.files[0];
           return { ...old, [taskId]: first?.path || '' };
         });
-        const requested = requestedFile.current;
-        if (
-          requested?.runId === runId &&
-          requested.taskId === taskId &&
-          !next.files.some((file) => file.path === requested.path)
-        )
-          setFileNotice('链接文件未找到：' + requested.path);
-        else setFileNotice((old) => (old.startsWith('链接文件未找到：') ? '' : old));
+        const name = selectedRef.current;
+        if (name && !next.files.some((file) => file.path === name)) await readEntry(next, name);
+        if (disposed) return;
         setUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
         setSnapshotError('');
       } catch (e) {
@@ -404,7 +447,7 @@ export function PreviewPanel({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [runId, taskId, auto, refresh]);
+  }, [runId, taskId, auto, refresh, readEntry]);
   useEffect(() => {
     setContent((old) =>
       old?.selectionContext === context &&
@@ -508,7 +551,11 @@ export function PreviewPanel({
     if (auto) fileRetries.current?.resume();
     else fileRetries.current?.cancel();
   }, [auto]);
-  const visible = current?.files.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase())) || [];
+  const pickerFiles =
+    selectedEntry && !listedEntry
+      ? [selectedEntry, ...(current?.files || [])].slice(0, 1500)
+      : current?.files || [];
+  const visible = pickerFiles.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase()));
   const selectedIndex = visible.findIndex((file) => file.path === selected);
   const selectedFile =
     selectedEntry &&
@@ -939,6 +986,14 @@ export function PreviewPanel({
                 title="等待第一个文件"
                 text="代理创建文件后会自动显示，也可以切换到其他代理查看进展。"
               />
+            ) : !selectedEntry ? (
+              currentUnlistedEntry?.error ? (
+                <PreviewEmpty title="无法读取所选文件" text={currentUnlistedEntry.error} />
+              ) : (
+                <div className="preview-loading" role="status">
+                  正在核对文件…
+                </div>
+              )
             ) : loading && !selectedFile ? (
               <div className="preview-loading" role="status">
                 正在读取文件…

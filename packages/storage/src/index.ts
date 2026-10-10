@@ -12,7 +12,7 @@ import {
 import path from 'node:path';
 import os from 'node:os';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { AppError, type Entity, type Event } from '../../contracts/src/index.js';
+import { AppError, type Entity, type Event, type Run, type Task } from '../../contracts/src/index.js';
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
 export function stable(value: unknown): string {
@@ -99,6 +99,8 @@ function projection(table: Table, entity: any) {
     id: entity.id,
     runId: entity.runId,
     revision: entity.revision,
+    ...(['runs', 'tasks', 'requests', 'tool_operations'].includes(table) ? { status: entity.status } : {}),
+    ...(table === 'runs' ? { archived: entity.archived } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages' ? { sessionId: entity.sessionId, ordinal: entity.ordinal } : {}),
     ...(readModel ? { readModelVersion: 1, readModel } : {}),
@@ -324,10 +326,52 @@ export class Store {
     ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
   }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
-  refreshReadProjection(table: 'runs' | 'requests' | 'tool_operations', entity: Entity) {
+  refreshReadProjection(table: 'runs' | 'tasks' | 'requests' | 'tool_operations', entity: Entity) {
     this.db
       .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
       .run(projection(table, entity), entity.id, entity.revision);
+  }
+  /** Filter redundant state before expanding bodies. Legacy projections are warmed once. */
+  stateCandidates<T extends Entity>(
+    table: 'runs' | 'tasks' | 'requests' | 'tool_operations',
+    statuses: string[],
+    options: { runId?: string; exclude?: boolean; unarchived?: boolean } = {},
+  ): T[] {
+    if (!statuses.length) return [];
+    const state = `COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))`;
+    const clauses = [
+      `(${state} IS NULL OR ${state} ${options.exclude ? 'NOT ' : ''}IN (${statuses.map(() => '?').join(',')}))`,
+      ...(options.runId ? ['run_id=?'] : []),
+      ...(options.unarchived
+        ? [`COALESCE(json_extract(data,'$.archived'),json_extract(data,'$.readModel.archived'),0)=0`]
+        : []),
+    ];
+    const rows = this.db
+      .prepare(`SELECT id,data,content FROM ${table} WHERE ${clauses.join(' AND ')} ORDER BY rowid`)
+      .all(...statuses, ...(options.runId ? [options.runId] : [])) as {
+      id: string;
+      data: string;
+      content: Uint8Array;
+    }[];
+    const wanted = new Set(statuses);
+    return rows.flatMap((row) => {
+      const metadata = JSON.parse(row.data);
+      const entity = this.hydrate(table, row.content ? expand(row.content) : metadata) as T & {
+        status?: string;
+        archived?: boolean;
+      };
+      if (metadata.status === undefined) this.refreshReadProjection(table, entity);
+      return (options.exclude ? !wanted.has(entity.status || '') : wanted.has(entity.status || '')) &&
+        (!options.unarchived || !entity.archived)
+        ? [entity]
+        : [];
+    });
+  }
+  schedulerCandidates(): { runs: Run[]; tasks: Task[] } {
+    return {
+      runs: this.stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true }),
+      tasks: this.stateCandidates<Task>('tasks', ['READY']),
+    };
   }
   messagePage<T>(runId: string, limit: number, before?: string) {
     let boundary: number | undefined;

@@ -103,7 +103,7 @@ export class NativeExecutor implements ExecutorAdapter {
   }
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
-    for (const task of this.kernel.store.all<Task>('tasks')) {
+    for (const task of this.kernel.store.schedulerCandidates().tasks) {
       if (task.status !== 'READY' || this.active.has(task.id)) continue;
       const run = this.kernel.store.require<Run>('runs', task.runId);
       if (this.schedulableRun(run))
@@ -151,7 +151,7 @@ export class NativeExecutor implements ExecutorAdapter {
     this.capacityController.abort();
     if (this.timer) clearInterval(this.timer);
     for (const run of this.kernel.store
-      .all<Run>('runs')
+      .stateCandidates<Run>('runs', ['READY', 'RUNNING'])
       .filter((r) => this.acceptRun(r) && ['READY', 'RUNNING'].includes(r.status)))
       this.kernel.action(run.id, 'pause');
     for (const value of this.active.values()) value.controller.abort();
@@ -169,23 +169,23 @@ export class NativeExecutor implements ExecutorAdapter {
     this.ticking = true;
     try {
       for (let run of this.kernel.store
-        .all<Run>('runs')
+        .stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true })
         .filter((r) => this.acceptRun(r) && !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if (
           ![...this.active.values()].some((a) => a.runId === run.id) &&
           (run.kind === 'chat' ||
             (!this.kernel.store
-              .all<Task>('tasks', run.id)
+              .stateCandidates<Task>('tasks', ['VERIFYING', 'WAITING'], { runId: run.id })
               .some(
                 (t) =>
                   t.status === 'VERIFYING' || (t.status === 'WAITING' && t.waitReason === 'verification'),
               ) &&
               !this.kernel.store
-                .all<RequestRecord>('requests', run.id)
+                .stateCandidates<RequestRecord>('requests', ['RESERVED', 'UNKNOWN'], { runId: run.id })
                 .some((r) => ['RESERVED', 'UNKNOWN'].includes(r.status)) &&
               !this.kernel.store
-                .all<Operation>('tool_operations', run.id)
+                .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: run.id })
                 .some((o) => ['INTENT', 'UNCERTAIN'].includes(o.status))))
         ) {
           // Apply safe project feedback before checking its unchanged cumulative time budget.
@@ -200,7 +200,7 @@ export class NativeExecutor implements ExecutorAdapter {
           ['READY', 'RUNNING'].includes(run.status)
         ) {
           for (const t of this.kernel.store
-            .all<Task>('tasks', run.id)
+            .stateCandidates<Task>('tasks', ['READY', 'RUNNING'], { runId: run.id })
             .filter((t) => ['READY', 'RUNNING'].includes(t.status)))
             this.waitAtLimit(t, 'TIME_BUDGET', '运行时间达到上限');
           await this.interrupt(run.id);
@@ -208,7 +208,7 @@ export class NativeExecutor implements ExecutorAdapter {
         }
         this.kernel.wakeChildren(run.id);
       }
-      const tasks = this.kernel.store.all<Task>('tasks').filter((t) => t.status === 'READY');
+      const tasks = this.kernel.store.stateCandidates<Task>('tasks', ['READY']);
       if (
         this.terminalResources &&
         tasks.some((task) => {
@@ -218,10 +218,13 @@ export class NativeExecutor implements ExecutorAdapter {
       )
         await this.terminalCapacityRefresh?.(this.capacityController.signal);
       if (this.stopped) return;
-      for (const task of tasks) {
+      for (const candidate of tasks) {
         if (this.active.size >= 4) break;
+        const task = this.kernel.store.get<Task>('tasks', candidate.id);
+        if (!task || task.status !== 'READY') continue;
         if (this.active.has(task.id)) continue;
-        const run = this.kernel.store.require<Run>('runs', task.runId);
+        const run = this.kernel.store.get<Run>('runs', task.runId);
+        if (!run) continue;
         if (!this.acceptRun(run)) continue;
         if (run.archived || !['READY', 'RUNNING'].includes(run.status)) continue;
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
@@ -644,7 +647,7 @@ export class NativeExecutor implements ExecutorAdapter {
         (run.projectId && store.require<Project>('projects', run.projectId).archived)
       )
         return;
-      for (const task of store.all<Task>('tasks', run.id)) {
+      for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], { runId: run.id })) {
         const resumeAt = this.rateLimitResumeAt(task);
         if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
         if (task.status === 'WAITING' && task.waitReason === 'rate_limit')
@@ -653,7 +656,7 @@ export class NativeExecutor implements ExecutorAdapter {
       if (
         run.status === 'WAITING' &&
         run.reason === 'rate_limit' &&
-        store.all<Task>('tasks', run.id).some((task) => {
+        store.stateCandidates<Task>('tasks', ['READY'], { runId: run.id }).some((task) => {
           const resumeAt = this.rateLimitResumeAt(task);
           return (
             task.status === 'READY' &&

@@ -161,7 +161,7 @@ export class PreviewService {
       renderIssueCount: issues.length,
     };
   }
-  private async renderState(task: Task, name: string, active: boolean) {
+  private async renderState(task: Task, name: string, active: boolean, signal?: AbortSignal) {
     const scope = path.posix.dirname(name) === '.' ? '' : path.posix.dirname(name);
     const token = this.tokens.get(capabilityKey(task.id, scope, name));
     const capability = token ? this.capabilities.get(token) : undefined;
@@ -169,6 +169,7 @@ export class PreviewService {
     if (!active) return this.renderSummary(capability);
     capability.touched = Date.now();
     for (const resource of capability.resources.keys()) {
+      signal?.throwIfAborted();
       // Invalid request paths share one safe diagnostic; they never enter filesystem observation.
       if (!resource) continue;
       const observation = ++capability.observation;
@@ -215,7 +216,7 @@ export class PreviewService {
     invariant(within(root, await fs.realpath(target)), 'PREVIEW_PATH', '文件超出当前代理工作区');
     return target;
   }
-  private async git(task: Task, args: string[], limit = 1024 * 1024) {
+  private async git(task: Task, args: string[], limit = 1024 * 1024, signal?: AbortSignal) {
     const result = await this.gateway.processes.run(
       'preview:' + task.id,
       'git',
@@ -223,7 +224,9 @@ export class PreviewService {
       task.workspace!,
       8000,
       limit,
+      signal,
     );
+    signal?.throwIfAborted();
     invariant(
       result.exitCode === 0 && !result.timedOut,
       'PREVIEW_GIT',
@@ -359,6 +362,54 @@ export class PreviewService {
     const name = normalized(input);
     const filename = await this.filename(task, name);
     return this.locator.locate(filename, JSON.stringify([runId, taskId, name]), options);
+  }
+  async entry(runId: string, taskId: string, input: string, signal?: AbortSignal): Promise<PreviewEntry> {
+    signal?.throwIfAborted();
+    const task = this.task(runId, taskId),
+      name = normalized(input);
+    try {
+      const filename = await this.filename(task, name),
+        stat = await fs.stat(filename);
+      signal?.throwIfAborted();
+      invariant(stat.isFile(), 'PREVIEW_NOT_FILE', '此路径不是普通文件');
+      invariant(Number.isSafeInteger(stat.size), 'FILE_SIZE', '文件大小超出安全读取范围');
+      let change: PreviewEntry['change'] = task.baseline ? '' : 'A';
+      if (task.baseline) {
+        const pathspec = ':(literal)' + name;
+        const [tracked, changed] = await Promise.all([
+          this.git(task, ['ls-files', '-z', '--cached', '--', pathspec], 4096, signal),
+          this.git(
+            task,
+            [
+              'diff',
+              '--no-ext-diff',
+              '--no-textconv',
+              '--no-renames',
+              '--name-status',
+              '-z',
+              task.baseline,
+              '--',
+              pathspec,
+            ],
+            4096,
+            signal,
+          ),
+        ]);
+        const status = changed.stdout.split('\0')[0];
+        change = !tracked.stdout ? 'A' : status ? (status === 'A' ? 'A' : 'M') : '';
+      }
+      const render = /\.html?$/i.test(name) ? await this.renderState(task, name, true, signal) : {};
+      invariant((await this.filename(task, name)) === filename, 'PREVIEW_PATH', '文件路径在读取时改变');
+      signal?.throwIfAborted();
+      return { path: name, size: stat.size, modifiedAt: stat.mtimeMs, change, ...render };
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code || ''))
+        throw new AppError('PREVIEW_MISSING', '文件不存在', false, null, 404);
+      if (['EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code || ''))
+        throw new AppError('PREVIEW_UNREADABLE', '此文件无法读取');
+      throw error;
+    }
   }
   async file(
     runId: string,

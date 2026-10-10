@@ -5,6 +5,24 @@ import { TerminalAppId, type TerminalCliInstallationPhase } from '../../contract
 import type { DockerCommandOptions, DockerCommandResult, DockerTransport } from './docker-agent.js';
 import { TerminalResourcePool } from './terminal-resources.js';
 import type { TerminalCliCapability } from '../../contracts/src/terminal-runtime.js';
+import type { Store } from '../../storage/src/index.js';
+import { z } from 'zod';
+
+const ProbeRecord = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().regex(/^elysia-cli-check-[a-f0-9-]{36}$/),
+    owner: z.string().regex(/^[a-f0-9]{32}$/),
+    imageId: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  })
+  .strict();
+type ProbeRecord = z.infer<typeof ProbeRecord>;
+type SharedProbe = {
+  id: string;
+  controller: AbortController;
+  subscribers: Set<symbol>;
+  promise: Promise<DockerCommandResult>;
+};
 
 const packages = {
   codex: { name: '@openai/codex', version: '0.162.1', executable: 'codex' },
@@ -46,14 +64,232 @@ export class DockerCliManager {
   private owner: string;
   private capacityProbe?: Promise<void>;
   private capacityCheckedAt = 0;
+  private readonly resources: TerminalResourcePool;
+  private readonly inFlight = new Map<string, SharedProbe>();
+  private readonly probeRecords = new Map<string, ProbeRecord>();
+  private reconciling?: Promise<void>;
+  private closed = false;
   constructor(
     private directory: string,
-    private options: { transport: DockerTransport; resources?: TerminalResourcePool },
+    private options: { transport: DockerTransport; resources?: TerminalResourcePool; store?: Store },
   ) {
     this.owner = createHash('sha256').update(path.resolve(directory)).digest('hex').slice(0, 32);
+    this.resources = options.resources ?? new TerminalResourcePool();
+    if (!options.resources) this.resources.configure(4, 4096);
+    for (const row of options.store?.db
+      .prepare("SELECT value FROM storage_meta WHERE key LIKE 'cli-probe:%'")
+      .all() ?? []) {
+      try {
+        const record = ProbeRecord.parse(JSON.parse((row as { value: string }).value));
+        if (record.owner !== this.owner || record.name !== `elysia-cli-check-${record.id}`) continue;
+        this.probeRecords.set(record.id, record);
+        this.resources.hold(record.id, '服务曾中断，离线检测容器尚未确认清理', 'probe');
+      } catch {
+        /* Unknown records do not authorize Docker mutations. */
+      }
+    }
   }
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.options.transport.run(args, { cwd: this.directory, ...options });
+  }
+  private saveProbe(record: ProbeRecord) {
+    this.probeRecords.set(record.id, record);
+    this.options.store?.db
+      .prepare(
+        'INSERT INTO storage_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      )
+      .run('cli-probe:' + record.id, JSON.stringify(record));
+  }
+  private async cleanupProbe(id: string) {
+    const record = this.probeRecords.get(id);
+    if (!record) return;
+    const inspected = await this.command(['inspect', '--format', '{{json .Config.Labels}}', record.name], {
+      timeoutMs: 12000,
+      outputLimit: 4000,
+    });
+    if (!complete(inspected)) {
+      invariant(
+        !inspected.timedOut && !inspected.truncated && /No such (container|object)/i.test(inspected.stderr),
+        'TERMINAL_CLI_CLEANUP',
+        '离线检测容器尚未确认清理，请检查 Docker 后重新检测',
+      );
+    } else {
+      let labels: Record<string, string>;
+      try {
+        labels = JSON.parse(inspected.stdout);
+      } catch {
+        throw new AppError('TERMINAL_CLI_CLEANUP', '无法确认离线检测容器归属，请检查 Docker');
+      }
+      invariant(
+        labels?.['io.elysia.cli-manager'] === record.owner && labels?.['io.elysia.cli-probe'] === record.id,
+        'TERMINAL_CLI_CLEANUP',
+        '离线检测容器归属不匹配，未执行清理',
+      );
+      const removed = await this.command(['rm', '--force', record.name], {
+        timeoutMs: 12000,
+        outputLimit: 4000,
+      });
+      invariant(
+        complete(removed) ||
+          (!removed.timedOut && !removed.truncated && /No such (container|object)/i.test(removed.stderr)),
+        'TERMINAL_CLI_CLEANUP',
+        '离线检测容器尚未确认清理，请检查 Docker 后重新检测',
+      );
+    }
+    this.probeRecords.delete(id);
+    this.options.store?.db.prepare('DELETE FROM storage_meta WHERE key=?').run('cli-probe:' + id);
+    this.resources.confirmStopped(id);
+    this.resources.release(id);
+  }
+  private reconcileProbes() {
+    if (this.reconciling) return this.reconciling;
+    this.reconciling = (async () => {
+      for (const item of this.resources
+        .snapshot()
+        .reservations.filter((item) => item.kind === 'probe' && item.held))
+        await this.cleanupProbe(item.id);
+    })().finally(() => {
+      this.reconciling = undefined;
+    });
+    return this.reconciling;
+  }
+  private sharedProbe(
+    key: string,
+    imageId: string,
+    executable: string,
+    args: string[],
+    signal?: AbortSignal,
+    sponsorId?: string,
+  ): Promise<DockerCommandResult> {
+    invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '终端检测服务正在退出，请稍后重试');
+    signal?.throwIfAborted();
+    let entry = this.inFlight.get(key);
+    if (!entry) {
+      const id = randomUUID(),
+        controller = new AbortController();
+      entry = {
+        id,
+        controller,
+        subscribers: new Set(),
+        promise: Promise.resolve()
+          .then(async () => {
+            const timer = setTimeout(
+              () =>
+                controller.abort(
+                  new AppError('TERMINAL_CLI_PROBE_TIMEOUT', '离线检测等待或运行超时，请稍后重试'),
+                ),
+              30000,
+            );
+            let dispatched = false;
+            try {
+              await this.refreshResourceCapacity(controller.signal);
+              await this.resources.acquireProbe(id, controller.signal, sponsorId);
+              controller.signal.throwIfAborted();
+              const record = { id, name: `elysia-cli-check-${id}`, owner: this.owner, imageId };
+              this.saveProbe(record);
+              dispatched = true;
+              return await this.command(
+                [
+                  'run',
+                  '--rm',
+                  '--pull',
+                  'never',
+                  '--name',
+                  record.name,
+                  '--label',
+                  `io.elysia.cli-manager=${this.owner}`,
+                  '--label',
+                  `io.elysia.cli-probe=${id}`,
+                  '--network',
+                  'none',
+                  '--read-only',
+                  '--tmpfs',
+                  '/tmp:rw,noexec,nosuid,size=32m',
+                  '--cap-drop',
+                  'ALL',
+                  '--security-opt',
+                  'no-new-privileges',
+                  '--pids-limit',
+                  '64',
+                  '--memory',
+                  '256m',
+                  '--cpus',
+                  '1',
+                  '--user',
+                  '1000:1000',
+                  '--env',
+                  'HOME=/tmp',
+                  '--entrypoint',
+                  executable,
+                  imageId,
+                  ...args,
+                ],
+                {
+                  signal: controller.signal,
+                  timeoutMs: 20000,
+                  outputLimit: args[0] === '--version' ? 4000 : 16000,
+                },
+              );
+            } finally {
+              clearTimeout(timer);
+              if (dispatched) {
+                try {
+                  await this.cleanupProbe(id);
+                } catch (error) {
+                  this.resources.hold(id, '离线检测容器尚未确认停止，资源暂时保留', 'probe');
+                  throw error;
+                }
+              } else this.resources.release(id);
+            }
+          })
+          .finally(() => {
+            if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
+          }),
+      };
+      this.inFlight.set(key, entry);
+    }
+    this.resources.sponsorProbe(entry.id, sponsorId);
+    const token = Symbol(),
+      current = entry;
+    current.subscribers.add(token);
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const detach = () => {
+        current.subscribers.delete(token);
+        signal?.removeEventListener('abort', abort);
+      };
+      const abort = () => {
+        if (finished) return;
+        finished = true;
+        detach();
+        if (!current.subscribers.size) current.controller.abort(signal?.reason);
+        reject(signal?.reason ?? new AppError('TERMINAL_CLI_CANCELLED', '检测已取消'));
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+      current.promise.then(
+        (value) => {
+          if (!finished) {
+            finished = true;
+            detach();
+            resolve(value);
+          }
+        },
+        (error) => {
+          if (!finished) {
+            finished = true;
+            detach();
+            reject(error);
+          }
+        },
+      );
+      if (signal?.aborted) abort();
+    });
+  }
+  async dispose() {
+    this.closed = true;
+    for (const probe of this.inFlight.values())
+      probe.controller.abort(new AppError('TERMINAL_CLI_CLOSED', '终端检测服务正在退出'));
+    await Promise.allSettled([...this.inFlight.values()].map((probe) => probe.promise));
   }
   async refreshResourceCapacity(signal?: AbortSignal, force = false) {
     if (!this.options.resources) return;
@@ -70,11 +306,12 @@ export class DockerCliManager {
         invariant(info.os === 'linux', 'DOCKER_PLATFORM', '终端需要 Docker Linux 容器模式');
         this.options.resources!.configure(info.cpus, info.memoryBytes / 1024 / 1024);
       } catch (error) {
-        this.options.resources!.unavailable(
-          error instanceof AppError ? error.message : 'Docker 资源检测未完成',
-        );
+        if (!signal?.aborted)
+          this.options.resources!.unavailable(
+            error instanceof AppError ? error.message : 'Docker 资源检测未完成',
+          );
       } finally {
-        this.capacityCheckedAt = Date.now();
+        if (!signal?.aborted) this.capacityCheckedAt = Date.now();
       }
     })().finally(() => {
       this.capacityProbe = undefined;
@@ -137,13 +374,18 @@ export class DockerCliManager {
     rawAppId: TerminalAppId,
     rawProfile: AgentTerminalProfile,
     signal?: AbortSignal,
+    sponsorId?: string,
   ): Promise<TerminalCliStatus> {
     const appId = TerminalAppId.parse(rawAppId),
       profile = AgentTerminalProfile.parse(rawProfile);
     let imageAvailable = false,
       engineAvailable = false;
     try {
+      invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '终端检测服务正在退出，请稍后重试');
+      signal?.throwIfAborted();
       await this.engine(signal);
+      await this.reconcileProbes();
+      signal?.throwIfAborted();
       engineAvailable = true;
       const imageId = await this.image(profile.image, signal);
       if (!imageId)
@@ -165,56 +407,14 @@ export class DockerCliManager {
       const probeKey = `${imageId}:${executable}`;
       const cached = this.probes.get(probeKey);
       if (cached) return { ...cached };
-      const name = `elysia-cli-check-${randomUUID()}`;
-      let result: DockerCommandResult;
-      try {
-        result = await this.command(
-          [
-            'run',
-            '--rm',
-            '--pull',
-            'never',
-            '--name',
-            name,
-            '--label',
-            `io.elysia.cli-manager=${this.owner}`,
-            '--network',
-            'none',
-            '--read-only',
-            '--tmpfs',
-            '/tmp:rw,noexec,nosuid,size=32m',
-            '--cap-drop',
-            'ALL',
-            '--security-opt',
-            'no-new-privileges',
-            '--pids-limit',
-            '64',
-            '--memory',
-            '256m',
-            '--cpus',
-            '1',
-            '--user',
-            '1000:1000',
-            '--env',
-            'HOME=/tmp',
-            '--entrypoint',
-            executable,
-            imageId,
-            '--version',
-          ],
-          { signal, timeoutMs: 20000, outputLimit: 4000 },
-        );
-      } finally {
-        // --rm handles normal exits; explicit removal handles killed or timed-out Docker clients.
-        const cleanup = await this.command(['rm', '--force', name], { timeoutMs: 12000 }).catch(
-          () => undefined,
-        );
-        invariant(
-          cleanup && (complete(cleanup) || /No such (container|object)/i.test(cleanup.stderr)),
-          'TERMINAL_CLI_CLEANUP',
-          'CLI 检测容器未确认清理，请检查 Docker 后重新检测',
-        );
-      }
+      const result = await this.sharedProbe(
+        'version:' + probeKey,
+        imageId,
+        executable,
+        ['--version'],
+        signal,
+        sponsorId,
+      );
       if (!complete(result))
         return {
           available: false,
@@ -345,6 +545,7 @@ export class DockerCliManager {
       onPhase?.('verify');
       const image = await this.image(imageTag, signal);
       invariant(image, 'TERMINAL_CLI_INSTALL', '构建完成后无法确认镜像，请重新检测');
+      this.options.resources?.release(reservationId);
       const verified = await this.check(
         appId,
         AgentTerminalProfile.parse({
@@ -409,57 +610,11 @@ export class DockerCliManager {
   ): Promise<TerminalResumeCapability> {
     const status = await this.check('codex', { ...profile, image: imageId });
     if (!status.available) return { supported: false, reason: status.message };
-    const name = `elysia-cli-check-${randomUUID()}`;
-    let result: DockerCommandResult;
-    try {
-      result = await this.command(
-        [
-          'run',
-          '--rm',
-          '--pull',
-          'never',
-          '--name',
-          name,
-          '--label',
-          `io.elysia.cli-manager=${this.owner}`,
-          '--network',
-          'none',
-          '--read-only',
-          '--tmpfs',
-          '/tmp:rw,noexec,nosuid,size=32m',
-          '--cap-drop',
-          'ALL',
-          '--security-opt',
-          'no-new-privileges',
-          '--pids-limit',
-          '64',
-          '--memory',
-          '256m',
-          '--cpus',
-          '1',
-          '--user',
-          '1000:1000',
-          '--env',
-          'HOME=/tmp',
-          '--entrypoint',
-          'codex',
-          imageId,
-          'exec',
-          'resume',
-          '--help',
-        ],
-        { timeoutMs: 20000, outputLimit: 16000 },
-      );
-    } finally {
-      const cleanup = await this.command(['rm', '--force', name], { timeoutMs: 12000 }).catch(
-        () => undefined,
-      );
-      invariant(
-        cleanup && (complete(cleanup) || /No such (container|object)/i.test(cleanup.stderr)),
-        'TERMINAL_CLI_CLEANUP',
-        'CLI 检测容器未确认清理，请检查 Docker 后重新检测',
-      );
-    }
+    const result = await this.sharedProbe('resume-help:' + imageId, imageId, 'codex', [
+      'exec',
+      'resume',
+      '--help',
+    ]);
     const supported =
       complete(result) &&
       /codex exec resume/.test(result.stdout) &&

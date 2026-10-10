@@ -68,6 +68,7 @@ import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
+import { ReadCoordinator } from './ReadCoordinator';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
 import { conversationIndex } from './ConversationIndex';
 import {
@@ -114,7 +115,7 @@ type Detail = {
 };
 type Provider = ProviderConfig & { keyConfigured: boolean };
 type ArtifactView = Artifact;
-type ReadSource = 'session' | 'lists' | 'detail';
+type ReadSource = 'session' | 'lists' | 'detail' | 'configuration';
 type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request: number; runId?: string };
 function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
   return {
@@ -351,9 +352,11 @@ function App({
       ? 'detail'
       : readIssues.lists
         ? 'lists'
-        : readIssues.session
-          ? 'session'
-          : undefined;
+        : readIssues.configuration
+          ? 'configuration'
+          : readIssues.session
+            ? 'session'
+            : undefined;
   const readIssue = readSource ? readIssues[readSource] : undefined;
   const project = projects.find((p) => p.id === projectId);
   const runSetupKey = JSON.stringify([projectId, project ? 'task' : 'chat', draft]);
@@ -454,6 +457,7 @@ function App({
   }, [narrowLayout, compactLayout, runId]);
   const mainMotion = usePositionMotion<HTMLElement>();
   const activeRunId = useRef('');
+  const heldNavigation = useRef<{ runId: string; operationId: string; epoch: number } | undefined>(undefined);
   const detailRequest = useRef(0);
   const runStream = useRef(new RunStream());
   const streamRun = useRef('');
@@ -465,6 +469,20 @@ function App({
   const savedNavigation = useRef<NavigationState | undefined>(undefined);
   const navigationInitialized = useRef(false);
   const listRequest = useRef(0);
+  const listReads = useRef(new ReadCoordinator());
+  const detailReads = useRef(new ReadCoordinator());
+  const configurationReads = useRef(new ReadCoordinator());
+  const configurationRequest = useRef(0);
+  const configurationAt = useRef(0);
+  const listData = useRef({ projects: [] as Project[], spaces: [] as ProjectSpace[] });
+  useEffect(
+    () => () => {
+      listReads.current.stop();
+      detailReads.current.stop();
+      configurationReads.current.stop();
+    },
+    [],
+  );
   const listedEntities = useRef({ projects: new Set<string>(), runs: new Set<string>() });
   const sessionReady = useRef(false);
   const connectPending = useRef(false);
@@ -529,22 +547,45 @@ function App({
     },
     [closeArtifact],
   );
-  const refresh = useCallback(async () => {
-    const request = ++listRequest.current;
-    const epoch = navigationEpoch.current;
-    let p: Project[],
-      listing: {
-        runs: RunListItem[];
-        included: RunListItem[];
-        page: RecordPage;
-        projectCounts: Record<string, number>;
-      },
-      v: Provider[],
-      s: ProjectSpace[],
-      settings: SurfaceTerminalSettings | null,
-      control: TerminalControlOverview | null;
-    try {
+  const refreshConfiguration = useCallback(
+    (force = false) => {
+      if (!force && Date.now() - configurationAt.current < 60000) return Promise.resolve(true);
+      return configurationReads.current.run(
+        'configuration',
+        async (signal) => {
+          const request = ++configurationRequest.current;
+          const result = await Promise.allSettled([
+            terminalSurface
+              ? Promise.resolve([] as Provider[])
+              : api<Provider[]>('/providers', undefined, undefined, signal),
+            terminalSurface
+              ? api<SurfaceTerminalSettings>('/terminal/settings', undefined, undefined, signal)
+              : Promise.resolve(null),
+            terminalSurface
+              ? api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal)
+              : Promise.resolve(null),
+          ] as const);
+          if (signal.aborted) return false;
+          configurationAt.current = Date.now();
+          if (result[0].status === 'fulfilled') setProviders(result[0].value);
+          if (result[1].status === 'fulfilled') setTerminalSettings(result[1].value);
+          if (result[2].status === 'fulfilled') setTerminalControl(result[2].value);
+          const failure = result.find((entry) => entry.status === 'rejected');
+          if (failure?.status === 'rejected')
+            setReadIssues((old) => ({ ...old, configuration: readIssueFor(failure.reason, request) }));
+          else clearReadIssue('configuration', request);
+          return !failure;
+        },
+        force,
+      );
+    },
+    [terminalSurface, clearReadIssue],
+  );
+  const refresh = useCallback(
+    async (forceConfiguration = false, trailing = false) => {
+      void refreshConfiguration(forceConfiguration);
       const position = runListPosition.current;
+      const epoch = navigationEpoch.current;
       const listQuery = new URLSearchParams({ limit: '100' });
       if (position.before) listQuery.set('before', position.before);
       if (position.query) listQuery.set('query', position.query);
@@ -556,67 +597,94 @@ function App({
         .map(([key]) => key.slice('pinned:run:'.length))
         .slice(0, 40);
       if (pinned.length) listQuery.set('pinned', pinned.join(','));
-      const readListing = async () => {
-        try {
-          return await api<typeof listing>('/runs?' + listQuery.toString());
-        } catch (issue) {
-          if (
-            issue instanceof ApiError &&
-            issue.code === 'RECORD_CURSOR_MISSING' &&
-            position.before &&
-            request === listRequest.current &&
-            epoch === navigationEpoch.current &&
-            runListPosition.current === position
-          ) {
-            runListPosition.current = { ...position, before: '', trail: [] };
-            listQuery.delete('before');
-            return api<typeof listing>('/runs?' + listQuery.toString());
+      const key = listQuery.toString();
+      return listReads.current.run(
+        key,
+        async (signal) => {
+          const request = ++listRequest.current;
+          type Listing = {
+            runs: RunListItem[];
+            included: RunListItem[];
+            page: RecordPage;
+            projectCounts: Record<string, number>;
+          };
+          const readListing = async () => {
+            try {
+              return await api<Listing>('/runs?' + listQuery.toString(), undefined, undefined, signal);
+            } catch (issue) {
+              if (
+                !signal.aborted &&
+                issue instanceof ApiError &&
+                issue.code === 'RECORD_CURSOR_MISSING' &&
+                position.before &&
+                request === listRequest.current &&
+                epoch === navigationEpoch.current &&
+                runListPosition.current === position
+              ) {
+                runListPosition.current = { ...position, before: '', trail: [] };
+                listQuery.delete('before');
+                return api<Listing>('/runs?' + listQuery.toString(), undefined, undefined, signal);
+              }
+              throw issue;
+            }
+          };
+          const [projectResult, listingResult, spaceResult] = await Promise.allSettled([
+            api<Project[]>('/projects', undefined, undefined, signal),
+            readListing(),
+            api<ProjectSpace[]>('/spaces', undefined, undefined, signal),
+          ] as const);
+          if (signal.aborted || request !== listRequest.current) return;
+          if (projectResult.status === 'fulfilled') {
+            listData.current.projects = projectResult.value;
+            setProjects(projectResult.value);
           }
-          throw issue;
-        }
-      };
-      [p, listing, v, s, settings, control] = await Promise.all([
-        api<Project[]>('/projects'),
-        readListing(),
-        terminalSurface ? Promise.resolve([]) : api<Provider[]>('/providers'),
-        api<ProjectSpace[]>('/spaces'),
-        terminalSurface ? api<SurfaceTerminalSettings>('/terminal/settings') : Promise.resolve(null),
-        terminalSurface ? api<TerminalControlOverview>('/terminal/control') : Promise.resolve(null),
-      ]);
-    } catch (error) {
-      if (request === listRequest.current)
-        setReadIssues((old) => ({ ...old, lists: readIssueFor(error, request) }));
-      return false;
-    }
-    if (request !== listRequest.current) return;
-    clearReadIssue('lists', request);
-    const r = [...new Map([...listing.runs, ...listing.included].map((run) => [run.id, run])).values()];
-    setRunListPage(listing.page);
-    setProjectCounts(listing.projectCounts);
-    setProjects(p);
-    setRuns(r);
-    setProviders(v);
-    setTerminalSettings(settings);
-    setTerminalControl(control);
-    setSpaces(s);
-    listedEntities.current = {
-      projects: new Set(p.map((project) => project.id)),
-      runs: new Set(r.map((run) => run.id)),
-    };
-    cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
-    if (epoch !== navigationEpoch.current) return;
-    const restoring = !navigationInitialized.current;
-    const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
-    navigationInitialized.current = true;
-    savedNavigation.current = undefined;
-    if (restoring && next.runId) {
-      const run = r.find((run) => run.id === next.runId)!;
-      setPreviewTaskId(run.rootTaskId);
-      setTab(run.kind === 'chat' ? 'agents' : 'tasks');
-    }
-    navigate(next);
-    return true;
-  }, [navigate, clearReadIssue, cache, terminalSurface]);
+          if (spaceResult.status === 'fulfilled') {
+            listData.current.spaces = spaceResult.value;
+            setSpaces(spaceResult.value);
+          }
+          const failure = [projectResult, listingResult, spaceResult].find(
+            (entry) => entry.status === 'rejected',
+          );
+          if (failure?.status === 'rejected')
+            setReadIssues((old) => ({ ...old, lists: readIssueFor(failure.reason, request) }));
+          else clearReadIssue('lists', request);
+          if (listingResult.status === 'rejected') return false;
+          const listing = listingResult.value;
+          const p = listData.current.projects,
+            s = listData.current.spaces;
+          const r = [...new Map([...listing.runs, ...listing.included].map((run) => [run.id, run])).values()];
+          setRunListPage(listing.page);
+          setProjectCounts(listing.projectCounts);
+          setRuns(r);
+          listedEntities.current = {
+            projects: new Set(p.map((project) => project.id)),
+            runs: new Set(r.map((run) => run.id)),
+          };
+          if (projectResult.status === 'fulfilled')
+            cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
+          if (
+            epoch !== navigationEpoch.current ||
+            projectResult.status === 'rejected' ||
+            spaceResult.status === 'rejected'
+          )
+            return true;
+          const restoring = !navigationInitialized.current;
+          const next = resolveNavigation(savedNavigation.current || navigation.current, p, r, s, restoring);
+          navigationInitialized.current = true;
+          savedNavigation.current = undefined;
+          if (restoring && next.runId) {
+            const run = r.find((run) => run.id === next.runId)!;
+            setPreviewTaskId(run.rootTaskId);
+            setTab(run.kind === 'chat' ? 'agents' : 'tasks');
+          }
+          navigate(next);
+          return true;
+        },
+        trailing || forceConfiguration,
+      );
+    },
+    [navigate, clearReadIssue, cache, refreshConfiguration],
+  );
   async function changeRunList(direction: 'older' | 'newer' | 'latest') {
     if (runListMoving.current) return;
     const prior = runListPosition.current;
@@ -654,44 +722,56 @@ function App({
   useEffect(() => {
     if (!modal.startsWith('manage:')) setRunListArchive(undefined);
   }, [modal]);
-  const refreshDetail = useCallback(async () => {
-    const wanted = activeRunId.current;
-    if (!wanted) return;
-    const request = ++detailRequest.current;
-    let result: Detail;
-    try {
+  const refreshDetail = useCallback(
+    async (trailing = false) => {
+      const wanted = activeRunId.current;
+      if (!wanted) return;
       const before = historyPosition.current.runId === wanted ? historyPosition.current.before : '';
-      result = await api<Detail>(
-        '/runs/' +
-          wanted +
-          '?messageLimit=160&view=conversation' +
-          (before ? '&beforeMessage=' + encodeURIComponent(before) : ''),
+      return detailReads.current.run(
+        `${wanted}:${before}`,
+        async (signal) => {
+          const request = ++detailRequest.current;
+          let result: Detail;
+          try {
+            result = await api<Detail>(
+              '/runs/' +
+                wanted +
+                '?messageLimit=160&view=conversation' +
+                (before ? '&beforeMessage=' + encodeURIComponent(before) : ''),
+              undefined,
+              undefined,
+              signal,
+            );
+          } catch (error) {
+            if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+              setReadIssues((old) => ({ ...old, detail: readIssueFor(error, request, wanted) }));
+              return false;
+            }
+            return;
+          }
+          if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+            clearReadIssue('detail', request);
+            runStream.current.sync(result.requests);
+            setStreaming(runStream.current.texts());
+            setDetail((old) => {
+              if (old?.run.id !== wanted) return result;
+              const events = [
+                ...new Map([...result.events, ...old.events].map((event) => [event.seq, event])).values(),
+              ]
+                .sort((a, b) => a.seq - b.seq)
+                .slice(-100);
+              return old.run.revision > result.run.revision
+                ? { ...old, messages: result.messages, messagePage: result.messagePage, events }
+                : { ...result, events };
+            });
+          }
+          return true;
+        },
+        trailing,
       );
-    } catch (error) {
-      if (activeRunId.current === wanted && detailRequest.current === request) {
-        setReadIssues((old) => ({ ...old, detail: readIssueFor(error, request, wanted) }));
-        return false;
-      }
-      return;
-    }
-    if (activeRunId.current === wanted && detailRequest.current === request) {
-      clearReadIssue('detail', request);
-      runStream.current.sync(result.requests);
-      setStreaming(runStream.current.texts());
-      setDetail((old) => {
-        if (old?.run.id !== wanted) return result;
-        const events = [
-          ...new Map([...result.events, ...old.events].map((event) => [event.seq, event])).values(),
-        ]
-          .sort((a, b) => a.seq - b.seq)
-          .slice(-100);
-        return old.run.revision > result.run.revision
-          ? { ...old, messages: result.messages, messagePage: result.messagePage, events }
-          : { ...result, events };
-      });
-    }
-    return true;
-  }, [clearReadIssue]);
+    },
+    [clearReadIssue],
+  );
   async function changeHistory(before: string, trail: string[]) {
     if (historyLoading) return;
     const wanted = activeRunId.current;
@@ -740,6 +820,8 @@ function App({
         }
         if (source === 'detail') {
           if (target === activeRunId.current) await refreshDetail();
+        } else if (source === 'configuration') {
+          await refreshConfiguration(true);
         } else {
           await refresh();
           if (retry && refreshCurrentDetail) await refreshDetail();
@@ -750,7 +832,7 @@ function App({
         setRetrying(false);
       }
     },
-    [clearReadIssue, refresh, refreshDetail, cache],
+    [clearReadIssue, refresh, refreshDetail, refreshConfiguration, cache],
   );
   useEffect(() => {
     void connect();
@@ -808,8 +890,8 @@ function App({
       if (!disposed && !timer)
         timer = setTimeout(() => {
           timer = null;
-          void refreshDetail().catch(() => {});
-          void refresh().catch(() => {});
+          void refreshDetail(true).catch(() => {});
+          void refresh(false, true).catch(() => {});
         }, 120);
     };
     source.addEventListener('open', () => {
@@ -890,8 +972,8 @@ function App({
     setError('');
     try {
       await fn();
-      await refresh();
-      await refreshDetail();
+      await refresh(true);
+      await refreshDetail(true);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -963,6 +1045,42 @@ function App({
     setPreviewOpen(false);
     setTab(run.kind === 'chat' ? 'agents' : 'tasks');
   };
+  const openResourceOwner = async (ownerRunId: string, operationId?: string) => {
+    if (actionPending.current) return;
+    const epoch = navigationEpoch.current;
+    try {
+      const target = await api<Run>('/runs/' + ownerRunId + '/header');
+      if (epoch !== navigationEpoch.current) return;
+      selectRun(target);
+      setTab('artifacts');
+      setDetailsCollapsed(false);
+      setDetailsDrawerOpen(true);
+      heldNavigation.current = operationId
+        ? { runId: ownerRunId, operationId, epoch: navigationEpoch.current }
+        : undefined;
+      if (
+        detail?.run.id === ownerRunId &&
+        detail.operations.some((row) => row.id === operationId && row.status === 'UNCERTAIN')
+      ) {
+        heldNavigation.current = undefined;
+        setModal('decision:' + operationId);
+      }
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : '无法打开资源所属对话');
+    }
+  };
+  useEffect(() => {
+    const target = heldNavigation.current;
+    if (!target) return;
+    if (target.epoch !== navigationEpoch.current) {
+      heldNavigation.current = undefined;
+      return;
+    }
+    if (detail?.run.id !== target.runId) return;
+    const operation = detail.operations.find((row) => row.id === target.operationId);
+    heldNavigation.current = undefined;
+    if (operation?.status === 'UNCERTAIN') setModal('decision:' + operation.id);
+  }, [detail]);
   const newRun = () => {
     navigate({ ...navigation.current, runId: '' }, true);
     setDetail(null);
@@ -1899,7 +2017,11 @@ function App({
                     </div>
                   )}
                   {detail.terminalRuntime && (
-                    <TerminalRuntimePanel snapshot={detail.terminalRuntime} tasks={detail.tasks} />
+                    <TerminalRuntimePanel
+                      snapshot={detail.terminalRuntime}
+                      tasks={detail.tasks}
+                      onNavigate={(runId, operationId) => void openResourceOwner(runId, operationId)}
+                    />
                   )}
                   {detail.run.execution?.kind === 'docker-agent' &&
                     detail.run.reason === 'terminal_verification' &&
@@ -2588,7 +2710,7 @@ function App({
                   <ProviderSettings
                     providers={providers}
                     close={() => setModal(modal === 'run-settings' ? 'run' : '')}
-                    updated={refresh}
+                    updated={() => refresh(true)}
                   />
                 </React.Suspense>
               )}

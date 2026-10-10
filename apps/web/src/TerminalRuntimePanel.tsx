@@ -29,9 +29,11 @@ const reasons: Record<RuntimeQueueReason, string> = {
 export function TerminalRuntimePanel({
   snapshot,
   tasks,
+  onNavigate,
 }: {
   snapshot: { executor: ExecutorRuntimeSnapshot; terminal: TerminalRuntimeSnapshot };
   tasks: Task[];
+  onNavigate?: (runId: string, operationId?: string) => void;
 }) {
   const [time, setTime] = useState(Date.now());
   const working = snapshot.terminal.tasks.some((task) =>
@@ -78,9 +80,25 @@ export function TerminalRuntimePanel({
           {resource.capacity.cpus} · 内存 {resource.reserved.memoryMiB}/{resource.capacity.memoryMiB} MiB
         </p>
         {resource.status !== 'ready' && <p className="field-help">{resource.message}</p>}
-        {resource.reservations.some((item) => item.held) && (
-          <p className="field-help">有终端的停止状态尚待核验，资源暂时保留。</p>
-        )}
+        {resource.reservations
+          .filter((item) => item.held)
+          .map((item) => (
+            <p className="field-help" key={item.id}>
+              {item.owner
+                ? `${item.owner.runTitle} · ${item.owner.taskTitle}：${item.owner.reason}`
+                : item.reason || '终端停止状态尚待核验，资源暂时保留。'}
+              {item.owner && onNavigate && (
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => onNavigate(item.owner!.runId, item.owner!.operationId)}
+                >
+                  打开待核验对话
+                </button>
+              )}
+              {item.kind === 'probe' && ' 请在终端管理中重新检测，以核验并清理已知检测容器。'}
+            </p>
+          ))}
         <p className="field-help">暂时没有输出时仍保留运行状态，可查看日志或手动暂停。</p>
       </div>
     </details>
