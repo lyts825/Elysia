@@ -233,8 +233,8 @@ function App({
   const chosenTerminalProfile =
     terminalProfiles.find((profile) => profile.id === terminalProfileId) ||
     terminalProfiles.find((profile) => profile.id === projectPreferences?.defaultProfileId) ||
-    terminalProfiles.find((profile) => profile.agent === terminalControl?.apps.defaultAppId) ||
     terminalProfiles.find((profile) => profile.id === terminalSettings?.defaultProfileId) ||
+    terminalProfiles.find((profile) => profile.agent === terminalControl?.apps.defaultAppId) ||
     terminalProfiles[0];
   const inheritedConnection = terminalControl?.connections.find(
     (connection) => connection.id === projectPreferences?.connectionId,
@@ -2149,17 +2149,10 @@ function App({
                       project={project}
                       close={() => setModal(modal === 'run-settings' ? 'run' : '')}
                       updated={(settings) => {
-                        if (settings.defaultProfileId !== terminalSettings.defaultProfileId)
-                          cache.set(profileSelectionKey, settings.defaultProfileId);
                         setTerminalSettings(settings);
                         void refresh();
                       }}
                       controlUpdated={(overview, preferences) => {
-                        if (
-                          terminalControl &&
-                          overview.apps.defaultAppId !== terminalControl.apps.defaultAppId
-                        )
-                          cache.set(profileSelectionKey, '');
                         setTerminalControl(overview);
                         if (preferences && project) {
                           if (projectPreferences && preferences.revision !== projectPreferences.revision)

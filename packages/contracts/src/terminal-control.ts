@@ -132,7 +132,7 @@ export const TerminalCliInstallationJob = z
     profileId: z.string().uuid().nullable(),
     baseImage: z.string().min(1).max(200),
     requestedVersion: z.string().min(1).max(80).optional(),
-    status: z.enum(['running', 'completed', 'failed']),
+    status: z.enum(['running', 'completed', 'failed', 'cancelled']),
     result: z
       .object({
         image: z.string().regex(/^sha256:[a-f0-9]{64}$/),

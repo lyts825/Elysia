@@ -1,6 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Activity, useEffect, useId, useRef, useState } from 'react';
 import {
-  AgentTerminalProfile,
   SurfaceTerminalSettings,
   TerminalConnectionWrite,
   type Project,
@@ -92,6 +91,22 @@ const connectionDraft = (item: TerminalConnectionView): ConnectionDraft => ({
   apiKeyEnv: item.auth.kind === 'environment' ? item.auth.env : 'ELYSIA_TERMINAL_API_KEY',
   apiKey: '',
 });
+const connectionValues = (draft: ConnectionDraft | null) =>
+  draft &&
+  JSON.stringify({
+    name: draft.name,
+    protocol: draft.protocol,
+    baseUrl: draft.baseUrl,
+    model: draft.model,
+    credentialMode: draft.credentialMode,
+    apiKeyEnv: draft.credentialMode === 'environment' ? draft.apiKeyEnv : '',
+    apiKey: draft.apiKey.trim(),
+  });
+const preferenceValues = (value: TerminalProjectPreferences | null) =>
+  value && JSON.stringify({ defaultProfileId: value.defaultProfileId, connectionId: value.connectionId });
+const appProfile = (settings: SurfaceTerminalSettings, appId: TerminalAppId) =>
+  settings.profiles.find((profile) => profile.id === settings.defaultProfileId && profile.agent === appId) ||
+  settings.profiles.find((profile) => profile.agent === appId);
 
 export function TerminalControlCenter({
   initial,
@@ -114,9 +129,19 @@ export function TerminalControlCenter({
   const [settings, setSettings] = useState(initial);
   const [preferences, setPreferences] = useState<TerminalProjectPreferences | null>(null);
   const [projectDraft, setProjectDraft] = useState<TerminalProjectPreferences | null>(null);
+  const [projectBaseline, setProjectBaseline] = useState<TerminalProjectPreferences | null>(null);
   const [draft, setDraft] = useState<ConnectionDraft | null>(null);
+  const [connectionBaseline, setConnectionBaseline] = useState<ConnectionDraft | null>(null);
+  const [templateVisited, setTemplateVisited] = useState(false);
+  const [templateDirty, setTemplateDirty] = useState(false);
+  const [pending, setPending] = useState<
+    { kind: 'close' } | { kind: 'connection'; next: ConnectionDraft } | null
+  >(null);
+  const [applyTargets, setApplyTargets] = useState<Record<string, string>>({});
   const [jobs, setJobs] = useState<TerminalCliInstallationJob[]>([]);
-  const [statuses, setStatuses] = useState<Partial<Record<TerminalAppId, CliStatus>>>({});
+  const [statuses, setStatuses] = useState<
+    Partial<Record<TerminalAppId, { key: string; result: CliStatus }>>
+  >({});
   const [checking, setChecking] = useState<TerminalAppId | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -124,6 +149,22 @@ export function TerminalControlCenter({
   const [deleting, setDeleting] = useState<string | null>(null);
   const [versions, setVersions] = useState<Partial<Record<TerminalAppId, string>>>({});
   const submitting = useRef(false);
+  const drafts = useRef({ projectDraft, projectBaseline });
+  drafts.current = { projectDraft, projectBaseline };
+  const profileKeys = useRef<Partial<Record<TerminalAppId, string>>>({});
+  profileKeys.current = Object.fromEntries(
+    (overview?.catalog || []).map((item) => {
+      const binding = overview?.apps.entries.find((entry) => entry.id === item.id)?.connectionId;
+      return [
+        item.id,
+        JSON.stringify([
+          appProfile(settings, item.id) || item.preset,
+          binding,
+          overview?.connections.find((connection) => connection.id === binding)?.revision,
+        ]),
+      ];
+    }),
+  );
   const panelId = useId(),
     tabPrefix = useId();
   async function load(signal?: AbortSignal) {
@@ -145,9 +186,16 @@ export function TerminalControlCenter({
     setJobs(installs);
     setSettings(latestSettings);
     setPreferences(prefs);
-    setProjectDraft((current) => current || prefs);
+    if (
+      !drafts.current.projectDraft ||
+      preferenceValues(drafts.current.projectDraft) === preferenceValues(drafts.current.projectBaseline)
+    ) {
+      setProjectDraft(prefs);
+      setProjectBaseline(prefs);
+    }
     updated(latestSettings);
     controlUpdated(control, prefs ?? undefined);
+    return prefs;
   }
   useEffect(() => {
     const controller = new AbortController();
@@ -175,7 +223,7 @@ export function TerminalControlCenter({
       clearTimeout(timer);
     };
   }, [running, api]);
-  async function perform(action: () => Promise<void>) {
+  async function perform(action: () => Promise<unknown>) {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
@@ -205,35 +253,46 @@ export function TerminalControlCenter({
     );
     const control = { ...overview, apps };
     setOverview(control);
+    savedSettings(await api<SurfaceTerminalSettings>('/terminal/settings'));
     controlUpdated(control);
   }
   function savedSettings(next: SurfaceTerminalSettings) {
     setSettings(next);
     updated(next);
   }
-  async function ensureProfile(appId: TerminalAppId, image?: string) {
-    const item = overview!.catalog.find((entry) => entry.id === appId)!;
-    let profile = settings.profiles.find((entry) => entry.agent === appId);
-    if (profile && !image) return profile;
-    profile = profile
-      ? { ...profile, image: image! }
-      : AgentTerminalProfile.parse({ ...item.preset, ...(image ? { image } : {}) });
-    const profiles = settings.profiles.some((entry) => entry.id === profile!.id)
-      ? settings.profiles.map((entry) => (entry.id === profile!.id ? profile! : entry))
-      : [...settings.profiles, profile];
-    const next = await mutation<SurfaceTerminalSettings>(
-      '/terminal/settings',
-      {
-        expectedRevision: settings.revision,
-        profiles,
-        defaultProfileId: settings.defaultProfileId,
-      },
-      'PUT',
-    );
-    savedSettings(next);
-    return profile;
-  }
   const selectedConnection = overview?.connections.find((item) => item.id === draft?.id);
+  const connectionDirty = connectionValues(draft) !== connectionValues(connectionBaseline);
+  const projectDirty = preferenceValues(projectDraft) !== preferenceValues(projectBaseline);
+  useEffect(() => {
+    if (pending?.kind === 'close' && !connectionDirty && !projectDirty && !templateDirty) setPending(null);
+  }, [pending, connectionDirty, projectDirty, templateDirty]);
+  function replaceConnection(next: ConnectionDraft) {
+    setDraft(next);
+    setConnectionBaseline(next);
+    setDeleting(null);
+    setPending(null);
+  }
+  function selectConnection(next: ConnectionDraft) {
+    if (busy) return;
+    if (next.id === draft?.id) return;
+    if (connectionDirty) setPending({ kind: 'connection', next });
+    else replaceConnection(next);
+  }
+  function requestClose() {
+    if (busy) return;
+    if (connectionDirty || projectDirty || templateDirty) setPending({ kind: 'close' });
+    else close();
+  }
+  function selectTab(next: typeof tab) {
+    if (next === 'templates') setTemplateVisited(true);
+    setTab(next);
+    setError('');
+    setNotice('');
+  }
+  useEffect(() => {
+    if (selectedConnection && !connectionDirty && draft?.revision !== selectedConnection.revision)
+      replaceConnection(connectionDraft(selectedConnection));
+  }, [selectedConnection, connectionDirty, draft?.revision]);
   const draftBody = draft
     ? {
         expectedRevision: draft.revision,
@@ -254,15 +313,15 @@ export function TerminalControlCenter({
     (draft?.credentialMode !== 'vault' || !!draft.apiKey.trim() || selectedConnection?.auth.kind === 'vault');
   const projectProfile =
     settings.profiles.find((entry) => entry.id === projectDraft?.defaultProfileId) ||
-    settings.profiles.find((entry) => entry.agent === overview?.apps.defaultAppId) ||
-    settings.profiles.find((entry) => entry.id === settings.defaultProfileId);
+    settings.profiles.find((entry) => entry.id === settings.defaultProfileId) ||
+    settings.profiles.find((entry) => entry.agent === overview?.apps.defaultAppId);
   const projectProtocols =
     overview?.catalog.find((entry) => entry.id === projectProfile?.agent)?.protocols || [];
   return (
     <Modal
       title="终端管理"
       subtitle="应用、API 连接与项目默认配置"
-      close={close}
+      close={requestClose}
       busy={busy}
       wide
       className="terminal-control-center"
@@ -286,9 +345,7 @@ export function TerminalControlCenter({
             tabIndex={tab === id ? 0 : -1}
             disabled={busy}
             onClick={() => {
-              setTab(id);
-              setError('');
-              setNotice('');
+              selectTab(id);
             }}
             onKeyDown={(event) => {
               const tabs = ['apps', 'connections', 'project', 'templates'] as const;
@@ -305,7 +362,7 @@ export function TerminalControlCenter({
                         : undefined;
               if (target) {
                 event.preventDefault();
-                setTab(target);
+                selectTab(target);
                 document.getElementById(`${tabPrefix}-${target}`)?.focus();
               }
             }}
@@ -314,6 +371,24 @@ export function TerminalControlCenter({
           </button>
         ))}
       </div>
+      {pending && (
+        <div className="terminal-control-confirm" role="group" aria-label="未保存修改确认">
+          <span>有未保存的修改。</span>
+          <button className="secondary" disabled={busy} onClick={() => setPending(null)}>
+            继续编辑
+          </button>
+          <button
+            className="secondary danger"
+            disabled={busy}
+            onClick={() => {
+              if (pending.kind === 'close') close();
+              else replaceConnection(pending.next);
+            }}
+          >
+            {pending.kind === 'close' ? '放弃并关闭' : '放弃并切换'}
+          </button>
+        </div>
+      )}
       <div
         id={panelId}
         role="tabpanel"
@@ -358,11 +433,19 @@ export function TerminalControlCenter({
             <div className="cli-app-list">
               {overview.catalog.map((item) => {
                 const entry = overview.apps.entries.find((value) => value.id === item.id)!;
-                const profile = settings.profiles.find((value) => value.agent === item.id);
-                const status = statuses[item.id];
+                const profile = appProfile(settings, item.id);
+                const statusKey = profileKeys.current[item.id]!;
+                const status = statuses[item.id]?.key === statusKey ? statuses[item.id]!.result : undefined;
                 const job = jobs.find((value) => value.appId === item.id);
-                const defaultApp = overview.apps.defaultAppId === item.id;
-                const applied = !!job?.result && profile?.image === job.result.image;
+                const target = job?.profileId
+                  ? settings.profiles.find((value) => value.id === job.profileId && value.agent === item.id)
+                  : settings.profiles.find(
+                      (value) => value.id === applyTargets[job?.id || ''] && value.agent === item.id,
+                    ) || profile;
+                const defaultApp =
+                  settings.profiles.find((value) => value.id === settings.defaultProfileId)?.agent ===
+                  item.id;
+                const applied = !!job?.result && target?.image === job.result.image;
                 return (
                   <article key={item.id} className="cli-app-row" data-app={item.id}>
                     <span className={`cli-app-glyph ${item.id}`} aria-hidden="true">
@@ -422,29 +505,50 @@ export function TerminalControlCenter({
                               : '尚未检查')}
                       </span>
                       {status && <small>{status.message}</small>}
+                      {job?.status === 'cancelled' && <small>安装已取消</small>}
                       {job?.status === 'failed' && <small className="cli-app-error">{job.message}</small>}
                       {job?.status === 'completed' && !applied && (
-                        <button
-                          className="text-button"
-                          disabled={busy}
-                          onClick={() =>
-                            void perform(async () => {
-                              await ensureProfile(item.id, job.result!.image);
-                              setStatuses((current) => ({
-                                ...current,
-                                [item.id]: {
-                                  available: true,
-                                  installed: true,
-                                  version: job.result!.version,
-                                  message: '已应用于新任务',
-                                },
-                              }));
-                              setNotice('镜像已保存，供新任务使用。');
-                            })
-                          }
-                        >
-                          应用已安装镜像
-                        </button>
+                        <>
+                          {!job.profileId && (
+                            <select
+                              aria-label={`${item.label} 镜像目标模板`}
+                              value={target?.id || ''}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setApplyTargets((current) => ({ ...current, [job.id]: event.target.value }))
+                              }
+                            >
+                              <option value="">先启用应用并选择模板</option>
+                              {settings.profiles
+                                .filter((value) => value.agent === item.id)
+                                .map((value) => (
+                                  <option key={value.id} value={value.id}>
+                                    {value.label}
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+                          {job.profileId && !target && <small>原模板已删除，请重新安装。</small>}
+                          <button
+                            className="text-button"
+                            disabled={busy || !target}
+                            onClick={() =>
+                              void perform(async () => {
+                                const next = await mutation<SurfaceTerminalSettings>(
+                                  `/terminal/control/installations/${job.id}/apply`,
+                                  {
+                                    profileId: target!.id,
+                                    expectedRevision: settings.revision,
+                                  },
+                                );
+                                savedSettings(next);
+                                setNotice('镜像已保存，供新任务使用。');
+                              })
+                            }
+                          >
+                            应用已安装镜像
+                          </button>
+                        </>
                       )}
                     </div>
                     <div className="cli-app-actions">
@@ -459,9 +563,13 @@ export function TerminalControlCenter({
                               `/terminal/control/apps/${item.id}/check`,
                               profile ? { profileId: profile.id } : {},
                             );
-                            setStatuses((current) => ({ ...current, [item.id]: result }));
+                            if (profileKeys.current[item.id] === statusKey)
+                              setStatuses((current) => ({
+                                ...current,
+                                [item.id]: { key: statusKey, result },
+                              }));
                           } catch (issue) {
-                            setError(message(issue));
+                            if (profileKeys.current[item.id] === statusKey) setError(message(issue));
                           } finally {
                             setChecking(null);
                           }
@@ -499,12 +607,31 @@ export function TerminalControlCenter({
                               : '安装'}
                         </button>
                       )}
+                      {job?.status === 'running' && (
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(async () => {
+                              const cancelled = await mutation<TerminalCliInstallationJob>(
+                                `/terminal/control/installations/${job.id}/cancel`,
+                                { expectedRevision: job.revision },
+                              );
+                              setJobs((current) =>
+                                current.map((value) => (value.id === job.id ? cancelled : value)),
+                              );
+                              setNotice('安装已取消。');
+                            })
+                          }
+                        >
+                          取消安装
+                        </button>
+                      )}
                       <button
                         className="text-button"
                         disabled={busy || defaultApp}
                         onClick={() =>
                           void perform(async () => {
-                            await ensureProfile(item.id);
                             await saveApps({
                               ...overview.apps,
                               defaultAppId: item.id,
@@ -529,7 +656,6 @@ export function TerminalControlCenter({
                         onChange={(event) => {
                           const visible = event.target.checked;
                           void perform(async () => {
-                            if (visible) await ensureProfile(item.id);
                             await saveApps({
                               ...overview.apps,
                               entries: overview.apps.entries.map((value) =>
@@ -576,8 +702,7 @@ export function TerminalControlCenter({
                   aria-label="新增 API 连接"
                   disabled={busy}
                   onClick={() => {
-                    setDraft(newConnection());
-                    setDeleting(null);
+                    selectConnection(newConnection());
                   }}
                 >
                   <Icon name="plus" />
@@ -590,8 +715,7 @@ export function TerminalControlCenter({
                   aria-current={draft?.id === connection.id ? 'true' : undefined}
                   disabled={busy}
                   onClick={() => {
-                    setDraft(connectionDraft(connection));
-                    setDeleting(null);
+                    selectConnection(connectionDraft(connection));
                   }}
                 >
                   <strong>{connection.name}</strong>
@@ -610,7 +734,7 @@ export function TerminalControlCenter({
                 <Icon name="settings" size={32} />
                 <h3>连接你的模型服务</h3>
                 <p>端点、模型和凭据集中管理。</p>
-                <button className="primary" onClick={() => setDraft(newConnection())}>
+                <button className="primary" onClick={() => selectConnection(newConnection())}>
                   添加 API 连接
                 </button>
               </div>
@@ -631,7 +755,7 @@ export function TerminalControlCenter({
                       connections: [...overview.connections.filter((item) => item.id !== saved.id), saved],
                     };
                     setOverview(next);
-                    setDraft(connectionDraft(saved));
+                    replaceConnection(connectionDraft(saved));
                     controlUpdated(next);
                     setNotice('API 连接已保存。');
                   });
@@ -644,7 +768,7 @@ export function TerminalControlCenter({
                       type="button"
                       className="secondary"
                       disabled={busy}
-                      onClick={() => setDraft(connectionDraft(selectedConnection))}
+                      onClick={() => replaceConnection(connectionDraft(selectedConnection))}
                     >
                       载入最新连接
                     </button>
@@ -801,10 +925,24 @@ export function TerminalControlCenter({
                             { expectedRevision: draft.revision },
                             'DELETE',
                           );
+                          const editedProject = projectDirty ? projectDraft : null;
                           setDraft(null);
+                          setConnectionBaseline(null);
                           setDeleting(null);
-                          setProjectDraft(null);
-                          await load();
+                          if (!projectDirty) {
+                            setProjectDraft(null);
+                            setProjectBaseline(null);
+                          }
+                          const prefs = await load();
+                          if (editedProject && prefs) {
+                            setProjectDraft({
+                              ...editedProject,
+                              revision: prefs.revision,
+                              connectionId:
+                                editedProject.connectionId === draft.id ? null : editedProject.connectionId,
+                            });
+                            setProjectBaseline(prefs);
+                          }
                           setNotice('连接已删除。');
                         })
                       }
@@ -834,6 +972,8 @@ export function TerminalControlCenter({
                   );
                   setPreferences(saved);
                   setProjectDraft(saved);
+                  setProjectBaseline(saved);
+                  setPending(null);
                   controlUpdated(overview, saved);
                   setNotice('项目默认配置已保存。');
                 });
@@ -846,7 +986,10 @@ export function TerminalControlCenter({
                     type="button"
                     className="secondary"
                     disabled={busy}
-                    onClick={() => setProjectDraft(preferences)}
+                    onClick={() => {
+                      setProjectDraft(preferences);
+                      setProjectBaseline(preferences);
+                    }}
                   >
                     载入最新项目默认
                   </button>
@@ -902,10 +1045,7 @@ export function TerminalControlCenter({
                     ))}
                 </select>
               </label>
-              <button
-                className="primary"
-                disabled={busy || JSON.stringify(projectDraft) === JSON.stringify(preferences)}
-              >
+              <button className="primary" disabled={busy || !projectDirty}>
                 保存项目默认
               </button>
             </form>
@@ -916,27 +1056,35 @@ export function TerminalControlCenter({
               <p>在工作台打开项目后，可在此设置独立的 CLI 与 API 连接。</p>
             </div>
           )
-        ) : (
-          <TerminalSettings
-            key={settings.revision}
-            initial={settings}
-            embedded
-            close={() => setTab('apps')}
-            updated={(next) => {
-              savedSettings(next);
-              setNotice('模板已保存。');
-            }}
-            activity={(value) => {
-              setBusy(value);
-              activity(value);
-            }}
-          />
+        ) : null}
+        {(templateVisited || tab === 'templates') && (
+          <Activity mode={tab === 'templates' ? 'visible' : 'hidden'}>
+            <TerminalSettings
+              initial={settings}
+              embedded
+              close={() => setTab('apps')}
+              dirtyChanged={setTemplateDirty}
+              updated={async (next) => {
+                savedSettings(next);
+                try {
+                  await load();
+                } catch (issue) {
+                  setError(message(issue));
+                }
+                setNotice('模板已保存。');
+              }}
+              activity={(value) => {
+                setBusy(value);
+                activity(value);
+              }}
+            />
+          </Activity>
         )}
       </div>
       {tab !== 'templates' && (
         <footer className="modal-footer">
           <span className="field-help">CLI 在 Docker 中运行</span>
-          <button className="secondary" disabled={busy} onClick={close}>
+          <button className="secondary" disabled={busy} onClick={requestClose}>
             完成
           </button>
         </footer>

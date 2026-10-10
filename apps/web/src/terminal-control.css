@@ -417,3 +417,43 @@
 .terminal-control-conflict span {
   flex: 1 1 160px;
 }
+.terminal-control-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-pale);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.terminal-control-confirm span {
+  flex: 1 1 180px;
+}
+.terminal-settings-body ~ .terminal-control-confirm,
+.form-body > .terminal-control-confirm {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.terminal-control-content.with-templates > .terminal-control-read-error,
+.terminal-control-content.with-templates > .terminal-control-notice {
+  margin: 12px 22px;
+  flex-shrink: 0;
+}
+.cli-app-version select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .terminal-control-confirm {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .terminal-control-confirm .secondary {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+}

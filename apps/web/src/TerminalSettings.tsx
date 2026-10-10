@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SurfaceTerminalSettings, type AgentTerminalProfile } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import './surface.css';
+import './terminal-control.css';
 
 export function TerminalSettings({
   initial,
@@ -13,20 +14,24 @@ export function TerminalSettings({
   updated,
   activity,
   embedded = false,
+  dirtyChanged,
 }: {
   initial: SurfaceTerminalSettings;
   close: () => void;
-  updated: (settings: SurfaceTerminalSettings) => void;
+  updated: (settings: SurfaceTerminalSettings) => void | Promise<void>;
   activity: (busy: boolean) => void;
   embedded?: boolean;
+  dirtyChanged?: (dirty: boolean) => void;
 }) {
-  const { mutation } = useSurfaceClient();
-  const [baseline] = useState(() => structuredClone(initial));
+  const { api, mutation } = useSurfaceClient();
+  const [baseline, setBaseline] = useState(() => structuredClone(initial));
+  const [latest, setLatest] = useState(initial);
   const [profiles, setProfiles] = useState(() => structuredClone(baseline.profiles));
   const [defaultProfileId, setDefaultProfileId] = useState(baseline.defaultProfileId);
   const [selectedId, setSelectedId] = useState(baseline.defaultProfileId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmClose, setConfirmClose] = useState(false);
   const submitting = useRef(false);
   const selected = profiles.find((profile) => profile.id === selectedId)!;
   const valid = SurfaceTerminalSettings.safeParse({
@@ -37,6 +42,27 @@ export function TerminalSettings({
   const changed =
     JSON.stringify(profiles) !== JSON.stringify(baseline.profiles) ||
     defaultProfileId !== baseline.defaultProfileId;
+  function adopt(next: SurfaceTerminalSettings) {
+    setBaseline(structuredClone(next));
+    setProfiles(structuredClone(next.profiles));
+    setDefaultProfileId(next.defaultProfileId);
+    setSelectedId((id) => (next.profiles.some((profile) => profile.id === id) ? id : next.defaultProfileId));
+    setError('');
+    setConfirmClose(false);
+    dirtyChanged?.(false);
+  }
+  useEffect(() => {
+    if (initial.revision >= latest.revision) setLatest(initial);
+  }, [initial, latest.revision]);
+  useEffect(() => {
+    if (!changed && latest.revision !== baseline.revision) adopt(latest);
+  }, [latest, baseline.revision, changed]);
+  useEffect(() => dirtyChanged?.(changed), [changed, dirtyChanged]);
+  const requestClose = () => {
+    if (busy) return;
+    if (!embedded && changed) setConfirmClose(true);
+    else close();
+  };
   const form = (
     <form
       onSubmit={async (event) => {
@@ -52,16 +78,23 @@ export function TerminalSettings({
             { expectedRevision: baseline.revision, profiles, defaultProfileId },
             'PUT',
           );
-          updated(saved);
+          setLatest(saved);
+          adopt(saved);
+          await updated(saved);
           close();
         } catch (issue) {
           setError(
             issue instanceof ApiError && issue.code === 'REVISION_CONFLICT'
-              ? '模板已在另一窗口更新。当前修改已保留，请关闭并重新打开设置后核对。'
+              ? '模板已更新，当前修改已保留。'
               : issue instanceof Error
                 ? issue.message
                 : '无法保存终端设置，请重试。',
           );
+          if (issue instanceof ApiError && issue.code === 'REVISION_CONFLICT') {
+            try {
+              setLatest(await api<SurfaceTerminalSettings>('/terminal/settings'));
+            } catch {}
+          }
         } finally {
           submitting.current = false;
           setBusy(false);
@@ -70,6 +103,25 @@ export function TerminalSettings({
       }}
     >
       <div className="form-body">
+        {confirmClose && (
+          <div className="terminal-control-confirm" role="group" aria-label="未保存模板确认">
+            <span>模板修改尚未保存。</span>
+            <button type="button" className="secondary" onClick={() => setConfirmClose(false)}>
+              继续编辑
+            </button>
+            <button type="button" className="secondary danger" onClick={close}>
+              放弃并关闭
+            </button>
+          </div>
+        )}
+        {latest.revision !== baseline.revision && (
+          <div className="terminal-control-conflict" role="status">
+            <span>模板已更新；载入最新将替换当前修改。</span>
+            <button type="button" className="secondary" disabled={busy} onClick={() => adopt(latest)}>
+              载入最新模板
+            </button>
+          </div>
+        )}
         {error && (
           <p className="inline-warning" role="alert">
             {error}
@@ -140,7 +192,7 @@ export function TerminalSettings({
               </button>
             </div>
             <TerminalSetup
-              key={selected.id}
+              key={`${selected.id}:${baseline.revision}`}
               value={selected}
               disabled={busy}
               change={(profile) =>
@@ -151,7 +203,7 @@ export function TerminalSettings({
         </div>
       </div>
       <footer className="modal-footer">
-        <button type="button" className="secondary" disabled={busy} onClick={close}>
+        <button type="button" className="secondary" disabled={busy} onClick={requestClose}>
           返回
         </button>
         <button className="primary" disabled={busy || !valid || !changed}>
@@ -163,7 +215,7 @@ export function TerminalSettings({
   return embedded ? (
     form
   ) : (
-    <Modal title="终端模板" subtitle="用于新任务，现有任务保留原配置。" close={close} busy={busy} wide>
+    <Modal title="终端模板" subtitle="用于新任务，现有任务保留原配置。" close={requestClose} busy={busy} wide>
       {form}
     </Modal>
   );

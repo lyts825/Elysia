@@ -2,7 +2,7 @@
 
 本机多 Agent 协作应用。文件修改、资料分析与办公产物使用统一项目和任务入口，接入 OpenAI Responses 与 DeepSeek Chat。模型按需加载办公技能，无需选择 Code / Work 分类。
 
-当前源码为 **v0.15.0-preview.1 预览版**。左上角切换 **Elysia（原生 API）** 与 **Agent 终端**，保留各自页面、草稿和预览，隐藏入口暂停事件流与轮询。终端管理集中提供 CLI 显示、默认选择、Docker 安装与版本检测、独立 API 连接及项目默认配置；Codex CLI 和 DSH 默认预设，Claude Code、Gemini CLI 与自定义模板可按需启用。任务保存创建时的连接与镜像配置。旧 Docker 任务保留只读历史，详见 [Agent 终端架构与使用](docs/AGENT_TERMINALS.md)。本轮未重载正式窗口；Docker Linux 引擎尚未就绪，真实镜像、容器、供应商与多代理验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
+当前源码为 **v0.16.0-preview.1 预览版**。左上角切换 **Elysia（原生 API）** 与 **Agent 终端**，保留各自页面、草稿和预览，隐藏入口暂停事件流与轮询。终端管理集中提供 CLI 显示、默认选择、Docker 安装与版本检测、独立 API 连接及项目默认配置；Codex CLI 和 DSH 默认预设，Claude Code、Gemini CLI 与自定义模板可按需启用。本轮完善应用与模板默认的一致性、后台安装取消及镜像应用保护、管理页草稿保留。任务保存创建时的连接与镜像配置。旧 Docker 任务保留只读历史，详见 [Agent 终端架构与使用](docs/AGENT_TERMINALS.md)。本轮未重载正式窗口；Docker Linux 引擎尚未就绪，真实镜像、容器、供应商与多代理验收仍待完成，未发布稳定版。范围、进度与验收结论以 [执行文档](docs/EXECUTION.md) 为准。
 
 ## 启动
 

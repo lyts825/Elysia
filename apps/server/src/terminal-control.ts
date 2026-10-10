@@ -22,120 +22,28 @@ import {
 import { type Store, stable } from '../../../packages/storage/src/index.js';
 import type { DesktopServices } from './desktop.js';
 import { ProviderKeys } from './provider-keys.js';
-import { initialTerminalSettings, terminalSettings } from './terminal-settings.js';
+import {
+  terminalSettings,
+  terminalControlApps,
+  writeTerminalControlApps,
+  writeTerminalSettings,
+} from './terminal-settings.js';
+import {
+  terminalAppCatalog,
+  terminalAppForProfile,
+  assertTerminalConnectionCompatible,
+  terminalProtocols as protocols,
+} from './terminal-catalog.js';
+export {
+  terminalAppCatalog,
+  terminalAppForProfile,
+  assertTerminalConnectionCompatible,
+} from './terminal-catalog.js';
 
 const connectionsKey = 'surface:terminal:control:connections:v1';
 const deletedConnectionsKey = 'surface:terminal:control:deleted-connections:v1';
 const appsKey = 'surface:terminal:control:apps:v1';
 const projectKey = (projectId: string) => `surface:terminal:control:project:${projectId}`;
-const protocols: Record<TerminalAppId, TerminalConnectionBinding['protocol'][]> = {
-  codex: ['openai-responses'],
-  dsh: ['anthropic-messages'],
-  claude: ['anthropic-messages'],
-  gemini: ['gemini'],
-  custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
-};
-export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
-  const presets = initialTerminalSettings().profiles;
-  const image = 'elysia-agents:0.13.0';
-  return [
-    {
-      id: 'codex',
-      label: 'Codex CLI',
-      description: '项目任务、代码修改与交付',
-      executable: 'codex',
-      protocols: protocols.codex,
-      preset: presets.find((profile) => profile.agent === 'codex')!,
-    },
-    {
-      id: 'dsh',
-      label: 'DSH',
-      description: 'DeepSeek 终端代理',
-      executable: 'dsh',
-      protocols: protocols.dsh,
-      preset: presets.find((profile) => profile.agent === 'dsh')!,
-    },
-    {
-      id: 'claude',
-      label: 'Claude Code',
-      description: 'Anthropic Messages 兼容连接',
-      executable: 'claude',
-      protocols: protocols.claude,
-      preset: {
-        id: '40b8e1d6-d469-4b56-a1c7-9e098129ec55',
-        label: 'Claude Code · Docker',
-        agent: 'claude',
-        image,
-        command: [
-          'claude',
-          '-p',
-          '--verbose',
-          '--output-format',
-          'stream-json',
-          '--dangerously-skip-permissions',
-        ],
-        protocol: 'claude-stream-json',
-        environment: ['ANTHROPIC_API_KEY'],
-      },
-    },
-    {
-      id: 'gemini',
-      label: 'Gemini CLI',
-      description: 'Gemini API 终端代理',
-      executable: 'gemini',
-      protocols: protocols.gemini,
-      preset: {
-        id: 'c9bf0a51-285d-4cab-bc77-15e8dd274f08',
-        label: 'Gemini CLI · Docker',
-        agent: 'gemini',
-        image,
-        command: [
-          'gemini',
-          '-p',
-          'Complete the task supplied through standard input.',
-          '--output-format',
-          'stream-json',
-          '--approval-mode',
-          'yolo',
-        ],
-        protocol: 'gemini-stream-json',
-        environment: ['GEMINI_API_KEY'],
-      },
-    },
-    {
-      id: 'custom',
-      label: '自定义 CLI',
-      description: '配置命令、镜像与环境变量',
-      executable: '',
-      protocols: protocols.custom,
-      preset: {
-        id: 'd9e34a0a-a941-49d7-a9f2-af747eef0f32',
-        label: '自定义 CLI · Docker',
-        agent: 'custom',
-        image,
-        command: ['agent'],
-        protocol: 'text',
-        environment: [],
-      },
-    },
-  ];
-}
-export function terminalAppForProfile(profile: AgentTerminalProfile): TerminalAppId {
-  // The explicit adapter controls both API compatibility and runtime injection.
-  // A custom executable remains custom even when named after a supported CLI.
-  return TerminalAppId.parse(profile.agent);
-}
-export function assertTerminalConnectionCompatible(
-  profile: AgentTerminalProfile,
-  connection: TerminalConnectionBinding,
-) {
-  const appId = terminalAppForProfile(profile);
-  invariant(
-    protocols[appId].includes(connection.protocol),
-    'TERMINAL_CONNECTION_PROTOCOL',
-    `${terminalAppCatalog().find((entry) => entry.id === appId)!.label} 不支持 ${connection.protocol}；请在 API 连接中选择 ${protocols[appId].join(' / ')} 协议`,
-  );
-}
 /** ProviderKeys encryption is reused, but every vault operation targets the terminal vault. */
 export function terminalProviderKeys(desktop?: DesktopServices): ProviderKeys {
   return new ProviderKeys(
@@ -180,15 +88,7 @@ export class TerminalControlService {
     return this.read(connectionsKey, z.array(TerminalConnectionBinding).max(100), () => []);
   }
   apps(): TerminalControlApps {
-    return this.read(appsKey, TerminalControlApps, () => ({
-      revision: 0,
-      defaultAppId: 'codex',
-      entries: TerminalAppId.options.map((id) => ({
-        id,
-        visible: id === 'codex' || id === 'dsh',
-        connectionId: null,
-      })),
-    }));
+    return terminalControlApps(this.store);
   }
   preferences(projectId: string): TerminalProjectPreferences {
     this.store.require<Project>('projects', projectId);
@@ -377,6 +277,21 @@ export class TerminalControlService {
               connectionId: null,
             });
         }
+        const settings = terminalSettings(this.store);
+        if (settings.profiles.some((profile) => profile.connectionId === id || profile.connection?.id === id))
+          writeTerminalSettings(this.store, {
+            expectedRevision: settings.revision,
+            defaultProfileId: settings.defaultProfileId,
+            profiles: settings.profiles.map((profile) => {
+              // Removing the override allows new tasks to inherit a surviving project/app connection.
+              const { connectionId, connection, ...remaining } = profile;
+              return {
+                ...remaining,
+                ...(connectionId !== undefined && connectionId !== id ? { connectionId } : {}),
+                ...(connection && connection.id !== id ? { connection } : {}),
+              };
+            }),
+          });
         // Old encrypted references are retained for already-created task snapshots.
         return { deleted: true, id };
       }),
@@ -409,9 +324,11 @@ export class TerminalControlService {
             `${entry.id} 与所选连接的 API 协议不兼容`,
           );
         }
-        const saved = { ...desired, revision: previous.revision + 1 };
-        this.write(appsKey, saved);
-        return saved;
+        return writeTerminalControlApps(this.store, {
+          expectedRevision: body.expectedRevision,
+          defaultAppId: desired.defaultAppId,
+          entries: desired.entries,
+        });
       }),
     );
   }

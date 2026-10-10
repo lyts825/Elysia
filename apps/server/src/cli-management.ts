@@ -8,7 +8,7 @@ import {
 import { type Store, now, stable } from '../../../packages/storage/src/index.js';
 import type { DockerCliManager } from '../../../packages/runtime/src/cli-manager.js';
 import { terminalAppCatalog, terminalAppForProfile } from './terminal-control.js';
-import { terminalSettings } from './terminal-settings.js';
+import { terminalSettings, writeTerminalProfileImage } from './terminal-settings.js';
 
 const jobsKey = 'surface:terminal:control:installations:v1';
 const version = z
@@ -78,7 +78,9 @@ export class TerminalCliManagement {
     const settings = terminalSettings(this.store);
     const selected = profileId
       ? settings.profiles.find((profile) => profile.id === profileId)
-      : settings.profiles.find((profile) => terminalAppForProfile(profile) === appId);
+      : (settings.profiles.find(
+          (profile) => profile.id === settings.defaultProfileId && terminalAppForProfile(profile) === appId,
+        ) ?? settings.profiles.find((profile) => terminalAppForProfile(profile) === appId));
     invariant(!profileId || selected, 'TERMINAL_PROFILE_MISSING', '所选终端模板已删除，请刷新后重试');
     const raw = selected ?? terminalAppCatalog().find((entry) => entry.id === appId)!.preset;
     const profile = AgentTerminalProfile.parse(raw);
@@ -122,8 +124,8 @@ export class TerminalCliManagement {
     const { profile, profileId } = this.profile(appId, body.profileId);
     const job = this.store.command(body.commandId, payload, () => {
       const jobs = this.jobs();
-      if (jobs.some((entry) => entry.status === 'running'))
-        throw new AppError('TERMINAL_CLI_BUSY', '已有 CLI 镜像正在安装，请等待完成', false, null, 409);
+      if (this.active.size || jobs.some((entry) => entry.status === 'running'))
+        throw new AppError('TERMINAL_CLI_BUSY', '已有 CLI 镜像正在安装或收尾，请等待完成', false, null, 409);
       const created = TerminalCliInstallationJob.parse({
         id: body.commandId,
         revision: 0,
@@ -143,10 +145,81 @@ export class TerminalCliManagement {
     this.start(job);
     return job;
   }
+  cancel(rawId: string, input: unknown, route: string) {
+    const id = z.string().uuid().parse(rawId);
+    const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).strict().parse(input);
+    const cancelled = this.store.command(body.commandId, { route, id, body }, () => {
+      invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '服务正在退出，请稍后重试');
+      const current = this.job(id);
+      if (body.expectedRevision !== current.revision)
+        throw new AppError(
+          'REVISION_CONFLICT',
+          '安装状态已更新，请刷新后重试',
+          false,
+          { currentRevision: current.revision },
+          409,
+        );
+      if (current.status === 'cancelled') return current;
+      if (current.status !== 'running')
+        throw new AppError('TERMINAL_CLI_NOT_RUNNING', '该安装已结束，无法取消', false, null, 409);
+      const next = TerminalCliInstallationJob.parse({
+        ...current,
+        revision: current.revision + 1,
+        status: 'cancelled',
+        code: 'TERMINAL_CLI_CANCELLED',
+        message: '安装已取消，镜像不会应用于模板',
+        updatedAt: now(),
+      });
+      this.write(this.jobs().map((job) => (job.id === id ? next : job)));
+      return next;
+    });
+    // Commit the visible cancellation before aborting the process. A late result
+    // can no longer change a cancelled job, and the active slot stays occupied
+    // until the manager has finished cleaning up.
+    this.active.get(id)?.controller.abort();
+    return cancelled;
+  }
+  apply(rawId: string, input: unknown, route: string) {
+    const id = z.string().uuid().parse(rawId);
+    const body = Command.extend({
+      profileId: z.string().uuid(),
+      expectedRevision: z.number().int().nonnegative(),
+    })
+      .strict()
+      .parse(input);
+    return this.store.command(body.commandId, { route, id, body }, () => {
+      invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '服务正在退出，请稍后重试');
+      const job = this.job(id);
+      if (job.status !== 'completed' || !job.result)
+        throw new AppError('TERMINAL_CLI_NOT_COMPLETED', '请等待安装成功后再应用镜像', false, null, 409);
+      if (job.profileId !== null && body.profileId !== job.profileId)
+        throw new AppError('TERMINAL_CLI_PROFILE_TARGET', '请应用于安装时选定的原模板', false, null, 409);
+      const settings = terminalSettings(this.store);
+      const profile = settings.profiles.find((entry) => entry.id === body.profileId);
+      if (!profile)
+        throw new AppError('TERMINAL_PROFILE_MISSING', '原终端模板已删除，请重新安装', false, null, 409);
+      if (terminalAppForProfile(profile) !== job.appId)
+        throw new AppError('TERMINAL_PROFILE_APP', '终端模板的 CLI 已改变，请重新安装', false, null, 409);
+      if (profile.image !== job.baseImage && profile.image !== job.result.image)
+        throw new AppError(
+          'TERMINAL_CLI_IMAGE_CONFLICT',
+          '终端模板镜像已改变，请基于新镜像重新安装',
+          false,
+          null,
+          409,
+        );
+      return writeTerminalProfileImage(this.store, {
+        expectedRevision: body.expectedRevision,
+        profileId: profile.id,
+        image: job.result.image,
+      });
+    });
+  }
   private start(job: TerminalCliInstallationJob) {
     const controller = new AbortController();
     const promise = Promise.resolve().then(async () => {
       try {
+        controller.signal.throwIfAborted();
         const result = await this.manager.install(
           { appId: job.appId, baseImage: job.baseImage, version: job.requestedVersion },
           controller.signal,
@@ -224,6 +297,12 @@ export function registerCliManagement(app: FastifyInstance, store: Store, manage
   app.get(root + '/installations', () => management.jobs());
   app.get<{ Params: { id: string } }>(root + '/installations/:id', (request) =>
     management.job(z.string().uuid().parse(request.params.id)),
+  );
+  app.post<{ Params: { id: string } }>(root + '/installations/:id/cancel', (request) =>
+    management.cancel(request.params.id, request.body, request.url),
+  );
+  app.post<{ Params: { id: string } }>(root + '/installations/:id/apply', (request) =>
+    management.apply(request.params.id, request.body, request.url),
   );
   app.addHook('onClose', () => management.close());
   return management;
