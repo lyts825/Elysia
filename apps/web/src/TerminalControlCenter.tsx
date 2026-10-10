@@ -23,6 +23,16 @@ import type { TerminalCliCapability } from '../../../packages/contracts/src/term
 import './terminal-control.css';
 
 type CliStatus = { available: boolean; installed: boolean | null; version?: string; message: string };
+const readRegions = ['control', 'installations', 'preferences', 'settings', 'capabilities'] as const;
+type ReadRegion = (typeof readRegions)[number];
+type ReadState = { loading: boolean; loaded: boolean; error: string };
+const readLabels: Record<ReadRegion, string> = {
+  control: '应用与 API 连接',
+  installations: '安装任务',
+  preferences: '项目默认',
+  settings: '终端模板',
+  capabilities: 'CLI 能力',
+};
 type ConnectionDraft = {
   id: string;
   revision: number;
@@ -169,6 +179,15 @@ export function TerminalControlCenter({
   const drafts = useRef({ projectDraft, projectBaseline });
   drafts.current = { projectDraft, projectBaseline };
   const profileKeys = useRef<Partial<Record<TerminalAppId, string>>>({});
+  const [reads, setReads] = useState<Record<ReadRegion, ReadState>>(
+    () =>
+      Object.fromEntries(
+        readRegions.map((region) => [region, { loading: false, loaded: region === 'settings', error: '' }]),
+      ) as Record<ReadRegion, ReadState>,
+  );
+  const readControllers = useRef<Partial<Record<ReadRegion, AbortController>>>({});
+  const latestData = useRef({ overview, preferences });
+  latestData.current = { overview, preferences };
   profileKeys.current = Object.fromEntries(
     (overview?.catalog || []).map((item) => {
       const binding = overview?.apps.entries.find((entry) => entry.id === item.id)?.connectionId;
@@ -184,49 +203,79 @@ export function TerminalControlCenter({
   );
   const panelId = useId(),
     tabPrefix = useId();
-  async function load(signal?: AbortSignal) {
-    const [control, installs, prefs, latestSettings, matrix] = await Promise.all([
-      api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal),
-      api<TerminalCliInstallationJob[]>(
-        '/terminal/control/installations?latest=true',
-        undefined,
-        undefined,
-        signal,
-      ),
-      project
-        ? api<TerminalProjectPreferences>(
-            `/terminal/control/projects/${project.id}/preferences`,
-            undefined,
-            undefined,
-            signal,
-          )
-        : Promise.resolve(null),
-      api<SurfaceTerminalSettings>('/terminal/settings', undefined, undefined, signal),
-      api<TerminalCliCapability[]>('/terminal/capabilities', undefined, undefined, signal),
-    ]);
-    if (signal?.aborted) return;
-    setOverview(control);
-    setJobs(installs);
-    setSettings(latestSettings);
-    setCapabilities(matrix);
-    setPreferences(prefs);
-    if (
-      !drafts.current.projectDraft ||
-      preferenceValues(drafts.current.projectDraft) === preferenceValues(drafts.current.projectBaseline)
-    ) {
-      setProjectDraft(prefs);
-      setProjectBaseline(prefs);
+  async function readRegion(region: ReadRegion, signal?: AbortSignal) {
+    readControllers.current[region]?.abort();
+    const controller = new AbortController();
+    readControllers.current[region] = controller;
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) controller.abort();
+    setReads((current) => ({ ...current, [region]: { ...current[region], loading: true, error: '' } }));
+    try {
+      let value: unknown;
+      if (region === 'preferences' && !project) value = null;
+      else {
+        const path =
+          region === 'control'
+            ? '/terminal/control'
+            : region === 'installations'
+              ? '/terminal/control/installations?latest=true'
+              : region === 'preferences'
+                ? `/terminal/control/projects/${project!.id}/preferences`
+                : region === 'settings'
+                  ? '/terminal/settings'
+                  : '/terminal/capabilities';
+        value = await api(path, undefined, undefined, controller.signal);
+      }
+      if (controller.signal.aborted || readControllers.current[region] !== controller) return;
+      if (region === 'control') {
+        const control = value as TerminalControlOverview;
+        latestData.current.overview = control;
+        setOverview(control);
+        controlUpdated(control, latestData.current.preferences ?? undefined);
+      } else if (region === 'installations') setJobs(value as TerminalCliInstallationJob[]);
+      else if (region === 'settings') savedSettings(value as SurfaceTerminalSettings);
+      else if (region === 'capabilities') setCapabilities(value as TerminalCliCapability[]);
+      else {
+        const prefs = value as TerminalProjectPreferences | null;
+        latestData.current.preferences = prefs;
+        setPreferences(prefs);
+        if (
+          !drafts.current.projectDraft ||
+          preferenceValues(drafts.current.projectDraft) === preferenceValues(drafts.current.projectBaseline)
+        ) {
+          setProjectDraft(prefs);
+          setProjectBaseline(prefs);
+        }
+        if (latestData.current.overview) controlUpdated(latestData.current.overview, prefs ?? undefined);
+      }
+      setReads((current) => ({ ...current, [region]: { loading: false, loaded: true, error: '' } }));
+      return value;
+    } catch (issue) {
+      if (!controller.signal.aborted && readControllers.current[region] === controller)
+        setReads((current) => ({
+          ...current,
+          [region]: { ...current[region], loading: false, error: message(issue) },
+        }));
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      if (readControllers.current[region] === controller) delete readControllers.current[region];
     }
-    updated(latestSettings);
-    controlUpdated(control, prefs ?? undefined);
-    return prefs;
+  }
+  async function load(signal?: AbortSignal) {
+    const values = await Promise.allSettled(readRegions.map((region) => readRegion(region, signal)));
+    const prefs = values[2];
+    return prefs.status === 'fulfilled'
+      ? (prefs.value as TerminalProjectPreferences | null | undefined)
+      : undefined;
   }
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal).catch((issue) => {
-      if (!controller.signal.aborted) setError(message(issue));
-    });
-    return () => controller.abort();
+    void load(controller.signal);
+    return () => {
+      controller.abort();
+      for (const reader of Object.values(readControllers.current)) reader?.abort();
+    };
   }, [project?.id]);
   const running = jobs.some((job) => job.status === 'running');
   useEffect(() => {
@@ -235,11 +284,13 @@ export function TerminalControlCenter({
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        setJobs(
-          await api('/terminal/control/installations?latest=true', undefined, undefined, controller.signal),
-        );
+        await readRegion('installations', controller.signal);
       } catch (issue) {
-        if (!controller.signal.aborted) setError(message(issue));
+        if (!controller.signal.aborted)
+          setReads((current) => ({
+            ...current,
+            installations: { ...current.installations, loading: false, error: message(issue) },
+          }));
       }
       if (!controller.signal.aborted) timer = setTimeout(poll, 1800);
     };
@@ -374,6 +425,16 @@ export function TerminalControlCenter({
     settings.profiles.find((entry) => entry.agent === overview?.apps.defaultAppId);
   const projectProtocols =
     overview?.catalog.find((entry) => entry.id === projectProfile?.agent)?.protocols || [];
+  const visibleRegions: ReadRegion[] =
+    tab === 'apps'
+      ? ['control', 'settings', 'installations', 'capabilities']
+      : tab === 'connections'
+        ? ['control']
+        : tab === 'project'
+          ? ['control', 'preferences', 'settings']
+          : tab === 'templates'
+            ? ['settings', 'control']
+            : [];
   return (
     <Modal
       title="终端管理"
@@ -480,23 +541,40 @@ export function TerminalControlCenter({
             </button>
           </div>
         )}
+        {visibleRegions
+          .filter((region) => reads[region].loading || reads[region].error)
+          .map((region) => (
+            <div className="terminal-control-read-error" key={region} data-terminal-read-region={region}>
+              <p
+                className={reads[region].error ? 'inline-warning' : 'field-help'}
+                role={reads[region].error ? 'alert' : 'status'}
+              >
+                {readLabels[region]}
+                {reads[region].loading ? '正在读取…' : `读取失败：${reads[region].error}`}
+              </p>
+              {reads[region].error && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || reads[region].loading}
+                  onClick={() => void readRegion(region)}
+                >
+                  重试{readLabels[region]}
+                </button>
+              )}
+            </div>
+          ))}
         {notice && (
           <p className="terminal-control-notice" role="status">
             <Icon name="check" size={16} />
             {notice}
           </p>
         )}
-        {!overview ? (
+        {!overview && ['apps', 'connections', 'project'].includes(tab) ? (
           <div className="terminal-control-loading">
-            {error ? (
-              <button className="secondary" onClick={() => void perform(() => load())}>
-                重新加载
-              </button>
-            ) : (
-              '正在读取终端管理…'
-            )}
+            {reads.control.error ? '应用与 API 连接暂不可用，请重试此区域。' : '正在读取应用与 API 连接…'}
           </div>
-        ) : tab === 'apps' ? (
+        ) : tab === 'apps' && overview ? (
           <>
             <div className="terminal-control-heading">
               <div>
@@ -718,7 +796,7 @@ export function TerminalControlCenter({
                       {item.id !== 'custom' && (
                         <button
                           className="secondary"
-                          disabled={busy || running}
+                          disabled={busy || running || !reads.installations.loaded}
                           onClick={() =>
                             void perform(async () => {
                               const installed = await mutation<TerminalCliInstallationJob>(
@@ -830,7 +908,7 @@ export function TerminalControlCenter({
               </div>
             </details>
           </>
-        ) : tab === 'connections' ? (
+        ) : tab === 'connections' && overview ? (
           <div className="terminal-connection-layout">
             <aside className="terminal-connection-list">
               <div className="terminal-control-heading">
@@ -1101,7 +1179,7 @@ export function TerminalControlCenter({
               </form>
             )}
           </div>
-        ) : tab === 'project' ? (
+        ) : tab === 'project' && overview ? (
           project && projectDraft ? (
             <form
               className="terminal-project-defaults"
@@ -1220,8 +1298,12 @@ export function TerminalControlCenter({
           ) : (
             <div className="terminal-connection-empty">
               <Icon name="folder" size={32} />
-              <h3>先选择一个项目</h3>
-              <p>在工作台打开项目后，可在此设置独立的 CLI 与 API 连接。</p>
+              <h3>{project ? '项目配置尚未就绪' : '先选择一个项目'}</h3>
+              <p>
+                {project
+                  ? '项目默认配置读取完成后即可编辑。'
+                  : '在工作台打开项目后，可在此设置独立的 CLI 与 API 连接。'}
+              </p>
             </div>
           )
         ) : tab === 'maintenance' ? (

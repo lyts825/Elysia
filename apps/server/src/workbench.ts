@@ -6,6 +6,7 @@ import { AppError, invariant } from '../../../packages/contracts/src/index.js';
 import { hash, type Store } from '../../../packages/storage/src/index.js';
 
 const prefix = 'workbench:v1:';
+const indexPrefix = 'workbench-index:v1:';
 const maxEntries = 4096;
 const maxTotalBytes = 16 * 1024 * 1024;
 // JSON escaping can use six bytes for each character in a 200,000-character draft.
@@ -112,17 +113,27 @@ function capacity(count: number, bytes: number) {
     );
 }
 
-export function registerWorkbench(app: FastifyInstance, store: Store) {
+export function workbenchScope(store: Store) {
   // Store.directory is already resolved with realpathSync, including directory links.
   const directory = path.normalize(path.resolve(store.directory));
-  const scope = hash(`workbench:v1:${process.platform === 'win32' ? directory.toLowerCase() : directory}`);
+  return hash(`workbench:v1:${process.platform === 'win32' ? directory.toLowerCase() : directory}`);
+}
+export function registerWorkbench(app: FastifyInstance, store: Store) {
+  const scope = workbenchScope(store);
+  // Older application versions and management deletes invalidate the derived sizes too.
+  for (const action of ['INSERT', 'UPDATE', 'DELETE'] as const) {
+    const row = action === 'DELETE' ? 'OLD' : 'NEW';
+    store.db.exec(
+      `CREATE TRIGGER IF NOT EXISTS workbench_index_${action.toLowerCase()} AFTER ${action} ON storage_meta WHEN ${row}.key LIKE 'workbench:v1:%' BEGIN DELETE FROM storage_meta WHERE key='workbench-index:v1:' || substr(${row}.key,14); END;`,
+    );
+  }
   const exists = ({ table, id }: { table: 'projects' | 'runs'; id: string }) =>
     !!store.db.prepare(`SELECT id FROM ${table} WHERE id=?`).get(id);
   const rows = () =>
-    store.db
-      .prepare('SELECT key,value FROM storage_meta WHERE key LIKE ? ORDER BY key')
-      .all(prefix + '%') as Row[];
-  const prune = (entries: Row[]) =>
+    store.db.prepare('SELECT key FROM storage_meta WHERE key LIKE ? ORDER BY key').all(prefix + '%') as {
+      key: string;
+    }[];
+  const prune = (entries: { key: string }[]) =>
     entries.filter((row) => {
       const key = row.key.slice(prefix.length);
       if (!keySchema.safeParse(key).success)
@@ -130,24 +141,88 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
       const entity = reference(key);
       if (!entity || exists(entity)) return true;
       store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(row.key);
+      store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(indexPrefix + key);
       return false;
     });
+  const read = (key: string) =>
+    decode(store.db.prepare('SELECT key,value FROM storage_meta WHERE key=?').get(key) as Row);
+  const index = (key: string, decoded: { entry: Entry; bytes: number }) => {
+    store.db
+      .prepare(
+        'INSERT INTO storage_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      )
+      .run(
+        indexPrefix + key.slice(prefix.length),
+        JSON.stringify({ bytes: decoded.bytes, revision: decoded.entry.revision }),
+      );
+  };
+  const totalBytes = (saved: { key: string }[]) => {
+    let total = 0;
+    for (const row of saved) {
+      const metadata = store.db
+        .prepare('SELECT value FROM storage_meta WHERE key=?')
+        .get(indexPrefix + row.key.slice(prefix.length)) as { value: string } | undefined;
+      let bytes: number | undefined;
+      try {
+        const value = JSON.parse(metadata?.value ?? 'null');
+        if (
+          Number.isSafeInteger(value?.bytes) &&
+          value.bytes > 0 &&
+          value.bytes <= maxEntryBytes &&
+          Number.isSafeInteger(value.revision) &&
+          value.revision > 0
+        )
+          bytes = value.bytes;
+      } catch {
+        /* Rebuild redundant metadata from the preserved entry. */
+      }
+      if (bytes === undefined) {
+        const decoded = read(row.key);
+        index(row.key, decoded);
+        bytes = decoded.bytes;
+      }
+      total += bytes;
+    }
+    return total;
+  };
 
-  app.get('/api/workbench', () =>
-    store.tx(() => {
+  app.get('/api/workbench', (request) => {
+    const query = z
+      .object({ view: z.literal('preferences').optional(), keys: z.string().max(15424).optional() })
+      .strict()
+      .parse(request.query);
+    invariant(
+      !query.view || query.keys === undefined,
+      'WORKBENCH_READ_SELECTION',
+      '请只指定一种缓存读取方式',
+    );
+    const keys =
+      query.keys === undefined
+        ? undefined
+        : new Set(
+            z
+              .array(keySchema)
+              .max(64)
+              .parse(query.keys ? query.keys.split(',') : []),
+          );
+    return store.tx(() => {
       const saved = prune(rows());
       capacity(saved.length, 0);
       const entries: Record<string, Entry> = {};
       let bytes = 0;
       for (const row of saved) {
-        const decoded = decode(row);
+        const key = row.key.slice(prefix.length);
+        if (query.view === 'preferences' && key.startsWith('draft:')) continue;
+        if (keys && !keys.has(key)) continue;
+        const decoded = read(row.key);
+        index(row.key, decoded);
         bytes += decoded.bytes;
         capacity(saved.length, bytes);
         entries[row.key.slice(prefix.length)] = decoded.entry;
       }
-      return { scope, entries };
-    }),
-  );
+      return { scope, entries, partial: !!query.view || keys !== undefined };
+    });
+  });
 
   app.put<{ Params: { key: string } }>('/api/workbench/:key', (request) => {
     const key = keySchema.parse(request.params.key);
@@ -160,7 +235,8 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
       const saved = prune(rows());
       const previous = saved.find((row) => row.key === prefix + key);
       capacity(saved.length + (previous ? 0 : 1), 0);
-      const currentRevision = previous ? decode(previous).entry.revision : 0;
+      const current = previous ? read(previous.key) : undefined;
+      const currentRevision = current?.entry.revision ?? 0;
       if (body.expectedRevision !== currentRevision)
         throw new AppError(
           'REVISION_CONFLICT',
@@ -171,8 +247,7 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
         );
       const entry = { value: body.value, revision: currentRevision + 1 };
       const raw = Buffer.from(JSON.stringify(entry));
-      let bytes = raw.length;
-      for (const row of saved) if (row !== previous) bytes += decode(row).bytes;
+      const bytes = raw.length + totalBytes(saved.filter((row) => row !== previous));
       capacity(saved.length + (previous ? 0 : 1), bytes);
       const value = gzipSync(raw, { level: 6 }).toString('base64');
       store.db
@@ -180,6 +255,7 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
           'INSERT INTO storage_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
         )
         .run(prefix + key, value);
+      index(prefix + key, { entry, bytes: raw.length });
       return entry;
     });
   });

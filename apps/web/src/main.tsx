@@ -125,6 +125,7 @@ type Detail = {
   recordCounts?: { requests: number; operations: number; artifacts: number };
   recordsLimited?: boolean;
   summaryDeferred?: boolean;
+  eventCursor?: number;
   recordVersions?: { requests: string; operations: string; artifacts: string };
   terminalRuntime?: { executor: ExecutorRuntimeSnapshot; terminal: TerminalRuntimeSnapshot };
 };
@@ -236,6 +237,8 @@ function App({
   >(undefined);
   const [historySegment, setHistorySegment] = useState(0);
   const fullDetailRequested = useRef(false);
+  const summaryDemand = useRef(false);
+  const streamCursor = useRef({ runId: '', cursor: 0 });
   const [summaryLoading, setSummaryLoading] = useState(false);
   const detailSnapshot = useRef(detail);
   detailSnapshot.current = detail;
@@ -323,7 +326,15 @@ function App({
     typeof cacheState.entries[draftKey]?.value === 'string'
       ? (cacheState.entries[draftKey].value as string)
       : '';
-  const setDraft = (value: string) => cache.set(draftKey, value);
+  const setDraft = (value: string) => {
+    if (!navigationInitialized.current) {
+      navigationInitialized.current = true;
+      savedNavigation.current = undefined;
+      navigationEpoch.current++;
+      writeNavigation(navigationStorageKey.current, navigation.current);
+    }
+    cache.set(draftKey, value);
+  };
   const [homeModels, setHomeModels] = useState<Record<string, ModelChoice>>({});
   const homeModel = homeModels[draftKey] || defaultChoice(providers);
   const homeProvider = providers.find((provider) => provider.id === homeModel.providerId);
@@ -485,6 +496,8 @@ function App({
   const detailsVisible =
     !!runId && !!detail && !previewOpen && (compactLayout ? detailsDrawerOpen : !detailsCollapsed);
   const detailsOverlayOpen = compactLayout && detailsVisible;
+  summaryDemand.current =
+    (detailsVisible && ['agents', 'artifacts', 'usage'].includes(tab)) || modal.startsWith('context:');
   useDrawerFocus(sidebarRef, navigationDrawerOpen, () => setNavigationOpen(false));
   useDrawerFocus(detailsRef, detailsOverlayOpen, () => setDetailsDrawerOpen(false));
   useEffect(() => {
@@ -568,6 +581,7 @@ function App({
         historyPending.current = undefined;
         historyMoving.current = false;
         fullDetailRequested.current = false;
+        streamCursor.current = { runId: next.runId, cursor: 0 };
         setHistoryLoading(false);
         setSummaryLoading(false);
         setHistorySegment(0);
@@ -805,12 +819,12 @@ function App({
     if (ready && runListFullSummary.current) void refresh();
   }, [modal, ready, refresh]);
   const refreshDetail = useCallback(
-    async (trailing = false) => {
+    async (trailing = false, forceSummary = false) => {
       const wanted = activeRunId.current;
       if (!wanted) return;
       const position = historyPosition.current;
       const before = position.runId === wanted ? position.before : '';
-      const full = fullDetailRequested.current;
+      const full = forceSummary || (fullDetailRequested.current && summaryDemand.current);
       const append = historyAppend.current;
       const retained =
         append && detailSnapshot.current?.run.id === wanted
@@ -847,6 +861,8 @@ function App({
             return;
           }
           if (!signal.aborted && activeRunId.current === wanted && detailRequest.current === request) {
+            if (Number.isSafeInteger(result.eventCursor) && result.eventCursor! >= 0)
+              streamCursor.current = { runId: wanted, cursor: result.eventCursor! };
             const pending = historyPending.current;
             if (pending?.target === position) {
               historyPending.current = undefined;
@@ -905,7 +921,7 @@ function App({
     fullDetailRequested.current = true;
     setSummaryLoading(true);
     try {
-      return (await refreshDetail()) === true && activeRunId.current === wanted;
+      return (await refreshDetail(false, true)) === true && activeRunId.current === wanted;
     } finally {
       if (activeRunId.current === wanted) setSummaryLoading(false);
     }
@@ -937,6 +953,7 @@ function App({
           bindReadingCheckpointScope(client, scope);
           navigationStorageKey.current = navigationKey(scope, client);
           savedNavigation.current = readNavigation(navigationStorageKey.current);
+          cache.bindScope(client.workbenchScope());
           // The authenticated workbench and lists do not depend on each other.
           sessionReady.current = true;
           setReady(true);
@@ -965,6 +982,14 @@ function App({
   useEffect(() => {
     void connect();
   }, [connect]);
+  useEffect(() => {
+    if (!ready) return;
+    const keys = [newDraftKey(projectId)];
+    if (runId) keys.push(`draft:run:${runId}`, `draft:terminal-continuation:${runId}`);
+    for (const operation of detail?.operations || [])
+      if (operation.status === 'UNCERTAIN') keys.push(`draft:terminal-recovery:${runId}:${operation.id}`);
+    void cache.ensureKeys(keys).catch(() => {});
+  }, [ready, projectId, runId, detail?.operations, cache]);
   useEffect(() => {
     if (!terminalSurface || !ready || !projectId) {
       setTerminalPreferences(null);
@@ -1002,8 +1027,7 @@ function App({
     setDetail((old) => (old?.run.id === runId ? old : null));
     setConnection('connecting');
     if (!ready || !runId) return;
-    void refreshDetail();
-    const source = new EventSource(apiUrl('/runs/' + runId + '/events'));
+    let source: EventSource | undefined;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let frame: number | null = null;
@@ -1014,77 +1038,102 @@ function App({
         if (!disposed) setStreaming(runStream.current.texts());
       });
     };
-    const reload = () => {
+    let listsDirty = false;
+    const reload = (lists = false) => {
+      listsDirty ||= lists;
       if (!disposed && !timer)
         timer = setTimeout(() => {
           timer = null;
           void refreshDetail(true).catch(() => {});
-          void refresh(false, true).catch(() => {});
+          if (listsDirty) void refresh(false, true).catch(() => {});
+          listsDirty = false;
         }, 120);
     };
-    source.addEventListener('open', () => {
-      if (disposed) return;
-      setConnection('connected');
-      reload();
-    });
-    source.addEventListener('error', (event) => {
-      if (!disposed && !(event instanceof MessageEvent)) setConnection('reconnecting');
-    });
-    const events = [
-      'run.updated',
-      'plan.proposed',
-      'task.updated',
-      'agent.started',
-      'message.completed',
-      'tool.started',
-      'tool.completed',
-      'decision.required',
-      'artifact.created',
-      'usage.updated',
-      'context.updated',
-      'context.policy.updated',
-      'terminal.started',
-      'terminal.phase',
-      'terminal.output',
-      'terminal.completed',
-      'terminal.failed',
-      'terminal.unavailable',
-      'terminal.accepted',
-      'error',
-    ];
-    for (const event of events)
-      source.addEventListener(event, (e) => {
+    const start = async () => {
+      const read = await refreshDetail();
+      if (disposed || activeRunId.current !== runId) return;
+      if (read !== true) {
+        timer = setTimeout(() => {
+          timer = null;
+          void start();
+        }, 5000);
+        return;
+      }
+      const cursor = streamCursor.current.runId === runId ? streamCursor.current.cursor : 0;
+      source = new EventSource(apiUrl('/runs/' + runId + '/events?after=' + cursor));
+      source.addEventListener('open', () => {
         if (disposed) return;
-        if (event === 'terminal.output') {
-          const data = JSON.parse((e as MessageEvent).data);
-          setDetail((old) =>
-            old?.run.id === runId
-              ? {
-                  ...old,
-                  events: [...old.events.filter((item) => item.seq !== data.seq), data]
-                    .sort((a, b) => a.seq - b.seq)
-                    .slice(-100),
-                }
-              : old,
-          );
-          return;
-        }
-        if (event === 'message.completed') {
-          const data = JSON.parse((e as MessageEvent).data);
-          runStream.current.complete(data.taskId, data.payload);
-          publishStream();
-        }
+        setConnection('connected');
         reload();
       });
-    source.addEventListener('message.delta', (e) => {
-      if (disposed) return;
-      const data = JSON.parse((e as MessageEvent).data);
-      if (!runStream.current.delta(data)) reload();
-      publishStream();
-    });
+      source.addEventListener('error', (event) => {
+        if (!disposed && !(event instanceof MessageEvent)) setConnection('reconnecting');
+      });
+      const events = [
+        'run.updated',
+        'plan.proposed',
+        'task.updated',
+        'agent.started',
+        'message.completed',
+        'tool.started',
+        'tool.completed',
+        'decision.required',
+        'artifact.created',
+        'usage.updated',
+        'context.updated',
+        'context.policy.updated',
+        'terminal.started',
+        'terminal.phase',
+        'terminal.output',
+        'terminal.completed',
+        'terminal.failed',
+        'terminal.unavailable',
+        'terminal.accepted',
+        'error',
+      ];
+      for (const event of events)
+        source.addEventListener(event, (e) => {
+          if (disposed) return;
+          if (event === 'terminal.output') {
+            const data = JSON.parse((e as MessageEvent).data);
+            setDetail((old) =>
+              old?.run.id === runId
+                ? {
+                    ...old,
+                    events: [...old.events.filter((item) => item.seq !== data.seq), data]
+                      .sort((a, b) => a.seq - b.seq)
+                      .slice(-100),
+                  }
+                : old,
+            );
+            return;
+          }
+          if (event === 'message.completed') {
+            const data = JSON.parse((e as MessageEvent).data);
+            runStream.current.complete(data.taskId, data.payload);
+            publishStream();
+          }
+          reload(
+            [
+              'run.updated',
+              'terminal.completed',
+              'terminal.failed',
+              'terminal.accepted',
+              'terminal.unavailable',
+            ].includes(event),
+          );
+        });
+      source.addEventListener('message.delta', (e) => {
+        if (disposed) return;
+        const data = JSON.parse((e as MessageEvent).data);
+        if (!runStream.current.delta(data)) reload();
+        publishStream();
+      });
+    };
+    void start();
     return () => {
       disposed = true;
-      source.close();
+      source?.close();
       if (timer) clearTimeout(timer);
       if (frame !== null) cancelAnimationFrame(frame);
     };
@@ -1182,7 +1231,7 @@ function App({
       selectRun(target);
       setTab('artifacts');
       fullDetailRequested.current = true;
-      void refreshDetail();
+      void refreshDetail(false, true);
       setDetailsCollapsed(false);
       setDetailsDrawerOpen(true);
       heldNavigation.current = operationId

@@ -590,6 +590,41 @@ export class Store {
         occurredAt: r.occurred_at,
       }));
   }
+  /** SSE notifications have a fixed batch and bounded decompression; full bodies stay in record reads. */
+  eventNotifications(runId: string, after: number): Event[] {
+    const rows = this.db
+      .prepare('SELECT * FROM events WHERE run_id=? AND seq>? ORDER BY seq LIMIT 32')
+      .all(runId, after) as any[];
+    return rows.map((row) => {
+      let payload: unknown;
+      let type = row.type;
+      try {
+        if (row.content)
+          payload = JSON.parse(gunzipSync(row.content, { maxOutputLength: 48 * 1024 }).toString('utf8'));
+        else {
+          if (Buffer.byteLength(row.payload) > 48 * 1024)
+            throw Object.assign(new Error('Large notification'), { code: 'ERR_BUFFER_TOO_LARGE' });
+          payload = JSON.parse(row.payload);
+          if (payload && typeof payload === 'object' && 'externalPayloadRef' in payload)
+            throw Object.assign(new Error('Legacy external notification'), { code: 'ERR_BUFFER_TOO_LARGE' });
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ERR_BUFFER_TOO_LARGE') throw error;
+        type = 'run.updated';
+        payload = { detailsOmitted: true, eventType: row.type };
+      }
+      return {
+        runId: row.run_id,
+        seq: row.seq,
+        eventId: row.event_id,
+        type,
+        taskId: row.task_id,
+        attemptId: row.attempt_id,
+        payload,
+        occurredAt: row.occurred_at,
+      };
+    });
+  }
   private eventPayload(value: string) {
     const payload = JSON.parse(value);
     return payload && Object.keys(payload).length === 1 && typeof payload.externalPayloadRef === 'string'

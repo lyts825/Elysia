@@ -42,6 +42,7 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
   const apiUrl = (path: string) => apiPrefix + path;
   const surfaceStorageKey = (key: string) => (surface === 'terminal' ? key + ':terminal' : key);
   let csrf = '';
+  let workbenchScope: string | undefined;
   async function api<T = any>(
     path: string,
     body?: unknown,
@@ -170,6 +171,10 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
       if (typeof result?.csrf !== 'string' || !result.csrf.trim())
         throw new ApiError('本机服务返回的会话无法读取，请重新打开 Elysia。', 'protocol', 200);
       csrf = result.csrf;
+      workbenchScope =
+        typeof result.workbenchScope === 'string' && /^[a-f0-9]{64}$/.test(result.workbenchScope)
+          ? result.workbenchScope
+          : undefined;
       bootstrapToken = null;
       sessionFailure = undefined;
       return typeof result.selectionScope === 'string' && result.selectionScope.trim()
@@ -185,7 +190,16 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     });
     return sessionPromise;
   }
-  return { surface, api, apiBytes, apiUrl, mutation, initializeSession, surfaceStorageKey };
+  return {
+    surface,
+    api,
+    apiBytes,
+    apiUrl,
+    mutation,
+    initializeSession,
+    surfaceStorageKey,
+    workbenchScope: () => workbenchScope,
+  };
 }
 export type SurfaceClient = ReturnType<typeof createSurfaceClient>;
 // Keep direct imports usable by standalone helper consumers; React workbenches

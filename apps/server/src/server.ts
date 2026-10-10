@@ -51,7 +51,8 @@ import { ArtifactPreviewService } from './artifact-preview.js';
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
-import { registerWorkbench } from './workbench.js';
+import { registerWorkbench, workbenchScope } from './workbench.js';
+import { BoundedEventStream, eventFrame } from './event-stream.js';
 import { availableModels, resolveModelChoice } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
 import { createSurfaceAuth, type SurfaceAuth, type WorkbenchSurface } from './surfaces.js';
@@ -233,6 +234,7 @@ export function createServer(
     for (const config of defaultProviders())
       if (!store.get('providers', config.id)) store.put('providers', config);
   const selectionScope = randomBytes(16).toString('hex');
+  const stableWorkbenchScope = workbenchScope(store);
   const auth = options.auth ?? createSurfaceAuth(options.port, options.dev);
   const { bootstrapToken, sessions, origins, hosts } = auth;
   const previews = new PreviewService(store, executor.gateway, prefix);
@@ -465,12 +467,19 @@ export function createServer(
       csrf = randomBytes(32).toString('hex');
     sessions.set(session, csrf);
     reply.header('Set-Cookie', `elysia_session=${session}; HttpOnly; SameSite=Strict; Path=/`);
-    return { csrf, version: VERSION, selectionScope, surface: options.surface ?? 'native' };
+    return {
+      csrf,
+      version: VERSION,
+      selectionScope,
+      workbenchScope: stableWorkbenchScope,
+      surface: options.surface ?? 'native',
+    };
   });
   app.get('/api/session', async (request) => ({
     csrf: sessions.get(cookieSession(request.headers.cookie)!),
     version: VERSION,
     selectionScope,
+    workbenchScope: stableWorkbenchScope,
     surface: options.surface ?? 'native',
   }));
   app.get('/api/projects', async () => store.all<Project>('projects'));
@@ -1066,6 +1075,13 @@ export function createServer(
     });
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id', async (request) => {
+    const eventCursor = Number(
+      (
+        store.db
+          .prepare('SELECT COALESCE(MAX(seq),0) n FROM events WHERE run_id=?')
+          .get(request.params.id) as { n: number }
+      ).n,
+    );
     const run = store.require<Run>('runs', request.params.id);
     const query = z
       .object({
@@ -1101,6 +1117,7 @@ export function createServer(
         : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
     return {
       run,
+      eventCursor,
       ...(options.surface === 'terminal'
         ? {
             terminalRuntime: {
@@ -1427,6 +1444,7 @@ export function createServer(
     });
   });
   const streams = new Map<string, Set<any>>();
+  const boundedStreams = new WeakMap<object, BoundedEventStream>();
   const management = registerManagement(
     app,
     store,
@@ -1440,19 +1458,26 @@ export function createServer(
   );
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
-      stream.write(
-        'event: message.delta\ndata: ' + JSON.stringify({ runId, taskId, text, requestId, offset }) + '\n\n',
-      );
+      boundedStreams
+        .get(stream)
+        ?.write(
+          'event: message.delta\ndata: ' +
+            JSON.stringify({ runId, taskId, text, requestId, offset }) +
+            '\n\n',
+          true,
+        );
   };
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/api/runs/:id/events',
     async (request, reply) => {
       store.require<Run>('runs', request.params.id);
       const runId = request.params.id;
-      let after = Math.max(Number(request.query.after ?? request.headers['last-event-id'] ?? 0), 0);
+      let after = Math.max(Number(request.headers['last-event-id'] ?? request.query.after ?? 0), 0);
       invariant(Number.isSafeInteger(after), 'EVENT_CURSOR', '事件游标无效');
       reply.hijack();
       const stream = reply.raw;
+      const bounded = new BoundedEventStream(stream, runId);
+      boundedStreams.set(stream, bounded);
       stream.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -1463,14 +1488,15 @@ export function createServer(
       if (!streams.has(runId)) streams.set(runId, new Set());
       streams.get(runId)!.add(stream);
       const flush = () => {
-        for (const event of store.events(runId, after)) {
-          stream.write(`id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+        if (!bounded.available) return;
+        for (const event of store.eventNotifications(runId, after)) {
+          if (!bounded.available || !bounded.write(eventFrame(event))) break;
           after = event.seq;
         }
       };
       flush();
       const timer = setInterval(flush, 350),
-        heartbeat = setInterval(() => stream.write(': heartbeat\n\n'), 15000);
+        heartbeat = setInterval(() => bounded.write(': heartbeat\n\n'), 15000);
       stream.on('close', () => {
         clearInterval(timer);
         clearInterval(heartbeat);
