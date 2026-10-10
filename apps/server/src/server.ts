@@ -55,7 +55,8 @@ import { registerWorkbench } from './workbench.js';
 import { availableModels, resolveModelChoice } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
 import { createSurfaceAuth, type SurfaceAuth, type WorkbenchSurface } from './surfaces.js';
-import { registerTerminalSettings } from './terminal-settings.js';
+import { registerTerminalSettings, terminalSettings } from './terminal-settings.js';
+import { registerTerminalLogSearchRoutes } from './terminal-log-search.js';
 import { TerminalControlService, registerTerminalControl, terminalAppCatalog } from './terminal-control.js';
 import { registerCliManagement } from './cli-management.js';
 const textPageQuery = z.object({
@@ -374,6 +375,7 @@ export function createServer(
     surface: options.surface ?? 'native',
   }));
   registerWorkbench(app, store);
+  registerTerminalLogSearchRoutes(app, store, artifactPreviews);
   if (options.surface !== 'native') registerTerminalSettings(app, store);
   if (terminalControl) {
     registerTerminalControl(app, terminalControl);
@@ -774,8 +776,21 @@ export function createServer(
   });
   app.get('/api/runs', async () => store.all<Run>('runs').reverse());
   app.post('/api/terminal/check', async (request) => {
-    const body = z.object({ profile: AgentTerminalProfile.optional() }).parse(request.body);
-    return terminal.check(body.profile ? boundTerminalProfile(body.profile) : undefined);
+    const body = z
+      .object({
+        profile: AgentTerminalProfile.optional(),
+        profileId: z.string().uuid().optional(),
+        projectId: z.string().uuid().optional(),
+      })
+      .strict()
+      .parse(request.body);
+    invariant(!body.profile || !body.profileId, 'TERMINAL_PROFILE_SELECTION', '请只指定一个终端模板');
+    if (body.projectId) store.require<Project>('projects', body.projectId);
+    const profile = body.profileId
+      ? terminalSettings(store).profiles.find((value) => value.id === body.profileId)
+      : body.profile;
+    invariant(!body.profileId || profile, 'TERMINAL_PROFILE_MISSING', '终端模板已删除，请刷新后重试');
+    return terminal.check(profile ? boundTerminalProfile(profile, body.projectId) : undefined);
   });
   const assertTerminalMutable = (runId: string) => {
     const run = store.require<Run>('runs', runId);
@@ -834,6 +849,34 @@ export function createServer(
       assertTerminalMutable(run.id);
       return commit();
     });
+  });
+  app.get<{ Params: { id: string } }>('/api/runs/:id/terminal/session', async (request) =>
+    terminal.sessionView(request.params.id),
+  );
+  app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/continue', async (request) => {
+    const body = Command.extend({
+      expectedRevision: z.number().int().nonnegative(),
+      mode: z.enum(['resume', 'new-session']),
+      text: z.string().trim().min(1).max(60000),
+    })
+      .strict()
+      .parse(request.body);
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+      return command(body, request.url, () => {
+        throw new AppError('COMMAND_MISSING', '命令结果不存在');
+      });
+    const run = assertTerminalMutable(request.params.id);
+    invariant(options.surface !== 'native', 'TERMINAL_READ_ONLY', '旧终端记录仅供查看，请切换到 Agent 终端');
+    revision(body, run);
+    invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
+    const commit = await terminal.prepareContinuation(run.id, body.expectedRevision, body.mode, body.text);
+    const result = command(body, request.url, () => {
+      assertTerminalMutable(run.id);
+      invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
+      return commit();
+    });
+    executor.resume(run.id);
+    return result;
   });
   app.post('/api/runs', async (request) => {
     const body = z
@@ -972,6 +1015,22 @@ export function createServer(
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id', async (request) => {
     const run = store.require<Run>('runs', request.params.id);
+    const query = z
+      .object({
+        messageLimit: z.coerce.number().int().min(40).max(240).optional(),
+        beforeMessage: z.string().uuid().optional(),
+      })
+      .strict()
+      .parse(request.query);
+    invariant(
+      !query.beforeMessage || query.messageLimit !== undefined,
+      'MESSAGE_CURSOR_LIMIT',
+      '历史分页须指定消息数量',
+    );
+    const history =
+      query.messageLimit === undefined
+        ? { messages: store.all<Message>('messages', run.id) }
+        : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
     return {
       run,
       readOnly: options.surface === 'native' && run.execution?.kind === 'docker-agent',
@@ -983,7 +1042,7 @@ export function createServer(
       agents: store.all<Agent>('agents', run.id),
       contexts:
         options.surface === 'terminal' ? [] : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
-      messages: store.all<Message>('messages', run.id),
+      ...history,
       artifacts: store.all<Artifact>('artifacts', run.id),
       snapshots: store.all('snapshots', run.id),
       requests: store.all<RequestRecord>('requests', run.id),

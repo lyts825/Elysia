@@ -288,6 +288,34 @@ export class Store {
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
   }
+  messagePage<T>(runId: string, limit: number, before?: string) {
+    let boundary: number | undefined;
+    if (before) {
+      const row = this.db
+        .prepare('SELECT rowid position FROM messages WHERE id=? AND run_id=?')
+        .get(before, runId) as { position: number } | undefined;
+      if (!row)
+        throw new AppError('MESSAGE_CURSOR_MISSING', '历史位置已失效，请返回最新消息', false, null, 409);
+      boundary = Number(row.position);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id,data,content FROM messages WHERE run_id=? ${boundary === undefined ? '' : 'AND rowid<?'} ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(...(boundary === undefined ? [runId, limit + 1] : [runId, boundary, limit + 1])) as {
+      id: string;
+      data: string;
+      content?: Uint8Array;
+    }[];
+    const hasMore = rows.length > limit;
+    const selected = rows.slice(0, limit).reverse();
+    return {
+      messages: selected.map(
+        (row) => this.hydrate('messages', row.content ? expand(row.content) : JSON.parse(row.data)) as T,
+      ),
+      messagePage: { hasMore, nextBefore: hasMore ? selected[0]?.id : null, before: before ?? null, limit },
+    };
+  }
   private hydrate(table: Table, entity: any) {
     // Legacy classification is ignored; execution directory and baseline references are retained.
     if (table === 'projects') {

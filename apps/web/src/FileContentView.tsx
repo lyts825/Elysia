@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownDocument } from './MarkdownDocument';
 import type { FilePreviewContent } from './useFilePage';
 import './file-content.css';
@@ -15,14 +15,43 @@ export function FileContentView({
   file,
   onLocalLink,
   anchor,
+  highlight,
 }: {
   file: FilePreviewContent;
   onLocalLink?: (path: string) => void;
   anchor?: string;
+  highlight?: { offset: number; endOffset: number; requestId: string };
 }) {
   const [mode, setMode] = useState<'document' | 'source'>('document');
   const [wrap, setWrap] = useState(false);
   const [failedImage, setFailedImage] = useState<string | null>(null);
+  const highlighted = useRef<HTMLElement>(null);
+  const scrolledHighlight = useRef('');
+  const range = useMemo(() => {
+    if (
+      !highlight ||
+      !file.page ||
+      file.text === null ||
+      file.encoding !== 'utf-8' ||
+      highlight.offset < file.page.offset ||
+      highlight.endOffset > file.page.endOffset
+    )
+      return null;
+    const bytes = new TextEncoder().encode(file.text);
+    const bom = file.encodingSource === 'bom' && file.page.offset === 0 ? 3 : 0;
+    const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+    return {
+      start: decoder.decode(bytes.subarray(0, highlight.offset - file.page.offset - bom)).length,
+      end: decoder.decode(bytes.subarray(0, highlight.endOffset - file.page.offset - bom)).length,
+    };
+  }, [file.text, file.page?.offset, file.page?.endOffset, file.encoding, file.encodingSource, highlight]);
+  useLayoutEffect(() => {
+    const key = JSON.stringify([highlight?.requestId, file.page?.offset]);
+    if (range && highlighted.current && scrolledHighlight.current !== key) {
+      scrolledHighlight.current = key;
+      highlighted.current.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    }
+  }, [highlight?.requestId, range]);
   const markdown = file.kind === 'markdown' || /\.(?:md|markdown)$/i.test(file.path);
   return (
     <div className="file-content-view">
@@ -52,7 +81,7 @@ export function FileContentView({
           )}
         </div>
       )}
-      {markdown && mode === 'document' && file.text !== null ? (
+      {markdown && mode === 'document' && !highlight && file.text !== null ? (
         <>
           {file.page?.paged && (
             <p className="file-fragment-note">大文档按片段显示。跨片段的代码块、表格或引用可切换源码查看。</p>
@@ -69,7 +98,17 @@ export function FileContentView({
         </>
       ) : file.text !== null ? (
         <pre key={file.page?.offset || 0} className={'file-source-scroll' + (wrap ? ' wrapped' : '')}>
-          {file.text || '空文件'}
+          {range && file.text ? (
+            <>
+              {file.text.slice(0, range.start)}
+              <mark ref={highlighted} className="file-search-hit">
+                {file.text.slice(range.start, range.end)}
+              </mark>
+              {file.text.slice(range.end)}
+            </>
+          ) : (
+            file.text || '空文件'
+          )}
         </pre>
       ) : file.kind === 'image' && file.resourceUrl && failedImage !== file.resourceUrl ? (
         <div className="file-image-scroll">

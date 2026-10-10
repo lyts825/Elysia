@@ -1,11 +1,28 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 
-export function ConversationScroll({ children }: { children: ReactNode }) {
+export function ConversationScroll({
+  children,
+  positionKey,
+  startAtLatest = true,
+}: {
+  children: ReactNode;
+  positionKey?: string;
+  startAtLatest?: boolean;
+}) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [away, setAway] = useState(false);
+  const positioned = useRef('');
+  useLayoutEffect(() => {
+    const key = JSON.stringify([positionKey, startAtLatest]);
+    if (positioned.current === key) return;
+    positioned.current = key;
+    following.current = startAtLatest;
+    const node = viewport.current;
+    if (node) node.scrollTop = startAtLatest ? node.scrollHeight : 0;
+  }, [positionKey, startAtLatest]);
   const sync = () => {
     const node = viewport.current;
     if (!node) return;

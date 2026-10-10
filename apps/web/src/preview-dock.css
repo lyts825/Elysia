@@ -104,7 +104,16 @@
   min-width: 16px;
   text-align: center;
 }
-.preview-dock > .preview-embedded {
+.preview-dock-workspace,
+.preview-dock-artifacts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.preview-dock-workspace > .preview-embedded {
   width: 100%;
   min-width: 0;
   min-height: 0;

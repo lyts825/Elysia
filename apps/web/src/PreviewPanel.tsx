@@ -31,6 +31,12 @@ const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
   restricted: '路径不允许预览',
   'not-file': '路径不是文件',
 };
+export interface PreviewFileTarget {
+  taskId: string;
+  path: string;
+  anchor?: string;
+  requestId: string;
+}
 type Props = {
   embedded?: boolean;
   runId: string;
@@ -41,6 +47,7 @@ type Props = {
   artifacts: Artifact[];
   streaming: Record<string, string>;
   selectedTaskId: string;
+  fileTarget?: PreviewFileTarget;
   selectTask: (id: string) => void;
   close: () => void;
 };
@@ -54,6 +61,7 @@ export function PreviewPanel({
   artifacts,
   streaming,
   selectedTaskId,
+  fileTarget,
   selectTask,
   close,
 }: Props) {
@@ -66,6 +74,8 @@ export function PreviewPanel({
     agent = agents.find((a) => a.taskId === taskId);
   const [snapshot, setSnapshot] = useState<(PreviewSnapshot & { runId: string }) | null>(null);
   const [filesByTask, setFilesByTask] = useState<Record<string, string>>({});
+  const requestedFile = useRef<(PreviewFileTarget & { runId: string }) | null>(null);
+  const handledTarget = useRef('');
   const [content, setContent] = useState<
     | (PreviewFile & {
         context: string;
@@ -83,9 +93,12 @@ export function PreviewPanel({
     encoding: TextFileEncoding;
   }>({ scope: '', offset: 0, history: [], encoding: 'auto' });
   const [fileNotice, setFileNotice] = useState('');
-  const [pendingAnchor, setPendingAnchor] = useState<{ taskId: string; path: string; anchor: string } | null>(
-    null,
-  );
+  const [pendingAnchor, setPendingAnchor] = useState<{
+    taskId: string;
+    path: string;
+    anchor: string;
+    requestId: string;
+  } | null>(null);
   const [htmlPermission, setHtmlPermission] = useState('');
   const [view, setView] = useState('page'),
     [auto, setAuto] = useState(true),
@@ -141,8 +154,10 @@ export function PreviewPanel({
   };
   const chooseFile = useCallback(
     (path: string, anchor = '') => {
+      requestedFile.current = null;
+      selectedRef.current = path;
       setFilesByTask((old) => ({ ...old, [taskId]: path }));
-      setPendingAnchor(anchor ? { taskId, path, anchor } : null);
+      setPendingAnchor(anchor ? { taskId, path, anchor, requestId: crypto.randomUUID() } : null);
       setHtmlPermission('');
     },
     [taskId],
@@ -177,6 +192,17 @@ export function PreviewPanel({
     setFileNotice('');
   }, [previewScope]);
   useEffect(() => {
+    if (!fileTarget || fileTarget.taskId !== taskId || handledTarget.current === fileTarget.requestId) return;
+    handledTarget.current = fileTarget.requestId;
+    chooseFile(fileTarget.path, fileTarget.anchor);
+    requestedFile.current = { ...fileTarget, runId };
+    setReadPosition({ scope: '', offset: 0, history: [], encoding: 'auto' });
+    setFilter('');
+    setView('page');
+    setFileNotice('');
+    setRefresh((value) => value + 1);
+  }, [fileTarget?.requestId, taskId, runId, chooseFile]);
+  useEffect(() => {
     if (!taskId) return;
     const controller = new AbortController();
     let disposed = false,
@@ -203,6 +229,9 @@ export function PreviewPanel({
         );
         setFilesByTask((old) => {
           if (next.files.some((f) => f.path === old[taskId])) return old;
+          const requested = requestedFile.current;
+          if (requested?.runId === runId && requested.taskId === taskId && requested.path === old[taskId])
+            return old;
           const first =
             next.files.find((f) => f.change !== 'D' && /(?:dist|build|out)\/index\.html?$/.test(f.path)) ||
             next.files.find((f) => f.change !== 'D' && /(^|\/)index\.html?$/.test(f.path)) ||
@@ -210,6 +239,14 @@ export function PreviewPanel({
             next.files[0];
           return { ...old, [taskId]: first?.path || '' };
         });
+        const requested = requestedFile.current;
+        if (
+          requested?.runId === runId &&
+          requested.taskId === taskId &&
+          !next.files.some((file) => file.path === requested.path)
+        )
+          setFileNotice('链接文件未找到：' + requested.path);
+        else setFileNotice((old) => (old.startsWith('链接文件未找到：') ? '' : old));
         setUpdated(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
         setSnapshotError('');
       } catch (e) {
@@ -802,6 +839,11 @@ export function PreviewPanel({
                   anchor={
                     pendingAnchor?.taskId === taskId && pendingAnchor.path === selected
                       ? pendingAnchor.anchor
+                      : undefined
+                  }
+                  anchorRequestId={
+                    pendingAnchor?.taskId === taskId && pendingAnchor.path === selected
+                      ? pendingAnchor.requestId
                       : undefined
                   }
                   onLocalLink={followLocalLink}

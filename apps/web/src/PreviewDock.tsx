@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Activity, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Artifact } from '../../../packages/contracts/src/index';
-import { ArtifactFilePreview } from './ArtifactFilePreview';
+import { ArtifactFilePreview, type TerminalLogContext } from './ArtifactFilePreview';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
@@ -21,6 +21,8 @@ export function PreviewDock({
   workspaceAvailable,
   artifacts,
   selectedArtifactId,
+  workspaceRequestId,
+  logContexts,
   selectArtifact,
   close,
 }: {
@@ -28,6 +30,8 @@ export function PreviewDock({
   workspaceAvailable: boolean;
   artifacts: Artifact[];
   selectedArtifactId?: string;
+  workspaceRequestId?: string;
+  logContexts?: Record<string, TerminalLogContext>;
   selectArtifact: (artifact: Artifact | null) => void;
   close: () => void;
 }) {
@@ -41,13 +45,18 @@ export function PreviewDock({
   const [wide, setWide] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [view, setView] = useState(selectedArtifactId || !workspaceAvailable ? 'artifacts' : 'workspace');
+  const [workspaceVisited, setWorkspaceVisited] = useState(workspaceAvailable && !selectedArtifactId);
+  const [artifactsVisited, setArtifactsVisited] = useState(!!selectedArtifactId || !workspaceAvailable);
+  const [lastArtifactId, setLastArtifactId] = useState(selectedArtifactId);
+  const handledWorkspaceRequest = useRef('');
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const single = available < 668;
   const usable = Math.max(0, available - 8);
   const minimum = 320;
   const maximum = Math.max(minimum, usable - 320);
   const width = Math.max(minimum, Math.min(maximum, usable * ratio));
-  const artifact = artifacts.find((item) => item.id === selectedArtifactId) || artifacts[0];
+  const artifact =
+    artifacts.find((item) => item.id === (selectedArtifactId || lastArtifactId)) || artifacts[0];
 
   useLayoutEffect(() => {
     const layout = panel.current!.parentElement!;
@@ -86,10 +95,24 @@ export function PreviewDock({
     };
   }, [single, wide, present]);
   useEffect(() => {
-    if (selectedArtifactId) setView('artifacts');
+    if (selectedArtifactId) {
+      setLastArtifactId(selectedArtifactId);
+      setArtifactsVisited(true);
+      setView('artifacts');
+    }
   }, [selectedArtifactId]);
   useEffect(() => {
-    if (!workspaceAvailable) setView('artifacts');
+    if (workspaceRequestId && workspaceAvailable && handledWorkspaceRequest.current !== workspaceRequestId) {
+      handledWorkspaceRequest.current = workspaceRequestId;
+      setWorkspaceVisited(true);
+      setView('workspace');
+    }
+  }, [workspaceRequestId, workspaceAvailable]);
+  useEffect(() => {
+    if (!workspaceAvailable) {
+      setArtifactsVisited(true);
+      setView('artifacts');
+    }
   }, [workspaceAvailable]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -225,6 +248,7 @@ export function PreviewDock({
               aria-pressed={view === 'workspace'}
               onClick={() => {
                 setView('workspace');
+                setWorkspaceVisited(true);
                 selectArtifact(null);
               }}
             >
@@ -232,52 +256,74 @@ export function PreviewDock({
               工作区
             </button>
           )}
-          <button aria-pressed={view === 'artifacts'} onClick={() => setView('artifacts')}>
+          <button
+            aria-pressed={view === 'artifacts'}
+            onClick={() => {
+              setArtifactsVisited(true);
+              setView('artifacts');
+            }}
+          >
             <Icon name="file" size={15} />
             产物<span>{artifacts.length}</span>
           </button>
         </div>
-        {view === 'workspace' && workspaceAvailable ? (
-          children
-        ) : artifact ? (
-          <>
-            <div className="preview-artifact-selector">
-              <Icon name="file" size={16} />
-              <select
-                aria-label="选择预览产物"
-                value={artifact.id}
-                onChange={(event) =>
-                  selectArtifact(artifacts.find((item) => item.id === event.target.value) || null)
-                }
-              >
-                {artifacts.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} · v{item.version}
-                  </option>
-                ))}
-              </select>
+        {workspaceVisited && (
+          <Activity mode={view === 'workspace' && workspaceAvailable ? 'visible' : 'hidden'}>
+            <div className="preview-dock-workspace" inert={view !== 'workspace' || !workspaceAvailable}>
+              {children}
             </div>
-            <ArtifactFilePreview key={artifact.id} id={artifact.id} />
-            <footer className="preview-dock-footer">
-              <span>
-                {artifact.verified ? '证据已核验' : '待验收'} · v{artifact.version}
-              </span>
-              <a className="secondary" href={apiUrl('/artifacts/' + artifact.id)} download>
-                下载产物
-                <Icon name="arrow" size={14} />
-              </a>
-            </footer>
-          </>
-        ) : (
-          <div className="preview-empty">
-            <Icon name="file" size={28} />
-            <h3>产物将在这里交付</h3>
-            <p>
-              {workspaceAvailable
-                ? '选择工作区可以先查看代理正在修改的文件。'
-                : '对话中交付的文件会显示在这里。'}
-            </p>
-          </div>
+          </Activity>
+        )}
+        {artifactsVisited && (
+          <Activity mode={view === 'artifacts' ? 'visible' : 'hidden'}>
+            <div className="preview-dock-artifacts" inert={view !== 'artifacts'}>
+              {artifact ? (
+                <>
+                  <div className="preview-artifact-selector">
+                    <Icon name="file" size={16} />
+                    <select
+                      aria-label="选择预览产物"
+                      value={artifact.id}
+                      onChange={(event) => {
+                        setLastArtifactId(event.target.value);
+                        selectArtifact(artifacts.find((item) => item.id === event.target.value) || null);
+                      }}
+                    >
+                      {artifacts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · v{item.version}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <ArtifactFilePreview
+                    key={artifact.id}
+                    id={artifact.id}
+                    logContext={logContexts?.[artifact.id]}
+                  />
+                  <footer className="preview-dock-footer">
+                    <span>
+                      {artifact.verified ? '证据已核验' : '待验收'} · v{artifact.version}
+                    </span>
+                    <a className="secondary" href={apiUrl('/artifacts/' + artifact.id)} download>
+                      下载产物
+                      <Icon name="arrow" size={14} />
+                    </a>
+                  </footer>
+                </>
+              ) : (
+                <div className="preview-empty">
+                  <Icon name="file" size={28} />
+                  <h3>产物将在这里交付</h3>
+                  <p>
+                    {workspaceAvailable
+                      ? '选择工作区可以先查看代理正在修改的文件。'
+                      : '对话中交付的文件会显示在这里。'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </Activity>
         )}
       </aside>
     </>

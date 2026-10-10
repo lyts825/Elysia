@@ -120,6 +120,70 @@
   color: var(--muted);
   margin: 8px 0;
 }
+.terminal-log-search {
+  margin-block: 10px 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+.terminal-log-search form {
+  display: flex;
+  gap: 8px;
+}
+.terminal-log-search input {
+  min-width: 0;
+  flex: 1;
+}
+.terminal-log-search button {
+  font-size: 12px;
+}
+.terminal-log-search-status {
+  font-size: 11px;
+  color: var(--muted);
+  margin-block: 10px;
+}
+.terminal-log-search ol {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+.terminal-log-search li + li {
+  margin-top: 6px;
+}
+.terminal-log-search li button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  text-align: left;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--surface);
+}
+.terminal-log-search li button[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.terminal-log-search li small {
+  color: var(--muted);
+}
+.terminal-log-search li span {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.terminal-log-search mark,
+.file-search-hit {
+  background: var(--accent-pale);
+  color: var(--accent-strong);
+  border-radius: 2px;
+  outline: 1px solid var(--accent);
+}
 .artifact-file-preview {
   flex: 1;
   min-height: 0;

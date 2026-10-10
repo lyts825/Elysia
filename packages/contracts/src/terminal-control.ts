@@ -71,6 +71,54 @@ export const TerminalConnectionWrite = z
     path: ['apiKey'],
   });
 export type TerminalConnectionWrite = z.infer<typeof TerminalConnectionWrite>;
+export const TerminalConnectionProbeRequest = z
+  .object({ expectedRevision: z.number().int().nonnegative() })
+  .strict();
+export type TerminalConnectionProbeRequest = z.infer<typeof TerminalConnectionProbeRequest>;
+export const TerminalConnectionModel = z.object({ id: safeText(200), name: safeText(200) }).strict();
+export type TerminalConnectionModel = z.infer<typeof TerminalConnectionModel>;
+/** Explicit remote operations never return provider response text or credential values. */
+export const TerminalConnectionProbeResult = z
+  .object({
+    connectionId: z.string().uuid(),
+    revision: z.number().int().nonnegative(),
+    checkedAt: z.string().datetime(),
+    status: z.enum(['passed', 'failed', 'unsupported']),
+    code: safeText(100),
+    message: safeText(1000),
+    latencyMs: z.number().int().nonnegative(),
+    httpStatus: z.number().int().min(100).max(599).optional(),
+    resolvedModel: safeText(200).optional(),
+    models: z.array(TerminalConnectionModel).max(2000).optional(),
+    truncated: z.boolean().optional(),
+  })
+  .strict();
+export type TerminalConnectionProbeResult = z.infer<typeof TerminalConnectionProbeResult>;
+export const TerminalProfileDiagnostics = z
+  .object({
+    profileId: z.string().uuid(),
+    profileLabel: safeText(80),
+    appId: TerminalAppId,
+    image: z.string(),
+    settingsRevision: z.number().int().nonnegative(),
+    appsRevision: z.number().int().nonnegative(),
+    projectId: z.string().uuid().nullable(),
+    projectRevision: z.number().int().nonnegative().nullable(),
+    source: z.enum(['template', 'project', 'app', 'environment']),
+    connection: TerminalConnectionBinding.nullable(),
+    keyConfigured: z.boolean().nullable(),
+    environmentNames: z.array(z.string()),
+    missingEnvironment: z.array(z.string()),
+    commandPreview: z.array(z.string()),
+    issues: z.array(
+      z
+        .object({ severity: z.enum(['error', 'warning']), code: safeText(100), message: safeText(1000) })
+        .strict(),
+    ),
+    ready: z.boolean(),
+  })
+  .strict();
+export type TerminalProfileDiagnostics = z.infer<typeof TerminalProfileDiagnostics>;
 export const TerminalControlApps = z
   .object({
     revision: z.number().int().nonnegative(),
@@ -124,6 +172,15 @@ export interface TerminalControlOverview {
   apps: TerminalControlApps;
   connections: TerminalConnectionView[];
 }
+export const TerminalCliInstallationPhase = z.enum([
+  'queued',
+  'engine',
+  'base-image',
+  'build',
+  'verify',
+  'complete',
+]);
+export type TerminalCliInstallationPhase = z.infer<typeof TerminalCliInstallationPhase>;
 export const TerminalCliInstallationJob = z
   .object({
     id: z.string().uuid(),
@@ -133,6 +190,8 @@ export const TerminalCliInstallationJob = z
     baseImage: z.string().min(1).max(200),
     requestedVersion: z.string().min(1).max(80).optional(),
     status: z.enum(['running', 'completed', 'failed', 'cancelled']),
+    phase: TerminalCliInstallationPhase.optional(),
+    phaseStartedAt: z.string().optional(),
     result: z
       .object({
         image: z.string().regex(/^sha256:[a-f0-9]{64}$/),

@@ -1,4 +1,4 @@
-import React, { Activity, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import './motion.css';
@@ -29,6 +29,7 @@ import {
 } from '../../../packages/contracts/src/index';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import { TerminalRecovery } from './TerminalRecovery';
+import { TerminalContinuation } from './TerminalContinuation';
 const ProviderSettings = React.lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
@@ -61,6 +62,7 @@ import { ConversationScroll } from './ConversationScroll';
 import { ToolActivity } from './ToolActivity';
 import { RunStream } from './RunStream';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
+import { conversationIndex } from './ConversationIndex';
 import {
   initialNavigation,
   navigationKey,
@@ -90,6 +92,7 @@ type Detail = {
   tasks: Task[];
   agents: Agent[];
   messages: Message[];
+  messagePage?: { hasMore: boolean; nextBefore: string | null; before: string | null; limit: number };
   artifacts: Artifact[];
   requests: RequestRecord[];
   operations: Operation[];
@@ -185,6 +188,61 @@ function App({
     status: 'loading' | 'saved' | 'saving' | 'error';
     error: string;
   }>({ entries: {}, status: 'loading', error: '' });
+  const historyPosition = useRef<{ runId: string; before: string; trail: string[] }>({
+    runId: '',
+    before: '',
+    trail: [],
+  });
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [previewFileTarget, setPreviewFileTarget] = useState<{
+    taskId: string;
+    path: string;
+    anchor?: string;
+    requestId: string;
+  }>();
+  const messageIndex = useMemo(
+    () => conversationIndex(detail),
+    [detail?.messages, detail?.requests, detail?.agents, detail?.tasks, detail?.operations],
+  );
+  const visibleMessages = useMemo(
+    () => conversationMessages(detail?.messages || []).filter((message) => message.role !== 'tool'),
+    [detail?.messages],
+  );
+  const logContexts = useMemo(
+    () =>
+      Object.fromEntries(
+        !detail?.run.contract.permissionProfile.read
+          ? []
+          : (detail?.operations || []).flatMap((operation) => {
+              const result = operation.result as { transcriptArtifactId?: string } | undefined;
+              return operation.name === 'terminal_agent' && result?.transcriptArtifactId
+                ? [[result.transcriptArtifactId, { runId: operation.runId, taskId: operation.taskId }]]
+                : [];
+            }),
+      ),
+    [detail?.operations, detail?.run.contract.permissionProfile.read],
+  );
+  const openPreviewFile = useCallback((taskId: string, target: string) => {
+    const hash = target.indexOf('#');
+    const path = hash < 0 ? target : target.slice(0, hash);
+    if (!path) return;
+    setPreviewTaskId(taskId);
+    setPreviewFileTarget({
+      taskId,
+      path,
+      anchor: hash < 0 ? undefined : target.slice(hash + 1),
+      requestId: crypto.randomUUID(),
+    });
+    setArtifactView(null);
+    setPreviewOpen(true);
+  }, []);
+  const previewFileLinks = useMemo(
+    () =>
+      new Map(
+        (detail?.tasks || []).map((task) => [task.id, (path: string) => openPreviewFile(task.id, path)]),
+      ),
+    [detail?.tasks, openPreviewFile],
+  );
   const [cache] = useState(() => {
     const instance = new WorkbenchCache(setCacheState, client);
     registerCache(localSurface, instance);
@@ -420,8 +478,11 @@ function App({
         savedNavigation.current = undefined;
       }
       if (navigation.current.runId !== next.runId) {
+        historyPosition.current = { runId: next.runId, before: '', trail: [] };
+        setHistoryLoading(false);
         closeArtifact();
         setDetail(null);
+        setPreviewFileTarget(undefined);
         setPreviewOpen(false);
         setReadIssues((old) => {
           if (!old.detail) return old;
@@ -492,20 +553,50 @@ function App({
     const request = ++detailRequest.current;
     let result: Detail;
     try {
-      result = await api<Detail>('/runs/' + wanted);
+      const before = historyPosition.current.runId === wanted ? historyPosition.current.before : '';
+      result = await api<Detail>(
+        '/runs/' +
+          wanted +
+          '?messageLimit=160' +
+          (before ? '&beforeMessage=' + encodeURIComponent(before) : ''),
+      );
     } catch (error) {
-      if (activeRunId.current === wanted && detailRequest.current === request)
+      if (activeRunId.current === wanted && detailRequest.current === request) {
         setReadIssues((old) => ({ ...old, detail: readIssueFor(error, request, wanted) }));
-      return false;
+        return false;
+      }
+      return;
     }
     if (activeRunId.current === wanted && detailRequest.current === request) {
       clearReadIssue('detail', request);
       runStream.current.sync(result.requests);
       setStreaming(runStream.current.texts());
-      setDetail((old) => (old?.run.id === wanted && old.run.revision > result.run.revision ? old : result));
+      setDetail((old) => {
+        if (old?.run.id !== wanted) return result;
+        const events = [
+          ...new Map([...result.events, ...old.events].map((event) => [event.seq, event])).values(),
+        ]
+          .sort((a, b) => a.seq - b.seq)
+          .slice(-100);
+        return old.run.revision > result.run.revision
+          ? { ...old, messages: result.messages, messagePage: result.messagePage, events }
+          : { ...result, events };
+      });
     }
     return true;
   }, [clearReadIssue]);
+  async function changeHistory(before: string, trail: string[]) {
+    if (historyLoading) return;
+    const wanted = activeRunId.current;
+    const prior = historyPosition.current;
+    historyPosition.current = { runId: wanted, before, trail };
+    setHistoryLoading(true);
+    const loaded = await refreshDetail();
+    if (activeRunId.current === wanted) {
+      if (loaded === false) historyPosition.current = prior;
+      setHistoryLoading(false);
+    }
+  }
   const connect = useCallback(
     async (retry = false, source?: ReadSource, target?: string) => {
       if (connectPending.current || actionPending.current) return;
@@ -597,6 +688,14 @@ function App({
     const source = new EventSource(apiUrl('/runs/' + runId + '/events'));
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let frame: number | null = null;
+    const publishStream = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (!disposed) setStreaming(runStream.current.texts());
+      });
+    };
     const reload = () => {
       if (!disposed && !timer)
         timer = setTimeout(() => {
@@ -637,10 +736,24 @@ function App({
     for (const event of events)
       source.addEventListener(event, (e) => {
         if (disposed) return;
+        if (event === 'terminal.output') {
+          const data = JSON.parse((e as MessageEvent).data);
+          setDetail((old) =>
+            old?.run.id === runId
+              ? {
+                  ...old,
+                  events: [...old.events.filter((item) => item.seq !== data.seq), data]
+                    .sort((a, b) => a.seq - b.seq)
+                    .slice(-100),
+                }
+              : old,
+          );
+          return;
+        }
         if (event === 'message.completed') {
           const data = JSON.parse((e as MessageEvent).data);
           runStream.current.complete(data.taskId, data.payload);
-          setStreaming(runStream.current.texts());
+          publishStream();
         }
         reload();
       });
@@ -648,12 +761,13 @@ function App({
       if (disposed) return;
       const data = JSON.parse((e as MessageEvent).data);
       if (!runStream.current.delta(data)) reload();
-      setStreaming(runStream.current.texts());
+      publishStream();
     });
     return () => {
       disposed = true;
       source.close();
       if (timer) clearTimeout(timer);
+      if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [ready, runId, refreshDetail, refresh]);
   useEffect(() => {
@@ -1304,7 +1418,54 @@ function App({
               className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
             >
               <section className="conversation" inert={detailsOverlayOpen}>
-                <ConversationScroll>
+                <ConversationScroll
+                  positionKey={detail.run.id + ':' + (detail.messagePage?.before || '')}
+                  startAtLatest={!detail.messagePage?.before}
+                >
+                  {(detail.messagePage?.hasMore || detail.messagePage?.before) && (
+                    <nav className="conversation-pages" aria-label="对话历史分页">
+                      <button
+                        className="secondary"
+                        disabled={historyLoading || !detail.messagePage?.nextBefore}
+                        onClick={() =>
+                          void changeHistory(detail.messagePage!.nextBefore!, [
+                            ...historyPosition.current.trail,
+                            historyPosition.current.before,
+                          ])
+                        }
+                      >
+                        更早消息
+                      </button>
+                      <span role="status">
+                        {historyLoading
+                          ? '读取历史…'
+                          : detail.messagePage?.before
+                            ? '正在查看历史'
+                            : '最近消息'}
+                      </span>
+                      {detail.messagePage?.before && (
+                        <>
+                          <button
+                            className="secondary"
+                            disabled={historyLoading}
+                            onClick={() => {
+                              const trail = [...historyPosition.current.trail];
+                              void changeHistory(trail.pop() || '', trail);
+                            }}
+                          >
+                            更新消息
+                          </button>
+                          <button
+                            className="text-button"
+                            disabled={historyLoading}
+                            onClick={() => void changeHistory('', [])}
+                          >
+                            返回最新
+                          </button>
+                        </>
+                      )}
+                    </nav>
+                  )}
                   {legacyTerminal && (
                     <div className="system-note">
                       <Icon name="history" size={14} />
@@ -1346,69 +1507,76 @@ function App({
                       </span>
                     </div>
                   )}
-                  {conversationMessages(detail.messages)
-                    .filter((m) => m.role !== 'tool')
-                    .map((m) => {
-                      if (m.purpose === 'model_handoff')
-                        return (
-                          <div className="system-note model-handoff" key={m.id}>
-                            <Icon name="history" size={14} />
-                            <details>
-                              <summary>模型已切换，已保留对话交接</summary>
-                              <pre>{m.text}</pre>
-                            </details>
-                          </div>
-                        );
-                      const request = detail.requests.find((item) => item.id === m.requestId);
-                      const agent = detail.agents.find(
-                        (a) => a.sessionId === m.sessionId || a.taskId === request?.taskId,
-                      );
-                      const task = detail.tasks.find((t) => t.id === agent?.taskId);
+                  {visibleMessages.map((m) => {
+                    if (m.purpose === 'model_handoff')
                       return (
-                        <div className={'message ' + m.role} key={m.id}>
-                          <div className={'message-avatar ' + m.role}>
-                            {m.role === 'user' ? (
-                              '你'
-                            ) : (
-                              <Icon name={task?.spec.role === 'coordinator' ? 'spark' : 'tree'} size={17} />
-                            )}
-                          </div>
-                          <div className="message-body">
-                            <div className="message-label">
-                              {m.role === 'user'
-                                ? isChat || isInboxUserMessage(m)
-                                  ? '你'
-                                  : '用户 / 交接'
-                                : task?.spec.role === 'coordinator'
-                                  ? isChat
-                                    ? '助手'
-                                    : '总代理'
-                                  : task?.spec.title || 'Agent'}
-                              <small>
-                                {m.role === 'assistant'
-                                  ? request?.providerBinding.model || agent?.providerBinding.model
-                                  : ''}
-                              </small>
-                            </div>
-                            {m.text &&
-                              (m.role === 'assistant' ? <MarkdownDocument text={m.text} /> : <p>{m.text}</p>)}
-                            {m.calls?.map((c) => (
-                              <ToolActivity
-                                key={c.id}
-                                call={c}
-                                operation={detail.operations.find((o) => o.toolCallId === c.id)}
-                                toolResponse={detail.messages.find(
-                                  (r) => r.role === 'tool' && r.callId === c.id,
-                                )}
-                                taskStatus={task?.status}
-                              />
-                            ))}
-                          </div>
+                        <div className="system-note model-handoff" key={m.id}>
+                          <Icon name="history" size={14} />
+                          <details>
+                            <summary>模型已切换，已保留对话交接</summary>
+                            <pre>{m.text}</pre>
+                          </details>
                         </div>
                       );
-                    })}
+                    const request = messageIndex.requests.get(m.requestId || '');
+                    const agent =
+                      messageIndex.sessions.get(m.sessionId) ||
+                      messageIndex.agents.get(request?.taskId || '');
+                    const task = messageIndex.tasks.get(agent?.taskId || '');
+                    return (
+                      <div className={'message ' + m.role} key={m.id}>
+                        <div className={'message-avatar ' + m.role}>
+                          {m.role === 'user' ? (
+                            '你'
+                          ) : (
+                            <Icon name={task?.spec.role === 'coordinator' ? 'spark' : 'tree'} size={17} />
+                          )}
+                        </div>
+                        <div className="message-body">
+                          <div className="message-label">
+                            {m.role === 'user'
+                              ? isChat || isInboxUserMessage(m)
+                                ? '你'
+                                : '用户 / 交接'
+                              : task?.spec.role === 'coordinator'
+                                ? isChat
+                                  ? '助手'
+                                  : '总代理'
+                                : task?.spec.title || 'Agent'}
+                            <small>
+                              {m.role === 'assistant'
+                                ? request?.providerBinding.model || agent?.providerBinding.model
+                                : ''}
+                            </small>
+                          </div>
+                          {m.text &&
+                            (m.role === 'assistant' ? (
+                              <MarkdownDocument
+                                text={m.text}
+                                onLocalLink={
+                                  task && detail.run.contract.permissionProfile.read
+                                    ? previewFileLinks.get(task.id)
+                                    : undefined
+                                }
+                              />
+                            ) : (
+                              <p>{m.text}</p>
+                            ))}
+                          {m.calls?.map((c) => (
+                            <ToolActivity
+                              key={c.id}
+                              call={c}
+                              operation={messageIndex.operations.get(c.id)}
+                              toolResponse={messageIndex.responses.get(c.id)}
+                              taskStatus={task?.status}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                   {Object.entries(streaming)
-                    .filter(([, value]) => value)
+                    .filter(([, value]) => value && !detail.messagePage?.before)
                     .map(([taskId, value]) => (
                       <div className="message assistant" key={taskId}>
                         <div className="message-avatar assistant">
@@ -1419,12 +1587,19 @@ function App({
                             正在生成
                             <span className="typing-dot" />
                           </div>
-                          <MarkdownDocument text={value} />
+                          <MarkdownDocument
+                            text={value}
+                            onLocalLink={
+                              detail.run.contract.permissionProfile.read
+                                ? previewFileLinks.get(taskId)
+                                : undefined
+                            }
+                          />
                         </div>
                       </div>
                     ))}
                   {detail.tasks
-                    .filter((t) => t.status === 'RUNNING' && !streaming[t.id])
+                    .filter((t) => t.status === 'RUNNING' && !streaming[t.id] && !detail.messagePage?.before)
                     .map((t) => (
                       <div
                         className="message assistant pending-response"
@@ -1535,6 +1710,9 @@ function App({
                           >
                             确认交付并验收
                           </button>
+                          {!runReadOnly && (
+                            <TerminalContinuation run={detail.run} disabled={busy} act={act} />
+                          )}
                         </div>
                       </div>
                     )}
@@ -1657,7 +1835,7 @@ function App({
                       (detail.run.authorized || detail.run.plan) && (
                         <p className="field-help" style={{ padding: '0 16px 10px' }}>
                           {detail.run.execution?.kind === 'docker-agent'
-                            ? '终端执行中收到的补充需求会保存到记录。完成或中断后请先审阅结果；继续调度可新建任务。'
+                            ? '终端执行中收到的补充需求会保存到记录。正常结束后可在验收卡片中补充需求并继续；中断须先核验。'
                             : detail.run.planMode === false
                               ? '补充消息会在安全边界送入当前任务；权限和累计预算保持。'
                               : '发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。'}
@@ -1728,6 +1906,8 @@ function App({
                 {previewOpen && (
                   <PreviewDock
                     key={runId}
+                    workspaceRequestId={previewFileTarget?.requestId}
+                    logContexts={logContexts}
                     workspaceAvailable={detail.run.contract.permissionProfile.read}
                     artifacts={detail.artifacts}
                     selectedArtifactId={artifactView?.runId === runId ? artifactView.id : undefined}
@@ -1740,6 +1920,7 @@ function App({
                   >
                     <PreviewPanel
                       embedded
+                      fileTarget={previewFileTarget}
                       runId={runId}
                       tasks={detail.tasks}
                       agents={detail.agents}

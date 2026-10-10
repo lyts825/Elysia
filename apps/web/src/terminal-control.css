@@ -447,6 +447,35 @@
   padding: 5px 7px;
   font-size: 11px;
 }
+.terminal-connection-checks,
+.terminal-diagnostics,
+.terminal-install-history {
+  margin-top: 10px;
+}
+.terminal-diagnostics details,
+.terminal-install-history {
+  font-size: 12px;
+  color: var(--muted);
+}
+.terminal-diagnostic-stage {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0;
+}
+.terminal-diagnostic-stage > span:first-child {
+  min-width: 65px;
+}
+.terminal-install-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.terminal-install-record small {
+  display: block;
+}
 @media (max-width: 760px) {
   .terminal-control-confirm {
     padding: 10px 14px;

@@ -1,6 +1,6 @@
 # Agent 终端与 Docker 调度
 
-本轮版本：0.16.0-preview.1。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Gemini CLI 及自定义模板可在管理中心启用。
+本轮版本：0.17.0-preview.1。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Gemini CLI 及自定义模板可在管理中心启用。
 
 ```mermaid
 flowchart LR
@@ -45,10 +45,22 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
    镜像固定安装 `@openai/codex@0.162.1` 和 `@deepseek-ai/dsh@0.2.1-alpha.2`。可通过构建参数 `CODEX_VERSION`、`DSH_VERSION` 显式更新，更新后需再次核对 CLI 协议。构建上下文不会包含项目文件或密钥。运行时使用已有镜像，禁止自动拉取。
 
 3. 在 **API 连接** 添加端点、协议、模型 ID 和凭据。可使用终端独立的系统加密密钥库或启动进程的环境变量，再为各应用选择对应连接。Codex 使用 Responses，DSH / Claude 使用 Anthropic Messages，Gemini 使用 Gemini API。DeepSeek 预设为 `/anthropic` 与 `deepseek-flash`，其他供应商模型 ID 手动填写。未绑定连接的模板沿用环境变量方式，DSH 读取 `DEEPSEEK_API_KEY`，Codex 读取 `OPENAI_API_KEY`。终端不复用原生凭据库或宿主 Agent 登录目录。
-4. 左上角切换 **Agent 终端**，打开项目，在 **项目默认** 可覆盖默认 CLI 与连接。工作台临时选择优先于项目模板，再使用全局默认模板；应用默认与模板默认同步，同一 CLI 的具体默认模板会被保留。修改全局默认保留项目自己的选择；显式保存项目默认会应用新的覆盖。创建窗口可选择连接或明确仅使用模板环境变量。应用中的“检查”会启动无网络、无挂载和无凭据的版本检测容器；高级模板的“检查 Docker 与镜像”只探测引擎、镜像和环境变量，不调用模型或创建容器。
+4. 左上角切换 **Agent 终端**，打开项目，在 **项目默认** 可覆盖默认 CLI 与连接。工作台临时选择优先于项目模板，再使用全局默认模板；应用默认与模板默认同步，同一 CLI 的具体默认模板会被保留。修改全局默认保留项目自己的选择；显式保存项目默认会应用新的覆盖。创建窗口可选择连接或明确仅使用模板环境变量。应用中的“检查”会启动无网络、无挂载和无凭据的版本检测容器；“检查就绪”显示配置继承来源以及 Docker、镜像、CLI、本地配置和认证状态。高级模板检查也会运行离线 CLI 版本探测。上述检查不会调用模型；本地凭据可读取不代表 API 已认证。
 5. 创建任务后查看对话中的公开输出，右侧预览工作目录与产物。终端正常结束后，先查看日志和差异，再点击“确认交付并验收”。
 
 管理页之间切换保留模板、连接和项目配置草稿；有未保存修改时，关闭窗口或切换正在编辑的连接会显示简短提示。遇到版本冲突会保留当前修改，可明确载入最新配置后继续编辑。安装取消先保存取消状态，再中断构建进程；进程仍在收尾时拒绝重复安装。Docker 构建缓存可能保留，取消不会应用镜像或修改现有任务。旧安装记录可继续读取；新增的 `cancelled` 状态不被 0.15 服务识别，回退旧源码须使用升级前的终端数据备份。
+
+安装显示当前阶段及耗时，构建后的镜像通过离线 CLI 版本检查才标记成功。“安装历史”分页保留成功、失败和取消记录，可显式将历史成功镜像恢复到原模板；恢复时核对当前模板、镜像和配置版本，不改变已创建任务，不自动删除历史或镜像。
+
+保存 API 连接后，可主动“验证连接”或“读取模型目录”。验证发送一次小型模型请求，会产生少量用量；目录缺失仍可手填。结果对应保存时的连接版本，修改配置后旧结果失效；供应商返回不同型号时会明确提示。连接协议修改同时检查应用、项目和直接引用连接的模板，拒绝不兼容配置。
+
+对话只读取当前页消息，可用“更早消息／更新消息／返回最新”翻阅，运行输出不会改变旧页位置。文件链接打开对应任务的工作区预览；工作区与产物切换保留当前阅读状态。终端公开日志产物支持有界全文搜索、命中跳转和分页，搜索只读取已交付的公开日志。
+
+## 补充需求与会话续接
+
+终端正常结束且待验收时，“补充需求并继续”可以显式选择继续原 CLI 会话或新 CLI 会话。新会话使用当前工作目录、原合同与用户消息；原会话仅发送本轮补充文本。权限、冻结 API 配置、原时间起点和累计运行限制保持，不会获得新的授权或重新计算预算。暂停、中断、未知副作用和已完成任务不能通过此入口绕过原恢复与验收流程。
+
+首批原会话续接仅对 Codex 开放：实际固定镜像须通过 `exec resume --help` 及所需参数检查，并存在当前任务专属 HOME 内的可靠 session 文件。可靠结束时记录会话文件路径与内容哈希，续接再次比对；数据库回退、文件变化或旧记录缺少哈希时拒绝原会话，保留新会话。原会话在容器启动前可靠失败后，仅在容器清理成功且源会话未变化时保留原补充需求供显式重试；已启动或结果不确定时不自动重跑。专属 HOME 不包含在普通数据备份中，备份不保证恢复 CLI 记忆。自定义命令、缺失目录或绑定不一致时拒绝续接。DSH、Claude、Gemini 的原会话协议尚未核实，明确提示使用新会话；不会猜测续接参数。宿主 CLI 版本不代替任务镜像能力，正式 Codex 镜像与模型闭环仍待实机验收。
 
 自定义命令使用 JSON 参数数组，例如 `["agent", "--json"]`；目标通过 stdin 发送。不会拼接宿主 shell 命令。输出协议可选择 Codex、DSH、Claude、Gemini JSONL 或普通文本。自定义连接提供 `ELYSIA_API_KEY`、`ELYSIA_API_BASE_URL`、`ELYSIA_API_MODEL`、`ELYSIA_API_PROTOCOL`，自定义程序须自行适配，不保证任意 CLI 自动兼容。产品版本与镜像版本独立，旧模板保留 `elysia-agents:0.13.0`；管理安装使用唯一新标签并保存固定 sha256 镜像 ID，已有镜像不被覆盖。内置版本为 Codex 0.162.1、DSH 0.2.1-alpha.2、Claude 2.1.296、Gemini 0.63.0。
 
@@ -66,7 +78,7 @@ API 连接、应用及项目默认采用版本校验和幂等命令。创建任�
 - 中断时检查日志和实际任务目录，填写核验说明。确认已发生会生成当前证据并进入 `terminal_review`；确认未发生会保持暂停，允许用户显式恢复。Docker 无法确认容器停止时，核验不会越过这一边界。
 - 验收再次校验产物哈希、实际目录签名、运行版本、任务状态和必需子任务。异步准备后的文件或记录变化会被拒绝；最终提交采用同步事务与幂等命令。内容正确性由用户根据约定逐条确认。
 
-源码入口为 `apps/server/src/surfaces.ts`、`terminal-control.ts`、`cli-management.ts`、`apps/web/src/TerminalControlCenter.tsx`、`packages/runtime/src/cli-manager.ts`、`terminal-connection.ts` 和 `docker-agent.ts`。原生 API 为 `/api/*`；终端 API 为 `/terminal/api/*`，包括 `terminal/settings`、`terminal/check`、`terminal/control`、连接 CRUD、应用选择、项目偏好、CLI 检测/安装任务和 `runs/:id/terminal/{accept,verify}`。两侧资源及预览地址使用对应前缀。后续可在 runner 层扩展只读终端规划、会话续接与外部子代理投影。
+源码入口为 `apps/server/src/surfaces.ts`、`terminal-control.ts`、`cli-management.ts`、`terminal-log-search.ts`、`apps/web/src/TerminalControlCenter.tsx`、`packages/runtime/src/cli-manager.ts`、`terminal-session.ts`、`terminal-connection.ts` 和 `docker-agent.ts`。原生 API 为 `/api/*`；终端 API 为 `/terminal/api/*`，包括 `terminal/settings`、`terminal/check`、`terminal/control`、连接验证与目录、有效配置诊断、CLI 检测/安装历史和 `runs/:id/terminal/{accept,verify,session,continue}`。两侧资源及预览地址使用对应前缀。后续可在 runner 层扩展只读终端规划、更多 CLI 续接协议与外部子代理投影。
 
 ## 验证边界与参考
 

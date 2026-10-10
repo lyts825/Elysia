@@ -7,6 +7,7 @@ import {
   openSync,
   readSync,
   readdirSync,
+  realpathSync,
   promises as fs,
 } from 'node:fs';
 import path from 'node:path';
@@ -28,6 +29,16 @@ import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
 import { DockerCliManager } from './cli-manager.js';
 import { terminalConnectionConfiguration } from './terminal-connection.js';
+import {
+  codexResumeProfile,
+  readTerminalSession,
+  terminalSessionIdentity,
+  writeTerminalSession,
+  type TerminalContinuationMode,
+  type TerminalSessionRecord,
+  type TerminalSessionView,
+} from './terminal-session.js';
+export type { TerminalSessionView, TerminalContinuationMode } from './terminal-session.js';
 
 export interface DockerCommandOptions {
   cwd: string;
@@ -347,7 +358,12 @@ export interface DockerAgentCheck {
   available: boolean;
   version?: string;
   imageAvailable?: boolean;
-  agentAvailable: null;
+  imageId?: string;
+  agentAvailable: boolean | null;
+  stages: Record<
+    'engine' | 'image' | 'cli' | 'configuration' | 'authentication',
+    { status: 'ready' | 'failed' | 'unknown'; message: string; code?: string }
+  >;
   missingEnvironment?: string[];
   code?: string;
   message: string;
@@ -355,6 +371,7 @@ export interface DockerAgentCheck {
 
 /** External agent execution beside the native API loop; scheduling remains in NativeExecutor. */
 export class DockerAgentService {
+  private closed = false;
   private transport: DockerTransport;
   public cliManager: DockerCliManager;
   private active = new Map<string, { task: Task; operation: Operation; stopping?: Promise<void> }>();
@@ -645,10 +662,89 @@ export class DockerAgentService {
       throw new AppError('TERMINAL_WORKSPACE_CHECK', '工作区正在变化，请等待文件写入完成后重试');
     }
   }
-  async check(raw?: AgentTerminalProfile): Promise<DockerAgentCheck> {
+  async check(raw?: AgentTerminalProfile, signal?: AbortSignal): Promise<DockerAgentCheck> {
     const profile = raw ? AgentTerminalProfile.parse(raw) : undefined;
+    const stages: DockerAgentCheck['stages'] = {
+      engine: { status: 'unknown', message: '尚未检测 Docker Linux 引擎' },
+      image: { status: 'unknown', message: '尚未检测任务镜像' },
+      cli: { status: 'unknown', message: '尚未检测 CLI 可执行程序' },
+      configuration: { status: 'unknown', message: '尚未检查 API 配置与凭据' },
+      authentication: { status: 'unknown', message: '未请求外部 API；真实认证在执行时确认' },
+    };
+    let agentAvailable: boolean | null = null,
+      imageAvailable: boolean | undefined,
+      version: string | undefined,
+      imageId: string | undefined;
     try {
-      const probe = await this.command(['version', '--format', '{{json .Server}}']);
+      invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+      if (profile) {
+        const cli = await this.cliManager.check(
+          profile.agent === 'gemini' ? 'gemini' : profile.agent,
+          profile,
+          signal,
+        );
+        imageAvailable = cli.imageAvailable;
+        imageId = cli.imageId;
+        version = cli.version;
+        agentAvailable = cli.installed;
+        stages.engine = {
+          status: cli.engineAvailable ? 'ready' : 'failed',
+          message: cli.engineAvailable ? 'Docker Linux 引擎已就绪' : cli.message,
+          ...(cli.engineAvailable ? {} : { code: cli.code }),
+        };
+        stages.image = {
+          status: cli.imageAvailable ? 'ready' : cli.engineAvailable ? 'failed' : 'unknown',
+          message: cli.imageAvailable ? '任务镜像已固定并确认存在' : cli.message,
+        };
+        stages.cli = {
+          status: cli.installed === true ? 'ready' : cli.installed === false ? 'failed' : 'unknown',
+          message:
+            cli.installed === true ? `CLI 已就绪${cli.version ? ' · ' + cli.version : ''}` : cli.message,
+        };
+        if (!cli.available)
+          return {
+            available: false,
+            agentAvailable,
+            imageAvailable,
+            imageId,
+            version,
+            stages,
+            code: cli.code,
+            message: cli.message,
+          };
+        try {
+          const configuration = await this.connectionConfiguration(profile);
+          const values = configuration?.environment ?? this.environment(profile.environment);
+          const missingEnvironment = configuration ? [] : profile.environment.filter((name) => !values[name]);
+          invariant(
+            !missingEnvironment.length,
+            'TERMINAL_ENVIRONMENT_MISSING',
+            `服务进程缺少环境变量：${missingEnvironment.join('、')}；配置后重启服务`,
+          );
+          invariant(
+            Object.values(values).every((value) => !!value && !/[\r\n\0]/.test(value)),
+            'TERMINAL_ENVIRONMENT',
+            '终端环境变量无效，请检查配置',
+          );
+          stages.configuration = { status: 'ready', message: 'API 配置与本地凭据可读取' };
+        } catch (error) {
+          stages.configuration = {
+            status: 'failed',
+            message: error instanceof AppError ? error.message : 'API 配置检查未完成',
+          };
+          throw error;
+        }
+        return {
+          available: true,
+          agentAvailable,
+          imageAvailable,
+          imageId,
+          version,
+          stages,
+          message: '镜像、CLI 和本地配置已就绪；真实 API 认证尚未验证',
+        };
+      }
+      const probe = await this.command(['version', '--format', '{{json .Server}}'], { signal });
       if (
         probe.exitCode !== 0 ||
         probe.timedOut ||
@@ -656,61 +752,39 @@ export class DockerAgentService {
         !probe.stdout.trim() ||
         probe.stdout.trim() === 'null'
       )
-        return {
-          available: false,
-          agentAvailable: null,
-          code: 'DOCKER_UNAVAILABLE',
-          message: 'Docker Linux 引擎未就绪，请启动 Docker Desktop 后重试',
-        };
+        throw new AppError('DOCKER_UNAVAILABLE', 'Docker Linux 引擎未就绪，请启动 Docker Desktop 后重试');
       const server = JSON.parse(probe.stdout);
       invariant(
         server && typeof server === 'object' && typeof server.Version === 'string',
         'DOCKER_UNAVAILABLE',
         'Docker 返回信息不完整，请检查 Docker Desktop',
       );
-      if (server.Os !== 'linux')
-        return {
-          available: false,
-          agentAvailable: null,
-          code: 'DOCKER_PLATFORM',
-          message: 'Agent 终端需要 Docker Linux 容器模式',
-        };
-      if (profile) {
-        const image = await this.command(['image', 'inspect', '--format', '{{.Id}}', profile.image]);
-        if (image.exitCode !== 0 || image.timedOut || image.truncated)
-          return {
-            available: false,
-            version: server.Version,
-            imageAvailable: false,
-            agentAvailable: null,
-            code: 'DOCKER_IMAGE_MISSING',
-            message: '尚未安装指定 Agent 镜像，请先构建或导入镜像；不会自动拉取',
-          };
-        const configuration = await this.connectionConfiguration(profile);
-        const values = configuration?.environment ?? this.environment(profile.environment);
-        const missingEnvironment = configuration ? [] : profile.environment.filter((name) => !values[name]);
-        if (missingEnvironment.length)
-          return {
-            available: false,
-            version: server.Version,
-            imageAvailable: true,
-            agentAvailable: null,
-            missingEnvironment,
-            code: 'TERMINAL_ENVIRONMENT_MISSING',
-            message: `服务进程缺少环境变量：${missingEnvironment.join('、')}；配置后重启服务`,
-          };
-      }
+      invariant(server.Os === 'linux', 'DOCKER_PLATFORM', 'Agent 终端需要 Docker Linux 容器模式');
+      stages.engine = { status: 'ready', message: 'Docker Linux 引擎已就绪' };
       return {
         available: true,
         version: server.Version,
-        ...(profile ? { imageAvailable: true } : {}),
         agentAvailable: null,
-        message: 'Docker 已就绪；Agent 命令和认证将在实际运行时检查',
+        stages,
+        message: 'Docker 已就绪；请选择模板检查镜像、CLI 和 API 配置',
       };
     } catch (error) {
       return {
         available: false,
-        agentAvailable: null,
+        agentAvailable,
+        imageAvailable,
+        imageId,
+        version,
+        stages:
+          stages.engine.status === 'unknown'
+            ? {
+                ...stages,
+                engine: {
+                  status: 'failed',
+                  message: error instanceof AppError ? error.message : 'Docker 检查失败',
+                },
+              }
+            : stages,
         code: error instanceof AppError ? error.code : 'DOCKER_UNAVAILABLE',
         message:
           error instanceof AppError ? error.message : 'Docker 检查失败，请检查 Docker Desktop 和当前 context',
@@ -772,6 +846,7 @@ export class DockerAgentService {
     );
   }
   async dispose() {
+    this.closed = true;
     await Promise.all(
       [...new Set([...this.active.values()].map((entry) => entry.task.runId))].map((runId) =>
         this.interrupt(runId),
@@ -838,11 +913,297 @@ export class DockerAgentService {
       });
     }
   }
+  private continuationState(runId: string, expectedRevision?: number) {
+    invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    const run = this.store.require<Run>('runs', runId);
+    invariant(
+      expectedRevision === undefined || run.revision === expectedRevision,
+      'REVISION_CONFLICT',
+      '对话已更新，请刷新后再继续',
+    );
+    invariant(
+      run.execution?.kind === 'docker-agent' &&
+        run.kind === 'task' &&
+        run.planMode === false &&
+        !run.archived &&
+        run.status === 'WAITING' &&
+        run.reason === 'terminal_review',
+      'TERMINAL_CONTINUATION_STATE',
+      '当前终端任务不可继续',
+    );
+    const task = this.store.require<Task>('tasks', run.rootTaskId);
+    const operations = this.store
+      .all<Operation>('tool_operations', run.id)
+      .filter((op) => op.taskId === task.id && op.name === 'terminal_agent');
+    const operation = operations.at(-1);
+    invariant(
+      task.status === 'WAITING' &&
+        task.waitReason === 'terminal_review' &&
+        !this.active.has(task.id) &&
+        operation?.status === 'DONE' &&
+        operation.args.contractVersion === task.contractVersion &&
+        !operations.some((op) => ['INTENT', 'UNCERTAIN'].includes(op.status)),
+      'TERMINAL_CONTINUATION_STATE',
+      '请先等待终端停止并核验所有未确认操作',
+    );
+    invariant(
+      !run.startedAt || Date.now() - run.startedAt < run.limits.maxMinutes * 60000,
+      'TIME_BUDGET',
+      '运行时间达到上限，请创建新任务',
+    );
+    this.kernel.permissions(task);
+    const profile = AgentTerminalProfile.parse(run.execution.profile);
+    const identity = terminalSessionIdentity(run, task);
+    const record = readTerminalSession(this.store, task.id);
+    invariant(
+      !record ||
+        (record.runId === run.id &&
+          record.taskId === task.id &&
+          record.profileHash === identity.profileHash &&
+          record.authorityHash === identity.authorityHash &&
+          record.lastOperationId === operation.id &&
+          !record.pending),
+      'TERMINAL_SESSION_CHANGED',
+      '终端会话绑定已变化，请创建新任务',
+    );
+    const imageId = record?.imageId ?? operation.args.imageId ?? profile.image;
+    invariant(
+      typeof imageId === 'string' && /^sha256:[a-f0-9]{64}$/.test(imageId),
+      'TERMINAL_SESSION_IMAGE_UNKNOWN',
+      '旧任务未记录实际镜像内容，请创建新任务后使用续接',
+    );
+    return { run, task, operation, profile, record, imageId, identity };
+  }
+  private sessionHome(record: TerminalSessionRecord, requireSession = false) {
+    const source = this.store.require<Operation>('tool_operations', record.homeOperationId);
+    invariant(
+      source.runId === record.runId && source.taskId === record.taskId && source.name === 'terminal_agent',
+      'TERMINAL_SESSION_SCOPE',
+      '会话目录不属于当前任务',
+    );
+    const root = path.resolve(this.store.directory, 'terminal-state'),
+      folder = path.join(root, record.homeOperationId),
+      home = path.join(folder, 'home');
+    for (const item of [root, folder, home])
+      invariant(
+        !lstatSync(item).isSymbolicLink() &&
+          contained(realpathSync(this.store.directory), realpathSync(item)),
+        'TERMINAL_SESSION_SCOPE',
+        '会话目录出现链接或超出应用数据范围',
+      );
+    if (requireSession) {
+      invariant(
+        record.ready && record.state,
+        'TERMINAL_SESSION_MISSING',
+        '当前任务没有可靠的会话一致性记录；可开启新会话',
+      );
+      invariant(
+        stable(this.sessionSeal(record)) === stable(record.state),
+        'TERMINAL_SESSION_CHANGED',
+        '会话文件与任务记录不一致，可能曾恢复备份或被修改；请开启新会话',
+      );
+    }
+    return home;
+  }
+  /** Hash only the selected rollout; private CLI transcript content never enters the database or logs. */
+  private sessionSeal(record: TerminalSessionRecord) {
+    invariant(
+      typeof record.sessionId === 'string' &&
+        /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(record.sessionId),
+      'TERMINAL_SESSION_MISSING',
+      '当前任务没有可靠的 Codex 会话标识',
+    );
+    const home = this.sessionHome(record),
+      codex = path.join(home, '.codex'),
+      sessions = path.join(codex, 'sessions');
+    for (const item of [codex, sessions])
+      invariant(
+        !lstatSync(item).isSymbolicLink() && contained(realpathSync(home), realpathSync(item)),
+        'TERMINAL_SESSION_SCOPE',
+        'Codex 会话目录无效',
+      );
+    let count = 0;
+    const matches: string[] = [];
+    const visit = (directory: string, depth: number) => {
+      invariant(depth <= 5, 'TERMINAL_SESSION_SCOPE', 'Codex 会话目录层级异常');
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        invariant(++count <= 4000, 'TERMINAL_SESSION_SCOPE', 'Codex 会话文件过多，请创建新会话');
+        const filename = path.join(directory, entry.name),
+          stat = lstatSync(filename);
+        invariant(
+          !stat.isSymbolicLink() && contained(realpathSync(home), realpathSync(filename)),
+          'TERMINAL_SESSION_SCOPE',
+          'Codex 会话文件包含链接',
+        );
+        if (stat.isDirectory()) visit(filename, depth + 1);
+        else if (
+          stat.isFile() &&
+          stat.size > 0 &&
+          entry.name.endsWith('.jsonl') &&
+          entry.name.includes(record.sessionId!)
+        )
+          matches.push(filename);
+      }
+    };
+    visit(sessions, 0);
+    invariant(matches.length === 1, 'TERMINAL_SESSION_MISSING', '未找到唯一的 Codex 会话文件；请开启新会话');
+    const filename = matches[0],
+      before = lstatSync(filename),
+      descriptor = openSync(filename, 'r'),
+      digest = createHash('sha256'),
+      buffer = Buffer.allocUnsafe(65536);
+    try {
+      invariant(
+        before.size <= 64 * 1024 * 1024,
+        'TERMINAL_SESSION_LIMIT',
+        '会话文件超出续接上限；请开启新会话',
+      );
+      let length: number,
+        bytes = 0;
+      while ((length = readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+        bytes += length;
+        invariant(bytes <= 64 * 1024 * 1024, 'TERMINAL_SESSION_LIMIT', '会话文件超出续接上限；请开启新会话');
+        digest.update(buffer.subarray(0, length));
+      }
+    } finally {
+      closeSync(descriptor);
+    }
+    const after = lstatSync(filename);
+    invariant(
+      before.size === after.size &&
+        before.mtimeMs === after.mtimeMs &&
+        before.ctimeMs === after.ctimeMs &&
+        before.ino === after.ino,
+      'TERMINAL_SESSION_CHANGED',
+      '会话文件正在变化，请稍后重试',
+    );
+    return { path: path.relative(home, filename).split(path.sep).join('/'), hash: digest.digest('hex') };
+  }
+  async sessionView(runId: string): Promise<TerminalSessionView> {
+    const revision = this.store.require<Run>('runs', runId).revision;
+    try {
+      const state = this.continuationState(runId);
+      const capability = await this.cliManager.resumeCapability(state.profile, state.imageId);
+      this.continuationState(runId, revision);
+      const view: TerminalSessionView = {
+        supported: capability.supported,
+        canResume: false,
+        canStartNew: true,
+        reason: capability.reason,
+        revision,
+        lastOperationId: state.operation.id,
+        sessionId: state.record?.sessionId,
+      };
+      if (capability.supported) {
+        try {
+          invariant(state.record, 'TERMINAL_SESSION_MISSING', '旧任务没有独立会话记录；可开启新会话');
+          this.sessionHome(state.record, true);
+          view.canResume = true;
+        } catch (error) {
+          view.reason = error instanceof AppError ? error.message : '会话目录已丢失；可开启新会话';
+        }
+      }
+      return view;
+    } catch (error) {
+      return {
+        supported: false,
+        canResume: false,
+        canStartNew: false,
+        revision,
+        reason: error instanceof AppError ? error.message : '终端会话检查未完成，请稍后重试',
+      };
+    }
+  }
+  async prepareContinuation(
+    runId: string,
+    expectedRevision: number,
+    mode: TerminalContinuationMode,
+    text: string,
+  ): Promise<() => Run> {
+    invariant(
+      ['resume', 'new-session'].includes(mode) &&
+        typeof text === 'string' &&
+        text.trim().length > 0 &&
+        text.length <= 60000,
+      'TERMINAL_CONTINUATION_INPUT',
+      '请输入后续任务内容，最多 60000 字',
+    );
+    const state = this.continuationState(runId, expectedRevision);
+    const sessionSnapshot = stable(state.record ?? null);
+    if (mode === 'resume') {
+      const capability = await this.cliManager.resumeCapability(state.profile, state.imageId);
+      invariant(capability.supported, 'TERMINAL_RESUME_UNSUPPORTED', capability.reason);
+      invariant(state.record, 'TERMINAL_SESSION_MISSING', '旧任务没有可靠会话记录，请开启新会话');
+      this.sessionHome(state.record, true);
+    } else {
+      const check = await this.check({ ...state.profile, image: state.imageId });
+      invariant(check.available, check.code ?? 'TERMINAL_UNAVAILABLE', check.message);
+    }
+    return () =>
+      this.store.tx(() => {
+        const current = this.continuationState(runId, expectedRevision);
+        invariant(
+          current.task.revision === state.task.revision &&
+            current.operation.id === state.operation.id &&
+            current.operation.revision === state.operation.revision &&
+            stable(current.record ?? null) === sessionSnapshot &&
+            current.imageId === state.imageId &&
+            stable(current.identity) === stable(state.identity),
+          'TERMINAL_SESSION_CHANGED',
+          '续接准备期间终端状态已变化，请刷新后重试',
+        );
+        if (mode === 'resume') this.sessionHome(current.record!, true);
+        const record: TerminalSessionRecord = current.record ?? {
+          revision: 0,
+          runId,
+          taskId: current.task.id,
+          ...current.identity,
+          imageId: current.imageId,
+          homeOperationId: current.operation.id,
+          lastOperationId: current.operation.id,
+          ready: false,
+        };
+        writeTerminalSession(this.store, {
+          ...record,
+          revision: record.revision + 1,
+          pending: { requestId: id(), mode, text: text.trim(), sourceOperationId: current.operation.id },
+        });
+        this.kernel.appendMessage(current.task, 'user', text.trim());
+        this.kernel.updateTask(current.task, 'READY', {
+          waitReason: undefined,
+          waitingFor: [],
+          result: undefined,
+        });
+        const next = this.kernel.updateRun(current.run, { status: 'READY', reason: undefined });
+        this.kernel.event(
+          runId,
+          'terminal.continuation_requested',
+          { mode, sourceOperationId: current.operation.id },
+          current.task.id,
+        );
+        return next;
+      });
+  }
   async run(task: Task, signal: AbortSignal) {
+    invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
     task = this.store.require<Task>('tasks', task.id);
     let run = this.store.require<Run>('runs', task.runId);
     invariant(run.execution?.kind === 'docker-agent', 'TERMINAL_EXECUTION', '当前任务不是 Agent 终端执行');
-    const profile = AgentTerminalProfile.parse(run.execution.profile);
+    const frozenProfile = AgentTerminalProfile.parse(run.execution.profile);
+    const session = readTerminalSession(this.store, task.id);
+    const pending = session?.pending;
+    const identity = terminalSessionIdentity(run, task);
+    invariant(
+      !session ||
+        (session.runId === run.id &&
+          session.taskId === task.id &&
+          session.profileHash === identity.profileHash &&
+          session.authorityHash === identity.authorityHash),
+      'TERMINAL_SESSION_CHANGED',
+      '终端会话授权或模板已变化，请创建新任务',
+    );
+    const profile =
+      pending?.mode === 'resume' ? codexResumeProfile(frozenProfile, session!.sessionId!) : frozenProfile;
     const permission = this.kernel.permissions(task);
     invariant(
       run.kind === 'task' &&
@@ -872,15 +1233,50 @@ export class DockerAgentService {
       .all<Operation>('tool_operations', run.id)
       .filter((operation) => operation.taskId === task.id && operation.name === 'terminal_agent')
       .at(-1);
-    if (completed?.status === 'DONE' && completed.args.contractVersion === task.contractVersion) {
+    invariant(
+      pending || completed?.status !== 'FAILED' || !completed.args.continuation,
+      'TERMINAL_RETRY_STATE',
+      '本次续接没有可安全重试的会话状态；请核验后创建新任务',
+    );
+    if (completed?.status === 'DONE' && completed.args.contractVersion === task.contractVersion && !pending) {
       this.kernel.updateTask(task, task.status, { result: { terminal: completed.result } });
       this.kernel.wait(this.store.require<Task>('tasks', task.id), 'terminal_review');
       return;
     }
-    const check = await this.check(profile);
+    const source = pending
+      ? this.store.require<Operation>('tool_operations', pending.sourceOperationId)
+      : undefined;
+    const continuation = completed?.args.continuation as
+      | { requestId?: string; mode?: string; sourceOperationId?: string }
+      | undefined;
+    invariant(
+      !pending ||
+        (source?.status === 'DONE' &&
+          source.runId === run.id &&
+          source.taskId === task.id &&
+          source.name === 'terminal_agent' &&
+          source.args.contractVersion === task.contractVersion &&
+          source.id === session!.lastOperationId &&
+          (source.args.imageId ?? frozenProfile.image) === session!.imageId &&
+          (completed?.id === source.id ||
+            (completed?.status === 'FAILED' &&
+              continuation?.requestId === pending.requestId &&
+              continuation?.mode === pending.mode &&
+              continuation?.sourceOperationId === source.id))),
+      'TERMINAL_SESSION_CHANGED',
+      '续接源操作已变化，请核验终端状态',
+    );
+    if (pending?.mode === 'resume') this.sessionHome(session!, true);
+    const check = await this.check({ ...profile, image: session?.imageId ?? profile.image }, signal);
     signal.throwIfAborted();
     task = this.store.require<Task>('tasks', task.id);
     if (task.status !== 'READY') return;
+    invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    invariant(
+      !run.startedAt || Date.now() - run.startedAt < run.limits.maxMinutes * 60000,
+      'TIME_BUDGET',
+      '运行时间达到上限，请创建新任务',
+    );
     if (!check.available) {
       this.store.tx(() => {
         this.kernel.updateTask(task, 'READY', {
@@ -900,6 +1296,14 @@ export class DockerAgentService {
       'TERMINAL_ENVIRONMENT',
       '终端环境变量缺失或包含无效换行，请检查配置',
     );
+    invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
+    const beforeClaim = this.store.require<Run>('runs', run.id);
+    invariant(
+      stable(terminalSessionIdentity(beforeClaim, this.store.require<Task>('tasks', task.id))) ===
+        stable(identity),
+      'TERMINAL_SESSION_CHANGED',
+      '执行准备期间任务授权或模板已变化',
+    );
     const attempt = this.kernel.claim(task.id);
     task = await this.gateway.prepare(this.store.require<Task>('tasks', task.id), signal);
     await this.prepareInitialSnapshot(task, signal);
@@ -916,12 +1320,24 @@ export class DockerAgentService {
         profileId: profile.id,
         contractVersion: task.contractVersion,
         containerName: `elysia-agent-${id()}`,
+        imageId: check.imageId,
+        ...(pending
+          ? {
+              continuation: {
+                requestId: pending.requestId,
+                mode: pending.mode,
+                sourceOperationId: pending.sourceOperationId,
+              },
+            }
+          : {}),
       },
       status: 'INTENT',
     };
     const entry = { task, operation, stopping: undefined as Promise<void> | undefined };
     const state = path.join(this.store.directory, 'terminal-state', operation.id);
-    const home = path.join(state, 'home');
+    const homeOperationId = pending?.mode === 'resume' ? session!.homeOperationId : operation.id;
+    const home = path.join(this.store.directory, 'terminal-state', homeOperationId, 'home');
+    operation.args.homeOperationId = homeOperationId;
     const guard = path.join(state, 'git-hidden');
     const envFile = path.join(state, 'environment');
     const projection = new TerminalProjection(
@@ -938,7 +1354,25 @@ export class DockerAgentService {
         ),
     );
     this.store.tx(() => {
+      const currentSession = readTerminalSession(this.store, task.id);
+      invariant(
+        stable(currentSession ?? null) === stable(session ?? null),
+        'TERMINAL_SESSION_CHANGED',
+        '执行准备期间会话状态已变化',
+      );
       this.store.put('tool_operations', operation);
+      invariant(check.imageId, 'TERMINAL_SESSION_IMAGE_UNKNOWN', '无法固定任务镜像内容');
+      writeTerminalSession(this.store, {
+        revision: (session?.revision ?? 0) + 1,
+        runId: run.id,
+        taskId: task.id,
+        ...identity,
+        imageId: check.imageId,
+        homeOperationId,
+        lastOperationId: operation.id,
+        ready: false,
+        ...(pending?.mode === 'resume' ? { sessionId: session!.sessionId } : {}),
+      });
       this.kernel.event(
         run.id,
         'terminal.started',
@@ -958,6 +1392,7 @@ export class DockerAgentService {
     let terminalResult: TerminalResult | undefined;
     try {
       signal.throwIfAborted();
+      invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
       const stateRoot = path.dirname(state);
       await fs.mkdir(stateRoot, { recursive: true, mode: 0o700 });
       invariant(
@@ -968,9 +1403,11 @@ export class DockerAgentService {
       );
       await fs.mkdir(state, { mode: 0o700 });
       ownedState = true;
-      await fs.mkdir(home, { mode: 0o700 });
-      for (const file of configuration?.files ?? [])
-        await fs.writeFile(path.join(home, file.path), file.content, { mode: 0o600, flag: 'wx' });
+      if (pending?.mode !== 'resume') {
+        await fs.mkdir(home, { mode: 0o700 });
+        for (const file of configuration?.files ?? [])
+          await fs.writeFile(path.join(home, file.path), file.content, { mode: 0o600, flag: 'wx' });
+      } else this.sessionHome(session!, true);
       await fs.writeFile(guard, 'gitdir: /elysia-hidden-git\n', { mode: 0o600 });
       // The durable operation exists before any temporary credential file.
       await fs.writeFile(
@@ -1026,7 +1463,8 @@ export class DockerAgentService {
       // Worktree .git points at the host. A read-only file mask hides that pointer;
       // git diff and integration continue exclusively through the host gateway.
       if (task.baseline) args.push('--mount', `type=bind,source=${guard},target=/workspace/.git,readonly`);
-      args.push(profile.image, ...(configuration?.command ?? profile.command));
+      args.push(check.imageId!, ...(configuration?.command ?? profile.command));
+      invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
       const created = await this.command(args, { signal });
       await this.clearEnvironmentFile(operation);
       invariant(
@@ -1037,17 +1475,21 @@ export class DockerAgentService {
         'TERMINAL_CREATE_FAILED',
         '无法创建 Agent 容器，请检查镜像、挂载权限与 Docker 状态',
       );
-      if (signal.aborted) {
+      if (signal.aborted || this.closed) {
         entry.stopping = this.stopOwned(task, operation);
         await entry.stopping;
         signal.throwIfAborted();
+        invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
       }
-      const prompt = `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
-        this.kernel
-          .history(task)
-          .filter((message) => message.role === 'user')
-          .map((message) => message.text),
-      )}\n\n仅在 /workspace 完成本任务，不修改隐藏的 Git 元数据。请提供最终结果摘要；完成状态由 Elysia 用户验收决定。\n`;
+      const prompt =
+        pending?.mode === 'resume'
+          ? pending.text
+          : `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
+              this.kernel
+                .history(task)
+                .filter((message) => message.role === 'user')
+                .map((message) => message.text),
+            )}\n\n仅在 /workspace 完成本任务，不修改隐藏的 Git 元数据。请提供最终结果摘要；完成状态由 Elysia 用户验收决定。\n`;
       invariant(
         Buffer.byteLength(prompt) <= 1024 * 1024,
         'TERMINAL_INPUT_LIMIT',
@@ -1101,7 +1543,8 @@ export class DockerAgentService {
         truncated: projection.truncated || result.truncated,
       };
       invariant(
-        !signal.aborted &&
+        !this.closed &&
+          !signal.aborted &&
           !controller.signal.aborted &&
           !result.timedOut &&
           result.exitCode === 0 &&
@@ -1128,12 +1571,27 @@ export class DockerAgentService {
       }
       await (entry.stopping ??= this.stopOwned(task, operation));
       signal.throwIfAborted();
+      const completedSession: TerminalSessionRecord = {
+        ...readTerminalSession(this.store, task.id)!,
+        revision: readTerminalSession(this.store, task.id)!.revision + 1,
+        ready: true,
+        sessionId: projection.sessionId ?? (pending?.mode === 'resume' ? session!.sessionId : undefined),
+        state: undefined,
+      };
+      if (profile.agent === 'codex') {
+        try {
+          completedSession.state = this.sessionSeal(completedSession);
+        } catch {
+          /* A reliable turn may still lack resumable private state; explicit new-session remains available. */
+        }
+      }
       this.store.tx(() => {
         this.store.put('tool_operations', {
           ...this.store.require<Operation>('tool_operations', operation.id),
           status: 'DONE',
           result: terminalResult,
         });
+        writeTerminalSession(this.store, completedSession);
         const current = this.store.require<Task>('tasks', task.id);
         if (current.status !== 'RUNNING') return;
         this.kernel.appendMessage(
@@ -1146,8 +1604,10 @@ export class DockerAgentService {
         this.kernel.event(run.id, 'terminal.completed', terminalResult, task.id, attempt.id);
       });
     } catch (error) {
+      let stopped = false;
       try {
         await (entry.stopping ?? this.stopOwned(task, operation));
+        stopped = true;
       } catch {
         /* Do not turn a failed stop into a successful task. */
       }
@@ -1169,6 +1629,26 @@ export class DockerAgentService {
         };
       }
       const uncertain = started || signal.aborted;
+      let restorePending = false;
+      if (pending && session && !uncertain && stopped && session.ready && session.state) {
+        try {
+          this.sessionHome(session, true);
+          const currentSource = this.store.require<Operation>('tool_operations', pending.sourceOperationId);
+          restorePending =
+            currentSource.status === 'DONE' &&
+            currentSource.runId === run.id &&
+            currentSource.taskId === task.id &&
+            currentSource.args.imageId === session.imageId &&
+            stable(
+              terminalSessionIdentity(
+                this.store.require<Run>('runs', run.id),
+                this.store.require<Task>('tasks', task.id),
+              ),
+            ) === stable(identity);
+        } catch {
+          /* Modified or unknown private state never falls back to a different continuation mode. */
+        }
+      }
       this.store.tx(() => {
         const message = error instanceof AppError ? error.message : 'Agent 终端连接中断，请核验工作区';
         this.store.put('tool_operations', {
@@ -1177,6 +1657,12 @@ export class DockerAgentService {
           result: terminalResult,
           error: message,
         });
+        if (restorePending)
+          writeTerminalSession(this.store, {
+            ...session!,
+            revision: readTerminalSession(this.store, task.id)!.revision + 1,
+            pending,
+          });
         const current = this.store.require<Task>('tasks', task.id);
         if (current.status !== 'CANCELLED' && current.status !== 'DONE') {
           this.kernel.updateTask(current, current.status, {

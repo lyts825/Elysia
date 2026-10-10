@@ -131,6 +131,7 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   resourceBase,
   onLocalLink,
   anchor,
+  anchorRequestId,
   className = '',
 }: {
   text: string;
@@ -138,29 +139,33 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   resourceBase?: string | null;
   onLocalLink?: (path: string) => void;
   anchor?: string;
+  anchorRequestId?: string;
   className?: string;
 }) {
   const prefix = 'md-' + useId().replace(/[^\w-]/g, '') + '-';
   const root = useRef<HTMLElement>(null);
+  const scrolledAnchor = useRef('');
   const scrollToAnchor = (value: string) => {
     const raw = value.replace(/^#/, '');
     let decoded: string;
     try {
       decoded = decodeURIComponent(raw);
     } catch {
-      return;
+      return false;
     }
     for (const id of [prefix + raw, prefix + decoded, raw, decoded]) {
       const target = document.getElementById(id);
       if (target && root.current?.contains(target)) {
         target.scrollIntoView({ block: 'start', behavior: 'instant' });
-        return;
+        return true;
       }
     }
+    return false;
   };
   useEffect(() => {
-    if (anchor) scrollToAnchor(anchor);
-  }, [anchor, text, sourcePath, prefix]);
+    const key = JSON.stringify([sourcePath, anchor, anchorRequestId]);
+    if (anchor && scrolledAnchor.current !== key && scrollToAnchor(anchor)) scrolledAnchor.current = key;
+  }, [anchor, anchorRequestId, text, sourcePath, prefix]);
   const headings = new Map<string, number>();
   const heading = (
     level: 1 | 2 | 3 | 4 | 5 | 6,

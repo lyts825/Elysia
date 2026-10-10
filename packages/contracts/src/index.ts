@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
 export * from './terminal-control.js';
-export const VERSION = '0.16.0-preview.1';
+export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
+export const VERSION = '0.17.0-preview.1';
 export const Status = z.enum([
   'DRAFT',
   'READY',

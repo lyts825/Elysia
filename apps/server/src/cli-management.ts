@@ -52,6 +52,35 @@ export class TerminalCliManagement {
     invariant(job, 'TERMINAL_CLI_JOB_MISSING', 'CLI 安装记录不存在');
     return job;
   }
+  history(input: unknown) {
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        cursor: z.string().uuid().optional(),
+        appId: TerminalAppId.optional(),
+      })
+      .strict()
+      .parse(input);
+    const jobs = this.jobs().filter((job) => !query.appId || job.appId === query.appId);
+    const found = query.cursor ? jobs.findIndex((job) => job.id === query.cursor) : -1;
+    if (query.cursor && found < 0)
+      throw new AppError('TERMINAL_CLI_CURSOR', '安装历史已变化，请重新读取第一页', false, null, 409);
+    const start = query.cursor ? found + 1 : 0;
+    const items = jobs.slice(start, start + query.limit);
+    return {
+      items,
+      total: jobs.length,
+      nextCursor: start + items.length < jobs.length ? items.at(-1)!.id : null,
+    };
+  }
+  latest() {
+    const found = new Set<TerminalAppId>();
+    return this.jobs().filter((job) => {
+      if (found.has(job.appId)) return false;
+      found.add(job.appId);
+      return true;
+    });
+  }
   private write(jobs: TerminalCliInstallationJob[]) {
     this.store.db
       .prepare(
@@ -134,6 +163,8 @@ export class TerminalCliManagement {
         baseImage: profile.image,
         ...(body.version ? { requestedVersion: body.version } : {}),
         status: 'running',
+        phase: 'queued',
+        phaseStartedAt: now(),
         message: '正在安装 CLI 镜像',
         createdAt: now(),
         updatedAt: now(),
@@ -180,10 +211,17 @@ export class TerminalCliManagement {
     return cancelled;
   }
   apply(rawId: string, input: unknown, route: string) {
+    return this.applyImage(rawId, input, route, false);
+  }
+  restore(rawId: string, input: unknown, route: string) {
+    return this.applyImage(rawId, input, route, true);
+  }
+  private applyImage(rawId: string, input: unknown, route: string, restore: boolean) {
     const id = z.string().uuid().parse(rawId);
     const body = Command.extend({
       profileId: z.string().uuid(),
       expectedRevision: z.number().int().nonnegative(),
+      ...(restore ? { expectedImage: AgentTerminalProfile.shape.image } : {}),
     })
       .strict()
       .parse(input);
@@ -200,10 +238,14 @@ export class TerminalCliManagement {
         throw new AppError('TERMINAL_PROFILE_MISSING', '原终端模板已删除，请重新安装', false, null, 409);
       if (terminalAppForProfile(profile) !== job.appId)
         throw new AppError('TERMINAL_PROFILE_APP', '终端模板的 CLI 已改变，请重新安装', false, null, 409);
-      if (profile.image !== job.baseImage && profile.image !== job.result.image)
+      if (
+        restore
+          ? profile.image !== (body as typeof body & { expectedImage: string }).expectedImage
+          : profile.image !== job.baseImage && profile.image !== job.result.image
+      )
         throw new AppError(
           'TERMINAL_CLI_IMAGE_CONFLICT',
-          '终端模板镜像已改变，请基于新镜像重新安装',
+          restore ? '当前镜像已变化，请刷新后确认恢复' : '终端模板镜像已改变，请基于新镜像重新安装',
           false,
           null,
           409,
@@ -223,6 +265,9 @@ export class TerminalCliManagement {
         const result = await this.manager.install(
           { appId: job.appId, baseImage: job.baseImage, version: job.requestedVersion },
           controller.signal,
+          (phase) => {
+            if (!controller.signal.aborted) this.update(job.id, { phase, phaseStartedAt: now() });
+          },
         );
         controller.signal.throwIfAborted();
         this.update(job.id, {
@@ -294,7 +339,16 @@ export function registerCliManagement(app: FastifyInstance, store: Store, manage
   app.post<{ Params: { id: string } }>(root + '/apps/:id/install', (request) =>
     management.install(request.params.id, request.body, request.url),
   );
-  app.get(root + '/installations', () => management.jobs());
+  app.get(root + '/installations', (request) => {
+    const query = request.query as Record<string, unknown>;
+    if (query.latest !== undefined) {
+      z.object({ latest: z.literal('true') })
+        .strict()
+        .parse(query);
+      return management.latest();
+    }
+    return Object.keys(query).length ? management.history(query) : management.jobs();
+  });
   app.get<{ Params: { id: string } }>(root + '/installations/:id', (request) =>
     management.job(z.string().uuid().parse(request.params.id)),
   );
@@ -303,6 +357,9 @@ export function registerCliManagement(app: FastifyInstance, store: Store, manage
   );
   app.post<{ Params: { id: string } }>(root + '/installations/:id/apply', (request) =>
     management.apply(request.params.id, request.body, request.url),
+  );
+  app.post<{ Params: { id: string } }>(root + '/installations/:id/restore', (request) =>
+    management.restore(request.params.id, request.body, request.url),
   );
   app.addHook('onClose', () => management.close());
   return management;

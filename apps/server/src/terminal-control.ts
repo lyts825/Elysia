@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   AgentTerminalProfile,
   AppError,
@@ -15,6 +15,9 @@ import {
   TerminalConnectionWrite,
   TerminalControlApps,
   TerminalProjectPreferences,
+  TerminalConnectionProbeRequest,
+  TerminalConnectionProbeResult,
+  TerminalProfileDiagnostics,
   type TerminalAppCatalogEntry,
   type TerminalConnectionView,
   type TerminalControlOverview,
@@ -22,6 +25,12 @@ import {
 import { type Store, stable } from '../../../packages/storage/src/index.js';
 import type { DesktopServices } from './desktop.js';
 import { ProviderKeys } from './provider-keys.js';
+import { terminalConnectionConfiguration } from '../../../packages/runtime/src/terminal-connection.js';
+import {
+  terminalConnectionProbe,
+  terminalProbeFailure,
+  type TerminalConnectionProbeOptions,
+} from './terminal-connection-probe.js';
 import {
   terminalSettings,
   terminalControlApps,
@@ -44,6 +53,28 @@ const connectionsKey = 'surface:terminal:control:connections:v1';
 const deletedConnectionsKey = 'surface:terminal:control:deleted-connections:v1';
 const appsKey = 'surface:terminal:control:apps:v1';
 const projectKey = (projectId: string) => `surface:terminal:control:project:${projectId}`;
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    const clean = () => signal.removeEventListener('abort', abort);
+    if (signal.aborted) {
+      clean();
+      reject(signal.reason);
+      return;
+    }
+    promise.then(
+      (value) => {
+        clean();
+        resolve(value);
+      },
+      (error) => {
+        clean();
+        reject(error);
+      },
+    );
+  });
+}
 /** ProviderKeys encryption is reused, but every vault operation targets the terminal vault. */
 export function terminalProviderKeys(desktop?: DesktopServices): ProviderKeys {
   return new ProviderKeys(
@@ -65,9 +96,12 @@ export function terminalProviderKeys(desktop?: DesktopServices): ProviderKeys {
 export class TerminalControlService {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly keys: ProviderKeys;
+  private readonly probes = new Map<string, AbortController>();
+  private closed = false;
   constructor(
     private readonly store: Store,
     desktop?: DesktopServices,
+    private readonly probeOptions: TerminalConnectionProbeOptions = {},
   ) {
     this.keys = terminalProviderKeys(desktop);
   }
@@ -126,6 +160,161 @@ export class TerminalControlService {
     const connection = TerminalConnectionBinding.parse(binding);
     return (await this.keys.credential(this.keyConfig(connection))).token;
   }
+  async probe(connectionId: string, input: unknown, operation: 'check' | 'models', caller?: AbortSignal) {
+    const id = z.string().uuid().parse(connectionId);
+    const body = TerminalConnectionProbeRequest.parse(input);
+    const binding = this.connections().find((connection) => connection.id === id);
+    invariant(binding, 'TERMINAL_CONNECTION_MISSING', '所选 API 连接已删除，请刷新');
+    this.revision(body.expectedRevision, binding.revision);
+    if (this.closed)
+      throw new AppError('TERMINAL_CONTROL_CLOSED', '服务正在退出，请稍后重试', false, null, 409);
+    if (this.probes.has(id))
+      throw new AppError('TERMINAL_API_BUSY', '此连接已有请求正在进行，请等待或取消后重试', false, null, 409);
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(this.probeOptions.timeoutMs ?? 20000),
+      ...(caller ? [caller] : []),
+    ]);
+    this.probes.set(id, controller);
+    const started = Date.now();
+    try {
+      let outcome;
+      try {
+        signal.throwIfAborted();
+        const credential = await abortable(this.credential(binding), signal);
+        signal.throwIfAborted();
+        outcome = await terminalConnectionProbe(binding, credential, operation, signal, this.probeOptions);
+      } catch (error) {
+        outcome = terminalProbeFailure(error, signal);
+      }
+      const current = this.connections().find((connection) => connection.id === id);
+      if (!current || current.revision !== binding.revision)
+        throw new AppError(
+          'TERMINAL_CONNECTION_STALE',
+          '连接已修改或删除，请使用最新配置重新操作',
+          false,
+          null,
+          409,
+        );
+      return TerminalConnectionProbeResult.parse({
+        ...outcome,
+        connectionId: id,
+        revision: binding.revision,
+        checkedAt: new Date().toISOString(),
+        latencyMs: Math.max(0, Date.now() - started),
+      });
+    } finally {
+      this.probes.delete(id);
+    }
+  }
+  close() {
+    this.closed = true;
+    for (const controller of this.probes.values()) controller.abort();
+  }
+  async diagnostics(profileId: string, input: unknown = {}) {
+    const id = z.string().uuid().parse(profileId);
+    const body = z.object({ projectId: z.string().uuid().optional() }).strict().parse(input);
+    const settings = terminalSettings(this.store);
+    const profile = settings.profiles.find((entry) => entry.id === id);
+    invariant(profile, 'TERMINAL_PROFILE_MISSING', '所选终端模板不存在，请刷新');
+    const apps = this.apps();
+    const preferences = body.projectId ? this.preferences(body.projectId) : null;
+    const connections = this.connections();
+    const issues: TerminalProfileDiagnostics['issues'] = [];
+    let source: TerminalProfileDiagnostics['source'] = 'environment';
+    let selected: string | null = null;
+    if (profile.connectionId !== undefined) {
+      selected = profile.connectionId;
+      source = selected ? 'template' : 'environment';
+    } else {
+      const projectConnection = connections.find((entry) => entry.id === preferences?.connectionId);
+      if (projectConnection && protocols[profile.agent].includes(projectConnection.protocol)) {
+        selected = projectConnection.id;
+        source = 'project';
+      } else {
+        if (preferences?.connectionId)
+          issues.push({
+            severity: 'warning',
+            code: 'TERMINAL_PROJECT_CONNECTION_FALLBACK',
+            message: '项目连接已删除或与当前 CLI 不兼容，当前模板沿用应用连接或环境变量',
+          });
+        selected = apps.entries.find((entry) => entry.id === terminalAppForProfile(profile))!.connectionId;
+        source = selected ? 'app' : 'environment';
+      }
+    }
+    const connection = connections.find((entry) => entry.id === selected) ?? null;
+    let keyConfigured: boolean | null = null;
+    let environmentNames = [...profile.environment];
+    let missingEnvironment: string[] = [];
+    let commandPreview = [...profile.command];
+    if (selected && !connection)
+      issues.push({
+        severity: 'error',
+        code: 'TERMINAL_CONNECTION_MISSING',
+        message: '所选 API 连接已删除，请重新选择',
+      });
+    if (connection) {
+      keyConfigured = await this.keys.configured(this.keyConfig(connection));
+      if (!keyConfigured)
+        issues.push({
+          severity: 'error',
+          code: 'API_KEY_MISSING',
+          message: '此连接未配置可用凭据，请保存 API Key 或配置环境变量',
+        });
+      try {
+        const configuration = terminalConnectionConfiguration(
+          profile,
+          connection,
+          'elysia-diagnostic-placeholder',
+        );
+        environmentNames = Object.keys(configuration.environment);
+        commandPreview = configuration.command;
+      } catch (error) {
+        issues.push({
+          severity: 'error',
+          code: error instanceof AppError ? error.code : 'TERMINAL_CONNECTION_CONFIG',
+          message: error instanceof AppError ? error.message : '无法生成终端配置，请检查模板命令与 API 连接',
+        });
+      }
+    } else if (!selected) {
+      for (const name of environmentNames)
+        if (!(await this.keys.configured({ apiKeyEnv: name, credentialId: null } as ProviderConfig)))
+          missingEnvironment.push(name);
+      if (missingEnvironment.length)
+        issues.push({
+          severity: 'error',
+          code: 'TERMINAL_ENVIRONMENT_MISSING',
+          message: '模板所需环境变量尚未配置：' + missingEnvironment.join('、'),
+        });
+    }
+    if (
+      terminalSettings(this.store).revision !== settings.revision ||
+      this.apps().revision !== apps.revision ||
+      (body.projectId && this.preferences(body.projectId).revision !== preferences!.revision) ||
+      (connection &&
+        this.connections().find((entry) => entry.id === connection.id)?.revision !== connection.revision)
+    )
+      throw new AppError('TERMINAL_DIAGNOSTIC_STALE', '配置已更新，请重新读取诊断', false, null, 409);
+    return TerminalProfileDiagnostics.parse({
+      profileId: profile.id,
+      profileLabel: profile.label,
+      appId: profile.agent,
+      image: profile.image,
+      settingsRevision: settings.revision,
+      appsRevision: apps.revision,
+      projectId: body.projectId ?? null,
+      projectRevision: preferences?.revision ?? null,
+      source,
+      connection,
+      keyConfigured,
+      environmentNames,
+      missingEnvironment,
+      commandPreview,
+      issues,
+      ready: !issues.some((issue) => issue.severity === 'error'),
+    });
+  }
   bindProfile(profile: AgentTerminalProfile, connectionId?: string | null): AgentTerminalProfile {
     const supplied = profile as AgentTerminalProfile & {
       connectionId?: string | null;
@@ -161,6 +350,14 @@ export class TerminalControlService {
     return result;
   }
   private assertActiveSelections(connection: TerminalConnectionBinding) {
+    for (const profile of terminalSettings(this.store).profiles) {
+      if (profile.connectionId !== connection.id) continue;
+      invariant(
+        protocols[profile.agent].includes(connection.protocol),
+        'TERMINAL_CONNECTION_PROTOCOL',
+        `此连接正在被终端模板“${profile.label}”使用，请先更改模板连接`,
+      );
+    }
     for (const app of this.apps().entries.filter((entry) => entry.connectionId === connection.id))
       invariant(
         protocols[app.id].includes(connection.protocol),
@@ -379,6 +576,34 @@ export function registerTerminalControl(app: FastifyInstance, control: TerminalC
   app.delete<{ Params: { id: string } }>(root + '/connections/:id', (request) =>
     control.deleteConnection(request.params.id, request.body, request.url),
   );
+  const probe = async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply,
+    operation: 'check' | 'models',
+  ) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const close = () => {
+      if (!reply.raw.writableEnded) controller.abort();
+    };
+    request.raw.once('aborted', abort);
+    reply.raw.once('close', close);
+    try {
+      return await control.probe(request.params.id, request.body, operation, controller.signal);
+    } finally {
+      request.raw.removeListener('aborted', abort);
+      reply.raw.removeListener('close', close);
+    }
+  };
+  app.post<{ Params: { id: string } }>(root + '/connections/:id/check', (request, reply) =>
+    probe(request, reply, 'check'),
+  );
+  app.post<{ Params: { id: string } }>(root + '/connections/:id/models', (request, reply) =>
+    probe(request, reply, 'models'),
+  );
+  app.post<{ Params: { id: string } }>(root + '/profiles/:id/diagnostics', (request) =>
+    control.diagnostics(request.params.id, request.body ?? {}),
+  );
   app.put(root + '/apps', (request) => control.saveApps(request.body, request.url));
   app.get<{ Params: { id: string } }>(root + '/projects/:id/preferences', (request) =>
     control.preferences(request.params.id),
@@ -386,4 +611,7 @@ export function registerTerminalControl(app: FastifyInstance, control: TerminalC
   app.put<{ Params: { id: string } }>(root + '/projects/:id/preferences', (request) =>
     control.savePreferences(request.params.id, request.body, request.url),
   );
+  app.addHook('onClose', () => {
+    control.close();
+  });
 }

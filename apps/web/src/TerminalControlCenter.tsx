@@ -15,6 +15,9 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { TerminalSettings } from './TerminalSettings';
+import { TerminalConnectionChecks } from './TerminalConnectionChecks';
+import { TerminalDiagnostics } from './TerminalDiagnostics';
+import { TerminalInstallHistory, installationPhase, InstallationElapsed } from './TerminalInstallHistory';
 import './terminal-control.css';
 
 type CliStatus = { available: boolean; installed: boolean | null; version?: string; message: string };
@@ -170,7 +173,12 @@ export function TerminalControlCenter({
   async function load(signal?: AbortSignal) {
     const [control, installs, prefs, latestSettings] = await Promise.all([
       api<TerminalControlOverview>('/terminal/control', undefined, undefined, signal),
-      api<TerminalCliInstallationJob[]>('/terminal/control/installations', undefined, undefined, signal),
+      api<TerminalCliInstallationJob[]>(
+        '/terminal/control/installations?latest=true',
+        undefined,
+        undefined,
+        signal,
+      ),
       project
         ? api<TerminalProjectPreferences>(
             `/terminal/control/projects/${project.id}/preferences`,
@@ -211,7 +219,9 @@ export function TerminalControlCenter({
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        setJobs(await api('/terminal/control/installations', undefined, undefined, controller.signal));
+        setJobs(
+          await api('/terminal/control/installations?latest=true', undefined, undefined, controller.signal),
+        );
       } catch (issue) {
         if (!controller.signal.aborted) setError(message(issue));
       }
@@ -494,17 +504,40 @@ export function TerminalControlCenter({
                             ))}
                         </select>
                       </label>
+                      {profile && (
+                        <TerminalDiagnostics
+                          profileId={profile.id}
+                          configKey={JSON.stringify([
+                            settings.revision,
+                            overview.apps.revision,
+                            overview.connections,
+                          ])}
+                          disabled={busy}
+                        />
+                      )}
+                      <TerminalInstallHistory
+                        appId={item.id}
+                        settings={settings}
+                        refreshKey={job ? `${job.id}:${job.revision}` : ''}
+                        disabled={busy || running}
+                        perform={perform}
+                        saved={(next) => {
+                          savedSettings(next);
+                          setNotice('历史镜像已恢复，供新任务使用。');
+                        }}
+                      />
                     </div>
                     <div className="cli-app-version">
                       <span className={status?.available ? 'connected' : ''}>
                         {job?.status === 'running'
-                          ? '安装中…'
+                          ? installationPhase(job)
                           : status?.version ||
                             (job?.status === 'completed' && job.result
                               ? `已构建 ${job.result.version}`
                               : '尚未检查')}
                       </span>
                       {status && <small>{status.message}</small>}
+                      {job?.status === 'running' && <InstallationElapsed job={job} />}
                       {job?.status === 'cancelled' && <small>安装已取消</small>}
                       {job?.status === 'failed' && <small className="cli-app-error">{job.message}</small>}
                       {job?.status === 'completed' && !applied && (
@@ -888,6 +921,14 @@ export function TerminalControlCenter({
                 <p className="field-help">
                   Codex 使用 Responses，DSH 与 Claude 使用 Messages。现有任务保留创建时的连接。
                 </p>
+                {selectedConnection && (
+                  <TerminalConnectionChecks
+                    key={selectedConnection.id}
+                    connection={selectedConnection}
+                    enabled={!busy && !connectionDirty && draft.revision === selectedConnection.revision}
+                    chooseModel={(model) => setDraft({ ...draft, model })}
+                  />
+                )}
                 <div className="terminal-control-form-actions">
                   <button className="primary" disabled={busy || !validConnection}>
                     {busy ? '保存中…' : '保存连接'}
@@ -1048,6 +1089,19 @@ export function TerminalControlCenter({
               <button className="primary" disabled={busy || !projectDirty}>
                 保存项目默认
               </button>
+              {projectProfile && (
+                <TerminalDiagnostics
+                  profileId={projectProfile.id}
+                  projectId={project.id}
+                  configKey={JSON.stringify([
+                    settings.revision,
+                    overview.apps.revision,
+                    overview.connections,
+                    preferences,
+                  ])}
+                  disabled={busy || projectDirty}
+                />
+              )}
             </form>
           ) : (
             <div className="terminal-connection-empty">
