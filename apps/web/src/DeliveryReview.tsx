@@ -88,9 +88,11 @@ export function DeliveryReview({
           </p>
         )}
         {reading && value && <p role="status">正在重新读取，已读内容与备注保留…</p>}
-        {!value ? (
-          <p role="status">正在读取交付证据…</p>
-        ) : (
+        {!value && reading && <p role="status">正在读取交付证据…</p>}
+        {!value && !reading && error && (
+          <p className="field-help">当前交付暂不可读。已保存的复核历史仍可单独查看，未保存备注保持不变。</p>
+        )}
+        {value && (
           <>
             <p className="field-help">{value.limitation}</p>
             {value.summary && (
@@ -144,7 +146,6 @@ export function DeliveryReview({
                 />
               )}
             </DeliveryUserReview>
-            <ReviewHistory runId={runId} version={value.runRevision} />
             <section aria-label="交付文件">
               <h3>交付文件</h3>
               {value.artifacts.map(file)}
@@ -178,6 +179,7 @@ export function DeliveryReview({
             )}
           </>
         )}
+        <ReviewHistory runId={runId} version={value?.runRevision ?? 0} />
       </div>
       <footer className="modal-footer">
         <button className="secondary" onClick={close} disabled={reviewBusy}>

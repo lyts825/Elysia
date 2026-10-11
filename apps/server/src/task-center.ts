@@ -9,6 +9,11 @@ import type {
 import type { Store } from '../../../packages/storage/src/index.js';
 import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow.js';
 import { deliveryReviewReads, type DeliveryReviewReads } from './delivery-summary.js';
+import {
+  projectionIssue,
+  projectionReads,
+  type ProjectionReads,
+} from '../../../packages/storage/src/projection-reads.js';
 
 type Row = {
   seq: number;
@@ -27,7 +32,16 @@ type Row = {
   notification_status: NonNullable<TaskCenterItem['notification']>['status'] | null;
   notification_revision: number;
 };
-const categories = ['all', 'running', 'waiting', 'verification', 'done', 'failed', 'paused'] as const;
+const categories = [
+  'all',
+  'running',
+  'waiting',
+  'verification',
+  'done',
+  'failed',
+  'paused',
+  'unavailable',
+] as const;
 const reviewStatuses = ['unreviewed', 'accepted', 'changes_requested', 'stale'] as const;
 const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const state = (alias: string) =>
@@ -39,7 +53,9 @@ const waitReason = (alias: string) =>
 export class TaskCenterReads {
   private warming?: Promise<void>;
   private delivery: DeliveryReviewReads;
+  private projections: ProjectionReads;
   constructor(private store: Store) {
+    this.projections = projectionReads(store);
     this.delivery = deliveryReviewReads(store);
     const status = state('r');
     const runReason = "COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))";
@@ -67,13 +83,15 @@ export class TaskCenterReads {
       CREATE INDEX IF NOT EXISTS task_center_tombstones ON task_center_changes_v1(deleted,seq);
       INSERT OR IGNORE INTO storage_meta(key,value) VALUES('task-center-floor:v1','0');
       INSERT OR IGNORE INTO storage_meta(key,value) VALUES('task-center-warm:v1','1');
-      CREATE VIEW IF NOT EXISTS task_center_source_v1 AS SELECT
+      DROP VIEW IF EXISTS task_center_source_v1;
+      CREATE VIEW task_center_source_v1 AS SELECT
         r.id run_id,r.rowid position,
         COALESCE(json_extract(r.data,'$.readModel.title'),json_extract(r.data,'$.title'),json_extract(r.data,'$.objective'),r.id) title,
         COALESCE(json_extract(r.data,'$.readModel.projectId'),json_extract(r.data,'$.projectId')) project_id,
         COALESCE(json_extract(r.data,'$.readModel.kind'),json_extract(r.data,'$.kind'),'task') kind,
-        ${status} status,r.revision revision,
-        CASE WHEN ${verification} THEN 'verification'
+        CASE WHEN EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.run_id=r.id) THEN NULL ELSE ${status} END status,r.revision revision,
+        CASE WHEN EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.run_id=r.id) THEN 'unavailable'
+          WHEN ${verification} THEN 'verification'
           WHEN ${status}='FAILED' THEN 'failed'
           WHEN ${status} IN ('DONE','CANCELLED') THEN 'done'
           WHEN ${tasks(`${state('t')}='FAILED'`)} THEN 'failed'
@@ -137,6 +155,10 @@ export class TaskCenterReads {
       AFTER UPDATE OF review_status,reviewed_at,issue_code ON delivery_review_summary_v1
       WHEN NEW.review_status IS NOT OLD.review_status OR NEW.reviewed_at IS NOT OLD.reviewed_at OR NEW.issue_code IS NOT OLD.issue_code
       BEGIN ${this.refreshSql('NEW.run_id')} END;
+      CREATE TRIGGER IF NOT EXISTS task_center_projection_issue_insert AFTER INSERT ON projection_read_issues_v1
+      BEGIN ${this.refreshSql('NEW.run_id')} END;
+      CREATE TRIGGER IF NOT EXISTS task_center_projection_issue_delete AFTER DELETE ON projection_read_issues_v1
+      BEGIN ${this.refreshSql('OLD.run_id')} END;
     `),
     );
   }
@@ -187,14 +209,13 @@ export class TaskCenterReads {
         for (;;) {
           const rows = this.store.db
             .prepare(
-              `SELECT id FROM ${table} WHERE content IS NOT NULL AND (${where}) ORDER BY rowid LIMIT 32`,
+              `SELECT id FROM ${table} WHERE content IS NOT NULL AND (${where}) AND ${this.projections.available(table)} ORDER BY rowid LIMIT 32`,
             )
             .all() as { id: string }[];
           if (!rows.length) break;
           this.store.tx(() => {
             for (const { id } of rows) {
-              const entity = this.store.get<Entity>(table, id);
-              if (entity) this.store.refreshReadProjection(table, entity);
+              this.projections.read<Entity>(table, id, true);
             }
           });
           await new Promise<void>((resolve) => setImmediate(resolve));
@@ -214,13 +235,15 @@ export class TaskCenterReads {
       }
       // A legacy writer can change an earlier table while a later batch yields.
       // Check all projections once more before atomically marking this build complete.
-      const pending = ['runs', 'tasks', 'requests', 'tool_operations'].some((table) => {
+      const pending = (['runs', 'tasks', 'requests', 'tool_operations'] as const).some((table) => {
         const where =
           table === 'runs' || table === 'tasks'
             ? "json_type(data,'$.readModel') IS NOT 'object' OR json_extract(data,'$.readModelVersion') IS NOT 1"
             : `${state(table)} IS NULL`;
         return this.store.db
-          .prepare(`SELECT 1 FROM ${table} WHERE content IS NOT NULL AND (${where}) LIMIT 1`)
+          .prepare(
+            `SELECT 1 FROM ${table} WHERE content IS NOT NULL AND (${where}) AND ${this.projections.available(table)} LIMIT 1`,
+          )
           .get();
       });
       if (!pending) {
@@ -249,7 +272,8 @@ export class TaskCenterReads {
     this.store.db.prepare('DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=?').run(through);
   }
   private item(row: Row): TaskCenterItem {
-    const review = this.delivery.cached(row.run_id);
+    const unavailable = row.category === 'unavailable';
+    const review = unavailable ? undefined : this.delivery.cached(row.run_id);
     const expected =
       row.category === 'verification'
         ? 'UNCERTAIN'
@@ -271,9 +295,10 @@ export class TaskCenterReads {
       changeRevision: row.seq,
       ...(row.reason ? { reason: row.reason } : {}),
       updatedAt: row.updated_at,
-      ...(review.reviewStatus ? { reviewStatus: review.reviewStatus } : {}),
-      ...(review.reviewedAt ? { reviewedAt: review.reviewedAt } : {}),
-      ...(review.reviewIssue ? { reviewIssue: review.reviewIssue } : {}),
+      ...(unavailable ? { readIssue: projectionIssue } : {}),
+      ...(review?.reviewStatus ? { reviewStatus: review.reviewStatus } : {}),
+      ...(review?.reviewedAt ? { reviewedAt: review.reviewedAt } : {}),
+      ...(review?.reviewIssue ? { reviewIssue: review.reviewIssue } : {}),
       ...(expected && expected === row.notification_status && row.notification_revision > 0
         ? { notification: { status: expected, revision: row.notification_revision } }
         : {}),
@@ -287,7 +312,9 @@ export class TaskCenterReads {
     query?: string;
     reviewFilter?: DeliveryReviewStatus;
     retryReviews?: 'true' | 'false';
+    retryProjections?: 'true' | 'false';
   }): Promise<TaskCenterPage> {
+    if (query.retryProjections === 'true') await this.projections.retry();
     await this.warm();
     if (query.retryReviews === 'true') this.delivery.retryFailures();
     return this.delivery.read(() => {
@@ -312,6 +339,24 @@ export class TaskCenterReads {
         ...(query.projectId ? [query.projectId] : []),
         ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
       ];
+      // Known scope exclusions remain exact. A broken Run body may also hide its
+      // project/title, so those uncertain memberships stay in the coverage warning.
+      const unknownRun =
+        "EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.table_name='runs' AND p.record_id=task_center_changes_v1.run_id)";
+      const projectionUnavailable = Number(
+        (
+          this.store.db
+            .prepare(
+              `SELECT COUNT(*) n FROM task_center_changes_v1 WHERE deleted=0 AND archived=0 AND category='unavailable'
+          ${query.projectId ? ` AND (project_id=? OR (project_id IS NULL AND ${unknownRun}))` : ''}
+          ${query.query?.trim() ? ` AND (instr(lower(COALESCE(title,'')),?)>0 OR ${unknownRun})` : ''}`,
+            )
+            .get(
+              ...(query.projectId ? [query.projectId] : []),
+              ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
+            ) as { n: number }
+        ).n,
+      );
       const unavailable = Number(
         (
           this.store.db
@@ -323,6 +368,7 @@ export class TaskCenterReads {
         ).n,
       );
       if (query.reviewFilter) {
+        clauses.push("category<>'unavailable'");
         clauses.push('run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)');
         params.push(query.reviewFilter);
       }
@@ -343,6 +389,7 @@ export class TaskCenterReads {
       return {
         items: selected.map((row) => this.item(row)),
         reviewCoverage: { complete: unavailable === 0, unavailable },
+        projectionCoverage: { complete: projectionUnavailable === 0, unavailable: projectionUnavailable },
         page: {
           total,
           limit: query.limit,
@@ -412,6 +459,7 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
           filter: z.enum(categories).default('all'),
           reviewFilter: z.enum(reviewStatuses).optional(),
           retryReviews: z.enum(['true', 'false']).optional(),
+          retryProjections: z.enum(['true', 'false']).optional(),
           limit: z.coerce.number().int().min(1).max(100).default(40),
           before: z.string().uuid().optional(),
           projectId: z.string().uuid().optional(),

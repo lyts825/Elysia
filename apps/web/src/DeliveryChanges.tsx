@@ -7,7 +7,9 @@ export function DeliveryChanges({ value }: { value?: DeliveryChangeSummary | nul
       <p className="field-help" role="status">
         {value.reason === 'current_unreadable'
           ? '当前交付暂不可读取，无法比较变更，请重试读取交付。'
-          : '这份旧复核没有完整比较基线，无法确定具体变更；请按当前证据重新核对。'}
+          : value.reason === 'baseline_invalid'
+            ? '历史比较信息损坏或版本不支持，仍可查看原复核，无法确定具体变更。'
+            : '这份旧复核没有完整比较基线，无法确定具体变更；请按当前证据重新核对。'}
       </p>
     );
   if (value.status === 'unchanged') return <p className="field-help">当前交付与此复核记录的内容一致。</p>;

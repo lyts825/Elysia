@@ -1,4 +1,5 @@
 import { AppError, type Run, type Task } from '../../../packages/contracts/src/index.js';
+import { z } from 'zod';
 import type {
   DeliveryChangeSummary,
   DeliveryReviewHistory,
@@ -21,6 +22,40 @@ type Baseline = {
   resultHash: string;
   artifacts: ReturnType<typeof deliveryArtifactMetadata>;
 };
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+const baselineSchema = z.object({
+  version: z.literal(1),
+  fingerprint: digest,
+  rootTaskId: z.string().min(1),
+  status: z.string().min(1),
+  deliverablesHash: digest,
+  deliverablesCount: z.number().int().nonnegative(),
+  criteriaHash: digest,
+  criteriaCount: z.number().int().nonnegative(),
+  resultHash: digest,
+  artifacts: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        taskId: z.string().min(1),
+        name: z.string(),
+        version: z.number().int().nonnegative(),
+        hash: digest,
+        mediaType: z.string(),
+        verified: z.boolean(),
+      }),
+    )
+    .refine((items) => new Set(items.map((artifact) => artifact.id)).size === items.length),
+});
+/** Stored comparison metadata may come from older or damaged records; never infer a comparison from it. */
+function readBaseline(raw: string): Baseline | undefined {
+  try {
+    const parsed = baselineSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return;
+  }
+}
 type HistoryRow = {
   id: string;
   decision: DeliveryUserReview['decision'];
@@ -139,7 +174,7 @@ export function savedReviewSnapshot(
   return row ? (JSON.parse(row.review_json) as DeliveryUserReview) : undefined;
 }
 const unknown = (
-  reason: 'baseline_missing' | 'current_unreadable',
+  reason: 'baseline_missing' | 'baseline_invalid' | 'current_unreadable',
   baseline: 'known' | 'unknown',
 ): DeliveryChangeSummary => ({
   baseline,
@@ -155,11 +190,12 @@ export function deliveryChanges(
   current: Baseline | null,
 ): DeliveryChangeSummary {
   const row = store.db
-    .prepare('SELECT baseline_json FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
-    .get(runId, reviewId) as { baseline_json: string | null } | undefined;
+    .prepare('SELECT baseline_json,fingerprint FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
+    .get(runId, reviewId) as { baseline_json: string | null; fingerprint: string } | undefined;
   if (!row?.baseline_json) return unknown('baseline_missing', 'unknown');
+  const before = readBaseline(row.baseline_json);
+  if (!before || before.fingerprint !== row.fingerprint) return unknown('baseline_invalid', 'unknown');
   if (!current) return unknown('current_unreadable', 'known');
-  const before = JSON.parse(row.baseline_json) as Baseline;
   const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
   let added = 0,
     changed = 0;
@@ -169,18 +205,18 @@ export function deliveryChanges(
     else if (stable(prior) !== stable(artifact)) changed++;
     previous.delete(artifact.id);
   }
-  return {
-    baseline: 'known',
-    status: before.fingerprint === current.fingerprint ? 'unchanged' : 'changed',
-    fields: {
-      root: before.rootTaskId !== current.rootTaskId,
-      status: before.status !== current.status,
-      deliverables: before.deliverablesHash !== current.deliverablesHash,
-      criteria: before.criteriaHash !== current.criteriaHash,
-      result: before.resultHash !== current.resultHash,
-    },
-    artifacts: { added, removed: previous.size, changed },
+  const fields = {
+    root: before.rootTaskId !== current.rootTaskId,
+    status: before.status !== current.status,
+    deliverables: before.deliverablesHash !== current.deliverablesHash,
+    criteria: before.criteriaHash !== current.criteriaHash,
+    result: before.resultHash !== current.resultHash,
   };
+  const artifacts = { added, removed: previous.size, changed };
+  const unchanged = before.fingerprint === current.fingerprint;
+  if (unchanged && (Object.values(fields).some(Boolean) || Object.values(artifacts).some(Boolean)))
+    return unknown('baseline_invalid', 'unknown');
+  return { baseline: 'known', status: unchanged ? 'unchanged' : 'changed', fields, artifacts };
 }
 export function deliveryReviewHistory(store: Store, run: Run, before?: string): DeliveryReviewHistory {
   ensureCurrentReviewSnapshot(store, run);

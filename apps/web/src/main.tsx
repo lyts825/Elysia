@@ -340,6 +340,10 @@ function App({
     hasMore: false,
     nextBefore: null,
   });
+  const [runListReadCoverage, setRunListReadCoverage] = useState<{
+    complete: boolean;
+    unavailable: number;
+  }>();
   const [projectCounts, setProjectCounts] = useState<Record<string, number>>();
   const [runListQuery, setRunListQuery] = useState('');
   const [runListArchive, setRunListArchive] = useState<boolean | undefined>(undefined);
@@ -814,6 +818,8 @@ function App({
             included: RunListItem[];
             page: RecordPage;
             projectCounts?: Record<string, number>;
+            readCoverage?: { complete: boolean; unavailable: number };
+            unavailableIds?: string[];
           };
           const readListing = async () => {
             try {
@@ -845,10 +851,16 @@ function App({
             const retain =
               window.filter === filter &&
               (window.before === (listing.page.before || '') || runListAppend.current);
-            const rows = retainedRuns(retain ? window.rows : [], listing.runs, listing.included);
+            const unavailable = new Set(listing.unavailableIds || []);
+            const rows = retainedRuns(
+              retain ? window.rows.filter((row) => !unavailable.has(row.id)) : [],
+              listing.runs,
+              listing.included,
+            );
             runListWindow.current = { filter, before: listing.page.before || '', rows };
             const runs = [...new Map([...rows, ...listing.included].map((run) => [run.id, run])).values()];
             setRunListPage(listing.page);
+            setRunListReadCoverage(listing.readCoverage);
             setProjectCounts(listing.projectCounts);
             setRunWindowCount(rows.length);
             setRuns(runs);
@@ -1888,6 +1900,11 @@ function App({
           listBusy={runListBusy}
           listDynamic
           listError={readIssues.lists?.message}
+          listReadCoverage={runListReadCoverage}
+          inspectUnreadable={() => {
+            setTaskCenterState({ filter: 'unavailable', before: '', trail: [] });
+            setModal('task-center');
+          }}
           listWindowLimited={runWindowCount + runHistoryPageSize > runHistoryWindowLimit}
           listQuery={runListQuery}
           changeListQuery={setRunListQuery}
@@ -3884,6 +3901,12 @@ function UsagePanel({
           <strong>{summary?.unknownCount ?? unknown.length}</strong>
         </div>
       </div>
+      {summary?.readCoverage && !summary.readCoverage.complete && (
+        <p className="field-error" role="status">
+          {summary.readCoverage.unavailable}{' '}
+          条请求用量暂不可读取。请求总数包含这些记录，Token、厂商指标仅含可读取部分，完整成本未知。
+        </p>
+      )}
       <div className="budget-bar">
         <i
           style={{

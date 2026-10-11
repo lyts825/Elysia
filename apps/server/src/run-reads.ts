@@ -11,6 +11,7 @@ import {
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads.js';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
 import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
+import { projectionReads, type ProjectionReads } from '../../../packages/storage/src/projection-reads.js';
 
 type Table = 'runs' | 'requests' | 'tool_operations';
 type Metadata = { id: string; revision: number; rowid: number; value: any };
@@ -81,7 +82,10 @@ function briefRequest(request: RequestRecord): RequestRecord {
 }
 /** Reads small SQL projections; legacy rows warm once without expanding business bodies again. */
 export class RunReads {
-  constructor(private store: Store) {}
+  private projections: ProjectionReads;
+  constructor(private store: Store) {
+    this.projections = projectionReads(store);
+  }
   private recordVersion(table: 'requests' | 'tool_operations' | 'artifacts', runId: string) {
     const rows = this.store.db
       .prepare(`SELECT id,revision FROM ${table} WHERE run_id=? ORDER BY rowid`)
@@ -89,18 +93,13 @@ export class RunReads {
     return hash(JSON.stringify(rows));
   }
   private warmReadModels(table: Table, runId?: string) {
-    const rows = this.store.db
-      .prepare(
-        `SELECT id FROM ${table} WHERE (json_extract(data,'$.readModelVersion') IS NOT 1 OR json_type(data,'$.readModel') IS NOT 'object')${runId ? ' AND run_id=?' : ''}`,
-      )
-      .all(...(runId ? [runId] : [])) as { id: string }[];
-    for (const row of rows) this.store.refreshReadProjection(table, this.store.require<any>(table, row.id));
+    this.projections.warmSync(table, runId);
   }
   private metadata(table: Table, runId?: string): Metadata[] {
     this.warmReadModels(table, runId);
     const rows = this.store.db
       .prepare(
-        `SELECT id,revision,rowid,json_extract(data,'$.readModel') model FROM ${table}${runId ? ' WHERE run_id=?' : ''} ORDER BY rowid DESC`,
+        `SELECT id,revision,rowid,json_extract(data,'$.readModel') model FROM ${table} WHERE ${this.projections.available(table)}${runId ? ' AND run_id=?' : ''} ORDER BY rowid DESC`,
       )
       .all(...(runId ? [runId] : [])) as {
       id: string;
@@ -108,10 +107,11 @@ export class RunReads {
       rowid: number;
       model: string | null;
     }[];
-    return rows.map((row) => {
+    return rows.flatMap((row) => {
       const { model, ...identity } = row;
-      if (model) return { ...identity, value: JSON.parse(model) };
-      const entity = this.store.require<any>(table, row.id);
+      if (model) return [{ ...identity, value: JSON.parse(model) }];
+      const entity = this.projections.read<any>(table, row.id);
+      if (!entity) return [];
       const value =
         table === 'runs'
           ? sidebarRun(entity)
@@ -137,11 +137,12 @@ export class RunReads {
                   : null,
               };
       this.store.refreshReadProjection(table, entity);
-      return { ...identity, value };
+      return [{ ...identity, value }];
     });
   }
   usage(runId: string): RunUsageSummary {
     const rows = this.metadata('requests', runId);
+    const readCoverage = this.projections.coverage('requests', runId);
     const settled = rows.filter((r) => r.value.status === 'SETTLED');
     const provider = new Map<
       string,
@@ -171,12 +172,16 @@ export class RunReads {
       provider.set(row.providerId, data);
     }
     return {
-      requestCount: rows.length,
+      requestCount: this.count('requests', runId),
+      readCoverage,
       settledCount: settled.length,
       unknownCount: rows.filter((r) => r.value.status === 'UNKNOWN').length,
       totalTokens,
       cost,
-      costKnown: settled.length > 0 && settled.every((r) => typeof r.value.usage?.cost === 'number'),
+      costKnown:
+        readCoverage.complete &&
+        settled.length > 0 &&
+        settled.every((r) => typeof r.value.usage?.cost === 'number'),
       providers: [...provider].map(([providerId, data]) => ({
         providerId,
         input: data.input,
@@ -201,28 +206,34 @@ export class RunReads {
           `SELECT id FROM ${table} WHERE run_id=? AND (COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IS NULL${table === 'tool_operations' && linked.size ? " OR COALESCE(json_extract(data,'$.readModel.toolCallId'),json_extract(data,'$.toolCallId')) IS NULL" : ''})`,
         )
         .all(run.id) as { id: string }[];
-      for (const row of unknown)
-        this.store.refreshReadProjection(table, this.store.require<any>(table, row.id));
+      for (const row of unknown) this.projections.read(table, row.id, true);
       const match =
         table === 'requests'
           ? 'id'
           : "COALESCE(json_extract(data,'$.readModel.toolCallId'),json_extract(data,'$.toolCallId'))";
       return this.store.db
         .prepare(
-          `SELECT id FROM ${table} WHERE run_id=? AND (rowid IN (SELECT rowid FROM ${table} WHERE run_id=? ORDER BY rowid DESC LIMIT 30) OR ${match} IN (SELECT value FROM json_each(?)) OR COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IN (SELECT value FROM json_each(?))) ORDER BY rowid DESC`,
+          `SELECT id FROM ${table} WHERE run_id=? AND ${this.projections.available(table)} AND (rowid IN (SELECT rowid FROM ${table} WHERE run_id=? ORDER BY rowid DESC LIMIT 30) OR ${match} IN (SELECT value FROM json_each(?)) OR COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IN (SELECT value FROM json_each(?))) ORDER BY rowid DESC`,
         )
         .all(run.id, run.id, JSON.stringify([...linked]), JSON.stringify(statuses)) as { id: string }[];
     };
     const selectedRequests = select('requests', requestIds, ['RESERVED']);
     const selectedOperations = select('tool_operations', calls, ['INTENT', 'UNCERTAIN']);
     const artifacts = this.store.entityPage<Artifact>('artifacts', 60, undefined, run.id);
+    const requests = selectedRequests.flatMap((row) => {
+      const value = this.projections.read<RequestRecord>('requests', row.id);
+      return value ? [briefRequest(value)] : [];
+    });
+    const operations = selectedOperations.flatMap((row) => {
+      const value = this.projections.read<Operation>('tool_operations', row.id);
+      return value ? [briefOperation(value)] : [];
+    });
+    // Usage may discover a damaged older request outside the visible conversation page.
+    const usageSummary = deferred ? undefined : this.usage(run.id);
     return {
-      requests: selectedRequests.map((row) =>
-        briefRequest(this.store.require<RequestRecord>('requests', row.id)),
-      ),
-      operations: selectedOperations.map((row) =>
-        briefOperation(this.store.require<Operation>('tool_operations', row.id)),
-      ),
+      requests,
+      operations,
+      readCoverage: this.projections.coverage(undefined, run.id),
       artifacts: artifacts.items.reverse(),
       snapshots: [],
       decisions: [],
@@ -230,7 +241,7 @@ export class RunReads {
       ...(deferred
         ? { summaryDeferred: true as const }
         : {
-            usageSummary: this.usage(run.id),
+            usageSummary: usageSummary!,
             recordCounts: {
               requests: this.count('requests', run.id),
               operations: this.count('tool_operations', run.id),
@@ -263,9 +274,19 @@ export class RunReads {
       retained?: string[];
       archived?: boolean;
       summary?: 'deferred';
+      retryProjections?: 'true' | 'false';
     },
     signal?: AbortSignal,
   ) {
+    if (query.retryProjections === 'true') await this.projections.retry();
+    // Keep the deferred first page lazy; full summaries/search perform the yielding legacy warm.
+    if (
+      query.summary !== 'deferred' ||
+      query.archived !== undefined ||
+      query.query?.trim() ||
+      query.retryProjections === 'true'
+    )
+      await this.projections.warm('runs');
     const cursor = query.before
       ? (this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
           | { position: number }
@@ -291,8 +312,7 @@ export class RunReads {
           signal,
         )
       : undefined;
-    if (query.archived !== undefined || query.summary !== 'deferred') this.warmReadModels('runs');
-    const conditions: string[] = [];
+    const conditions: string[] = [this.projections.available('runs')];
     const parameters: (string | number)[] = [];
     if (query.archived !== undefined) {
       conditions.push(
@@ -301,21 +321,7 @@ export class RunReads {
       parameters.push(query.archived ? 1 : 0);
     }
     const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
-    const total =
-      result?.total ??
-      Number(
-        (this.store.db.prepare(`SELECT COUNT(*) n FROM runs${where}`).get(...parameters) as { n: number }).n,
-      );
     const pageConditions = [...conditions, ...(cursor ? ['rowid<?'] : [])];
-    const selected = result
-      ? result.ids.map((id) => ({ id }))
-      : (this.store.db
-          .prepare(
-            `SELECT id FROM runs${pageConditions.length ? ' WHERE ' + pageConditions.join(' AND ') : ''} ORDER BY rowid DESC LIMIT ?`,
-          )
-          .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[]);
-    const hasMore = result?.hasMore ?? selected.length > query.limit;
-    selected.splice(query.limit);
     const included = new Set(
       [
         query.includeRunId,
@@ -323,28 +329,57 @@ export class RunReads {
         ...(query.retained ?? []).slice(0, 300),
       ].filter(Boolean),
     );
-    for (const row of selected) included.delete(row.id);
-    const extra = this.store.db
-      .prepare('SELECT id FROM runs WHERE id IN (SELECT value FROM json_each(?)) ORDER BY rowid DESC')
-      .all(JSON.stringify([...included])) as { id: string }[];
-    const read = (row: { id: string }): RunListItem => {
+    const read = (row: { id: string }): RunListItem[] => {
+      if (this.projections.has('runs', row.id)) return [];
       const projection = this.store.db
         .prepare("SELECT json_extract(data,'$.readModel') model FROM runs WHERE id=?")
         .get(row.id) as { model: string | null };
       let value: RunListItem;
+      if (!projection) return [];
       if (projection.model) value = JSON.parse(projection.model) as RunListItem;
       else {
-        const run = this.store.require<Run>('runs', row.id);
+        const run = this.projections.read<Run>('runs', row.id);
+        if (!run) return [];
         this.store.refreshReadProjection('runs', run);
         value = sidebarRun(run);
       }
-      return search
-        ? {
-            ...value,
-            matchesQuery: result!.ids.includes(row.id) || result!.matchedIncluded.includes(row.id),
-          }
-        : value;
+      return [
+        search
+          ? {
+              ...value,
+              matchesQuery: result!.ids.includes(row.id) || result!.matchedIncluded.includes(row.id),
+            }
+          : value,
+      ];
     };
+    let selected: { id: string }[], runs: RunListItem[];
+    for (;;) {
+      signal?.throwIfAborted();
+      selected = result
+        ? result.ids.map((id) => ({ id }))
+        : (this.store.db
+            .prepare(`SELECT id FROM runs WHERE ${pageConditions.join(' AND ')} ORDER BY rowid DESC LIMIT ?`)
+            .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[]);
+      runs = selected.flatMap(read);
+      if (runs.length === selected.length || result) break;
+      // Refill the bounded page after isolating unreadable rows; never return a misleading empty page.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const hasMore = result?.hasMore ?? selected.length > query.limit;
+    selected.splice(query.limit);
+    runs.splice(query.limit);
+    for (const row of selected) included.delete(row.id);
+    const extra = this.store.db
+      .prepare(
+        `SELECT id FROM runs WHERE id IN (SELECT value FROM json_each(?)) AND ${this.projections.available('runs')} ORDER BY rowid DESC`,
+      )
+      .all(JSON.stringify([...included])) as { id: string }[];
+    const includedRuns = extra.flatMap(read);
+    const total =
+      result?.total ??
+      Number(
+        (this.store.db.prepare(`SELECT COUNT(*) n FROM runs${where}`).get(...parameters) as { n: number }).n,
+      );
     const page: RecordPage = {
       total,
       limit: query.limit,
@@ -356,20 +391,25 @@ export class RunReads {
     if (query.summary !== 'deferred') {
       const counts = this.store.db
         .prepare(
-          "SELECT COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId')) projectId,COUNT(*) n FROM runs GROUP BY COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId'))",
+          `SELECT COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId')) projectId,COUNT(*) n FROM runs WHERE ${this.projections.available('runs')} GROUP BY COALESCE(json_extract(data,'$.readModel.projectId'),json_extract(data,'$.projectId'))`,
         )
         .all() as { projectId: string | null; n: number }[];
       for (const row of counts) if (row.projectId) projectCounts[row.projectId] = Number(row.n);
     }
     return {
-      runs: selected.map(read),
-      included: extra.map(read),
+      runs,
+      included: includedRuns,
+      readCoverage: this.projections.coverage('runs'),
+      unavailableIds: [...included].filter(
+        (key): key is string => typeof key === 'string' && this.projections.has('runs', key),
+      ),
       page,
       ...(query.summary === 'deferred' ? { summaryDeferred: true as const } : { projectCounts }),
     };
   }
 }
 export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
+  const projections = projectionReads(store);
   const requestSignal = (request: FastifyRequest, reply: FastifyReply) => {
     const controller = new AbortController(),
       abort = () => controller.abort();
@@ -385,7 +425,7 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
     '/api/runs/:id/messages/search',
     async (request, reply): Promise<MessageSearchPage> => {
       // Validate the parent before any indexed query; another Run's message cursor is never accepted.
-      store.require<Run>('runs', request.params.id);
+      projections.require<Run>('runs', request.params.id);
       const query = z
         .object({
           query: z.string().trim().min(1).max(200),
@@ -450,19 +490,56 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
     },
   );
   app.get<{ Params: { id: string } }>('/api/runs/:id/header', (request) =>
-    store.require<Run>('runs', request.params.id),
+    projections.require<Run>('runs', request.params.id),
   );
   app.get<{ Params: { id: string; kind: keyof typeof tableNames } }>(
     '/api/runs/:id/records/:kind',
     (request) => {
-      store.require<Run>('runs', request.params.id);
+      projections.require<Run>('runs', request.params.id);
       const table = tableNames[z.enum(['requests', 'operations', 'artifacts']).parse(request.params.kind)];
       const query = pageQuery.parse(request.query);
+      if (table !== 'artifacts') {
+        projections.warmSync(table, request.params.id);
+        const cursor = query.before
+          ? (store.db
+              .prepare(`SELECT rowid position FROM ${table} WHERE id=? AND run_id=?`)
+              .get(query.before, request.params.id) as { position: number } | undefined)
+          : undefined;
+        if (query.before && !cursor)
+          throw new AppError('RECORD_CURSOR_MISSING', '记录位置已失效，请返回首页', false, null, 409);
+        const rows = store.db
+          .prepare(
+            `SELECT id FROM ${table} WHERE run_id=? AND ${projections.available(table)}${cursor ? ' AND rowid<?' : ''} ORDER BY rowid DESC LIMIT ?`,
+          )
+          .all(request.params.id, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[];
+        const hasMore = rows.length > query.limit,
+          selected = rows.slice(0, query.limit);
+        return {
+          items: selected.flatMap(({ id }) => {
+            const row = projections.read<any>(table, id);
+            return row ? [table === 'requests' ? briefRequest(row) : briefOperation(row)] : [];
+          }),
+          page: {
+            total: Number(
+              (
+                store.db
+                  .prepare(
+                    `SELECT COUNT(*) n FROM ${table} WHERE run_id=? AND ${projections.available(table)}`,
+                  )
+                  .get(request.params.id) as { n: number }
+              ).n,
+            ),
+            limit: query.limit,
+            before: query.before ?? null,
+            hasMore,
+            nextBefore: hasMore ? selected.at(-1)!.id : null,
+          },
+          readCoverage: projections.coverage(table, request.params.id),
+        };
+      }
       const result = store.entityPage<any>(table, query.limit, query.before, request.params.id);
       return {
-        items: result.items.map((row) =>
-          table === 'requests' ? briefRequest(row) : table === 'tool_operations' ? briefOperation(row) : row,
-        ),
+        items: result.items,
         page: result.page,
       };
     },
@@ -470,9 +547,13 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
   app.get<{ Params: { id: string; kind: keyof typeof tableNames; recordId: string } }>(
     '/api/runs/:id/records/:kind/:recordId',
     (request) => {
-      store.require<Run>('runs', request.params.id);
+      projections.require<Run>('runs', request.params.id);
       const table = tableNames[z.enum(['requests', 'operations', 'artifacts']).parse(request.params.kind)];
-      const row = store.require<any>(table, z.string().uuid().parse(request.params.recordId));
+      const key = z.string().uuid().parse(request.params.recordId);
+      if (!store.db.prepare(`SELECT 1 FROM ${table} WHERE id=? AND run_id=?`).get(key, request.params.id))
+        throw new AppError('NOT_FOUND', '记录不属于当前会话', false, null, 404);
+      const row =
+        table === 'artifacts' ? store.require<any>(table, key) : projections.require<any>(table, key);
       if (row.runId !== request.params.id)
         throw new AppError('NOT_FOUND', '记录不属于当前会话', false, null, 404);
       return row;

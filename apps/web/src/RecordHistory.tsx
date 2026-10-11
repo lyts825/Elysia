@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { RecordPage } from '../../../packages/contracts/src/run-reads';
+import type { RecordPage, ProjectionReadCoverage } from '../../../packages/contracts/src/run-reads';
 import { useSurfaceClient } from './SurfaceClientContext';
+
+type HistoryPage = { items: any[]; page: RecordPage; readCoverage?: ProjectionReadCoverage };
 
 export function RecordHistory({
   runId,
@@ -18,7 +20,7 @@ export function RecordHistory({
   render?: (record: any) => ReactNode;
 }) {
   const { api } = useSurfaceClient();
-  const [page, setPage] = useState<{ items: any[]; page: RecordPage } | null>(null);
+  const [page, setPage] = useState<HistoryPage | null>(null);
   const [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),
     [error, setError] = useState('');
@@ -36,7 +38,7 @@ export function RecordHistory({
     const request = new AbortController();
     setBusy(true);
     setError('');
-    void api<{ items: any[]; page: RecordPage }>(
+    void api<HistoryPage>(
       `/runs/${runId}/records/${kind}?limit=40${before ? '&before=' + encodeURIComponent(before) : ''}`,
       undefined,
       undefined,
@@ -66,6 +68,11 @@ export function RecordHistory({
               <button className="text-button" onClick={() => setRetry((value) => value + 1)}>
                 重试
               </button>
+            </p>
+          )}
+          {page?.readCoverage && !page.readCoverage.complete && (
+            <p className="field-error" role="status">
+              另有 {page.readCoverage.unavailable} 条记录暂不可读取。此页仅显示可读取记录，完整结果仍未知。
             </p>
           )}
           <nav className="conversation-page-nav" aria-label={label + '分页'}>

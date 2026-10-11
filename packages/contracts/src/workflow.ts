@@ -133,7 +133,7 @@ export interface DeliveryUserReview {
 export interface DeliveryChangeSummary {
   baseline: 'known' | 'unknown';
   status: 'unchanged' | 'changed' | 'unknown';
-  reason?: 'baseline_missing' | 'current_unreadable';
+  reason?: 'baseline_missing' | 'baseline_invalid' | 'current_unreadable';
   fields: {
     root: boolean;
     status: boolean;

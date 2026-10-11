@@ -1,3 +1,9 @@
+export type ProjectionReadIssue = {
+  code: 'READ_MODEL_UNAVAILABLE';
+  message: string;
+  retryable: true;
+};
+export type ProjectionReadCoverage = { complete: boolean; unavailable: number };
 export type RecordPage = {
   total: number;
   limit: number;
@@ -6,6 +12,7 @@ export type RecordPage = {
   nextBefore: string | null;
 };
 export type RunUsageSummary = {
+  readCoverage?: ProjectionReadCoverage;
   requestCount: number;
   settledCount: number;
   unknownCount: number;

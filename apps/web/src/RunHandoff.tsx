@@ -16,6 +16,7 @@ import { ReviewFeedbackSelection } from './ReviewFeedbackSelection';
 import { emptyReviewSource, readReviewSource, reviewNotesIssue } from './ReviewSourceState';
 import { ReviewSourceNotes } from './ReviewSourceNotes';
 import { useReviewSource } from './useReviewSource';
+import { HandoffReviewConfirmation } from './HandoffReviewConfirmation';
 import './workflow.css';
 
 type HandoffDraft = {
@@ -162,10 +163,12 @@ export function RunHandoff({
       return;
     }
     setDraftIssue('');
+    if (next.reviewSelection !== undefined || next.stage === 'select') setIgnoredPending(undefined);
     draftRef.current = updated;
     change(raw);
   };
   const [draftIssue, setDraftIssue] = useState('');
+  const [ignoredPending, setIgnoredPending] = useState<string>();
   const [options, setOptions] = useState<SourceOptions>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -183,6 +186,9 @@ export function RunHandoff({
   );
   const reviewSelection = readReviewSource(draft.reviewSelection);
   const reviewNotes = reviewSelection?.added || [];
+  const pendingNotes = reviewSelection?.pending || [];
+  const pendingKey = JSON.stringify(pendingNotes);
+  const pendingReady = !pendingNotes.length || ignoredPending === pendingKey;
   const notesIssue = reviewSelection
     ? reviewNotesIssue(reviewNotes)
     : '备注选择草稿格式无法读取，请返回选择页处理。';
@@ -265,6 +271,14 @@ export function RunHandoff({
         changed={(setup) => patch({ setup })}
         beforeForm={
           <>
+            <HandoffReviewConfirmation
+              added={reviewNotes.length}
+              pending={pendingNotes.length}
+              ignored={pendingReady}
+              disabled={busy}
+              ignore={(ignored) => setIgnoredPending(ignored ? pendingKey : undefined)}
+              back={() => patch({ stage: 'select' })}
+            />
             <details className="workflow-source">
               <summary>
                 已确认的带入内容（{draft.messages.length} 条消息、{draft.artifacts.length} 个产物、
@@ -321,10 +335,10 @@ export function RunHandoff({
         }
         close={() => patch({ stage: 'select' })}
         busy={busy}
-        submitDisabled={!canContinue}
+        submitDisabled={!canContinue || !pendingReady}
         settings={settings}
         submit={(body) => {
-          if (!canContinue || busy) return;
+          if (!canContinue || !pendingReady || busy) return;
           submit({
             ...body,
             objective: draft.objective,

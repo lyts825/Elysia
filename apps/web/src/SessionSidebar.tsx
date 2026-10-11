@@ -45,6 +45,8 @@ export function SessionSidebar({
   projectCounts,
   listDynamic = false,
   listError,
+  listReadCoverage,
+  inspectUnreadable,
   listWindowLimited = false,
 }: {
   projects: Project[];
@@ -76,6 +78,8 @@ export function SessionSidebar({
   projectCounts?: Record<string, number>;
   listDynamic?: boolean;
   listError?: string;
+  listReadCoverage?: { complete: boolean; unavailable: number };
+  inspectUnreadable?: () => void;
   listWindowLimited?: boolean;
 }) {
   const { surface: localSurface, api } = useSurfaceClient();
@@ -603,12 +607,18 @@ export function SessionSidebar({
               <p className="sidebar-muted">没有匹配的项目或会话。</p>
             )}
         </div>
+        {listReadCoverage && !listReadCoverage.complete && (
+          <div className="session-pagination" role="status">
+            <span>{listReadCoverage.unavailable} 个会话暂不可读取，列表和计数可能不完整。</span>
+            {inspectUnreadable && <button onClick={inspectUnreadable}>在任务中心检查</button>}
+          </div>
+        )}
         {listPage && listNavigate && (listPage.total > 0 || listBusy || listError) && (
           <nav className="session-pagination" aria-label="会话列表分页">
             <span role="status">
               {listBusy
                 ? '读取会话…'
-                : `${listDynamic ? '已载入' : '本页'} ${runs.length} / 共 ${listPage.total} 个会话`}
+                : `${listDynamic ? '已载入' : '本页'} ${runs.length} / ${listReadCoverage && !listReadCoverage.complete ? '已知' : '共'} ${listPage.total} 个会话`}
             </span>
             {listError && <span role="alert">{listError}</span>}
             {listWindowLimited && <span>已达本段上限，可点击加载更早会话继续。</span>}

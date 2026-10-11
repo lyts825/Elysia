@@ -24,6 +24,7 @@ import {
 } from '../../contracts/src/index.js';
 import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
+import { projectionReads } from './projection-reads.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -698,6 +699,7 @@ export class Store {
   /** Missing legacy indexes are populated only by an explicit search, in yielding small batches. */
   async ensureHistorySearch(kind: 'run' | 'message', runId?: string, signal?: AbortSignal): Promise<number> {
     const table = kind === 'run' ? 'runs' : 'messages';
+    const reads = kind === 'run' ? projectionReads(this) : undefined;
     return this.searchWork.run(
       `warm:${kind}:${runId ?? 'global'}`,
       async (workSignal) => {
@@ -727,7 +729,7 @@ export class Store {
             if (!rows.length) break;
             for (const row of rows)
               if (!row.indexed_id) {
-                const entity = this.get<Run | Message>(table, row.id);
+                const entity = reads ? reads.read<Run>('runs', row.id) : this.get<Message>('messages', row.id);
                 if (entity) {
                   this.historySearchProjection(table, entity);
                   this.refreshReadProjection(table, entity);
@@ -765,7 +767,7 @@ export class Store {
             continue;
           }
           for (const row of pending) {
-            const entity = this.get<Run | Message>(table, row.id);
+            const entity = reads ? reads.read<Run>('runs', row.id) : this.get<Message>('messages', row.id);
             if (entity) this.historySearchProjection(table, entity);
             else
               this.db

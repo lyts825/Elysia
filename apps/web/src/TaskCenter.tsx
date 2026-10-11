@@ -31,6 +31,7 @@ const labels: Record<'all' | TaskCenterCategory, string> = {
   done: '已结束',
   failed: '失败',
   paused: '暂停',
+  unavailable: '无法读取',
 };
 export function TaskCenter({
   state,
@@ -52,6 +53,7 @@ export function TaskCenter({
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const retryReviews = useRef(false);
+  const retryProjections = useRef(false);
   const [opening, setOpening] = useState('');
   const [notifications, setNotifications] = useState<boolean>();
   const [notifySupported, setNotifySupported] = useState(false);
@@ -97,6 +99,8 @@ export function TaskCenter({
         if (surface === 'native' && state.reviewFilter) query.set('reviewFilter', state.reviewFilter);
         if (surface === 'native' && retryReviews.current) query.set('retryReviews', 'true');
         retryReviews.current = false;
+        if (retryProjections.current) query.set('retryProjections', 'true');
+        retryProjections.current = false;
         if (state.before) query.set('before', state.before);
         const value = await api<TaskCenterPage>(
           '/task-center?' + query,
@@ -260,6 +264,24 @@ export function TaskCenter({
             </button>
           </div>
         )}
+        {result?.projectionCoverage && !result.projectionCoverage.complete && (
+          <div className="task-center-review-issue" role="status">
+            <p>
+              {result.projectionCoverage.unavailable} 项任务信息暂不可读取，无法判断其执行状态。
+              当前筛选、搜索与总数可能不完整，健康记录仍可使用。
+            </p>
+            <button
+              className="text-button"
+              disabled={loading}
+              onClick={() => {
+                retryProjections.current = true;
+                setRetry((value) => value + 1);
+              }}
+            >
+              重试读取异常任务
+            </button>
+          </div>
+        )}
         {result?.reviewCoverage && !result.reviewCoverage.complete && (
           <div className="task-center-review-issue" role="status">
             <p>
@@ -287,18 +309,27 @@ export function TaskCenter({
               className="task-center-row"
               aria-label={
                 item.title +
-                (item.reviewStatus || item.reviewIssue
-                  ? '，打开交付复核'
-                  : item.category === 'waiting'
-                    ? '，回答问题'
-                    : item.category === 'verification'
-                      ? '，核验操作'
-                      : '，打开对话')
+                (item.readIssue
+                  ? '，尝试打开详情'
+                  : item.reviewStatus || item.reviewIssue
+                    ? '，打开交付复核'
+                    : item.category === 'waiting'
+                      ? '，回答问题'
+                      : item.category === 'verification'
+                        ? '，核验操作'
+                        : '，打开对话')
               }
               disabled={!!opening}
               onClick={() => {
                 setOpening(item.id);
-                void openRun(item.id, item.reviewStatus || item.reviewIssue ? 'review' : item.category)
+                void openRun(
+                  item.id,
+                  item.readIssue
+                    ? 'unavailable'
+                    : item.reviewStatus || item.reviewIssue
+                      ? 'review'
+                      : item.category,
+                )
                   .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
                   .finally(() => setOpening(''));
               }}
@@ -312,7 +343,9 @@ export function TaskCenter({
                   {projects.find((project) => project.id === item.projectId)?.name ||
                     (item.kind === 'chat' ? '独立对话' : '项目任务')}
                 </small>
-                {item.reviewIssue ? (
+                {item.readIssue ? (
+                  <small className="field-error">{item.readIssue.message}</small>
+                ) : item.reviewIssue ? (
                   <small className="field-error">用户复核：暂不可读 · {item.reviewIssue.message}</small>
                 ) : (
                   item.reviewStatus && (
@@ -322,7 +355,9 @@ export function TaskCenter({
                   )
                 )}
               </span>
-              {item.reviewStatus || item.reviewIssue ? (
+              {item.readIssue ? (
+                <span className="task-center-action">详情</span>
+              ) : item.reviewStatus || item.reviewIssue ? (
                 <span className="task-center-action">{item.reviewIssue ? '检查' : '复核'}</span>
               ) : (
                 ['waiting', 'verification'].includes(item.category) && (
@@ -342,7 +377,7 @@ export function TaskCenter({
       <footer className="modal-footer task-center-pagination">
         <span role="status">
           {result
-            ? `${state.reviewFilter && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
+            ? `${result.projectionCoverage && !result.projectionCoverage.complete ? '当前可列出' : state.reviewFilter && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
             : '每页最多 40 项'}
         </span>
         <button

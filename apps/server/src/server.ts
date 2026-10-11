@@ -825,6 +825,7 @@ export function createServer(
         pinned: z.string().max(1600).optional(),
         retained: z.string().max(11100).optional(),
         summary: z.literal('deferred').optional(),
+        retryProjections: z.enum(['true', 'false']).optional(),
       })
       .strict()
       .parse(request.query);
@@ -1157,6 +1158,14 @@ export function createServer(
         : query.aroundMessage
           ? store.messageAroundPage<Message>(run.id, query.messageLimit, query.aroundMessage)
           : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
+    const conversation =
+      query.view === 'conversation'
+        ? runReads.conversation(
+            run,
+            [...history.messages, ...store.messageConversationLinks(run.id, retainedMessages)],
+            query.summary === 'deferred',
+          )
+        : undefined;
     return {
       run,
       eventCursor,
@@ -1176,16 +1185,14 @@ export function createServer(
       tasks: store.all<Task>('tasks', run.id),
       agents: store.all<Agent>('agents', run.id),
       contexts:
-        options.surface === 'terminal' || query.summary === 'deferred'
+        options.surface === 'terminal' ||
+        query.summary === 'deferred' ||
+        conversation?.readCoverage.complete === false
           ? []
           : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
       ...history,
-      ...(query.view === 'conversation'
-        ? runReads.conversation(
-            run,
-            [...history.messages, ...store.messageConversationLinks(run.id, retainedMessages)],
-            query.summary === 'deferred',
-          )
+      ...(conversation
+        ? conversation
         : {
             artifacts: store.all<Artifact>('artifacts', run.id),
             snapshots: store.all('snapshots', run.id),
