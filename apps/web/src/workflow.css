@@ -34,6 +34,30 @@
 .workflow-review-note {
   margin-top: 12px;
 }
+.workflow-history-row {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  margin: 8px 0;
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.workflow-history-row span,
+.workflow-note-provenance {
+  font-size: 12px;
+  color: var(--muted);
+}
+.workflow-history-detail,
+.workflow-change-summary {
+  padding: 12px;
+  margin-block: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 .workflow-note-choice {
   display: flex;
   gap: 8px;

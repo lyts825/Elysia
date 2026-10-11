@@ -43,7 +43,8 @@ import {
   recoverPreparedInstall,
 } from './maintenance-storage.js';
 import { prepareStartupUpgrade } from './startup-storage.js';
-import { createObjectCleanupPlan, executeObjectCleanup } from './object-maintenance.js';
+import { ObjectCleanupPlan } from './object-maintenance.js';
+import { inspectObjectAudit, runObjectMaintenance } from './object-maintenance-runner.js';
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -62,6 +63,7 @@ const terminalActions = [
 let selection: Selection = 'all';
 let argument: string | undefined;
 let hasSelection = false;
+let reportArgument: string | undefined;
 for (let index = 3; index < process.argv.length; index++) {
   const value = process.argv[index];
   if (value === '--surface' || value.startsWith('--surface=')) {
@@ -70,6 +72,11 @@ for (let index = 3; index < process.argv.length; index++) {
       throw new Error('--surface 只能指定一次，取值为 native、terminal 或 all');
     selection = selected as Selection;
     hasSelection = true;
+  } else if (value === '--report' || value.startsWith('--report=')) {
+    const requested = value === '--report' ? process.argv[++index] : value.slice('--report='.length);
+    if (action !== 'objects-cleanup' || reportArgument || !requested || requested.startsWith('--'))
+      throw new Error('--report 只能用于 objects-cleanup，并指定一次审计 JSONL 路径');
+    reportArgument = requested;
   } else if (value.startsWith('--') || argument) throw new Error('未知或重复的维护参数：' + value);
   else argument = value;
 }
@@ -80,6 +87,7 @@ if (
     'restore',
     'objects-plan',
     'objects-cleanup',
+    'objects-audit',
     ...terminalActions.filter((name) => !['terminal-inspect', 'terminal-cleanup-plan'].includes(name)),
   ].includes(action)
 )
@@ -190,7 +198,19 @@ async function terminalMaintenance(directory: string) {
 }
 
 const configuredDirectory = dataDirectory();
-if (action === 'stop') {
+if (action === 'objects-audit') {
+  if (!argument || hasSelection) throw new Error('objects-audit 需要审计 JSONL 文件，不接受 --surface');
+  const report = path.resolve(argument);
+  const audit = inspectObjectAudit(report);
+  console.log(
+    stable({
+      report,
+      audit,
+      message: 'deleted 仅计已配对确认的删除；unknownInFlight 须重新核验，同计划重试不会回滚已删除对象。',
+    }),
+  );
+  if (!audit.available) process.exitCode = 1;
+} else if (action === 'stop') {
   if (!existsSync(path.join(configuredDirectory, 'service.lock')))
     throw new Error('未找到正在运行的 Elysia 服务');
   const lock = JSON.parse(readFileSync(path.join(configuredDirectory, 'service.lock'), 'utf8'));
@@ -217,24 +237,81 @@ if (action === 'stop') {
       if (action === 'objects-plan') {
         if (filename === directory || isWithin(directory, filename))
           throw new Error('请将清理计划保存到数据目录以外');
-        const plan = createObjectCleanupPlan(directory, selection);
-        writeFileSync(filename, stable(plan), { flag: 'wx' });
-        console.log(
-          stable({
-            plan: filename,
-            surfaces: plan.surfaces.map(({ candidates, ...entry }) => ({
-              ...entry,
-              candidateCount: candidates.length,
-            })),
-          }),
-        );
-      } else {
+      }
+      let plan: unknown;
+      let report: string | undefined;
+      if (action === 'objects-cleanup') {
         const stat = lstatSync(filename);
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024)
           throw new Error('维护计划须为不超过 2 MiB 的普通 JSON 文件');
-        console.log(
-          stable(executeObjectCleanup(directory, JSON.parse(readFileSync(filename, 'utf8')), selection)),
+        plan = ObjectCleanupPlan.parse(JSON.parse(readFileSync(filename, 'utf8')));
+        report = canonicalDestination(path.resolve(reportArgument || filename + '.audit-' + id() + '.jsonl'));
+        if (report === directory || isWithin(directory, report))
+          throw new Error('请将清理审计记录保存到数据目录以外');
+        if (existsSync(report)) throw new Error('清理审计记录已存在，请指定新路径');
+        console.error(
+          stable({
+            type: 'objects-audit',
+            path: report,
+            note: '删除不回滚；异常退出后请核对审计尾部，并用同一计划重新核验。',
+          }),
         );
+      }
+      const controller = new AbortController(),
+        cancel = () => controller.abort();
+      const cancelMessage = (message: unknown) => {
+        if (
+          message &&
+          typeof message === 'object' &&
+          'type' in message &&
+          message.type === 'maintenance-cancel'
+        )
+          cancel();
+      };
+      process.once('SIGINT', cancel);
+      process.once('SIGTERM', cancel);
+      process.on('message', cancelMessage);
+      try {
+        const result = await runObjectMaintenance(
+          { directory, selection, action: action === 'objects-plan' ? 'plan' : 'cleanup', plan, report },
+          {
+            signal: controller.signal,
+            onProgress: (progress) => console.error(stable({ type: 'objects-progress', ...progress })),
+          },
+        );
+        if (result.status !== 'completed') {
+          console.log(
+            stable({
+              ...result.result,
+              status: result.status,
+              errorCode: result.errorCode,
+              ...(result.failureReason ? { failureReason: result.failureReason } : {}),
+              ...(result.guidance ? { guidance: result.guidance } : {}),
+              ...(result.audit ? { audit: result.audit } : {}),
+              ...(report ? { report } : {}),
+              message: '维护已停止；已删除对象不会回滚，使用同一计划可重新核验剩余对象。',
+            }),
+          );
+          process.exitCode = result.status === 'cancelled' ? 130 : 1;
+        } else if (action === 'objects-plan') {
+          const created = ObjectCleanupPlan.parse(result.value);
+          writeFileSync(filename, stable(created), { flag: 'wx' });
+          console.log(
+            stable({
+              status: 'completed',
+              plan: filename,
+              progress: result.progress,
+              surfaces: created.surfaces.map(({ candidates, ...entry }) => ({
+                ...entry,
+                candidateCount: candidates.length,
+              })),
+            }),
+          );
+        } else console.log(stable({ ...(result.value as object), report }));
+      } finally {
+        process.off('SIGINT', cancel);
+        process.off('SIGTERM', cancel);
+        process.off('message', cancelMessage);
       }
     } else if (terminalActions.includes(action)) {
       await prepareStartupUpgrade(directory, ['terminal']);

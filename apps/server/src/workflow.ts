@@ -32,6 +32,7 @@ import {
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecycle.js';
+import { captureReviewSource } from './review-source.js';
 
 const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
@@ -196,6 +197,7 @@ export function sourceOptions(
 export function captureRunSource(store: Store, selection: RunSourceSelection): RunSourceSnapshot {
   const source = nativeRun(store, selection.runId);
   assertRevision(selection.expectedRevision, source.revision);
+  const reviewSource = captureReviewSource(store, source, selection);
   invariant(
     new Set(selection.messageIds).size === selection.messageIds.length &&
       new Set(selection.artifacts.map((a) => a.id)).size === selection.artifacts.length,
@@ -249,14 +251,15 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
     surface: 'native' as const,
     capturedAt: now(),
     feedback: selection.feedback,
+    ...reviewSource,
     messages,
     artifacts,
     bundleArtifactId: id(),
   };
   invariant(
-    Buffer.byteLength(stable(snapshot), 'utf8') <= 32 * 1024,
+    Buffer.byteLength(stable(snapshot), 'utf8') <= (reviewSource.reviewNotes?.length ? 64 : 32) * 1024,
     'SOURCE_SNAPSHOT_LIMIT',
-    '来源快照超过 32 KiB，请减少选择',
+    `来源快照超过 ${reviewSource.reviewNotes?.length ? 64 : 32} KiB，请减少选择`,
   );
   return { ...snapshot, hash: hash(stable(snapshot)) };
 }

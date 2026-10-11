@@ -109,6 +109,7 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
       const manifest = JSON.parse(readFileSync(path.join(destination, 'build.json'), 'utf8'));
       return (
         manifest.formatVersion === 2 &&
+        manifest.leaseProtocol === 1 &&
         manifest.digest === digest &&
         JSON.stringify(manifest.resources) === JSON.stringify(resourceHashes) &&
         existsSync(path.join(destination, 'web/index.html')) &&
@@ -158,6 +159,7 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
         path.join(stage, 'build.json'),
         JSON.stringify({
           formatVersion: 2,
+          leaseProtocol: 1,
           digest,
           createdAt: new Date().toISOString(),
           resources: resourceHashes,

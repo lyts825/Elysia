@@ -8,6 +8,7 @@ import { deferredPanel } from './DeferredPanel';
 import { ToolActivity } from './ToolActivity';
 import { DeliveryCriteria } from './DeliveryCriteria';
 import { DeliveryUserReview } from './DeliveryUserReview';
+import { ReviewHistory } from './ReviewHistory';
 import './workflow.css';
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -143,6 +144,7 @@ export function DeliveryReview({
                 />
               )}
             </DeliveryUserReview>
+            <ReviewHistory runId={runId} version={value.runRevision} />
             <section aria-label="交付文件">
               <h3>交付文件</h3>
               {value.artifacts.map(file)}

@@ -7,6 +7,7 @@ const { attachServices } = require('./services.cjs');
 const { allowedLocalNavigation } = require('./navigation.cjs');
 const { createStartupDiagnostics } = require('./startup-diagnostics.cjs');
 const { waitForLaunchBuild } = require('./launch-handshake.cjs');
+const { createBuildLease } = require('../../scripts/launch-cache.cjs');
 const root = path.resolve(__dirname, '../..');
 const iconPath = path.join(
   root,
@@ -25,6 +26,7 @@ let window,
   backend,
   diagnostics,
   uiOrigin,
+  buildLease,
   quitting = false,
   ready = false;
 const logFile = path.join(root, '.elysia-runtime', 'desktop.log');
@@ -43,6 +45,11 @@ async function shutdown() {
   }
   if (diagnostics)
     await Promise.race([diagnostics.flush(), new Promise((resolve) => setTimeout(resolve, 500))]);
+  try {
+    buildLease?.close();
+  } catch (error) {
+    log('构建保留记录未正常关闭：' + error.message);
+  }
   app.quit();
 }
 if (!app.requestSingleInstanceLock()) {
@@ -70,6 +77,7 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       const prepared = await launchBuild;
+      if (prepared) buildLease = createBuildLease(prepared.build.directory);
       let launchMarks = prepared?.marks;
       if (!prepared) {
         try {
@@ -156,6 +164,7 @@ if (!app.requestSingleInstanceLock()) {
           },
         },
       );
+      if (backend.pid) buildLease?.backend(backend.pid);
       let failed = false;
       const fail = (message) => {
         if (failed || quitting) return;

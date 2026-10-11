@@ -245,6 +245,20 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
           revision: run.source.runRevision,
           hash: run.source.hash,
           feedback: run.source.feedback.slice(0, 1000),
+          ...(run.source.reviewNotes?.length
+            ? {
+                reviewNotes: run.source.reviewNotes.map((note) => ({
+                  origin: note.origin,
+                  reviewId: note.reviewId ?? null,
+                  fingerprint: note.fingerprint,
+                  criterionIndex: note.criterionIndex,
+                  criterionExcerpt: note.criterionText?.slice(0, 180) ?? null,
+                  excerpt: note.note.slice(0, 180),
+                  truncated: note.note.length > 180 || (note.criterionText?.length ?? 0) > 180,
+                })),
+                capturedDeliveryFingerprint: run.source.capturedDeliveryFingerprint,
+              }
+            : {}),
           bundleArtifactId: run.source.bundleArtifactId,
           messages: run.source.messages.map(({ id, role, text }) => ({
             id,

@@ -19,6 +19,36 @@ export interface NativeProjectDefaultsView {
 }
 export type NativeProjectDefaultsRecord = NativeProjectDefaultsView;
 export const sourceTextLimitBytes = 16 * 1024;
+export const reviewSourceTextLimitBytes = 16 * 1024;
+export const reviewSourceSnapshotLimitBytes = 32 * 1024;
+/** Explicitly selected review material has a separate budget from editable feedback. */
+export const ReviewSourceNote = z
+  .object({
+    origin: z.enum(['saved', 'draft']),
+    reviewId: z.string().uuid().nullable().optional(),
+    fingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+    criterionIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    criterionText: z.string().max(20000).nullable(),
+    note: z
+      .string()
+      .max(4000)
+      .refine((value) => !!value.trim(), '备注不能为空'),
+  })
+  .strict()
+  .refine((value) => value.origin !== 'draft' || !value.reviewId, '本机备注资料不能冒用已保存复核记录标识');
+export type ReviewSourceNote = z.infer<typeof ReviewSourceNote>;
+export function reviewSourceTextByteLength(notes: readonly Pick<ReviewSourceNote, 'note'>[]): number {
+  const encoder = new TextEncoder();
+  return notes.reduce((bytes, item) => bytes + encoder.encode(item.note).length, 0);
+}
+export function reviewSourceSnapshotByteLength(notes: readonly ReviewSourceNote[]): number {
+  return new TextEncoder().encode(
+    JSON.stringify(notes.map((note) => ({ ...note, reviewId: note.reviewId ?? null }))),
+  ).length;
+}
 /** Count captured public text only; source metadata has its own snapshot size limit. */
 export function sourceTextByteLength(messages: readonly { text: string }[], feedback: string): number {
   const encoder = new TextEncoder();
@@ -43,9 +73,26 @@ export const RunSourceSelection = z
           .strict(),
       )
       .max(10),
-    feedback: z.string().trim().min(1).max(4000),
+    feedback: z.string().trim().max(4000),
+    reviewNotes: z.array(ReviewSourceNote).max(40).default([]),
+    expectedDeliveryFingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (!value.feedback && !value.reviewNotes.length)
+      context.addIssue({ code: 'custom', path: ['feedback'], message: '请填写修改意见或明确选择复核备注' });
+    if (!value.messageIds.length && !value.artifacts.length && !value.reviewNotes.length)
+      context.addIssue({ code: 'custom', message: '至少选择一条消息、一个产物或一条复核备注' });
+    if (value.reviewNotes.length && !value.expectedDeliveryFingerprint)
+      context.addIssue({
+        code: 'custom',
+        path: ['expectedDeliveryFingerprint'],
+        message: '请核对来源交付版本',
+      });
+  });
 export type RunSourceSelection = z.infer<typeof RunSourceSelection>;
 export type DeliveryReviewStatus = 'unreviewed' | 'accepted' | 'changes_requested' | 'stale';
 export interface DeliveryReviewIssue {
@@ -74,6 +121,7 @@ export const DeliveryReviewInput = z
   })
   .strict();
 export interface DeliveryUserReview {
+  reviewId?: string;
   decision: 'accepted' | 'changes_requested';
   note: string;
   criteriaNotes: { index: number; note: string; criterionText?: string }[];
@@ -82,12 +130,51 @@ export interface DeliveryUserReview {
   rootTaskId: string;
   rootRevision: number;
 }
+export interface DeliveryChangeSummary {
+  baseline: 'known' | 'unknown';
+  status: 'unchanged' | 'changed' | 'unknown';
+  reason?: 'baseline_missing' | 'current_unreadable';
+  fields: {
+    root: boolean;
+    status: boolean;
+    deliverables: boolean;
+    criteria: boolean;
+    result: boolean;
+  } | null;
+  artifacts: { added: number; removed: number; changed: number } | null;
+}
+export interface DeliveryReviewHistoryItem {
+  id: string;
+  decision: DeliveryUserReview['decision'];
+  reviewedAt: string;
+  fingerprint: string;
+  notePreview: string;
+  criteriaNotesCount: number;
+  origin: 'saved' | 'legacy_snapshot';
+  baselineAvailable: boolean;
+}
+export interface DeliveryReviewHistory {
+  runId: string;
+  items: DeliveryReviewHistoryItem[];
+  page: RecordPage;
+  coverage: { sinceVersion: '0.27.0-preview.1'; possibleGaps: boolean; legacyCount: number };
+}
+export interface DeliveryReviewHistoryDetail {
+  runId: string;
+  item: DeliveryReviewHistoryItem;
+  review: DeliveryUserReview;
+  changeSummary: DeliveryChangeSummary;
+  currentFingerprint: string | null;
+  runRevision: number;
+  rootRevision: number | null;
+}
 export interface DeliveryReviewState {
   runId: string;
   runRevision: number;
   rootRevision: number;
   fingerprint: string;
   userReview: (DeliveryUserReview & { stale: boolean }) | null;
+  changeSummary: DeliveryChangeSummary | null;
 }
 export interface RunRevisionItem {
   runId: string;
@@ -151,6 +238,8 @@ export interface RunSourceSnapshot {
   surface: 'native';
   capturedAt: string;
   feedback: string;
+  reviewNotes?: ReviewSourceNote[];
+  capturedDeliveryFingerprint?: string;
   messages: Omit<SourceMessage, 'truncated'>[];
   artifacts: (SourceArtifact & { objectRef: string; source: string; importedId: string })[];
   bundleArtifactId: string;

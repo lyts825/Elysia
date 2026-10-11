@@ -1,4 +1,8 @@
-import type { DeliveryReview, DeliveryUserReview } from '../../../packages/contracts/src/workflow';
+import type {
+  DeliveryReview,
+  DeliveryUserReview,
+  ReviewSourceNote,
+} from '../../../packages/contracts/src/workflow';
 
 export type ReviewNote = {
   index: number;
@@ -80,6 +84,7 @@ export function readReviewDraft(raw: unknown, value: DeliveryReview): ReviewDraf
 
 export type ReviewCandidate = {
   id: string;
+  source: ReviewSourceNote;
   origin: '已保存' | '本机未保存';
   fingerprint: string;
   stale: boolean;
@@ -91,6 +96,7 @@ export function reviewCandidates(
   review: (DeliveryUserReview & { stale: boolean }) | null,
   draft: ReviewDraft | undefined,
   fingerprint: string,
+  reviewId: string | null = null,
 ): ReviewCandidate[] {
   const result: ReviewCandidate[] = [];
   const add = (
@@ -99,14 +105,24 @@ export function reviewCandidates(
     title: string,
     text: string,
     note: string,
+    criterionIndex: number | null,
+    criterionText: string | null,
     old = false,
   ) => {
     if (!note.trim()) return;
     const entry = { origin, fingerprint: version, stale: old || version !== fingerprint, title, text, note };
-    result.push({ ...entry, id: JSON.stringify(entry) });
+    const source: ReviewSourceNote = {
+      origin: origin === '已保存' ? 'saved' : 'draft',
+      reviewId: origin === '已保存' ? reviewId : null,
+      fingerprint: version || null,
+      criterionIndex,
+      criterionText,
+      note,
+    };
+    result.push({ ...entry, source, id: JSON.stringify(source) });
   };
   if (review) {
-    add('已保存', review.fingerprint, '整体备注', '', review.note, review.stale);
+    add('已保存', review.fingerprint, '整体备注', '', review.note, null, null, review.stale);
     for (const item of review.criteriaNotes)
       add(
         '已保存',
@@ -114,12 +130,14 @@ export function reviewCandidates(
         `原第 ${item.index + 1} 项`,
         criterionSnapshot(item),
         item.note,
+        item.index,
+        item.criterionText ?? null,
         review.stale,
       );
   }
   if (draft) {
     if (draft.fingerprint !== review?.fingerprint || draft.note !== review?.note)
-      add('本机未保存', draft.fingerprint, '整体备注', '', draft.note);
+      add('本机未保存', draft.fingerprint, '整体备注', '', draft.note, null, null);
     for (const item of draft.criteriaNotes) {
       if (
         draft.fingerprint === review?.fingerprint &&
@@ -132,6 +150,8 @@ export function reviewCandidates(
         `原第 ${item.index + 1} 项`,
         item.unknownStandard ? unknownCriterionText : item.text,
         item.note,
+        item.index,
+        item.unknownStandard ? null : item.text,
       );
     }
     for (const item of draft.unlinked) {
@@ -142,7 +162,16 @@ export function reviewCandidates(
         review.criteriaNotes.some((saved) => saved.note === item.note && criterionSnapshot(saved) === text)
       )
         continue;
-      add('本机未保存', item.fingerprint || '', '未关联旧备注', text, item.note, true);
+      add(
+        '本机未保存',
+        item.fingerprint || '',
+        '未关联旧备注',
+        text,
+        item.note,
+        null,
+        item.unknownStandard ? null : item.text,
+        true,
+      );
     }
   }
   return result;

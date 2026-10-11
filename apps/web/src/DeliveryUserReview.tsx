@@ -9,6 +9,7 @@ import { ApiError } from './api';
 
 import { readReviewDraft, type ReviewDraft } from './ReviewDraft';
 import { readReviewCriteria } from './ReviewCriteria';
+import { DeliveryChanges } from './DeliveryChanges';
 
 export function DeliveryUserReview({
   value,
@@ -193,6 +194,7 @@ export function DeliveryUserReview({
           你的结论只针对当前交付版本，与执行完成和结构核验分别记录。未保存备注会保留为本机草稿。
         </p>
         {value.userReview && <p className="field-help">上次保存：{value.userReview.reviewedAt}</p>}
+        <DeliveryChanges value={value.changeSummary} />
         {(changed || conflict) && (
           <div className="inline-warning" role="alert">
             <p>

@@ -9,9 +9,17 @@ import {
   type RunRevisions,
   type RunSourceSnapshot,
 } from '../../../packages/contracts/src/workflow.js';
-import { now, type Store } from '../../../packages/storage/src/index.js';
-import { deliveryFingerprint } from './delivery-fingerprint.js';
+import { id, now, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryReviewReads } from './delivery-summary.js';
+import {
+  appendDeliveryReview,
+  captureDeliveryBaseline,
+  deliveryChanges,
+  deliveryReviewHistory,
+  deliveryReviewHistoryDetail,
+  ensureCurrentReviewSnapshot,
+  initializeDeliveryReviewHistory,
+} from './delivery-review-history.js';
 export { deliveryFingerprint } from './delivery-fingerprint.js';
 
 const isNative = (run: Run) => (run.execution?.kind ?? 'native') === 'native';
@@ -32,15 +40,18 @@ function revision(expected: number, actual: number) {
 }
 
 export function deliveryUserState(store: Store, run: Run, root: Task): DeliveryReviewState {
-  const fingerprint = deliveryFingerprint(store, run, root);
+  const baseline = captureDeliveryBaseline(store, run, root);
+  const fingerprint = baseline.fingerprint;
+  const reviewId = ensureCurrentReviewSnapshot(store, run);
   return {
     runId: run.id,
     runRevision: run.revision,
     rootRevision: root.revision,
     fingerprint,
     userReview: run.deliveryReview
-      ? { ...run.deliveryReview, stale: run.deliveryReview.fingerprint !== fingerprint }
+      ? { ...run.deliveryReview, reviewId, stale: run.deliveryReview.fingerprint !== fingerprint }
       : null,
+    changeSummary: reviewId ? deliveryChanges(store, run.id, reviewId, baseline) : null,
   };
 }
 export function runLineage(store: Store, runId: string): RunLineage {
@@ -97,7 +108,22 @@ export function registerDeliveryLifecycle(
   store: Store,
   assertMutable: (runId: string | null, projectId?: string) => void,
 ) {
+  initializeDeliveryReviewHistory(store);
   const summaries = deliveryReviewReads(store);
+  app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/reviews', (request) => {
+    const query = z.object({ before: z.string().uuid().optional() }).strict().parse(request.query);
+    return store.tx(() => deliveryReviewHistory(store, nativeRun(store, request.params.id), query.before));
+  });
+  app.get<{ Params: { id: string; reviewId: string } }>(
+    '/api/runs/:id/delivery/reviews/:reviewId',
+    (request) => {
+      z.object({}).strict().parse(request.query);
+      const reviewId = z.string().uuid().parse(request.params.reviewId);
+      return store.tx(() =>
+        deliveryReviewHistoryDetail(store, nativeRun(store, request.params.id), reviewId),
+      );
+    },
+  );
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/summary', async (request) => {
     const query = z
       .object({ retry: z.enum(['true', 'false']).optional() })
@@ -133,7 +159,8 @@ export function registerDeliveryLifecycle(
         );
         revision(body.expectedRevision, run.revision);
         revision(body.expectedRootRevision, root.revision);
-        const fingerprint = deliveryFingerprint(store, run, root);
+        const baseline = captureDeliveryBaseline(store, run, root);
+        const fingerprint = baseline.fingerprint;
         if (fingerprint !== body.expectedFingerprint)
           throw new AppError('DELIVERY_CHANGED', '交付内容已变化，请重新读取并复核', false, null, 409);
         invariant(
@@ -142,7 +169,9 @@ export function registerDeliveryLifecycle(
           'CRITERION_SCOPE',
           '逐项备注必须对应现有验收项，且不能重复',
         );
+        ensureCurrentReviewSnapshot(store, run);
         const review: DeliveryUserReview = {
+          reviewId: id(),
           decision: body.decision,
           note: body.note,
           criteriaNotes: body.criteriaNotes.map(({ index, note }) => ({
@@ -155,6 +184,7 @@ export function registerDeliveryLifecycle(
           rootTaskId: root.id,
           rootRevision: root.revision,
         };
+        appendDeliveryReview(store, run.id, review, baseline);
         const updated = store.put<Run>('runs', { ...run, deliveryReview: review }, run.revision);
         store.event(run.id, 'run.updated', updated);
         return deliveryUserState(store, updated, root);

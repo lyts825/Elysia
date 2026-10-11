@@ -1,6 +1,6 @@
 {
   "name": "elysia",
-  "version": "0.26.1-preview.1",
+  "version": "0.27.0-preview.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -20,6 +20,9 @@
     "restore": "tsx apps/server/src/maintenance.ts restore",
     "objects:plan": "tsx apps/server/src/maintenance.ts objects-plan",
     "objects:cleanup": "tsx apps/server/src/maintenance.ts objects-cleanup",
+    "objects:audit": "tsx apps/server/src/maintenance.ts objects-audit",
+    "cache:list": "node scripts/launch-cache.mjs list",
+    "cache:preview": "node scripts/launch-cache.mjs preview",
     "stop": "tsx apps/server/src/maintenance.ts stop",
     "verify:local": "node scripts/verify-local.mjs",
     "assets:build": "node scripts/build-brand-assets.mjs"

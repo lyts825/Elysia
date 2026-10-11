@@ -13,6 +13,9 @@ import { RunModal, type RunSetupDraft } from './RunSetupModal';
 import { Modal } from './Modal';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ReviewFeedbackSelection } from './ReviewFeedbackSelection';
+import { emptyReviewSource, readReviewSource, reviewNotesIssue } from './ReviewSourceState';
+import { ReviewSourceNotes } from './ReviewSourceNotes';
+import { useReviewSource } from './useReviewSource';
 import './workflow.css';
 
 type HandoffDraft = {
@@ -23,6 +26,7 @@ type HandoffDraft = {
   artifacts: SourceArtifact[];
   stage: 'select' | 'setup';
   setup?: RunSetupDraft;
+  reviewSelection?: unknown;
 };
 function readDraft(raw: unknown, run: Run): HandoffDraft {
   const empty: HandoffDraft = {
@@ -39,6 +43,7 @@ function readDraft(raw: unknown, run: Run): HandoffDraft {
     if (!value || typeof value !== 'object') return empty;
     return {
       ...empty,
+      reviewSelection: value.reviewSelection,
       projectId: typeof value.projectId === 'string' ? value.projectId : empty.projectId,
       objective: typeof value.objective === 'string' ? value.objective : empty.objective,
       feedback: typeof value.feedback === 'string' ? value.feedback : '',
@@ -107,7 +112,11 @@ export function SourceSummary({
           {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
         </p>
       ))}
-      <small>来源快照 SHA256 {source.hash}</small>
+      {!!source.reviewNotes?.length && <ReviewSourceNotes notes={source.reviewNotes} />}
+      <details>
+        <summary>来源快照校验信息</summary>
+        <small>SHA256 {source.hash}</small>
+      </details>
     </details>
   );
 }
@@ -146,9 +155,17 @@ export function RunHandoff({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const patch = (next: Partial<HandoffDraft>) => {
-    draftRef.current = { ...draftRef.current, ...next };
-    change(JSON.stringify(draftRef.current));
+    const updated = { ...draftRef.current, ...next };
+    const raw = JSON.stringify(updated);
+    if (raw.length > 200000) {
+      setDraftIssue('交接草稿已达到本机保存上限，本次修改未写入。请先移除不再需要的待选或已加入内容。');
+      return;
+    }
+    setDraftIssue('');
+    draftRef.current = updated;
+    change(raw);
   };
+  const [draftIssue, setDraftIssue] = useState('');
   const [options, setOptions] = useState<SourceOptions>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -157,6 +174,24 @@ export function RunHandoff({
   const messageRequest = useRef<AbortController | null>(null);
   useEffect(() => () => messageRequest.current?.abort(), [run.id]);
   const [retry, setRetry] = useState(0);
+  const reviewSource = useReviewSource(
+    run.id,
+    run.kind === 'task' && run.status === 'DONE',
+    run.revision,
+    draft.stage,
+    retry,
+  );
+  const reviewSelection = readReviewSource(draft.reviewSelection);
+  const reviewNotes = reviewSelection?.added || [];
+  const notesIssue = reviewSelection
+    ? reviewNotesIssue(reviewNotes)
+    : '备注选择草稿格式无法读取，请返回选择页处理。';
+  const notesReady =
+    !reviewNotes.length ||
+    (!!reviewSource.value &&
+      !reviewSource.reading &&
+      !reviewSource.error &&
+      reviewSelection?.fingerprint === reviewSource.value.fingerprint);
   const [messageBefore, setMessageBefore] = useState('');
   const [artifactBefore, setArtifactBefore] = useState('');
   const selectedProject = projects.find((project) => project.id === draft.projectId && !project.archived);
@@ -183,18 +218,20 @@ export function RunHandoff({
   const canContinue =
     !!selectedProject &&
     !!draft.objective.trim() &&
-    !!draft.feedback.trim() &&
+    (!!draft.feedback.trim() || reviewNotes.length > 0) &&
     !!options &&
     !error &&
     !loading &&
     selectedBytes <= sourceTextLimitBytes &&
-    draft.messages.length + draft.artifacts.length > 0;
+    !notesIssue &&
+    notesReady &&
+    draft.messages.length + draft.artifacts.length + reviewNotes.length > 0;
   const selectionPreview = (
     <section className="workflow-source" aria-label="带入内容预览">
       <strong>带入内容预览 · {run.title || run.objective}</strong>
       <p className="workflow-prose">{draft.feedback}</p>
       <p>
-        {draft.messages.length} 条公开消息 · {draft.artifacts.length} 个产物
+        {draft.messages.length} 条公开消息 · {draft.artifacts.length} 个产物 · {reviewNotes.length} 条复核备注
       </p>
       {draft.messages.map((message) => (
         <details key={message.id}>
@@ -204,6 +241,7 @@ export function RunHandoff({
           <p className="workflow-prose">{message.text}</p>
         </details>
       ))}
+      {!!reviewNotes.length && <ReviewSourceNotes notes={reviewNotes} />}
       {draft.artifacts.map((artifact) => (
         <p key={artifact.id}>
           {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
@@ -229,7 +267,8 @@ export function RunHandoff({
           <>
             <details className="workflow-source">
               <summary>
-                已确认的带入内容（{draft.messages.length} 条消息、{draft.artifacts.length} 个产物）
+                已确认的带入内容（{draft.messages.length} 条消息、{draft.artifacts.length} 个产物、
+                {reviewNotes.length} 条备注）
               </summary>
               {selectionPreview}
             </details>
@@ -242,6 +281,24 @@ export function RunHandoff({
               </p>
             )}
             {loading && <p role="status">正在核对来源记录…</p>}
+            {draftIssue && (
+              <p role="alert" className="field-error">
+                {draftIssue}
+              </p>
+            )}
+            {notesIssue && (
+              <p role="alert" className="field-error">
+                {notesIssue}
+              </p>
+            )}
+            {!!reviewNotes.length && !notesReady && (
+              <p role="alert" className="field-error">
+                {reviewSource.reading
+                  ? '正在核对所选备注的来源交付…'
+                  : reviewSource.error ||
+                    '来源交付版本已变化。备注与任务配置均已保留，请返回调整带入内容并明确重新确认。'}
+              </p>
+            )}
             <div className="workflow-actions">
               <button
                 type="button"
@@ -279,6 +336,8 @@ export function RunHandoff({
               messageIds: draft.messages.map((message) => message.id),
               artifacts: draft.artifacts.map(({ id, version, hash }) => ({ id, version, hash })),
               feedback: draft.feedback,
+              reviewNotes,
+              ...(reviewNotes.length ? { expectedDeliveryFingerprint: reviewSelection!.fingerprint } : {}),
             },
           });
         }}
@@ -324,6 +383,11 @@ export function RunHandoff({
                 ))}
             </select>
           </label>
+          {draftIssue && (
+            <p role="alert" className="field-error">
+              {draftIssue}
+            </p>
+          )}
           {!projects.some((project) => !project.archived) && (
             <p className="field-help">请先关闭此窗口并创建项目，带入内容草稿会保留。</p>
           )}
@@ -354,8 +418,12 @@ export function RunHandoff({
             <ReviewFeedbackSelection
               runId={run.id}
               localDraft={reviewDraft}
-              feedback={draft.feedback}
-              change={(feedback) => patch({ feedback })}
+              value={reviewSource.value}
+              reading={reviewSource.reading}
+              error={reviewSource.error}
+              retry={() => setRetry((value) => value + 1)}
+              selection={draft.reviewSelection}
+              change={(reviewSelection) => patch({ reviewSelection })}
               disabled={busy}
             />
           )}
@@ -535,7 +603,7 @@ export function RunHandoff({
             </>
           )}
           {loading && <p role="status">正在读取来源…</p>}
-          {(draft.messages.length > 0 || draft.artifacts.length > 0) && (
+          {(draft.messages.length > 0 || draft.artifacts.length > 0 || reviewNotes.length > 0) && (
             <>
               {selectionPreview}
               <div className="workflow-actions">
@@ -543,7 +611,7 @@ export function RunHandoff({
                   type="button"
                   className="text-button"
                   disabled={busy}
-                  onClick={() => patch({ messages: [], artifacts: [] })}
+                  onClick={() => patch({ messages: [], artifacts: [], reviewSelection: emptyReviewSource() })}
                 >
                   清空所选内容
                 </button>

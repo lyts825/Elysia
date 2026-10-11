@@ -1,18 +1,17 @@
 import type { Artifact, Run, Task } from '../../../packages/contracts/src/index.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';
 
-/** Reviews bind to delivery content, never to the review itself or unrelated run metadata. */
-export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Task) {
+export function deliveryArtifactMetadata(store: Store, runId: string) {
   const legacy = new Set(
     (
       store.db
         .prepare(
           "SELECT id FROM artifacts WHERE run_id=? AND json_extract(data,'$.deliverySemanticHash') IS NULL",
         )
-        .all(run.id) as { id: string }[]
+        .all(runId) as { id: string }[]
     ).map((item) => item.id),
   );
-  const artifacts = store.all<Artifact>('artifacts', run.id).map((artifact) => {
+  return store.all<Artifact>('artifacts', runId).map((artifact) => {
     if (legacy.has(artifact.id)) store.refreshReadProjection('artifacts', artifact);
     return {
       id: artifact.id,
@@ -24,6 +23,13 @@ export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Ta
       verified: artifact.verified,
     };
   });
+}
+/** Reviews bind to delivery content, never to the review itself or unrelated run metadata. */
+export function deliveryFingerprintFromArtifacts(
+  run: Pick<Run, 'id'>,
+  root: Task,
+  artifacts: ReturnType<typeof deliveryArtifactMetadata>,
+) {
   return hash(
     stable({
       version: 1,
@@ -36,4 +42,7 @@ export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Ta
       artifacts: artifacts.sort((a, b) => a.id.localeCompare(b.id, 'en')),
     }),
   );
+}
+export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Task) {
+  return deliveryFingerprintFromArtifacts(run, root, deliveryArtifactMetadata(store, run.id));
 }
