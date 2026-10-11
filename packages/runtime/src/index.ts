@@ -341,7 +341,7 @@ export class NativeExecutor implements ExecutorAdapter {
     const current = { ...metrics, updatedAt: new Date().toISOString() };
     this.kernel.store.tx(() => {
       if (recordId) {
-        const record = this.kernel.store.require<RequestRecord>('requests', recordId);
+        const record = this.kernel.store.requestMetadata(recordId);
         this.kernel.store.put('requests', {
           ...record,
           manifest: { ...record.manifest, contextWindow: current },
@@ -481,10 +481,7 @@ export class NativeExecutor implements ExecutorAdapter {
         context.estimatedTokens,
         logicalId,
       );
-      store.put('requests', {
-        ...record,
-        manifest: { ...context.manifest, partialText: '', partialStreamRef: null },
-      });
+      store.startRequestStream(record.id);
       let partial = '';
       let lastContextUpdate = 0;
       metrics = {
@@ -498,9 +495,8 @@ export class NativeExecutor implements ExecutorAdapter {
       try {
         for await (const event of adapter.stream(request, signal)) {
           if (event.type === 'delta') {
+            store.appendRequestText(record.id, event.text, partial.length);
             partial += event.text;
-            const current = store.require<RequestRecord>('requests', record.id);
-            store.put('requests', { ...current, manifest: { ...current.manifest, partialText: partial } });
             this.onDelta(run.id, task.id, event.text, record.id, partial.length - event.text.length);
             // Throttle persisted snapshots; text bytes are estimates, not tokenizer receipts.
             if (Date.now() - lastContextUpdate >= 500) {
@@ -540,6 +536,9 @@ export class NativeExecutor implements ExecutorAdapter {
               interruptedRef: object.objectRef,
             },
           });
+        } else {
+          const current = store.requestMetadata(record.id);
+          store.put('requests', { ...current, manifest: { ...current.manifest, partialText: null } });
         }
         if (error instanceof ProviderError && error.details) {
           const current = store.require<RequestRecord>('requests', record.id);

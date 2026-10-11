@@ -9,6 +9,7 @@ const toolNames: Record<string, string> = {
   list: '浏览目录',
   read: '读取文件',
   read_artifact: '读取产物',
+  materialize_artifact: '复制来源文件',
   search: '搜索文件',
   write: '写入文件',
   apply_patch: '修改文件',
@@ -145,6 +146,8 @@ function resultSummary(name: string, outcome: unknown): string {
     return `已读取${result?.binary === true ? '二进制文件' : '文件'}${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}${suffix}`;
   if (name === 'write' || name === 'apply_patch')
     return `${name === 'write' ? '已写入文件' : '已修改文件'}${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}`;
+  if (name === 'materialize_artifact')
+    return `来源文件已复制${size(result?.bytes) ? ` · ${size(result?.bytes)}` : ''}${typeof result?.hash === 'string' ? ` · SHA256 ${result.hash.slice(0, 12)}` : ''}`;
   if (name === 'exec')
     return `${result?.timedOut === true ? '命令超时' : result?.exitCode === 0 ? '命令执行完成' : typeof result?.exitCode === 'number' ? `退出码 ${result.exitCode}` : '已返回命令结果'}${suffix}`;
   const summaries: Record<string, string> = {

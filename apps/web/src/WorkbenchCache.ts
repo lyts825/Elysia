@@ -18,6 +18,7 @@ const validKey = (key: string) =>
   key.length <= 240 &&
   (preferenceKeys.has(key) ||
     key === 'draft:chat' ||
+    /^draft:handoff:[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
     /^settings:selected-terminal-profile:[^:\s/\\]+$/.test(key) ||
     /^draft:terminal-(continuation|recovery):[^:\s/\\]+(?::[a-f0-9-]{36})?$/.test(key));
@@ -302,6 +303,8 @@ export class WorkbenchCache {
       if (match) return !projectIds.has(match[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
       const terminalDraft = /^draft:terminal-(?:continuation|recovery):([^:]+)(?::[^:]+)?$/.exec(key);
+      const handoffDraft = /^draft:handoff:([^:]+)$/.exec(key);
+      if (handoffDraft) return runsComplete && !runIds.has(handoffDraft[1]);
       if (terminalDraft) return runsComplete && !runIds.has(terminalDraft[1]);
       return run ? runsComplete && !runIds.has(run[1]) : false;
     });

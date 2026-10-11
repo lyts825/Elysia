@@ -66,6 +66,8 @@ import { registerContextPreview } from './context-preview.js';
 import { registerLocalAgentRoutes } from './local-agents.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
+import { RunSourceSelection } from '../../../packages/contracts/src/workflow.js';
+import { attachRunSource, captureRunSource, registerWorkflow } from './workflow.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -978,12 +980,19 @@ export function createServer(
           maxMinutes: 30,
         }),
         inputs: z.array(z.string()).default([]),
+        source: RunSourceSelection.optional(),
       })
       .parse(request.body);
     invariant(
       options.surface !== 'native' || body.execution.kind === 'native',
       'SURFACE_EXECUTION',
       'Elysia 入口仅使用原生模型；请在 Agent 终端入口创建 Docker 任务',
+    );
+    invariant(
+      !body.source ||
+        (options.surface !== 'terminal' && body.kind === 'task' && body.execution.kind === 'native'),
+      'SOURCE_SURFACE',
+      '带来源创建仅支持原生项目任务，请重新确认项目与授权范围',
     );
     invariant(
       options.surface !== 'terminal' ||
@@ -1015,6 +1024,7 @@ export function createServer(
       const project = body.kind === 'chat' ? null : store.require<Project>('projects', body.projectId!);
       management.assertMutable(null, project?.id);
       invariant(!project?.archived, 'PROJECT_ARCHIVED', '请先恢复已归档的项目');
+      const source = body.source ? captureRunSource(store, body.source) : undefined;
       const contract = Contract.parse({
         objective: body.objective,
         scope: [body.objective],
@@ -1030,7 +1040,7 @@ export function createServer(
         budget: body.budget,
         assumptions: [],
       });
-      return kernel.createRun(
+      const created = kernel.createRun(
         project,
         body.objective,
         provider,
@@ -1041,6 +1051,10 @@ export function createServer(
         body.planMode,
         execution,
       );
+      if (!source) return created;
+      const sourced = attachRunSource(store, created, source);
+      kernel.event(sourced.id, 'run.updated', sourced);
+      return sourced;
     });
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id/context', async (request) =>
@@ -1473,6 +1487,7 @@ export function createServer(
     },
     (projectId) => terminalControl?.removeProjectPreferences(projectId),
   );
+  if (options.surface !== 'terminal') registerWorkflow(app, store, management.assertMutable);
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
       boundedStreams

@@ -20,8 +20,10 @@ import {
   type Run,
   type Task,
   type Message,
+  type RequestRecord,
 } from '../../contracts/src/index.js';
 import { SearchWork, searchCancelled } from './search-work.js';
+import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -175,6 +177,7 @@ export class Store {
   directory: string;
   private depth = 0;
   private searchWork = new SearchWork();
+  private requestStreams: RequestStreams;
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
     this.directory = realpathSync(directory);
@@ -186,6 +189,7 @@ export class Store {
     );
     try {
       this.migrate();
+      this.requestStreams = new RequestStreams(this.db);
       this.historySearchSchema();
       for (const table of ['runs', 'tasks', 'inbox'])
         this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_${table}_state ON ${table}(
@@ -366,7 +370,7 @@ export class Store {
   }
   get<T>(table: Table, key: string): T | undefined {
     const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
-    return row && this.hydrate(table, row.content ? expand(row.content) : JSON.parse(row.data));
+    return row && this.decodeRow(table, row);
   }
   require<T>(table: Table, key: string): T {
     const value = this.get<T>(table, key);
@@ -378,7 +382,32 @@ export class Store {
       runId
         ? this.db.prepare(`SELECT data,content FROM ${table} WHERE run_id=? ORDER BY rowid`).all(runId)
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
-    ).map((r: any) => this.hydrate(table, r.content ? expand(r.content) : JSON.parse(r.data)));
+    ).map((r: any) => this.decodeRow(table, r));
+  }
+  /** Metadata updates deliberately omit in-flight text; normal reads retain partialText compatibility. */
+  requestMetadata(key: string): RequestRecord {
+    const row = this.db.prepare('SELECT data,content FROM requests WHERE id=?').get(key) as any;
+    if (!row) throw new AppError('NOT_FOUND', 'requests 记录不存在', false, null, 404);
+    return this.decodeRow('requests', row, false);
+  }
+  startRequestStream(key: string) {
+    this.tx(() => {
+      const request = this.require<RequestRecord>('requests', key);
+      if (request.status !== 'RESERVED') throw new AppError('REQUEST_STREAM_CLOSED', '模型请求已结束');
+      this.requestStreams.start(key);
+      this.put('requests', {
+        ...request,
+        manifest: {
+          ...request.manifest,
+          partialText: '',
+          partialStreamRef: null,
+          partialTextStorage: REQUEST_STREAM_FORMAT,
+        },
+      });
+    });
+  }
+  appendRequestText(key: string, text: string, expectedOffset: number) {
+    this.tx(() => this.requestStreams.append(key, text, expectedOffset));
   }
   private historySearchSchema() {
     this.db.exec(`
@@ -688,7 +717,7 @@ export class Store {
     const wanted = new Set(statuses);
     return rows.flatMap((row) => {
       const metadata = JSON.parse(row.data);
-      const entity = this.hydrate(table, row.content ? expand(row.content) : metadata) as T & {
+      const entity = this.decodeRow(table, row) as T & {
         status?: string;
         archived?: boolean;
       };
@@ -798,7 +827,7 @@ export class Store {
     return {
       messages: selected.map((row) => {
         const metadata = JSON.parse(row.data);
-        const message = this.hydrate('messages', row.content ? expand(row.content) : metadata) as Message;
+        const message = this.decodeRow('messages', row) as Message;
         if (!metadata.conversationLinks) this.refreshReadProjection('messages', message);
         return message as T;
       }),
@@ -856,9 +885,7 @@ export class Store {
       ).n,
     );
     return {
-      items: selected.map(
-        (row) => this.hydrate(table, row.content ? expand(row.content) : JSON.parse(row.data)) as T,
-      ),
+      items: selected.map((row) => this.decodeRow(table, row) as T),
       page: {
         total,
         limit,
@@ -868,7 +895,14 @@ export class Store {
       },
     };
   }
-  private hydrate(table: Table, entity: any) {
+  private decodeRow(table: Table, row: { data: string; content?: Uint8Array }, includeStream = true) {
+    const metadata = JSON.parse(row.data);
+    const entity = row.content ? expand(row.content) : metadata;
+    // Stream appends update only the SQL metadata revision; it remains authoritative on every read path.
+    entity.revision = metadata.revision;
+    return this.hydrate(table, entity, includeStream);
+  }
+  private hydrate(table: Table, entity: any, includeStream = true) {
     // Legacy classification is ignored; execution directory and baseline references are retained.
     if (table === 'projects') {
       delete entity.mode;
@@ -889,10 +923,17 @@ export class Store {
       if (entity.providerNativeRef)
         entity.native = JSON.parse(this.readObject(entity.providerNativeRef).toString());
     }
+    if (table === 'requests' && entity.manifest?.partialTextStorage === REQUEST_STREAM_FORMAT)
+      entity.manifest.partialText = includeStream ? this.requestStreams.read(entity.id) : '';
     return entity;
   }
   put<T extends Entity>(table: Table, entity: T, expectedRevision?: number): T {
-    const previous = this.get<Entity>(table, entity.id);
+    const previous =
+      table === 'requests'
+        ? (this.db.prepare('SELECT revision FROM requests WHERE id=?').get(entity.id) as
+            | { revision: number }
+            | undefined)
+        : this.get<Entity>(table, entity.id);
     if (expectedRevision !== undefined && (previous?.revision ?? 0) !== expectedRevision)
       throw new AppError(
         'REVISION_CONFLICT',
@@ -903,20 +944,33 @@ export class Store {
       );
     const next = { ...entity, revision: (previous?.revision ?? 0) + 1 };
     const stored: any = { ...next };
+    let clearStream = false;
+    if (table === 'requests' && stored.manifest?.partialTextStorage === REQUEST_STREAM_FORMAT) {
+      stored.manifest = { ...stored.manifest };
+      if (stored.manifest.partialText === null) {
+        clearStream = true;
+        delete stored.manifest.partialTextStorage;
+        (next as any).manifest = stored.manifest;
+      } else stored.manifest.partialText = '';
+    }
     if (table === 'messages') {
       delete stored.contentRef;
       delete stored.providerNativeRef;
       delete (next as any).contentRef;
       delete (next as any).providerNativeRef;
     }
-    this.db
-      .prepare(
-        `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
-      )
-      .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
-    if (table === 'runs' || table === 'messages')
-      this.historySearchProjection(table, next as unknown as Run | Message);
-    return next;
+    const save = () => {
+      this.db
+        .prepare(
+          `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
+        )
+        .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
+      if (clearStream) this.requestStreams.clear(entity.id);
+      if (table === 'runs' || table === 'messages')
+        this.historySearchProjection(table, next as unknown as Run | Message);
+      return next;
+    };
+    return clearStream ? this.tx(save) : save();
   }
   event(
     runId: string,
@@ -1096,6 +1150,7 @@ export class Store {
         `pinned:run:${runId}`,
         `unread:run:${runId}`,
         `draft:terminal-continuation:${runId}`,
+        `draft:handoff:${runId}`,
       ]);
       for (const row of this.db
         .prepare("SELECT key FROM storage_meta WHERE key LIKE 'workbench:v1:%'")

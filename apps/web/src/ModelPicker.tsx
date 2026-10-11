@@ -57,6 +57,7 @@ export function ModelPicker({
   ready,
   disabled = false,
   label = '模型连接',
+  preserveInvalid = false,
 }: {
   providers: SelectableProvider[];
   value: ModelChoice;
@@ -64,6 +65,7 @@ export function ModelPicker({
   ready?: (valid: boolean) => void;
   disabled?: boolean;
   label?: string;
+  preserveInvalid?: boolean;
 }) {
   const client = useSurfaceClient();
   const id = useId();
@@ -130,7 +132,7 @@ export function ModelPicker({
     ready?.(valid);
   }, [valid, ready]);
   useEffect(() => {
-    if (disabled || usesCatalog || !selected || apiBindingMatches) return;
+    if (preserveInvalid || disabled || usesCatalog || !selected || apiBindingMatches) return;
     change({ ...value, model: selected.model, reasoningEffort: selected.reasoningEffort });
   }, [
     disabled,
@@ -143,9 +145,10 @@ export function ModelPicker({
     value.reasoningEffort,
     apiBindingMatches,
     change,
+    preserveInvalid,
   ]);
   useEffect(() => {
-    if (disabled || !usesCatalog || !catalogReady) return;
+    if (preserveInvalid || disabled || !usesCatalog || !catalogReady) return;
     const current = models.find((m) => m.id === value.model);
     if (!value.model) {
       const next = initialTextModel(models, selected?.model);
@@ -177,6 +180,7 @@ export function ModelPicker({
     value.model,
     value.reasoningEffort,
     disabled,
+    preserveInvalid,
   ]);
   return (
     <div className="model-picker">
@@ -188,6 +192,7 @@ export function ModelPicker({
         onChange={(e) => change(defaultChoice(providers, e.target.value))}
       >
         {!providers.length && <option value="">请先连接模型</option>}
+        {value.providerId && !selected && <option value={value.providerId}>原连接不可用，请重新选择</option>}
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
             {p.label}
@@ -196,6 +201,19 @@ export function ModelPicker({
           </option>
         ))}
       </select>
+      {preserveInvalid && selected && !usesCatalog && !apiBindingMatches && (
+        <p className="field-error" role="status">
+          保存的型号或思考强度已与当前连接不同，请确认后采用当前配置。
+          <button
+            type="button"
+            className="text-button"
+            disabled={disabled}
+            onClick={() => change(defaultChoice(providers, selected.id))}
+          >
+            采用当前连接配置
+          </button>
+        </p>
+      )}
       {retiredModelIssue && (
         <p className="inline-warning" role="alert">
           {retiredModelIssue}

@@ -1,0 +1,137 @@
+.workflow-body {
+  min-height: 0;
+}
+.workflow-body section + section {
+  margin-top: 20px;
+}
+.workflow-body h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.workflow-body h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.workflow-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+.workflow-defaults,
+.workflow-criterion,
+.workflow-selection,
+.workflow-source {
+  padding: 14px;
+  border: 1px solid var(--line, #e7dce1);
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+.workflow-defaults > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+.workflow-defaults span,
+.workflow-source small {
+  font-size: 12px;
+  color: var(--text-muted, #776a72);
+}
+.workflow-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.workflow-evidence {
+  padding: 10px 0;
+  border-top: 1px solid var(--line, #e7dce1);
+}
+.workflow-evidence code,
+.workflow-evidence small {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.workflow-file {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+}
+.workflow-file span {
+  font-size: 12px;
+  color: var(--text-muted, #776a72);
+}
+.workflow-file button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.workflow-preview {
+  min-height: 180px;
+  max-height: 480px;
+  overflow: auto;
+  border: 1px solid var(--line, #e7dce1);
+  border-radius: 12px;
+  padding: 12px;
+}
+.workflow-selection {
+  margin-top: 10px;
+}
+.workflow-selection label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.workflow-selection label input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.workflow-selection details {
+  margin: 8px 0 0 24px;
+}
+.workflow-selection pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  font: inherit;
+  line-height: 1.6;
+}
+.workflow-source {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.workflow-source summary,
+.permission-card summary {
+  cursor: pointer;
+}
+.permission-card[open] summary {
+  margin-bottom: 12px;
+}
+.workflow-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 16px;
+  min-width: 0;
+}
+.workflow-form legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.workflow-modal .modal-footer {
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .workflow-defaults,
+  .workflow-criterion,
+  .workflow-selection {
+    padding: 10px;
+  }
+  .workflow-file {
+    align-items: flex-start;
+  }
+}

@@ -14,6 +14,14 @@ import {
 import { SurfaceClientContext, SurfaceRootContext, useSurfaceClient } from './SurfaceClientContext';
 import { SurfaceSwitcher } from './SurfaceSwitcher';
 import { deferredPanel } from './DeferredPanel';
+import type { RunSetupDraft } from './RunSetupModal';
+const RunModal = deferredPanel(() => import('./RunSetupModal').then((m) => m.RunModal), '任务设置');
+const RunHandoff = deferredPanel(() => import('./RunHandoff').then((m) => m.RunHandoff), '任务交接');
+const SourceSummary = deferredPanel(() => import('./RunHandoff').then((m) => m.SourceSummary), '来源摘要');
+const DeliveryReview = deferredPanel(
+  () => import('./DeliveryReview').then((m) => m.DeliveryReview),
+  '交付验收',
+);
 const PreviewPanel = deferredPanel(() => import('./PreviewPanel').then((m) => m.PreviewPanel), '预览');
 const PreviewDock = deferredPanel(() => import('./PreviewDock').then((m) => m.PreviewDock), '预览分屏');
 const ProjectFiles = deferredPanel(() => import('./ProjectFiles').then((m) => m.ProjectFiles), '项目文件');
@@ -25,15 +33,11 @@ import { manageUsage } from './desktop';
 import {
   VERSION,
   minimumContextWindowTokens,
-  AgentTerminalProfile,
   terminalResourceRequirement,
   SurfaceTerminalSettings,
   type TerminalControlOverview,
   type TerminalProjectPreferences,
-  type TerminalConnectionView,
 } from '../../../packages/contracts/src/index';
-import { terminalPreset } from './TerminalPreset';
-const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
 const TerminalRecovery = deferredPanel(
   () => import('./TerminalRecovery').then((m) => m.TerminalRecovery),
   '终端恢复',
@@ -127,7 +131,7 @@ import {
   writeNavigation,
   type NavigationState,
 } from './NavigationState';
-import { ModelPicker, defaultChoice, type ModelChoice } from './ModelPicker';
+import { defaultChoice, type ModelChoice } from './ModelPicker';
 import { modelSwitchReason, modelTaskCanContinue } from './ModelSwitchGuards';
 const ModelSwitchModal = deferredPanel(
   () => import('./ModelSwitchModal').then((m) => m.ModelSwitchModal),
@@ -150,7 +154,7 @@ const NewContextWindowModal = deferredPanel(
   '上下文设置',
 );
 import { contextPolicyLabel } from './ContextLabel';
-import { ContextPolicyEditor, validContextPolicy } from './ContextPolicyEditor';
+import { validContextPolicy } from './ContextPolicyEditor';
 const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
@@ -1218,7 +1222,8 @@ function App({
   useEffect(() => {
     if (!ready) return;
     const keys = [newDraftKey(projectId)];
-    if (runId) keys.push(`draft:run:${runId}`, `draft:terminal-continuation:${runId}`);
+    if (runId)
+      keys.push(`draft:run:${runId}`, `draft:terminal-continuation:${runId}`, `draft:handoff:${runId}`);
     for (const operation of detail?.operations || [])
       if (operation.status === 'UNCERTAIN') keys.push(`draft:terminal-recovery:${runId}:${operation.id}`);
     void cache.ensureKeys(keys).catch(() => {});
@@ -1634,6 +1639,7 @@ function App({
               `pinned:run:${deleted.id}`,
               `unread:run:${deleted.id}`,
               `draft:terminal-continuation:${deleted.id}`,
+              `draft:handoff:${deleted.id}`,
             ].includes(key) || key.startsWith(`draft:terminal-recovery:${deleted.id}:`),
         ),
       );
@@ -1647,7 +1653,7 @@ function App({
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
           const match =
-            /^(?:(?:draft|pinned|unread):run:|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
+            /^(?:(?:draft|pinned|unread):run:|draft:handoff:|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
               key,
             );
           return !!match && children.has(match[1]);
@@ -2125,6 +2131,12 @@ function App({
                     任务约定
                   </button>
                 )}
+                {isChat && !terminalSurface && !archived && (
+                  <button className="quiet-button" disabled={busy} onClick={() => setModal('handoff')}>
+                    <Icon name="arrow" size={14} />
+                    在项目中执行
+                  </button>
+                )}
                 {feedback?.action && !legacyTerminal && (
                   <button className="quiet-button run-next-action" disabled={busy} onClick={feedbackAction}>
                     <Icon
@@ -2333,6 +2345,17 @@ function App({
                         查看归档
                       </button>
                     </div>
+                  )}
+                  {detail.run.source && (
+                    <SourceSummary
+                      source={detail.run.source}
+                      openSource={() =>
+                        void act(async () => {
+                          const source = await api<Run>('/runs/' + detail.run.source!.runId + '/header');
+                          selectRun(source);
+                        })
+                      }
+                    />
                   )}
                   {!isChat && (
                     <div className="system-note">
@@ -2673,6 +2696,11 @@ function App({
                       <div>
                         <h3>交付已通过证据核验</h3>
                         <p>查看右侧产物和差异，复核内容是否符合你的目标。</p>
+                        {!terminalSurface && !legacyTerminal && (
+                          <button className="text-button" onClick={() => setModal('delivery')}>
+                            逐项查看交付与验收
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2704,6 +2732,15 @@ function App({
                       {isChat ? '新建独立对话' : '查看产物'}
                       <Icon name="arrow" size={14} />
                     </button>
+                    {!isChat &&
+                      !terminalSurface &&
+                      !legacyTerminal &&
+                      !archived &&
+                      detail.run.status === 'DONE' && (
+                        <button className="primary" disabled={busy} onClick={() => setModal('handoff')}>
+                          提出修改
+                        </button>
+                      )}
                   </div>
                 ) : (
                   <form
@@ -3084,6 +3121,11 @@ function App({
                             {detail.recordCounts?.artifacts ?? detail.artifacts.length} 个
                           </span>
                         </div>
+                        {!terminalSurface && !legacyTerminal && !isChat && (
+                          <button className="quiet-button" onClick={() => setModal('delivery')}>
+                            查看交付与验收
+                          </button>
+                        )}
                         {detail.artifacts.map((a) => (
                           <button className="artifact-card" key={a.id} onClick={() => void openArtifact(a)}>
                             <span className="artifact-icon">
@@ -3179,6 +3221,41 @@ function App({
         )}
       </main>
       <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
+        {modal === 'delivery' && detail && !terminalSurface && (
+          <DeliveryReview
+            runId={detail.run.id}
+            close={() => setModal('')}
+            revise={!archived && detail.run.status === 'DONE' ? () => setModal('handoff') : undefined}
+            openFile={(taskId, path) => {
+              setModal('');
+              openPreviewFile(taskId, path);
+            }}
+          />
+        )}
+        {modal === 'handoff' && detail && !terminalSurface && (
+          <RunHandoff
+            run={detail.run}
+            projects={projects}
+            providers={providers}
+            modelChoice={homeModel}
+            contextPolicy={homeContext}
+            value={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
+            change={(value) => cache.set(`draft:handoff:${detail.run.id}`, value)}
+            close={() => setModal('')}
+            settings={() => setModal('handoff-settings')}
+            busy={busy}
+            submit={(body) =>
+              void act(async () => {
+                const key = `draft:handoff:${detail.run.id}`;
+                const sent = cache.get(key);
+                const run = await mutation<Run>('/runs', body);
+                if (cache.get(key) === sent) cache.set(key, '');
+                selectRun(run);
+                setModal('');
+              })
+            }
+          />
+        )}
         {modal === 'task-center' && (
           <React.Suspense
             fallback={
@@ -3263,6 +3340,7 @@ function App({
                   objective={draft}
                   kind={project ? 'task' : 'chat'}
                   projectName={project?.name}
+                  projectId={project?.id}
                   providers={providers}
                   modelChoice={homeModel}
                   contextPolicy={homeContext}
@@ -3344,23 +3422,35 @@ function App({
                     </div>
                   </Modal>
                 ))}
-              {(modal === 'settings' || modal === 'run-settings') && !terminalSurface && (
-                <React.Suspense
-                  fallback={
-                    <Modal title="模型与连接" close={() => setModal(modal === 'run-settings' ? 'run' : '')}>
-                      <div className="form-body" role="status">
-                        正在加载模型设置…
-                      </div>
-                    </Modal>
-                  }
-                >
-                  <ProviderSettings
-                    providers={providers}
-                    close={() => setModal(modal === 'run-settings' ? 'run' : '')}
-                    updated={() => refresh(true)}
-                  />
-                </React.Suspense>
-              )}
+              {(modal === 'settings' || modal === 'run-settings' || modal === 'handoff-settings') &&
+                !terminalSurface && (
+                  <React.Suspense
+                    fallback={
+                      <Modal
+                        title="模型与连接"
+                        close={() =>
+                          setModal(
+                            modal === 'run-settings' ? 'run' : modal === 'handoff-settings' ? 'handoff' : '',
+                          )
+                        }
+                      >
+                        <div className="form-body" role="status">
+                          正在加载模型设置…
+                        </div>
+                      </Modal>
+                    }
+                  >
+                    <ProviderSettings
+                      providers={providers}
+                      close={() =>
+                        setModal(
+                          modal === 'run-settings' ? 'run' : modal === 'handoff-settings' ? 'handoff' : '',
+                        )
+                      }
+                      updated={() => refresh(true)}
+                    />
+                  </React.Suspense>
+                )}
               {modal.startsWith('model:') && detail && switchAgent && switchTask && (
                 <ModelSwitchModal
                   key={detail.run.id + ':' + switchAgent.id}
@@ -4012,378 +4102,6 @@ function ProjectModal({
           </button>
           <button className="primary" disabled={busy || inspecting || choosing || !folder || !name.trim()}>
             {existing ? '打开已有项目' : '打开文件夹作为项目'}
-            <Icon name="arrow" size={15} />
-          </button>
-        </footer>
-      </form>
-    </Modal>
-  );
-}
-type RunSetupDraft = {
-  planMode: boolean;
-  executionKind: 'native' | 'docker-agent';
-  terminalProfile: AgentTerminalProfile;
-  choice: ModelChoice;
-  contextPolicy: ContextPolicy;
-  write: boolean;
-  exec: boolean;
-  urls: string;
-  inputs: string;
-  writePaths: string;
-  maxRequests: number;
-  maxTokens: number;
-  concurrency: number;
-};
-
-function RunModal({
-  providers,
-  objective,
-  kind,
-  projectName,
-  close,
-  busy,
-  submit,
-  settings,
-  initial,
-  modelChoice,
-  contextPolicy,
-  terminalTemplate,
-  terminalConnections = [],
-}: {
-  providers: Provider[];
-  objective: string;
-  kind: 'task' | 'chat';
-  projectName?: string;
-  close: () => void;
-  busy: boolean;
-  submit: (body: any) => void;
-  settings: (draft: RunSetupDraft) => void;
-  initial?: RunSetupDraft;
-  modelChoice: ModelChoice;
-  contextPolicy: ContextPolicy;
-  terminalTemplate?: AgentTerminalProfile;
-  terminalConnections?: TerminalConnectionView[];
-}) {
-  const { surface: localSurface } = useSurfaceClient();
-  const executionKind = localSurface === 'terminal' ? 'docker-agent' : 'native';
-  const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
-    [planMode, setPlanMode] = useState(initial?.planMode ?? true),
-    [terminalProfile, setTerminalProfile] = useState<AgentTerminalProfile>(() =>
-      structuredClone(initial?.terminalProfile ?? terminalTemplate ?? terminalPreset()),
-    ),
-    [modelReady, setModelReady] = useState(false),
-    [context, setContext] = useState<ContextPolicy>(() => initial?.contextPolicy ?? contextPolicy),
-    [write, setWrite] = useState(initial?.write ?? true),
-    [exec, setExec] = useState(initial?.exec ?? true),
-    [urls, setUrls] = useState(initial?.urls ?? ''),
-    [inputs, setInputs] = useState(initial?.inputs ?? ''),
-    [writePaths, setWritePaths] = useState(initial?.writePaths ?? '.'),
-    [maxRequests, setMaxRequests] = useState(initial?.maxRequests ?? 80),
-    [maxTokens, setMaxTokens] = useState(initial?.maxTokens ?? 500000),
-    [concurrency, setConcurrency] = useState(initial?.concurrency ?? 4);
-  const selected = providers.find((p) => p.id === choice.providerId);
-  const contextValid = validContextPolicy(
-    context,
-    selected ? minimumContextWindowTokens(selected) : 4096,
-    selected?.contextLimit || 4096,
-  );
-  const chat = kind === 'chat';
-  const terminal = !chat && executionKind === 'docker-agent';
-  const setupReady = terminal
-    ? AgentTerminalProfile.safeParse(terminalProfile).success
-    : modelReady && contextValid;
-  const lines = (s: string) =>
-    s
-      .split('\n')
-      .map((v) => v.trim())
-      .filter(Boolean);
-  return (
-    <Modal
-      title={chat ? '新建独立对话' : '新建项目任务'}
-      subtitle={(chat ? '归属：独立会话' : `归属：${projectName}`) + ' · ' + objective.slice(0, 80)}
-      close={close}
-      busy={busy}
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (busy || !setupReady || !objective.trim() || (localSurface === 'terminal' && chat)) return;
-          submit({
-            ...(terminal ? {} : { ...choice, contextPolicy: context }),
-            planMode: terminal ? false : planMode,
-            execution: terminal ? { kind: 'docker-agent', profile: terminalProfile } : { kind: 'native' },
-            inputs: lines(inputs),
-            permissionProfile: chat
-              ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
-              : terminal
-                ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
-                : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
-            budget: { maxRequests, maxTokens, maxCost: null },
-            limits: {
-              maxDepth: chat ? 0 : 2,
-              maxAgents: chat ? 1 : 12,
-              concurrency: chat ? 1 : concurrency,
-              toolConcurrency: 4,
-              maxSteps: 20,
-              maxMinutes: terminal ? Math.ceil(terminalProfile.timeoutMs / 60000) : 30,
-            },
-          });
-        }}
-      >
-        <div className="form-body">
-          <p className="field-help">
-            {chat
-              ? '选择会话模型后开始聊天。独立对话可使用技能说明；处理项目文件和生成附件时，在项目下新建任务。'
-              : terminal
-                ? '确认终端配置后，在独立 Docker 任务目录中执行。'
-                : '确认模型、计划模式与授权范围。'}
-          </p>
-          {!chat && !terminal && (
-            <>
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label="计划模式"
-                  checked={planMode}
-                  disabled={busy}
-                  onChange={(e) => setPlanMode(e.target.checked)}
-                />
-                计划模式
-              </label>
-              <p className="field-help">
-                {planMode
-                  ? '先生成计划，确认具体版本后执行。'
-                  : '创建任务即授权在下方权限和预算内执行，仍需提供验收证据。'}
-              </p>
-            </>
-          )}
-          {terminal ? (
-            <>
-              <label>
-                API 连接
-                <select
-                  aria-label="任务 API 连接"
-                  value={
-                    terminalProfile.connectionId === null ? 'environment' : terminalProfile.connectionId || ''
-                  }
-                  disabled={busy}
-                  onChange={(event) => {
-                    const { connection: _frozen, connectionId: _old, ...clean } = terminalProfile;
-                    setTerminalProfile({
-                      ...clean,
-                      ...(event.target.value
-                        ? { connectionId: event.target.value === 'environment' ? null : event.target.value }
-                        : {}),
-                    });
-                  }}
-                >
-                  <option value="">使用默认连接</option>
-                  <option value="environment">仅使用模板环境变量</option>
-                  {terminalConnections
-                    .filter(
-                      (connection) =>
-                        terminalProfile.agent === 'custom' ||
-                        (terminalProfile.agent === 'codex'
-                          ? connection.protocol === 'openai-responses'
-                          : terminalProfile.agent === 'gemini'
-                            ? connection.protocol === 'gemini'
-                            : connection.protocol === 'anthropic-messages'),
-                    )
-                    .map((connection) => (
-                      <option key={connection.id} value={connection.id}>
-                        {connection.name} · {connection.model}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="field-help">
-                连接在创建任务时固定。CLI 安装、API 连接和项目默认配置可在终端管理中调整。
-              </p>
-              <details>
-                <summary>终端参数</summary>
-                <TerminalSetup value={terminalProfile} change={setTerminalProfile} disabled={busy} />
-              </details>
-            </>
-          ) : (
-            <>
-              <ModelPicker
-                providers={providers}
-                value={choice}
-                change={setChoice}
-                ready={setModelReady}
-                disabled={busy}
-                label={chat ? '会话模型连接' : '总代理连接'}
-              />
-              <details className="context-compact-setup">
-                <summary>上下文窗口 · {context.mode === 'manual' ? '手动分配' : '托管'}</summary>
-                <ContextPolicyEditor
-                  value={context}
-                  change={setContext}
-                  minimumWindowTokens={selected ? minimumContextWindowTokens(selected) : 4096}
-                  providerLimit={selected?.contextLimit || 4096}
-                  disabled={busy || !selected}
-                />
-              </details>
-              {['chatgpt', 'codex'].includes(selected?.authMode || '') && (
-                <p className="field-help">
-                  正在使用 ChatGPT 订阅 ·{' '}
-                  <button type="button" className="text-button" disabled={busy} onClick={manageUsage}>
-                    管理用量
-                  </button>
-                </p>
-              )}
-              {(!selected?.keyConfigured || selected.checkedRevision !== selected.revision) && (
-                <div className="inline-warning">
-                  请先连接并验证一个可用模型。
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      if (busy) return;
-                      settings({
-                        planMode,
-                        executionKind,
-                        terminalProfile,
-                        choice,
-                        contextPolicy: context,
-                        write,
-                        exec,
-                        urls,
-                        inputs,
-                        writePaths,
-                        maxRequests,
-                        maxTokens,
-                        concurrency,
-                      });
-                    }}
-                  >
-                    前往模型设置
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          {!chat && !terminal && (
-            <>
-              <label>
-                补充资料路径（可选，每行一项）
-                <textarea
-                  value={inputs}
-                  disabled={busy}
-                  onChange={(e) => setInputs(e.target.value)}
-                  placeholder="已可读取整个项目目录；可在此指定重点文件"
-                  rows={2}
-                />
-              </label>
-              <div className="permission-card">
-                <h4>执行范围</h4>
-                <label className="check-label">
-                  <input type="checkbox" checked readOnly disabled={busy} />
-                  项目内读取
-                </label>
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    checked={write}
-                    disabled={busy}
-                    onChange={(e) => setWrite(e.target.checked)}
-                  />
-                  任务目录写入
-                </label>
-                {write && (
-                  <label>
-                    允许写入的相对目录
-                    <textarea
-                      rows={1}
-                      value={writePaths}
-                      disabled={busy}
-                      onChange={(e) => setWritePaths(e.target.value)}
-                    />
-                  </label>
-                )}
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    checked={exec}
-                    disabled={busy}
-                    onChange={(e) => setExec(e.target.checked)}
-                  />
-                  命令执行（当前系统用户权限）
-                </label>
-                <label>
-                  授权网页 URL（每行一项）
-                  <textarea
-                    value={urls}
-                    disabled={busy}
-                    onChange={(e) => setUrls(e.target.value)}
-                    rows={2}
-                    placeholder="https://…"
-                  />
-                </label>
-              </div>
-            </>
-          )}
-          {!terminal && (
-            <div className="form-columns">
-              <label>
-                模型请求上限
-                <input
-                  type="number"
-                  min={1}
-                  max={80}
-                  value={maxRequests}
-                  disabled={busy}
-                  onChange={(e) => setMaxRequests(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                Token 上限
-                <input
-                  type="number"
-                  min={1000}
-                  value={maxTokens}
-                  disabled={busy}
-                  onChange={(e) => setMaxTokens(Number(e.target.value))}
-                />
-              </label>
-              {!chat && (
-                <label>
-                  并发实例
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={concurrency}
-                    disabled={busy}
-                    onChange={(e) => setConcurrency(Number(e.target.value))}
-                  />
-                </label>
-              )}
-            </div>
-          )}
-          <p className="field-help">
-            {chat
-              ? '普通回复后等待你继续。调用与 Token 按会话预算累计。'
-              : terminal
-                ? '只映射独立任务目录；不会修改项目主目录或自动发布。'
-                : `${planMode ? '接受计划后' : '创建后'}执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。`}
-          </p>
-        </div>
-        <footer className="modal-footer">
-          <button type="button" className="secondary" disabled={busy} onClick={close}>
-            返回
-          </button>
-          <button className="primary" disabled={busy || !setupReady || !objective.trim()}>
-            {busy
-              ? '正在创建…'
-              : chat
-                ? '开始对话'
-                : terminal
-                  ? '创建 Docker 任务'
-                  : planMode
-                    ? '生成约定与计划'
-                    : '开始执行'}
             <Icon name="arrow" size={15} />
           </button>
         </footer>

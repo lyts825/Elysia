@@ -90,7 +90,19 @@ const schemas = {
   }),
   list: z.object({ path: z.string().default('.') }),
   read: z.object({ path: z.string() }),
-  read_artifact: z.object({ artifactId: z.string() }),
+  read_artifact: z.object({
+    artifactId: z.string(),
+    offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+    limit: z.number().int().min(2).max(30000).default(30000),
+  }),
+  materialize_artifact: z.object({
+    artifactId: z.string(),
+    path: z.string().min(1),
+    expectedHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+  }),
   search: z.object({ path: z.string().default('.'), query: z.string().min(1).max(200) }),
   write: z.object({ path: z.string(), content: text, expectedHash: z.string().nullable() }),
   apply_patch: z.object({
@@ -144,7 +156,10 @@ const descriptions: Record<CoreToolName, string> = {
     '按本代理已压缩历史的原文引用分页回查，offset为记录下标，可按query筛选正文或调用参数；大结果用textOffset继续读取中段，每条最多6000字符。part=calls返回原调用参数JSON文本分页；不回放私有native签名或推理，不读取其他代理历史或开放文件权限。',
   list: '浏览授权目录，返回来源。',
   read: '读取文件并记录不可变来源快照和哈希。',
-  read_artifact: '读取本任务或已验收的同 run 产物，取得不可变内容与来源。',
+  read_artifact:
+    '读取本任务、已验收或用户选中的同 run 来源产物。文字按offset/limit分页（UTF-16位置，最多30000），用返回nextOffset继续，不拆开Unicode字符。二进制返回元信息；已选来源文件可在有写入授权时用materialize_artifact复制到任务目录。',
+  materialize_artifact:
+    '将用户明确选中的不可变来源产物复制到当前任务允许写入的路径，最多8MiB，支持二进制。expectedHash为目标现有文件哈希，新文件为null；需要读取和写入权限，执行文件或程序仍需单独命令授权。',
   search: '按字面文本搜索授权项目文件。',
   write: '原子写文件，expectedHash 为当前哈希，新文件为 null。',
   apply_patch: '用唯一原文与预期哈希修改文件。',
@@ -165,6 +180,7 @@ const descriptions: Record<CoreToolName, string> = {
 const mutating = new Set([
   'write',
   'apply_patch',
+  'materialize_artifact',
   'exec',
   'artifact',
   'diff',
@@ -524,7 +540,9 @@ export class ToolGateway {
   async recoverOperations() {
     for (const operation of this.store
       .all<Operation>('tool_operations')
-      .filter((o) => o.status === 'UNCERTAIN' && ['write', 'apply_patch'].includes(o.name))) {
+      .filter(
+        (o) => o.status === 'UNCERTAIN' && ['write', 'apply_patch', 'materialize_artifact'].includes(o.name),
+      )) {
       const task = this.store.require<Task>('tasks', operation.taskId),
         evidence = operation.evidence;
       if (!evidence || typeof evidence.path !== 'string' || typeof evidence.afterHash !== 'string') continue;
@@ -604,6 +622,8 @@ export class ToolGateway {
         names.push('spawn_task', 'allocate_context');
         if (permission.write) {
           names.push('write', 'apply_patch', 'artifact');
+          if (permission.read && this.store.require<Run>('runs', task.runId).source)
+            names.push('materialize_artifact');
           const project = this.store.require<Project>(
             'projects',
             this.store.require<Run>('runs', task.runId).projectId!,
@@ -865,23 +885,47 @@ export class ToolGateway {
         };
       } else if (name === 'read_artifact') {
         const artifact = this.store.require<Artifact>('artifacts', args.artifactId);
+        const source = this.store.require<Run>('runs', task.runId).source;
+        const selectedInput =
+          source?.bundleArtifactId === artifact.id ||
+          source?.artifacts.some((item) => item.importedId === artifact.id) === true;
         invariant(
-          artifact.runId === task.runId && (artifact.verified || artifact.taskId === task.id),
+          artifact.runId === task.runId &&
+            (artifact.verified || artifact.taskId === task.id || selectedInput),
           'ARTIFACT_SCOPE',
           '产物越界或尚未通过验收',
         );
         const bytes = this.store.readObject(artifact.objectRef);
         const binary = isBinaryFile(artifact.name, bytes);
         const content = binary ? null : bytes.toString('utf8');
+        const offset = content === null ? 0 : unicodeBoundary(content, args.offset);
+        const end = content === null ? 0 : unicodeBoundary(content, offset + args.limit);
+        const materializeAvailable =
+          selectedInput &&
+          bytes.length <= 8 * 1024 * 1024 &&
+          this.definitions(task).some((definition) => definition.name === 'materialize_artifact');
         result = {
           artifactId: artifact.id,
           hash: artifact.hash,
           source: artifact.source,
           binary,
           mediaType: artifact.mediaType,
-          content: content?.slice(0, 30000) ?? null,
+          content: content?.slice(offset, end) ?? null,
+          offset,
+          nextOffset: content !== null && end < content.length ? end : null,
+          totalCharacters: content?.length ?? null,
           bytes: bytes.length,
-          truncated: content !== null && content.length > 30000,
+          truncated: content !== null && end < content.length,
+          materialize:
+            binary || (content !== null && content.length > args.limit)
+              ? {
+                  available: materializeAvailable,
+                  tool: materializeAvailable ? 'materialize_artifact' : null,
+                  reason: materializeAvailable
+                    ? '可显式复制原始字节到本任务允许写入的目录；执行仍需原命令权限。'
+                    : '复制仅限用户选中的来源输入，且需要执行阶段的读取与写入授权（最多8MiB）。',
+                }
+              : undefined,
           trust: 'untrusted',
         };
       } else if (name === 'read') {
@@ -927,7 +971,7 @@ export class ToolGateway {
         };
         await walk(root, 0);
         result = { matches, inspected, truncated: inspected >= 500 || matches.length >= 100 };
-      } else if (name === 'write' || name === 'apply_patch') {
+      } else if (name === 'write' || name === 'apply_patch' || name === 'materialize_artifact') {
         const p = await this.path(task, args.path, true);
         let old: Buffer | null = null;
         try {
@@ -940,7 +984,22 @@ export class ToolGateway {
           'FILE_CONFLICT',
           '文件内容已变化，重新读取后再修改',
         );
-        let content = args.content;
+        let content: string | Buffer = args.content;
+        if (name === 'materialize_artifact') {
+          const artifact = this.store.require<Artifact>('artifacts', args.artifactId);
+          const source = this.store.require<Run>('runs', task.runId).source;
+          invariant(
+            artifact.runId === task.runId &&
+              (source?.bundleArtifactId === artifact.id ||
+                source?.artifacts.some((item) => item.importedId === artifact.id)),
+            'ARTIFACT_SCOPE',
+            '仅能复制当前任务中用户明确选中的来源输入',
+          );
+          invariant(this.kernel.permissions(task).read, 'PERMISSION_DENIED', '来源读取未授权');
+          content = this.store.readObject(artifact.objectRef);
+          invariant(content.length <= 8 * 1024 * 1024, 'ARTIFACT_TOO_LARGE', '来源文件超过8MiB');
+          invariant(hash(content) === artifact.hash, 'OBJECT_CORRUPT', '来源产物哈希与内容不一致');
+        }
         if (name === 'apply_patch') {
           const oldText = old!.toString('utf8');
           invariant(oldText.split(args.oldText).length === 2, 'PATCH_AMBIGUOUS', '原文必须唯一匹配');
@@ -950,7 +1009,12 @@ export class ToolGateway {
         const op = this.store.require<Operation>('tool_operations', operation.id);
         this.store.put('tool_operations', {
           ...op,
-          evidence: { path: p, beforeHash: args.expectedHash, afterHash: expectedNewHash },
+          evidence: {
+            path: p,
+            beforeHash: args.expectedHash,
+            afterHash: expectedNewHash,
+            ...(name === 'materialize_artifact' ? { artifactId: args.artifactId } : {}),
+          },
         });
         await fs.mkdir(path.dirname(p), { recursive: true });
         const temp = p + '.elysia-' + id() + '.tmp';
