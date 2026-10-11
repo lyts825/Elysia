@@ -21,6 +21,23 @@ export type NativeProjectDefaultsRecord = NativeProjectDefaultsView;
 export const sourceTextLimitBytes = 16 * 1024;
 export const reviewSourceTextLimitBytes = 16 * 1024;
 export const reviewSourceSnapshotLimitBytes = 32 * 1024;
+export const artifactChangeTextLimitBytes = 16 * 1024;
+export const artifactChangeSnapshotLimitBytes = 32 * 1024;
+export const ArtifactChangeSelection = z
+  .object({
+    reviewId: z.string().uuid(),
+    artifactId: z.string().uuid(),
+    requirement: z
+      .string()
+      .max(2000)
+      .refine((value) => !!value.trim(), '请填写具体修改要求'),
+  })
+  .strict();
+export type ArtifactChangeSelection = z.infer<typeof ArtifactChangeSelection>;
+export function artifactChangeTextByteLength(items: readonly Pick<ArtifactChangeSelection, 'requirement'>[]) {
+  const encoder = new TextEncoder();
+  return items.reduce((total, item) => total + encoder.encode(item.requirement).length, 0);
+}
 /** Explicitly selected review material has a separate budget from editable feedback. */
 export const ReviewSourceNote = z
   .object({
@@ -75,6 +92,7 @@ export const RunSourceSelection = z
       .max(10),
     feedback: z.string().trim().max(4000),
     reviewNotes: z.array(ReviewSourceNote).max(40).default([]),
+    artifactChanges: z.array(ArtifactChangeSelection).max(20).default([]),
     expectedDeliveryFingerprint: z
       .string()
       .regex(/^[a-f0-9]{64}$/)
@@ -82,11 +100,16 @@ export const RunSourceSelection = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (!value.feedback && !value.reviewNotes.length)
+    if (!value.feedback && !value.reviewNotes.length && !value.artifactChanges.length)
       context.addIssue({ code: 'custom', path: ['feedback'], message: '请填写修改意见或明确选择复核备注' });
-    if (!value.messageIds.length && !value.artifacts.length && !value.reviewNotes.length)
-      context.addIssue({ code: 'custom', message: '至少选择一条消息、一个产物或一条复核备注' });
-    if (value.reviewNotes.length && !value.expectedDeliveryFingerprint)
+    if (
+      !value.messageIds.length &&
+      !value.artifacts.length &&
+      !value.reviewNotes.length &&
+      !value.artifactChanges.length
+    )
+      context.addIssue({ code: 'custom', message: '至少选择一条消息、一个产物、一条复核备注或产物差异' });
+    if ((value.reviewNotes.length || value.artifactChanges.length) && !value.expectedDeliveryFingerprint)
       context.addIssue({
         code: 'custom',
         path: ['expectedDeliveryFingerprint'],
@@ -160,6 +183,50 @@ export interface DeliveryArtifactChange {
   after: DeliveryArtifactMetadata | null;
   /** Only the artifact in the current run may use the existing preview entry point. */
   currentArtifactId: string | null;
+}
+export interface SourceArtifactChange extends DeliveryArtifactChange {
+  reviewId: string;
+  reviewFingerprint: string;
+  currentFingerprint: string;
+  requirement: string;
+}
+export const SourceNoteResolutionStatus = z.enum(['pending', 'resolved', 'needs_changes']);
+export type SourceNoteResolutionStatus = z.infer<typeof SourceNoteResolutionStatus>;
+export const SourceNoteResolutionInput = z
+  .object({
+    commandId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative(),
+    expectedRootRevision: z.number().int().nonnegative(),
+    expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    noteIndex: z.number().int().min(0).max(39),
+    expectedResolutionRevision: z.number().int().nonnegative(),
+    status: SourceNoteResolutionStatus,
+    note: z.string().max(1000),
+    criterionIndex: z.number().int().nonnegative().nullable(),
+    evidenceIndices: z.array(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)).max(10),
+  })
+  .strict();
+export type SourceNoteResolutionInput = z.infer<typeof SourceNoteResolutionInput>;
+export interface SourceNoteResolution {
+  revision: number;
+  status: SourceNoteResolutionStatus;
+  note: string;
+  criterionIndex: number | null;
+  criterionText: string | null;
+  evidence: (DeliveryEvidence & { index: number })[];
+  fingerprint: string;
+  updatedAt: string;
+  stale: boolean;
+}
+export interface SourceNoteResolutions {
+  runId: string;
+  runRevision: number;
+  rootRevision: number;
+  currentFingerprint: string;
+  sourceHash: string | null;
+  writable: boolean;
+  items: { noteIndex: number; sourceNote: ReviewSourceNote; resolution: SourceNoteResolution | null }[];
 }
 export interface DeliveryArtifactChangePage {
   runId: string;
@@ -266,6 +333,7 @@ export interface RunSourceSnapshot {
   capturedAt: string;
   feedback: string;
   reviewNotes?: ReviewSourceNote[];
+  artifactChanges?: SourceArtifactChange[];
   capturedDeliveryFingerprint?: string;
   messages: Omit<SourceMessage, 'truncated'>[];
   artifacts: (SourceArtifact & { objectRef: string; source: string; importedId: string })[];

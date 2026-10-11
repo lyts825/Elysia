@@ -25,6 +25,7 @@ const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run
 const terminalSelectionKey = /^settings:selected-terminal-profile:([^:\s/\\]+)$/;
 const handoffDraftKey = /^draft:handoff:([^:\s/\\]+)$/;
 const deliveryReviewDraftKey = /^draft:delivery-review:([^:\s/\\]+)$/;
+const sourceResolutionDraftKey = /^draft:source-resolutions:([^:\s/\\]+)$/;
 const projectSetupDraftKey = /^draft:setup:project:([^:\s/\\]+)$/;
 const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
@@ -37,6 +38,7 @@ const keySchema = z
       terminalSelectionKey.test(key) ||
       handoffDraftKey.test(key) ||
       deliveryReviewDraftKey.test(key) ||
+      sourceResolutionDraftKey.test(key) ||
       projectSetupDraftKey.test(key) ||
       terminalDraftKey.test(key),
     '工作台缓存键无效',
@@ -63,6 +65,8 @@ function reference(key: string): { table: 'projects' | 'runs'; id: string } | un
   if (setup) return { table: 'projects', id: setup[1] };
   const review = deliveryReviewDraftKey.exec(key);
   if (review) return { table: 'runs', id: review[1] };
+  const resolution = sourceResolutionDraftKey.exec(key);
+  if (resolution) return { table: 'runs', id: resolution[1] };
   const handoff = handoffDraftKey.exec(key);
   if (handoff) return { table: 'runs', id: handoff[1] };
   const terminalDraft = terminalDraftKey.exec(key);

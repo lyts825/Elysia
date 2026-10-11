@@ -11,6 +11,7 @@ import { readReviewDraft, type ReviewDraft } from './ReviewDraft';
 import { readReviewCriteria } from './ReviewCriteria';
 import { DeliveryChanges } from './DeliveryChanges';
 import { ArtifactChanges } from './ArtifactChanges';
+import { UnlinkedReviewNotes } from './UnlinkedReviewNotes';
 
 export function DeliveryUserReview({
   value,
@@ -63,10 +64,11 @@ export function DeliveryUserReview({
     const raw = JSON.stringify(updated);
     if (raw.length > 200000) {
       setError('复核草稿已达到本机保存上限，本次输入未写入。请先复制并移除不再需要的旧备注。');
-      return;
+      return false;
     }
     draftRef.current = updated;
     changeDraft(raw);
+    return true;
   };
   const readonly = disabled || reading || busy || reconciling;
   async function reconcile() {
@@ -167,7 +169,7 @@ export function DeliveryUserReview({
       changeDraft(draft.unlinked.length ? JSON.stringify(draft) : '');
       setNotice(
         draft.unlinked.length
-          ? '复核已保存；未关联的旧备注仍保留为本机草稿，可复制后手动移除。'
+          ? '复核已保存；未关联的旧备注仍保留为本机草稿，可手动关联到当前标准或整体备注。'
           : '复核已保存，执行记录保持不变。',
       );
     } catch (issue) {
@@ -243,27 +245,13 @@ export function DeliveryUserReview({
           </details>
         )}
         {!!draft.unlinked.length && (
-          <details open>
-            <summary>尚未关联到当前标准的旧备注</summary>
-            {draft.unlinked.map((item, index) => (
-              <div key={index}>
-                <p className="workflow-prose">
-                  {item.text}：{item.note}
-                </p>
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={readonly}
-                  onClick={() => patch({ unlinked: draft.unlinked.filter((_, i) => i !== index) })}
-                >
-                  移除此旧备注
-                </button>
-              </div>
-            ))}
-            <p className="field-help">
-              请将适用内容复制到当前验收项；这些旧备注不会自动提交，保存结论后仍保留在本机，移除只影响本机草稿。
-            </p>
-          </details>
+          <UnlinkedReviewNotes
+            key={`${value.fingerprint}:${readVersion}`}
+            value={value}
+            draft={draft}
+            disabled={readonly || changed || conflict}
+            change={patch}
+          />
         )}
         <label>
           复核结论

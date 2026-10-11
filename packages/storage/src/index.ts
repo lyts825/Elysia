@@ -1389,6 +1389,7 @@ export class Store {
         `draft:terminal-continuation:${runId}`,
         `draft:handoff:${runId}`,
         `draft:delivery-review:${runId}`,
+        `draft:source-resolutions:${runId}`,
       ]);
       for (const row of this.db
         .prepare("SELECT key FROM storage_meta WHERE key LIKE 'workbench:v1:%'")

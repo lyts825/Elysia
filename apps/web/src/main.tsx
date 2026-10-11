@@ -1285,6 +1285,7 @@ function App({
         `draft:terminal-continuation:${runId}`,
         `draft:handoff:${runId}`,
         `draft:delivery-review:${runId}`,
+        `draft:source-resolutions:${runId}`,
       );
     for (const operation of detail?.operations || [])
       if (operation.status === 'UNCERTAIN') keys.push(`draft:terminal-recovery:${runId}:${operation.id}`);
@@ -1730,6 +1731,7 @@ function App({
               `draft:terminal-continuation:${deleted.id}`,
               `draft:handoff:${deleted.id}`,
               `draft:delivery-review:${deleted.id}`,
+              `draft:source-resolutions:${deleted.id}`,
             ].includes(key) || key.startsWith(`draft:terminal-recovery:${deleted.id}:`),
         ),
       );
@@ -1744,7 +1746,7 @@ function App({
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
           const match =
-            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review):|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
+            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review|source-resolutions):|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
               key,
             );
           return !!match && children.has(match[1]);
@@ -3416,9 +3418,14 @@ function App({
       <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
         {modal === 'delivery' && detail && !terminalSurface && (
           <DeliveryReview
+            key={detail.run.id}
             runId={detail.run.id}
             reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
             changeReviewDraft={(raw) => cache.set(`draft:delivery-review:${detail.run.id}`, raw)}
+            handoffDraft={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
+            changeHandoffDraft={(raw) => cache.set(`draft:handoff:${detail.run.id}`, raw)}
+            resolutionDraft={cacheState.entries[`draft:source-resolutions:${detail.run.id}`]?.value}
+            changeResolutionDraft={(raw) => cache.set(`draft:source-resolutions:${detail.run.id}`, raw)}
             readOnly={archived}
             updated={(revision) =>
               setDetail((old) =>

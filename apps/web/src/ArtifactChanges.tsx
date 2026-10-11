@@ -6,6 +6,7 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 import { DeliveryChanges } from './DeliveryChanges';
+import { ArtifactRevisionEditor } from './ArtifactRevisionDraft';
 import { deferredPanel } from './DeferredPanel';
 
 const FilePreview = deferredPanel(
@@ -151,6 +152,15 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
                     </button>
                   ) : (
                     <p className="field-help">此产物已从当前交付移除；仅保留历史元数据，不提供旧文件正文。</p>
+                  )}
+                  {fingerprint && (
+                    <ArtifactRevisionEditor
+                      runId={runId}
+                      reviewId={reviewId}
+                      fingerprint={fingerprint}
+                      item={item}
+                      disabled={blocked}
+                    />
                   )}
                   {preview && preview === item.currentArtifactId && !conflict && (
                     <section className="workflow-preview" aria-label="变化产物当前预览">

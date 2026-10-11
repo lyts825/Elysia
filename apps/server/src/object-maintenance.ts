@@ -285,6 +285,22 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         scan.state.recordsScanned++;
       }
     }
+    if (
+      database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_note_resolutions_v1'")
+        .get()
+    ) {
+      scan.phase('references', surface, 'source_note_resolutions_v1');
+      for (const row of database
+        .prepare('SELECT data FROM source_note_resolutions_v1')
+        .iterate() as Iterable<{ data: string }>) {
+        scan.check();
+        if (typeof row.data !== 'string' || Buffer.byteLength(row.data) > MAX_RECORD_BYTES)
+          throw new Error('维护备注处理记录超过读取上限或格式无效');
+        references(JSON.parse(row.data), retained);
+        scan.state.recordsScanned++;
+      }
+    }
     scan.phase('references', surface, 'storage_meta');
     for (const row of database.prepare('SELECT key,value FROM storage_meta').iterate() as Iterable<{
       key: string;

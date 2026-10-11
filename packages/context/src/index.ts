@@ -259,6 +259,23 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
                 capturedDeliveryFingerprint: run.source.capturedDeliveryFingerprint,
               }
             : {}),
+          ...(run.source.artifactChanges?.length
+            ? {
+                artifactChanges: run.source.artifactChanges.map((change) => ({
+                  reviewId: change.reviewId,
+                  reviewFingerprint: change.reviewFingerprint,
+                  currentFingerprint: change.currentFingerprint,
+                  artifactId: change.artifactId,
+                  kind: change.kind,
+                  before: change.before,
+                  after: change.after,
+                  requirementExcerpt: change.requirement.slice(0, 180),
+                  truncated: change.requirement.length > 180,
+                })),
+                changeRule:
+                  '差异是冻结的历史元数据与用户修改要求。removed 不提供旧文件正文；只有显式选择的 artifacts 有 importedId 可读取。完整修改要求请读取来源快照。',
+              }
+            : {}),
           bundleArtifactId: run.source.bundleArtifactId,
           messages: run.source.messages.map(({ id, role, text }) => ({
             id,

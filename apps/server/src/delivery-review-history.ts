@@ -183,9 +183,30 @@ export function savedReviewSnapshot(
   )
     return;
   const row = store.db
-    .prepare('SELECT review_json FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
-    .get(runId, reviewId) as { review_json: string } | undefined;
-  return row ? (JSON.parse(row.review_json) as DeliveryUserReview) : undefined;
+    .prepare(
+      'SELECT review_json,fingerprint,review_hash FROM delivery_review_history_v1 WHERE run_id=? AND id=?',
+    )
+    .get(runId, reviewId) as { review_json: string; fingerprint: string; review_hash: string } | undefined;
+  if (!row) return;
+  try {
+    const review = JSON.parse(row.review_json) as DeliveryUserReview;
+    if (
+      !review ||
+      (review.reviewId !== undefined && review.reviewId !== reviewId) ||
+      review.fingerprint !== row.fingerprint ||
+      reviewHash(review) !== row.review_hash
+    )
+      throw new Error('Inconsistent review snapshot');
+    return review;
+  } catch {
+    throw new AppError(
+      'DELIVERY_REVIEW_UNREADABLE',
+      '原复核记录完整性核验失败，请修复记录后重新选择',
+      true,
+      null,
+      422,
+    );
+  }
 }
 const unknown = (
   reason: 'baseline_missing' | 'baseline_invalid' | 'current_unreadable',
@@ -248,6 +269,7 @@ export function deliveryArtifactChanges(
   reviewId: string,
   expectedCurrentFingerprint: string,
   offset = 0,
+  artifactId?: string,
 ): DeliveryArtifactChangePage {
   if (
     !store.db
@@ -296,11 +318,14 @@ export function deliveryArtifactChanges(
     changeSummary: comparison.summary,
   };
   if (!comparison.known) return { ...response, items: [], page: null };
-  const total = comparison.items.length;
+  const items = artifactId
+    ? comparison.items.filter((item) => item.artifactId === artifactId)
+    : comparison.items;
+  const total = items.length;
   const hasMore = offset + 20 < total;
   return {
     ...response,
-    items: comparison.items.slice(offset, offset + 20),
+    items: items.slice(offset, offset + 20),
     page: { offset, limit: 20, total, hasMore, nextOffset: hasMore ? offset + 20 : null },
   };
 }

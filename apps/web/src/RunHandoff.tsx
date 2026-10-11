@@ -17,6 +17,8 @@ import { emptyReviewSource, readReviewSource, reviewNotesIssue } from './ReviewS
 import { ReviewSourceNotes } from './ReviewSourceNotes';
 import { useReviewSource } from './useReviewSource';
 import { HandoffReviewConfirmation } from './HandoffReviewConfirmation';
+import { readArtifactRevision, artifactRevisionIssue } from './ArtifactRevisionDraft';
+import { ArtifactRevisionSelection, ArtifactRevisionSummary } from './ArtifactRevisionSelection';
 import './workflow.css';
 
 type HandoffDraft = {
@@ -28,6 +30,7 @@ type HandoffDraft = {
   stage: 'select' | 'setup';
   setup?: RunSetupDraft;
   reviewSelection?: unknown;
+  artifactRevision?: unknown;
 };
 function readDraft(raw: unknown, run: Run): HandoffDraft {
   const empty: HandoffDraft = {
@@ -45,6 +48,7 @@ function readDraft(raw: unknown, run: Run): HandoffDraft {
     return {
       ...empty,
       reviewSelection: value.reviewSelection,
+      artifactRevision: value.artifactRevision,
       projectId: typeof value.projectId === 'string' ? value.projectId : empty.projectId,
       objective: typeof value.objective === 'string' ? value.objective : empty.objective,
       feedback: typeof value.feedback === 'string' ? value.feedback : '',
@@ -116,6 +120,7 @@ export function SourceSummary({
       {!!source.reviewNotes?.length && (
         <ReviewSourceNotes notes={source.reviewNotes} sourceRunId={source.runId} />
       )}
+      {!!source.artifactChanges?.length && <ArtifactRevisionSummary items={source.artifactChanges} />}
       <details>
         <summary>来源快照校验信息</summary>
         <small>SHA256 {source.hash}</small>
@@ -165,7 +170,8 @@ export function RunHandoff({
       return;
     }
     setDraftIssue('');
-    if (next.reviewSelection !== undefined || next.stage === 'select') setIgnoredPending(undefined);
+    if (next.reviewSelection !== undefined || next.artifactRevision !== undefined || next.stage === 'select')
+      setIgnoredPending(undefined);
     draftRef.current = updated;
     change(raw);
   };
@@ -189,8 +195,20 @@ export function RunHandoff({
   const reviewSelection = readReviewSource(draft.reviewSelection);
   const reviewNotes = reviewSelection?.added || [];
   const pendingNotes = reviewSelection?.pending || [];
-  const pendingKey = JSON.stringify(pendingNotes);
-  const pendingReady = !pendingNotes.length || ignoredPending === pendingKey;
+  const artifactRevision = readArtifactRevision(draft.artifactRevision);
+  const differences = artifactRevision?.filter((entry) => entry.added) || [];
+  const pendingDifferences = artifactRevision?.filter((entry) => !entry.added) || [];
+  const differencesIssue = artifactRevision
+    ? artifactRevisionIssue(artifactRevision)
+    : '差异草稿格式无法读取，请返回选择页处理。';
+  const differencesReady =
+    !differences.length ||
+    (!!reviewSource.value &&
+      !reviewSource.reading &&
+      !reviewSource.error &&
+      differences.every((entry) => entry.fingerprint === reviewSource.value!.fingerprint));
+  const pendingKey = JSON.stringify([pendingNotes, pendingDifferences]);
+  const pendingReady = (!pendingNotes.length && !pendingDifferences.length) || ignoredPending === pendingKey;
   const notesIssue = reviewSelection
     ? reviewNotesIssue(reviewNotes)
     : '备注选择草稿格式无法读取，请返回选择页处理。';
@@ -226,14 +244,16 @@ export function RunHandoff({
   const canContinue =
     !!selectedProject &&
     !!draft.objective.trim() &&
-    (!!draft.feedback.trim() || reviewNotes.length > 0) &&
+    (!!draft.feedback.trim() || reviewNotes.length > 0 || differences.length > 0) &&
     !!options &&
     !error &&
     !loading &&
     selectedBytes <= sourceTextLimitBytes &&
     !notesIssue &&
+    !differencesIssue &&
+    differencesReady &&
     notesReady &&
-    draft.messages.length + draft.artifacts.length + reviewNotes.length > 0;
+    draft.messages.length + draft.artifacts.length + reviewNotes.length + differences.length > 0;
   const selectionPreview = (
     <section className="workflow-source" aria-label="带入内容预览">
       <strong>带入内容预览 · {run.title || run.objective}</strong>
@@ -250,6 +270,7 @@ export function RunHandoff({
         </details>
       ))}
       {!!reviewNotes.length && <ReviewSourceNotes notes={reviewNotes} />}
+      {!!differences.length && <ArtifactRevisionSummary items={differences} />}
       {draft.artifacts.map((artifact) => (
         <p key={artifact.id}>
           {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
@@ -276,6 +297,8 @@ export function RunHandoff({
             <HandoffReviewConfirmation
               added={reviewNotes.length}
               pending={pendingNotes.length}
+              addedDifferences={differences.length}
+              pendingDifferences={pendingDifferences.length}
               ignored={pendingReady}
               disabled={busy}
               ignore={(ignored) => setIgnoredPending(ignored ? pendingKey : undefined)}
@@ -305,6 +328,16 @@ export function RunHandoff({
             {notesIssue && (
               <p role="alert" className="field-error">
                 {notesIssue}
+              </p>
+            )}
+            {differencesIssue && (
+              <p role="alert" className="field-error">
+                {differencesIssue}
+              </p>
+            )}
+            {!!differences.length && !differencesReady && (
+              <p role="alert" className="field-error">
+                差异的来源交付尚未确认。输入保留，请返回核对最新差异后重新加入。
               </p>
             )}
             {!!reviewNotes.length && !notesReady && (
@@ -353,7 +386,14 @@ export function RunHandoff({
               artifacts: draft.artifacts.map(({ id, version, hash }) => ({ id, version, hash })),
               feedback: draft.feedback,
               reviewNotes,
-              ...(reviewNotes.length ? { expectedDeliveryFingerprint: reviewSelection!.fingerprint } : {}),
+              artifactChanges: differences.map((entry) => ({
+                reviewId: entry.reviewId,
+                artifactId: entry.change.artifactId,
+                requirement: entry.requirement,
+              })),
+              ...(reviewNotes.length || differences.length
+                ? { expectedDeliveryFingerprint: reviewSource.value!.fingerprint }
+                : {}),
             },
           });
         }}
@@ -443,6 +483,14 @@ export function RunHandoff({
               disabled={busy}
             />
           )}
+          <ArtifactRevisionSelection
+            runId={run.id}
+            raw={draft.artifactRevision}
+            change={(artifactRevision) => patch({ artifactRevision })}
+            fingerprint={reviewSource.value?.fingerprint}
+            disabled={busy || reviewSource.reading || !!reviewSource.error}
+            reload={() => setRetry((value) => value + 1)}
+          />
           <p className="field-help">
             每类最多选择 10 项。当前已选 {draft.messages.length} 条消息、{draft.artifacts.length} 个产物。
             消息正文与修改意见合计 {selectedBytes.toLocaleString()} / {sourceTextLimitBytes.toLocaleString()}{' '}
@@ -619,7 +667,10 @@ export function RunHandoff({
             </>
           )}
           {loading && <p role="status">正在读取来源…</p>}
-          {(draft.messages.length > 0 || draft.artifacts.length > 0 || reviewNotes.length > 0) && (
+          {(draft.messages.length > 0 ||
+            draft.artifacts.length > 0 ||
+            reviewNotes.length > 0 ||
+            differences.length > 0) && (
             <>
               {selectionPreview}
               <div className="workflow-actions">
@@ -627,7 +678,14 @@ export function RunHandoff({
                   type="button"
                   className="text-button"
                   disabled={busy}
-                  onClick={() => patch({ messages: [], artifacts: [], reviewSelection: emptyReviewSource() })}
+                  onClick={() =>
+                    patch({
+                      messages: [],
+                      artifacts: [],
+                      reviewSelection: emptyReviewSource(),
+                      artifactRevision: [],
+                    })
+                  }
                 >
                   清空所选内容
                 </button>

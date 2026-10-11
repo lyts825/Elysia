@@ -139,6 +139,7 @@ export function registerDeliveryLifecycle(
       const query = z
         .object({
           expectedCurrentFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+          artifactId: z.string().uuid().optional(),
           offset: z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
         })
         .strict()
@@ -150,6 +151,7 @@ export function registerDeliveryLifecycle(
           params.reviewId,
           query.expectedCurrentFingerprint,
           query.offset,
+          query.artifactId,
         ),
       );
     },

@@ -35,6 +35,8 @@ import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecyc
 import { deliveryArtifactRows } from './delivery-fingerprint.js';
 import { captureDeliveryBaseline } from './delivery-review-history.js';
 import { captureReviewSource } from './review-source.js';
+import { captureArtifactChanges } from './artifact-change-source.js';
+import { registerSourceNoteResolutions } from './source-note-resolutions.js';
 
 const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
@@ -200,6 +202,7 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
   const source = nativeRun(store, selection.runId);
   assertRevision(selection.expectedRevision, source.revision);
   const reviewSource = captureReviewSource(store, source, selection);
+  const changeSource = captureArtifactChanges(store, source, selection);
   invariant(
     new Set(selection.messageIds).size === selection.messageIds.length &&
       new Set(selection.artifacts.map((a) => a.id)).size === selection.artifacts.length,
@@ -254,14 +257,16 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
     capturedAt: now(),
     feedback: selection.feedback,
     ...reviewSource,
+    ...changeSource,
     messages,
     artifacts,
     bundleArtifactId: id(),
   };
+  const snapshotKiB = changeSource.artifactChanges?.length ? 96 : reviewSource.reviewNotes?.length ? 64 : 32;
   invariant(
-    Buffer.byteLength(stable(snapshot), 'utf8') <= (reviewSource.reviewNotes?.length ? 64 : 32) * 1024,
+    Buffer.byteLength(stable(snapshot), 'utf8') <= snapshotKiB * 1024,
     'SOURCE_SNAPSHOT_LIMIT',
-    `来源快照超过 ${reviewSource.reviewNotes?.length ? 64 : 32} KiB，请减少选择`,
+    `来源快照超过 ${snapshotKiB} KiB，请减少选择`,
   );
   return { ...snapshot, hash: hash(stable(snapshot)) };
 }
@@ -308,13 +313,21 @@ function deliveryPage(offset: number, limit: number, total: number): DeliveryPag
   const hasMore = offset + limit < total;
   return { offset, limit, total, hasMore, nextOffset: hasMore ? offset + limit : null };
 }
-function publicEvidence(runId: string, evidence: Evidence, artifact?: Artifact): DeliveryEvidence {
+function publicEvidence(
+  runId: string,
+  evidence: Evidence,
+  artifact?: Artifact,
+  full = false,
+): DeliveryEvidence {
   return {
     type: evidence.type,
-    ref: evidence.ref.slice(0, 1000),
-    hash: evidence.hash?.slice(0, 100) ?? null,
-    note: evidence.note.slice(0, 1500),
-    artifact: artifact?.runId === runId ? publicArtifact(artifact) : null,
+    ref: full ? evidence.ref : evidence.ref.slice(0, 1000),
+    hash: (full ? evidence.hash : evidence.hash?.slice(0, 100)) ?? null,
+    note: full ? evidence.note : evidence.note.slice(0, 1500),
+    artifact:
+      artifact?.runId === runId
+        ? { ...publicArtifact(artifact), ...(full ? { name: artifact.name } : {}) }
+        : null,
   };
 }
 /** Count matching evidence before paging it; unrelated criteria cannot consume this page's budget. */
@@ -326,6 +339,7 @@ function criterionEvidence(
   offset: number,
   limit: number,
   artifacts?: Map<string, Artifact>,
+  full = false,
 ) {
   const groups = new Map(indices.map((index) => [index, { total: 0, evidence: [] as DeliveryEvidence[] }]));
   const references = new Map<string, Artifact | undefined>();
@@ -347,7 +361,7 @@ function criterionEvidence(
           artifact = references.get(evidence.ref);
         }
       }
-      group.evidence.push(publicEvidence(runId, evidence, artifact));
+      group.evidence.push(publicEvidence(runId, evidence, artifact, full));
     }
   }
   return groups;
@@ -456,6 +470,23 @@ export function registerWorkflow(
   assertMutable: (runId: string | null, projectId?: string) => void,
 ) {
   registerDeliveryLifecycle(app, store, assertMutable);
+  registerSourceNoteResolutions(app, store, assertMutable, (run, root, criterion, indices) => {
+    const result =
+      root.result && typeof root.result === 'object' ? (root.result as Record<string, unknown>) : {};
+    const raw = Array.isArray(result.evidence) ? result.evidence : [];
+    return indices.map((index) => {
+      const evidence = criterionEvidence(store, run.id, raw, [criterion], index, 1, undefined, true).get(
+        criterion,
+      )!.evidence[0];
+      invariant(evidence, 'SOURCE_EVIDENCE_SCOPE', '所选证据不属于当前标准，请重新读取');
+      invariant(
+        evidence.type !== 'artifact' || evidence.artifact,
+        'SOURCE_EVIDENCE_SCOPE',
+        '所选产物证据已缺失或不属于当前任务',
+      );
+      return { index, ...evidence };
+    });
+  });
   app.get<{ Params: { id: string; messageId: string } }>(
     '/api/runs/:id/handoff/messages/:messageId',
     async (request) => sourceMessage(store, request.params.id, request.params.messageId),

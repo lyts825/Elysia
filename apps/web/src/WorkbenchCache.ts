@@ -20,7 +20,7 @@ const validKey = (key: string) =>
     key === 'draft:chat' ||
     key === 'draft:setup:chat' ||
     /^draft:setup:project:[^:\s/\\]+$/.test(key) ||
-    /^draft:(?:handoff|delivery-review):[^:\s/\\]+$/.test(key) ||
+    /^draft:(?:handoff|delivery-review|source-resolutions):[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
     /^settings:selected-terminal-profile:[^:\s/\\]+$/.test(key) ||
     /^draft:terminal-(continuation|recovery):[^:\s/\\]+(?::[a-f0-9-]{36})?$/.test(key));
@@ -312,7 +312,7 @@ export class WorkbenchCache {
       if (setup) return !projectIds.has(setup[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
       const terminalDraft = /^draft:terminal-(?:continuation|recovery):([^:]+)(?::[^:]+)?$/.exec(key);
-      const handoffDraft = /^draft:(?:handoff|delivery-review):([^:]+)$/.exec(key);
+      const handoffDraft = /^draft:(?:handoff|delivery-review|source-resolutions):([^:]+)$/.exec(key);
       if (handoffDraft) return runsComplete && !runIds.has(handoffDraft[1]);
       if (terminalDraft) return runsComplete && !runIds.has(terminalDraft[1]);
       return run ? runsComplete && !runIds.has(run[1]) : false;
