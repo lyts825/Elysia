@@ -7,6 +7,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { deferredPanel } from './DeferredPanel';
 import { ToolActivity } from './ToolActivity';
 import { DeliveryCriteria } from './DeliveryCriteria';
+import { DeliveryUserReview } from './DeliveryUserReview';
 import './workflow.css';
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -18,29 +19,46 @@ export function DeliveryReview({
   close,
   revise,
   openFile,
+  reviewDraft,
+  changeReviewDraft,
+  readOnly = false,
+  updated,
 }: {
   runId: string;
   close: () => void;
   revise?: () => void;
   openFile?: (taskId: string, path: string) => void;
+  reviewDraft?: unknown;
+  changeReviewDraft?: (raw: string) => void;
+  readOnly?: boolean;
+  updated?: (runRevision: number) => void;
 }) {
   const { api, apiUrl } = useSurfaceClient();
   const [value, setValue] = useState<Delivery>();
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [preview, setPreview] = useState<SourceArtifact>();
+  const [reading, setReading] = useState(true),
+    [reviewBusy, setReviewBusy] = useState(false),
+    [readVersion, setReadVersion] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setError('');
-    setValue(undefined);
+    setReading(true);
     setPreview(undefined);
     void api<Delivery>(`/runs/${runId}/delivery`, undefined, undefined, controller.signal)
       .then((next) => {
-        if (!controller.signal.aborted) setValue(next);
+        if (!controller.signal.aborted) {
+          setValue(next);
+          setReadVersion((version) => version + 1);
+        }
       })
       .catch((issue) => {
         if (!controller.signal.aborted)
           setError(issue instanceof Error ? issue.message : '交付核验读取失败。');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReading(false);
       });
     return () => controller.abort();
   }, [api, runId, retry]);
@@ -58,16 +76,18 @@ export function DeliveryReview({
     </div>
   );
   return (
-    <Modal title="交付与验收" close={close} wide className="workflow-modal">
+    <Modal title="交付与验收" close={close} busy={reviewBusy} wide className="workflow-modal">
       <div className="form-body workflow-body">
-        {error ? (
+        {error && (
           <p role="alert" className="field-error">
             {error}{' '}
             <button className="text-button" onClick={() => setRetry((v) => v + 1)}>
               重试
             </button>
           </p>
-        ) : !value ? (
+        )}
+        {reading && value && <p role="status">正在重新读取，已读内容与备注保留…</p>}
+        {!value ? (
           <p role="status">正在读取交付证据…</p>
         ) : (
           <>
@@ -78,30 +98,51 @@ export function DeliveryReview({
                 <p className="workflow-prose">{value.summary}</p>
               </section>
             )}
-            <DeliveryCriteria
-              key={`${runId}:${value.runRevision}:${value.rootRevision}:${retry}`}
-              initial={value}
+            <DeliveryUserReview
+              value={value}
+              rawDraft={reviewDraft}
+              changeDraft={changeReviewDraft || (() => {})}
+              disabled={readOnly || !changeReviewDraft || value.status !== 'DONE' || !!error}
+              reading={reading}
+              readVersion={readVersion}
+              activity={setReviewBusy}
               reload={() => setRetry((v) => v + 1)}
-              evidence={(evidence, index) => (
-                <div className="workflow-evidence" key={index}>
-                  <strong>
-                    {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]}
-                  </strong>
-                  <p className="workflow-prose">{evidence.note || evidence.ref}</p>
-                  <code>{evidence.ref}</code>
-                  {evidence.hash && <small>SHA256 {evidence.hash}</small>}
-                  {evidence.artifact && file(evidence.artifact)}
-                  {evidence.type === 'file' && openFile && (
-                    <button className="text-button" onClick={() => openFile(value.rootTaskId, evidence.ref)}>
-                      打开当前工作区文件
-                    </button>
+              saved={(state) => {
+                setValue((old) => (old ? { ...old, ...state } : old));
+                updated?.(state.runRevision);
+              }}
+            >
+              {(criterionNote) => (
+                <DeliveryCriteria
+                  key={`${runId}:${value.runRevision}:${value.rootRevision}:${retry}`}
+                  initial={value}
+                  reload={() => setRetry((v) => v + 1)}
+                  criterionNote={criterionNote}
+                  evidence={(evidence, index) => (
+                    <div className="workflow-evidence" key={index}>
+                      <strong>
+                        {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]}
+                      </strong>
+                      <p className="workflow-prose">{evidence.note || evidence.ref}</p>
+                      <code>{evidence.ref}</code>
+                      {evidence.hash && <small>SHA256 {evidence.hash}</small>}
+                      {evidence.artifact && file(evidence.artifact)}
+                      {evidence.type === 'file' && openFile && (
+                        <button
+                          className="text-button"
+                          onClick={() => openFile(value.rootTaskId, evidence.ref)}
+                        >
+                          打开当前工作区文件
+                        </button>
+                      )}
+                      {evidence.type === 'command' && (
+                        <CommandEvidence runId={runId} operationId={evidence.ref} />
+                      )}
+                    </div>
                   )}
-                  {evidence.type === 'command' && (
-                    <CommandEvidence runId={runId} operationId={evidence.ref} />
-                  )}
-                </div>
+                />
               )}
-            />
+            </DeliveryUserReview>
             <section aria-label="交付文件">
               <h3>交付文件</h3>
               {value.artifacts.map(file)}
@@ -137,11 +178,11 @@ export function DeliveryReview({
         )}
       </div>
       <footer className="modal-footer">
-        <button className="secondary" onClick={close}>
+        <button className="secondary" onClick={close} disabled={reviewBusy}>
           关闭
         </button>
         {revise && (
-          <button className="primary" onClick={revise}>
+          <button className="primary" onClick={revise} disabled={reviewBusy}>
             提出修改
           </button>
         )}

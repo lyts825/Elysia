@@ -546,29 +546,19 @@ export class NativeExecutor implements ExecutorAdapter {
     );
     const adapter = this.adapterFactory(agent),
       request = adapter.compile(context);
-    const previous = store
-      .all<RequestRecord>('requests', run.id)
-      .filter((r) => r.taskId === task.id)
-      .at(-1);
+    const previous = store.latestTaskRequest(run.id, task.id);
     context.manifest.difference = requestDifference(previous?.manifest, context.manifest);
+    const retryHistory = cooldown?.logicalId
+      ? store.requestLedger({ runId: run.id, logicalId: cooldown.logicalId, attemptId: attempt.id })
+      : [];
     const continuation =
       cooldown?.logicalId &&
       Number.isInteger(cooldown.retry) &&
       cooldown.retry! >= 0 &&
       cooldown.retry! <= 2 &&
-      (cooldown.retry === 0 ||
-        store
-          .all<RequestRecord>('requests', run.id)
-          .some((r) => r.logicalId === cooldown.logicalId && r.attemptId === attempt.id));
+      (cooldown.retry === 0 || retryHistory.length > 0);
     const logicalId = continuation ? cooldown!.logicalId! : id();
-    const firstRetry = continuation
-      ? Math.max(
-          cooldown!.retry!,
-          store
-            .all<RequestRecord>('requests', run.id)
-            .filter((record) => record.logicalId === logicalId && record.attemptId === attempt.id).length,
-        )
-      : 0;
+    const firstRetry = continuation ? Math.max(cooldown!.retry!, retryHistory.length) : 0;
     if (firstRetry >= 3)
       throw new ProviderError(
         'REQUEST_RETRY_LIMIT',
@@ -579,9 +569,7 @@ export class NativeExecutor implements ExecutorAdapter {
     let successfulRequestId: string | null = null;
     for (let retry = firstRetry; retry <= 2; retry++) {
       signal.throwIfAborted();
-      const accountRequests = store
-        .all<RequestRecord>('requests')
-        .filter((r) => r.providerBinding.account === config.account && r.startedAt > Date.now() - 60000);
+      const accountRequests = store.requestLedger({ account: config.account, since: Date.now() - 60000 });
       const requestTokens = context.estimatedTokens + config.outputLimit;
       if (requestTokens > config.tpm) {
         this.waitAtLimit(

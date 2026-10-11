@@ -38,6 +38,55 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
+export const STORAGE_SCHEMA_VERSION = 4;
+export const STORAGE_MIN_READER_VERSION = '0.25.0-preview.1';
+export type RequestLedgerRow = Pick<
+  RequestRecord,
+  | 'id'
+  | 'revision'
+  | 'runId'
+  | 'taskId'
+  | 'attemptId'
+  | 'logicalId'
+  | 'providerId'
+  | 'status'
+  | 'startedAt'
+  | 'reservedTokens'
+  | 'reservedCost'
+> & {
+  account?: string;
+  priceCurrency?: string;
+  usage: Pick<
+    NonNullable<RequestRecord['usage']>,
+    'inputTotal' | 'outputTotal' | 'cost' | 'cacheRead' | 'ttftMs'
+  > | null;
+};
+function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
+  return {
+    id: entity.id,
+    revision: entity.revision,
+    runId: entity.runId,
+    taskId: entity.taskId,
+    attemptId: entity.attemptId,
+    logicalId: entity.logicalId,
+    providerId: entity.providerId,
+    status: entity.status,
+    startedAt: entity.startedAt,
+    reservedTokens: entity.reservedTokens,
+    reservedCost: entity.reservedCost,
+    account: entity.providerBinding?.account,
+    priceCurrency: entity.providerBinding?.prices?.currency,
+    usage: entity.usage
+      ? {
+          inputTotal: entity.usage.inputTotal,
+          outputTotal: entity.usage.outputTotal,
+          cost: entity.usage.cost,
+          cacheRead: entity.usage.cacheRead,
+          ttftMs: entity.usage.ttftMs,
+        }
+      : null,
+  };
+}
 export function stable(value: unknown): string {
   if (value === undefined) return 'null';
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
@@ -146,6 +195,8 @@ function projection(table: Table, entity: any) {
       : {}),
     ...(table === 'tasks' ? { schedulerVersion: 1 } : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
+    ...(table === 'runs' ? { sourceRunId: entity.source?.runId } : {}),
+    ...(table === 'requests' ? { requestLedgerVersion: 1, requestLedger: ledgerProjection(entity) } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages'
       ? {
@@ -203,6 +254,9 @@ export class Store {
       this.db.exec(
         'CREATE INDEX IF NOT EXISTS context_event_preview ON events(run_id,task_id,type,seq DESC);',
       );
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS messages_run_session ON messages(run_id,json_extract(data,'$.sessionId'));",
+      );
     } catch (error) {
       this.db.close();
       throw error;
@@ -210,7 +264,8 @@ export class Store {
   }
   migrate() {
     const version = Number((this.db.prepare('PRAGMA user_version').get() as any).user_version);
-    if (version > 3) throw new AppError('SCHEMA_TOO_NEW', '数据库版本比应用新，请恢复相容备份');
+    if (version > STORAGE_SCHEMA_VERSION)
+      throw new AppError('SCHEMA_TOO_NEW', '数据库版本比应用新，请使用相容应用或恢复升级前备份');
     if (version < 3)
       this.tx(() => {
         this.db.exec(
@@ -328,6 +383,29 @@ export class Store {
           throw new AppError('DATABASE_CORRUPT', '数据库迁移完整性检查失败');
         this.db.exec('PRAGMA user_version=3;');
       });
+    if (version < STORAGE_SCHEMA_VERSION)
+      this.tx(() => {
+        // These chunks are authoritative content. Version 4 prevents pre-chunk readers
+        // from silently treating the empty compatibility field as a complete response.
+        new RequestStreams(this.db);
+        for (const table of ['requests', 'runs'] as const) {
+          const update = this.db.prepare(`UPDATE ${table} SET data=? WHERE id=?`);
+          for (const row of this.db
+            .prepare(`SELECT id,revision,data,content FROM ${table}`)
+            .iterate() as Iterable<any>) {
+            const entity = row.content ? expand(row.content) : JSON.parse(row.data);
+            entity.revision = row.revision;
+            update.run(projection(table, entity), row.id);
+          }
+        }
+        this.db.exec(`
+        CREATE INDEX request_ledger_account_time ON requests(json_extract(data,'$.requestLedger.account'),json_extract(data,'$.requestLedger.startedAt'));
+        CREATE INDEX request_ledger_task ON requests(run_id,json_extract(data,'$.requestLedger.taskId'));
+        CREATE INDEX request_ledger_logical ON requests(run_id,json_extract(data,'$.requestLedger.logicalId'),json_extract(data,'$.requestLedger.attemptId'));
+        CREATE INDEX run_source_parent ON runs(json_extract(data,'$.sourceRunId'));
+        PRAGMA user_version=4;
+      `);
+      });
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
     const pending = this.db
@@ -388,7 +466,94 @@ export class Store {
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.decodeRow(table, r));
   }
-  /** Metadata updates deliberately omit in-flight text; normal reads retain partialText compatibility. */
+  /** Budget and scheduling reads never expand request manifests or stream text. */
+  requestLedger(
+    filters: {
+      runId?: string;
+      taskId?: string;
+      account?: string;
+      since?: number;
+      logicalId?: string;
+      attemptId?: string;
+    } = {},
+  ): RequestLedgerRow[] {
+    const conditions: string[] = [],
+      values: (string | number)[] = [];
+    for (const key of ['runId', 'taskId', 'account', 'logicalId', 'attemptId'] as const) {
+      if (filters[key] === undefined) continue;
+      conditions.push(key === 'runId' ? 'run_id=?' : `json_extract(data,'$.requestLedger.${key}')=?`);
+      values.push(filters[key]!);
+    }
+    if (filters.since !== undefined) {
+      conditions.push("json_extract(data,'$.requestLedger.startedAt')>?");
+      values.push(filters.since);
+    }
+    return (
+      this.db
+        .prepare(
+          `SELECT data,revision FROM requests ${conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''} ORDER BY rowid`,
+        )
+        .all(...values) as { data: string; revision: number }[]
+    ).map((row) => ({ ...JSON.parse(row.data).requestLedger, revision: row.revision }));
+  }
+  latestTaskRequest(runId: string, taskId: string): RequestRecord | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT data,content FROM requests WHERE run_id=? AND json_extract(data,'$.requestLedger.taskId')=? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(runId, taskId) as any;
+    return row ? this.decodeRow('requests', row) : undefined;
+  }
+  sessionMessages(runId: string, sessionId: string): Message[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT data,content FROM messages WHERE run_id=? AND json_extract(data,'$.sessionId')=? ORDER BY rowid",
+        )
+        .all(runId, sessionId) as any[]
+    ).map((row) => this.decodeRow('messages', row));
+  }
+  sessionMessageCount(runId: string, sessionId: string): number {
+    return Number(
+      this.db
+        .prepare("SELECT count(*) total FROM messages WHERE run_id=? AND json_extract(data,'$.sessionId')=?")
+        .get(runId, sessionId)?.total ?? 0,
+    );
+  }
+  runRevisions(sourceRunId: string, limit = 20, before?: string) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 40)
+      throw new AppError('PAGE_LIMIT', '修订分页数量无效');
+    let cursor: number | undefined;
+    if (before) {
+      const row = this.db
+        .prepare("SELECT rowid ordinal FROM runs WHERE id=? AND json_extract(data,'$.sourceRunId')=?")
+        .get(before, sourceRunId) as { ordinal: number } | undefined;
+      if (!row) throw new AppError('PAGE_CURSOR', '修订分页已变化，请重新读取', false, null, 409);
+      cursor = row.ordinal;
+    }
+    const total = Number(
+      this.db
+        .prepare("SELECT count(*) total FROM runs WHERE json_extract(data,'$.sourceRunId')=?")
+        .get(sourceRunId)?.total ?? 0,
+    );
+    const rows = this.db
+      .prepare(
+        `SELECT id,data,content FROM runs WHERE json_extract(data,'$.sourceRunId')=? ${cursor === undefined ? '' : 'AND rowid<?'} ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(sourceRunId, ...(cursor === undefined ? [] : [cursor]), limit + 1) as any[];
+    const selected = rows.slice(0, limit);
+    return {
+      items: selected.map((row) => this.decodeRow('runs', row) as Run),
+      page: {
+        limit,
+        before: before ?? null,
+        total,
+        hasMore: rows.length > limit,
+        nextBefore: rows.length > limit ? selected.at(-1).id : null,
+      },
+    };
+  }
+  /** Read one request without expanding its in-flight stream. */
   requestMetadata(key: string): RequestRecord {
     const row = this.db.prepare('SELECT data,content FROM requests WHERE id=?').get(key) as any;
     if (!row) throw new AppError('NOT_FOUND', 'requests 记录不存在', false, null, 404);
@@ -1166,6 +1331,7 @@ export class Store {
         `unread:run:${runId}`,
         `draft:terminal-continuation:${runId}`,
         `draft:handoff:${runId}`,
+        `draft:delivery-review:${runId}`,
       ]);
       for (const row of this.db
         .prepare("SELECT key FROM storage_meta WHERE key LIKE 'workbench:v1:%'")

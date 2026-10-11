@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
 import { terminalResourcePresets } from './terminal-runtime.js';
-import type { NativeProjectDefaults, RunSourceSnapshot } from './workflow.js';
+import type { NativeProjectDefaults, RunSourceSnapshot, DeliveryUserReview } from './workflow.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '0.24.1-preview.1';
+export const VERSION = '0.25.0-preview.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -347,6 +347,8 @@ export interface Run extends Entity {
   reason?: string;
   /** Selected public source material, frozen at creation; never grants permissions. */
   source?: RunSourceSnapshot;
+  /** Explicit user review of a fingerprinted delivery; independent of execution status. */
+  deliveryReview?: DeliveryUserReview;
 }
 export interface Task extends Entity {
   contractVersion: number;

@@ -1,0 +1,89 @@
+import type { NativeProjectDefaults } from '../../../packages/contracts/src/workflow';
+import type { RunSetupDraft } from './RunSetupModal';
+import { requirementLines } from './TaskRequirements';
+
+export function RunConfirmation({
+  projectName,
+  objective,
+  value,
+  defaults,
+  providerLabel,
+  adjust,
+  disabled,
+}: {
+  projectName?: string;
+  objective: string;
+  value: RunSetupDraft;
+  defaults: NativeProjectDefaults;
+  providerLabel?: string;
+  adjust: () => void;
+  disabled: boolean;
+}) {
+  const differences = [
+    JSON.stringify(value.choice) !== JSON.stringify(defaults.modelChoice) && '模型',
+    value.planMode !== defaults.planMode && '计划模式',
+    JSON.stringify(value.contextPolicy) !== JSON.stringify(defaults.contextPolicy) && '上下文',
+    (value.maxRequests !== defaults.budget.maxRequests ||
+      value.maxTokens !== defaults.budget.maxTokens ||
+      value.maxCost !== defaults.budget.maxCost) &&
+      '预算',
+    value.concurrency !== defaults.concurrency && '并发',
+  ].filter(Boolean);
+  return (
+    <section className="workflow-confirmation" aria-label="本次执行配置确认">
+      <h3>确认本次执行</h3>
+      <dl>
+        <dt>项目与目标</dt>
+        <dd>
+          {projectName}
+          <p className="workflow-prose">{objective}</p>
+        </dd>
+        <dt>模型</dt>
+        <dd>
+          {providerLabel} · {value.choice.model}
+          {value.choice.reasoningEffort ? ` · ${value.choice.reasoningEffort}` : ''}
+        </dd>
+        <dt>执行方式</dt>
+        <dd>
+          {value.planMode ? '先生成计划，接受后执行' : '创建后直接执行'} · {value.concurrency} 个并发实例
+        </dd>
+        <dt>权限范围</dt>
+        <dd>
+          项目内读取；
+          {value.write
+            ? `任务目录写入：${requirementLines(value.writePaths).join('、') || '未指定'}`
+            : '不允许写入'}
+          ；{value.exec ? '允许命令执行（当前系统用户权限）' : '不允许命令执行'}；
+          {requirementLines(value.urls).length} 个授权网页
+        </dd>
+        <dt>预算上限</dt>
+        <dd>
+          {value.maxRequests} 次请求 · {value.maxTokens.toLocaleString()} Token
+          {value.maxCost == null ? ' · 未设金额上限' : ` · 金额 ${value.maxCost}`}
+        </dd>
+        <dt>上下文</dt>
+        <dd>
+          {value.contextPolicy.mode === 'managed'
+            ? '托管'
+            : `${value.contextPolicy.windowTokens?.toLocaleString() || '未指定'} Token`}
+        </dd>
+      </dl>
+      {(value.inputs || value.urls) && (
+        <details>
+          <summary>补充资料与网页范围</summary>
+          <p className="workflow-prose">
+            {value.inputs || '未指定重点资料'}
+            {value.urls && `\n授权网页：\n${value.urls}`}
+          </p>
+        </details>
+      )}
+      <p className="field-help">
+        {differences.length ? `本次调整：${differences.join('、')}。` : '执行参数来自项目默认。'}
+        权限仍由本次任务单独确认，点击底部按钮后才创建。
+      </p>
+      <button type="button" className="secondary" disabled={disabled} onClick={adjust}>
+        调整配置
+      </button>
+    </section>
+  );
+}

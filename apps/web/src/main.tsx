@@ -18,6 +18,10 @@ import type { RunSetupDraft } from './RunSetupModal';
 const RunModal = deferredPanel(() => import('./RunSetupModal').then((m) => m.RunModal), '任务设置');
 const RunHandoff = deferredPanel(() => import('./RunHandoff').then((m) => m.RunHandoff), '任务交接');
 const SourceSummary = deferredPanel(() => import('./RunHandoff').then((m) => m.SourceSummary), '来源摘要');
+const RunRevisionLinks = deferredPanel(
+  () => import('./RunRevisionLinks').then((m) => m.RunRevisionLinks),
+  '修订关系',
+);
 const DeliveryReview = deferredPanel(
   () => import('./DeliveryReview').then((m) => m.DeliveryReview),
   '交付验收',
@@ -1228,7 +1232,12 @@ function App({
     if (!ready) return;
     const keys = [newDraftKey(projectId)];
     if (runId)
-      keys.push(`draft:run:${runId}`, `draft:terminal-continuation:${runId}`, `draft:handoff:${runId}`);
+      keys.push(
+        `draft:run:${runId}`,
+        `draft:terminal-continuation:${runId}`,
+        `draft:handoff:${runId}`,
+        `draft:delivery-review:${runId}`,
+      );
     for (const operation of detail?.operations || [])
       if (operation.status === 'UNCERTAIN') keys.push(`draft:terminal-recovery:${runId}:${operation.id}`);
     void cache.ensureKeys(keys).catch(() => {});
@@ -1664,6 +1673,7 @@ function App({
               `unread:run:${deleted.id}`,
               `draft:terminal-continuation:${deleted.id}`,
               `draft:handoff:${deleted.id}`,
+              `draft:delivery-review:${deleted.id}`,
             ].includes(key) || key.startsWith(`draft:terminal-recovery:${deleted.id}:`),
         ),
       );
@@ -1677,7 +1687,7 @@ function App({
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
           const match =
-            /^(?:(?:draft|pinned|unread):run:|draft:handoff:|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
+            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review):|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
               key,
             );
           return !!match && children.has(match[1]);
@@ -2371,16 +2381,9 @@ function App({
                       </button>
                     </div>
                   )}
-                  {detail.run.source && (
-                    <SourceSummary
-                      source={detail.run.source}
-                      openSource={() =>
-                        void act(async () => {
-                          const source = await api<Run>('/runs/' + detail.run.source!.runId + '/header');
-                          selectRun(source);
-                        })
-                      }
-                    />
+                  {detail.run.source && <SourceSummary source={detail.run.source} />}
+                  {!terminalSurface && !legacyTerminal && (
+                    <RunRevisionLinks key={detail.run.id} runId={detail.run.id} openRun={selectRun} />
                   )}
                   {!isChat && (
                     <div className="system-note">
@@ -3288,6 +3291,14 @@ function App({
         {modal === 'delivery' && detail && !terminalSurface && (
           <DeliveryReview
             runId={detail.run.id}
+            reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
+            changeReviewDraft={(raw) => cache.set(`draft:delivery-review:${detail.run.id}`, raw)}
+            readOnly={archived}
+            updated={(revision) =>
+              setDetail((old) =>
+                old?.run.id === detail.run.id ? { ...old, run: { ...old.run, revision } } : old,
+              )
+            }
             close={() => setModal('')}
             revise={!archived && detail.run.status === 'DONE' ? () => setModal('handoff') : undefined}
             openFile={(taskId, path) => {
@@ -3411,8 +3422,8 @@ function App({
                   terminalTemplate={terminalProfile}
                   terminalConnections={terminalControl?.connections || []}
                   initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
+                  changed={(configuration) => setRunSetup({ key: runSetupKey, draft: configuration })}
                   close={() => {
-                    setRunSetup(null);
                     setModal('');
                   }}
                   busy={busy}

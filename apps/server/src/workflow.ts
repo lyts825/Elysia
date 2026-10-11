@@ -29,6 +29,7 @@ import {
   type DeliveryPage,
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
+import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecycle.js';
 
 const textLimit = 16 * 1024;
 const artifactLimit = 8 * 1024 * 1024;
@@ -387,6 +388,7 @@ export function deliveryReview(
   });
   const artifacts = store.entityPage<Artifact>('artifacts', 20, beforeArtifact, run.id);
   return {
+    ...deliveryUserState(store, run, root),
     runId: run.id,
     runRevision: run.revision,
     rootTaskId: root.id,
@@ -417,6 +419,7 @@ export function registerWorkflow(
   store: Store,
   assertMutable: (runId: string | null, projectId?: string) => void,
 ) {
+  registerDeliveryLifecycle(app, store, assertMutable);
   app.get<{ Params: { id: string; messageId: string } }>(
     '/api/runs/:id/handoff/messages/:messageId',
     async (request) => sourceMessage(store, request.params.id, request.params.messageId),

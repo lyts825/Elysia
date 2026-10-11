@@ -38,6 +38,66 @@ export const RunSourceSelection = z
   })
   .strict();
 export type RunSourceSelection = z.infer<typeof RunSourceSelection>;
+export const RunDeliveryItems = z.array(z.string().trim().min(1).max(2000)).min(1).max(40);
+export const DeliveryReviewInput = z
+  .object({
+    commandId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative(),
+    expectedRootRevision: z.number().int().nonnegative(),
+    expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    decision: z.enum(['accepted', 'changes_requested']),
+    note: z.string().max(4000),
+    criteriaNotes: z
+      .array(z.object({ index: z.number().int().nonnegative(), note: z.string().max(1000) }).strict())
+      .max(40),
+  })
+  .strict();
+export interface DeliveryUserReview {
+  decision: 'accepted' | 'changes_requested';
+  note: string;
+  criteriaNotes: { index: number; note: string }[];
+  fingerprint: string;
+  reviewedAt: string;
+  rootTaskId: string;
+  rootRevision: number;
+}
+export interface DeliveryReviewState {
+  runId: string;
+  runRevision: number;
+  rootRevision: number;
+  fingerprint: string;
+  userReview: (DeliveryUserReview & { stale: boolean }) | null;
+}
+export interface RunRevisionItem {
+  runId: string;
+  title: string;
+  kind: 'task' | 'chat';
+  status: string;
+  projectId: string | null;
+  archived: boolean;
+  createdAt: string;
+  sourceRunId: string | null;
+}
+export interface RunRevisions {
+  runId: string;
+  items: RunRevisionItem[];
+  page: RecordPage;
+}
+export interface RunLineage {
+  runId: string;
+  ancestors: {
+    runId: string;
+    title: string;
+    kind: 'task' | 'chat' | null;
+    status: string | null;
+    projectId: string | null;
+    archived: boolean | null;
+    missing: boolean;
+    capturedAt: string;
+  }[];
+  hasMore: boolean;
+  cycleDetected: boolean;
+}
 export interface SourceMessage {
   id: string;
   revision: number;
@@ -105,7 +165,7 @@ export interface DeliveryEvidencePage {
   evidence: DeliveryEvidence[];
   page: DeliveryPage;
 }
-export interface DeliveryReview {
+export interface DeliveryReview extends DeliveryReviewState {
   runId: string;
   runRevision: number;
   rootTaskId: string;

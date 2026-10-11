@@ -298,7 +298,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
         };
       }),
   });
-  let history = store.all<Message>('messages', run.id).filter((m) => m.sessionId === agent.sessionId);
+  let history = store.sessionMessages(run.id, agent.sessionId);
   validatePairs(history);
   const originalHash = hash(stable(history));
   const fixedTokens = Buffer.byteLength(system + taskText + stable(tools), 'utf8') * factor;

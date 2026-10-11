@@ -1,4 +1,14 @@
-import { Store, acquireLock, dataDirectory, id, now, stable } from '../../../packages/storage/src/index.js';
+import {
+  Store,
+  acquireLock,
+  dataDirectory,
+  id,
+  now,
+  stable,
+  STORAGE_SCHEMA_VERSION,
+  STORAGE_MIN_READER_VERSION,
+} from '../../../packages/storage/src/index.js';
+import { VERSION } from '../../../packages/contracts/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { ToolGateway } from '../../../packages/tools/src/index.js';
 import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
@@ -24,8 +34,11 @@ import { backup, DatabaseSync } from 'node:sqlite';
 
 type Surface = 'native' | 'terminal';
 type Selection = Surface | 'all';
-type SurfaceBackup = { path: string; schemaVersion: number; includes: string[] };
+type DataFormat = { name: 'elysia-sqlite'; version: number; minimumReaderVersion: string };
+type SurfaceBackup = { path: string; schemaVersion: number; dataFormat?: DataFormat; includes: string[] };
 type BackupMetadata = {
+  appVersion: string;
+  backupFormatVersion: 1;
   schemaVersion: number;
   createdAt: string;
   includes: string[];
@@ -34,6 +47,26 @@ type BackupMetadata = {
   surfaces: Partial<Record<Surface, SurfaceBackup>>;
 };
 const fileNames = ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs'];
+const supportedSchema = (version: unknown): version is number =>
+  Number.isInteger(version) && Number(version) >= 1 && Number(version) <= STORAGE_SCHEMA_VERSION;
+const dataFormat = (version: number): DataFormat => ({
+  name: 'elysia-sqlite',
+  version,
+  minimumReaderVersion: version === 4 ? STORAGE_MIN_READER_VERSION : '0.24.0-preview.1',
+});
+function validateDataFormat(entry: SurfaceBackup, required: boolean) {
+  if (!entry.dataFormat) {
+    if (required || entry.schemaVersion >= 4) throw new Error('备份缺少数据格式及最低读取版本');
+    return;
+  }
+  const expected = dataFormat(entry.schemaVersion);
+  if (
+    entry.dataFormat.name !== expected.name ||
+    entry.dataFormat.version !== expected.version ||
+    entry.dataFormat.minimumReaderVersion !== expected.minimumReaderVersion
+  )
+    throw new Error('备份数据格式或最低读取版本不相容');
+}
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -230,7 +263,7 @@ async function snapshotDatabase(source: string, target: string, expectedVersion?
   const validation = new DatabaseSync(target, { readOnly: true });
   try {
     const version = Number((validation.prepare('PRAGMA user_version').get() as any).user_version);
-    if (![1, 2, 3].includes(version)) throw new Error('备份 schema 不相容');
+    if (!supportedSchema(version)) throw new Error('备份 schema 不相容');
     if (expectedVersion !== undefined && version !== expectedVersion)
       throw new Error('备份版本与元数据不一致');
     const integrity = validation.prepare('PRAGMA integrity_check').all() as any[];
@@ -285,19 +318,28 @@ async function prepareSurface(source: string, target: string, expectedVersion?: 
       store.close();
     }
     const standalone = path.join(target, 'prepared.db');
-    schemaVersion = await snapshotDatabase(path.join(target, 'state.db'), standalone, 3);
+    schemaVersion = await snapshotDatabase(path.join(target, 'state.db'), standalone, STORAGE_SCHEMA_VERSION);
     for (const name of ['state.db', 'state.db-wal', 'state.db-shm'])
       rmSync(path.join(target, name), { force: true });
     renameSync(standalone, path.join(target, 'state.db'));
   }
-  return { schemaVersion, includes };
+  return { schemaVersion, dataFormat: dataFormat(schemaVersion), includes };
 }
 
 function backupSurfaces(source: string): Partial<Record<Surface, SurfaceBackup>> {
   const metadata = JSON.parse(readFileSync(path.join(source, 'backup.json'), 'utf8'));
-  if (![1, 2, 3].includes(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
+  if (!supportedSchema(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
+  const modern = metadata.backupFormatVersion !== undefined;
+  if (
+    modern &&
+    (metadata.backupFormatVersion !== 1 ||
+      typeof metadata.appVersion !== 'string' ||
+      !metadata.appVersion.trim())
+  )
+    throw new Error('备份封装格式或应用版本无效');
+  if (!modern && metadata.schemaVersion >= 4) throw new Error('备份缺少封装格式与应用版本');
   // Legacy backups have only the native root. Never infer a terminal backup from its filename.
-  if (metadata.surface === undefined && metadata.surfaces === undefined)
+  if (!modern && metadata.surface === undefined && metadata.surfaces === undefined)
     return { native: { path: '.', schemaVersion: metadata.schemaVersion, includes: metadata.includes } };
   if (!['native', 'terminal', 'all'].includes(metadata.surface) || !metadata.surfaces)
     throw new Error('备份入口元数据无效');
@@ -309,13 +351,14 @@ function backupSurfaces(source: string): Partial<Record<Surface, SurfaceBackup>>
     if (
       !entry ||
       entry.path !== expectedPath ||
-      ![1, 2, 3].includes(entry.schemaVersion) ||
+      !supportedSchema(entry.schemaVersion) ||
       !Array.isArray(entry.includes) ||
       !entry.includes.includes('state.db') ||
       !entry.includes.includes('objects') ||
       (metadata.surface !== 'all' && name !== metadata.surface)
     )
       throw new Error('备份入口元数据不一致');
+    validateDataFormat(entry, modern);
     selected[name as Surface] = entry;
   }
   const primary = metadata.surface === 'terminal' ? selected.terminal : selected.native;
@@ -422,7 +465,9 @@ if (action === 'stop') {
         const store = new Store(surfaceDirectory(directory, surface));
         store.close();
       }
-      console.log('schema v3 迁移完成（' + surfaces.join('、') + '）：' + directory);
+      console.log(
+        'schema v' + STORAGE_SCHEMA_VERSION + ' 迁移完成（' + surfaces.join('、') + '）：' + directory,
+      );
     } else if (action === 'backup') {
       const target = canonicalDestination(
         path.resolve(argument || path.join(directory, 'backups', now().replace(/[:.]/g, '-'))),
@@ -458,6 +503,8 @@ if (action === 'stop') {
         }
         const primary = entries[selection === 'terminal' ? 'terminal' : 'native']!;
         const metadata: BackupMetadata = {
+          appVersion: VERSION,
+          backupFormatVersion: 1,
           schemaVersion: primary.schemaVersion,
           createdAt: now(),
           includes: primary.includes,

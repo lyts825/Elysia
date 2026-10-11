@@ -66,7 +66,7 @@ import { registerContextPreview } from './context-preview.js';
 import { registerLocalAgentRoutes } from './local-agents.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
-import { RunSourceSelection } from '../../../packages/contracts/src/workflow.js';
+import { RunSourceSelection, RunDeliveryItems } from '../../../packages/contracts/src/workflow.js';
 import { attachRunSource, captureRunSource, registerWorkflow } from './workflow.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
@@ -981,6 +981,8 @@ export function createServer(
         }),
         inputs: z.array(z.string()).default([]),
         source: RunSourceSelection.optional(),
+        deliverables: RunDeliveryItems.optional(),
+        acceptanceCriteria: RunDeliveryItems.optional(),
       })
       .parse(request.body);
     invariant(
@@ -993,6 +995,12 @@ export function createServer(
         (options.surface !== 'terminal' && body.kind === 'task' && body.execution.kind === 'native'),
       'SOURCE_SURFACE',
       '带来源创建仅支持原生项目任务，请重新确认项目与授权范围',
+    );
+    invariant(
+      (!body.deliverables && !body.acceptanceCriteria) ||
+        (options.surface !== 'terminal' && body.kind === 'task' && body.execution.kind === 'native'),
+      'DELIVERY_SURFACE',
+      '具体交付物和验收标准仅用于原生项目任务',
     );
     invariant(
       options.surface !== 'terminal' ||
@@ -1030,8 +1038,11 @@ export function createServer(
         scope: [body.objective],
         nonGoals: ['发布、push、修改主目录', '未经授权的访问'],
         inputs: body.inputs,
-        deliverables: body.kind === 'chat' ? ['聊天回复'] : ['可检查的文件、差异或报告'],
-        acceptanceCriteria: body.kind === 'chat' ? ['回答用户消息'] : ['交付产物可读取，并有实际验证证据'],
+        deliverables:
+          body.deliverables ?? (body.kind === 'chat' ? ['聊天回复'] : ['可检查的文件、差异或报告']),
+        acceptanceCriteria:
+          body.acceptanceCriteria ??
+          (body.kind === 'chat' ? ['回答用户消息'] : ['交付产物可读取，并有实际验证证据']),
         constraints: ['遵守用户指定的授权和预算'],
         permissionProfile:
           body.kind === 'chat'

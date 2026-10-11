@@ -53,10 +53,12 @@ export function DeliveryCriteria({
   initial,
   evidence,
   reload,
+  criterionNote,
 }: {
   initial: DeliveryReview;
   evidence: (item: DeliveryEvidence, index: number) => ReactNode;
   reload: () => void;
+  criterionNote?: (criterion: DeliveryCriterion) => ReactNode;
 }) {
   const [value, setValue] = useState(initial);
   const [stale, setStale] = useState(false);
@@ -86,6 +88,7 @@ export function DeliveryCriteria({
           evidence={evidence}
           disabled={stale || reader.busy}
           stale={() => setStale(true)}
+          note={criterionNote?.(criterion)}
         />
       ))}
       <div className="workflow-actions" aria-label="验收项分页">
@@ -128,12 +131,14 @@ function CriterionEvidence({
   evidence,
   disabled,
   stale,
+  note,
 }: {
   criterion: DeliveryCriterion;
   snapshot: Snapshot;
   evidence: (item: DeliveryEvidence, index: number) => ReactNode;
   disabled: boolean;
   stale: () => void;
+  note?: ReactNode;
 }) {
   const [value, setValue] = useState({ evidence: criterion.evidence, page: criterion.evidencePage });
   const [expanded, setExpanded] = useState(false);
@@ -192,6 +197,7 @@ function CriterionEvidence({
           {reader.error} 请重试读取，已读内容已保留。
         </p>
       )}
+      {note}
     </article>
   );
 }

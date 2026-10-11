@@ -8,6 +8,48 @@
 .task-recovery {
   margin: 10px 0;
 }
+.workflow-confirmation,
+.workflow-user-review {
+  border: 1px solid var(--line, #e7dce1);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.workflow-confirmation dl {
+  margin: 0;
+}
+.workflow-confirmation dt {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.workflow-confirmation dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.workflow-confirmation dd p {
+  margin: 4px 0;
+}
+.workflow-review-note {
+  margin-top: 12px;
+}
+.workflow-revision-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  overflow-wrap: anywhere;
+}
+.workflow-revision-row span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.workflow-revision-row button {
+  text-align: left;
+}
+.workflow-requirements {
+  margin-bottom: 16px;
+}
 .workflow-body section + section {
   margin-top: 20px;
 }

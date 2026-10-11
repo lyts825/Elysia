@@ -104,7 +104,7 @@ export class Kernel {
     if (['DONE', 'CANCELLED'].includes(run.status) || ['DONE', 'CANCELLED'].includes(task.status))
       return '任务已结束，上下文配置仅供查看';
     if (['RUNNING', 'VERIFYING'].includes(task.status)) return '请先暂停代理并等待当前请求和操作结束';
-    const requests = this.store.all<RequestRecord>('requests', run.id).filter((r) => r.taskId === task.id);
+    const requests = this.store.requestLedger({ runId: run.id, taskId: task.id });
     const operations = this.store
       .all<Operation>('tool_operations', run.id)
       .filter((o) => o.taskId === task.id);
@@ -760,9 +760,7 @@ export class Kernel {
   }
   appendMessage(task: Task, role: Message['role'], text: string, extra: Partial<Message> = {}) {
     const agent = this.store.require<Agent>('agents', task.agentId);
-    const ordinal =
-      this.store.all<Message>('messages', task.runId).filter((m) => m.sessionId === agent.sessionId).length +
-      1;
+    const ordinal = this.store.sessionMessageCount(task.runId, agent.sessionId) + 1;
     const message = this.store.put<Message>('messages', {
       id: id(),
       revision: 0,
@@ -853,7 +851,7 @@ export class Kernel {
   }
   history(task: Task) {
     const agent = this.store.require<Agent>('agents', task.agentId);
-    return this.store.all<Message>('messages', task.runId).filter((m) => m.sessionId === agent.sessionId);
+    return this.store.sessionMessages(task.runId, agent.sessionId);
   }
   wait(task: Task, reason: string, ids: string[] = []) {
     return this.store.tx(() => {
@@ -906,7 +904,7 @@ export class Kernel {
         'TIME_BUDGET',
         '运行时间达到上限',
       );
-      const requests = this.store.all<RequestRecord>('requests', run.id);
+      const requests = this.store.requestLedger({ runId: run.id });
       const price = provider.prices;
       const reservedCost = price
         ? (tokens * (Math.max(price.input, price.cacheRead) + (price.cacheWrite ?? 0)) +
@@ -935,8 +933,7 @@ export class Kernel {
         );
         if (budget.maxCost !== null) {
           invariant(
-            reservedCost !== null &&
-              scoped.every((r) => r.providerBinding.prices?.currency === price?.currency),
+            reservedCost !== null && scoped.every((r) => r.priceCurrency === price?.currency),
             'PRICE_UNKNOWN',
             '货币预算需要全部模型价格与相同币种',
           );
@@ -1002,7 +999,7 @@ export class Kernel {
       'MODEL_SWITCH_DENIED',
       '请选择处于等待或失败状态的代理',
     );
-    const requests = this.store.all<RequestRecord>('requests', run.id).filter((r) => r.taskId === task.id),
+    const requests = this.store.requestLedger({ runId: run.id, taskId: task.id }),
       operations = this.store.all<Operation>('tool_operations', run.id).filter((o) => o.taskId === task.id);
     invariant(
       !requests.some((r) => r.status === 'RESERVED') && !operations.some((o) => o.status === 'INTENT'),
@@ -1444,8 +1441,8 @@ export class Kernel {
   private taskNeedsVerification(task: Task) {
     return (
       this.store
-        .stateCandidates<RequestRecord>('requests', ['RESERVED', 'UNKNOWN'], { runId: task.runId })
-        .some((request) => request.taskId === task.id) ||
+        .requestLedger({ runId: task.runId, taskId: task.id })
+        .some((request) => ['RESERVED', 'UNKNOWN'].includes(request.status)) ||
       this.store
         .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: task.runId })
         .some((operation) => operation.taskId === task.id)
@@ -1528,7 +1525,7 @@ export class Kernel {
   }
   recover() {
     this.store.tx(() => {
-      for (const r of this.store.all<RequestRecord>('requests').filter((r) => r.status === 'RESERVED'))
+      for (const r of this.store.requestLedger().filter((r) => r.status === 'RESERVED'))
         this.settle(r.id, null, '服务中断，用量待核验');
       for (const op of this.store.all<any>('tool_operations').filter((o) => o.status === 'INTENT')) {
         this.store.put('tool_operations', { ...op, status: 'UNCERTAIN' });

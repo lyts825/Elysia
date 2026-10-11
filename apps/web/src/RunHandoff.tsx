@@ -10,6 +10,7 @@ import type { ModelChoice, SelectableProvider } from './ModelPicker';
 import { RunModal, type RunSetupDraft } from './RunSetupModal';
 import { Modal } from './Modal';
 import { useSurfaceClient } from './SurfaceClientContext';
+import { ReviewFeedbackSelection } from './ReviewFeedbackSelection';
 import './workflow.css';
 
 type HandoffDraft = {
@@ -222,7 +223,12 @@ export function RunHandoff({
         changed={(setup) => patch({ setup })}
         beforeForm={
           <>
-            {selectionPreview}
+            <details className="workflow-source">
+              <summary>
+                已确认的带入内容（{draft.messages.length} 条消息、{draft.artifacts.length} 个产物）
+              </summary>
+              {selectionPreview}
+            </details>
             {error && (
               <p className="field-error" role="alert">
                 {error}{' '}
@@ -340,6 +346,14 @@ export function RunHandoff({
               onChange={(event) => patch({ feedback: event.target.value })}
             />
           </label>
+          {run.kind === 'task' && run.status === 'DONE' && (
+            <ReviewFeedbackSelection
+              runId={run.id}
+              feedback={draft.feedback}
+              change={(feedback) => patch({ feedback })}
+              disabled={busy}
+            />
+          )}
           <p className="field-help">
             每类最多选择 10 项；消息总量最多 16 KiB。当前已选 {draft.messages.length} 条消息、
             {draft.artifacts.length} 个产物。

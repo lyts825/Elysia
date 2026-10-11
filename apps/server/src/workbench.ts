@@ -23,6 +23,7 @@ const fixedKeys = new Set([
 const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):([^:\s/\\]+)$/;
 const terminalSelectionKey = /^settings:selected-terminal-profile:([^:\s/\\]+)$/;
 const handoffDraftKey = /^draft:handoff:([^:\s/\\]+)$/;
+const deliveryReviewDraftKey = /^draft:delivery-review:([^:\s/\\]+)$/;
 const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
   .string()
@@ -33,6 +34,7 @@ const keySchema = z
       entityKey.test(key) ||
       terminalSelectionKey.test(key) ||
       handoffDraftKey.test(key) ||
+      deliveryReviewDraftKey.test(key) ||
       terminalDraftKey.test(key),
     '工作台缓存键无效',
   );
@@ -54,6 +56,8 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const review = deliveryReviewDraftKey.exec(key);
+  if (review) return { table: 'runs', id: review[1] };
   const handoff = handoffDraftKey.exec(key);
   if (handoff) return { table: 'runs', id: handoff[1] };
   const terminalDraft = terminalDraftKey.exec(key);
