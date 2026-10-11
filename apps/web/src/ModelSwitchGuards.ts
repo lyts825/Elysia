@@ -1,6 +1,12 @@
 import type { Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
+import { detailReadReason, type DetailReadState } from './DetailReadState';
 
-type SwitchDetail = { run: Run; tasks: Task[]; requests: RequestRecord[]; operations: Operation[] };
+type SwitchDetail = DetailReadState & {
+  run: Run;
+  tasks: Task[];
+  requests: RequestRecord[];
+  operations: Operation[];
+};
 export function modelTaskCanContinue(task: Task) {
   return (
     task.status === 'FAILED' ||
@@ -15,12 +21,14 @@ export function modelSwitchReason(detail: SwitchDetail, archived: boolean, taskI
   return taskBoundaryReason(detail, archived, taskId, false);
 }
 export function taskResumeReason(detail: SwitchDetail, archived: boolean, taskId: string) {
+  if (detailReadReason(detail)) return detailReadReason(detail);
   const task = detail.tasks.find((item) => item.id === taskId);
   if (task?.waitReason === 'dependency_failed')
     return '请先定位并恢复依赖源，等待它完成；此任务不能直接恢复。';
   return taskBoundaryReason(detail, archived, taskId, true);
 }
 function taskBoundaryReason(detail: SwitchDetail, archived: boolean, taskId: string, resume: boolean) {
+  if (detailReadReason(detail)) return detailReadReason(detail);
   if (detail.run.execution?.kind === 'docker-agent') return '终端配置在创建时冻结，调整 Agent 请新建任务。';
   const task = detail.tasks.find((item) => item.id === taskId);
   if (archived)

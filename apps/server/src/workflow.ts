@@ -32,7 +32,7 @@ import {
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecycle.js';
-import { deliveryArtifactMetadata } from './delivery-fingerprint.js';
+import { deliveryArtifactRows } from './delivery-fingerprint.js';
 import { captureDeliveryBaseline } from './delivery-review-history.js';
 import { captureReviewSource } from './review-source.js';
 
@@ -384,16 +384,10 @@ export function deliveryReview(
   expectedRootRevision?: number,
 ): DeliveryReview {
   const { run, root, result, rawEvidence } = deliveryState(store, runId, expectedRootRevision);
-  // The fingerprint already requires every artifact. Reuse that one request-local
-  // snapshot for evidence references and the visible page as well.
-  const artifactRows = store.all<Artifact>('artifacts', run.id);
+  // Reuse the bounded database-generation snapshot for evidence and visible rows.
+  const artifactRows = deliveryArtifactRows(store, run.id);
   const artifactMap = new Map(artifactRows.map((artifact) => [artifact.id, artifact]));
-  const baseline = captureDeliveryBaseline(
-    store,
-    run,
-    root,
-    deliveryArtifactMetadata(store, run.id, artifactRows),
-  );
+  const baseline = captureDeliveryBaseline(store, run, root);
   const criteriaPage = deliveryPage(criteriaOffset, 40, root.spec.acceptanceCriteria.length);
   const items = root.spec.acceptanceCriteria.slice(criteriaOffset, criteriaOffset + criteriaPage.limit);
   const groups = criterionEvidence(
@@ -482,12 +476,14 @@ export function registerWorkflow(
       })
       .strict()
       .parse(request.query);
-    return deliveryReview(
-      store,
-      request.params.id,
-      query.beforeArtifact,
-      query.criteriaOffset,
-      query.expectedRootRevision,
+    return store.tx(() =>
+      deliveryReview(
+        store,
+        request.params.id,
+        query.beforeArtifact,
+        query.criteriaOffset,
+        query.expectedRootRevision,
+      ),
     );
   });
   app.get<{ Params: { id: string; index: string } }>(

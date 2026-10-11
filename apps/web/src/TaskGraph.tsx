@@ -1,5 +1,6 @@
 import type { Run, Task } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
+import type { DetailReadState } from './DetailReadState';
 
 const statusLabels: Record<Task['status'], string> = {
   DRAFT: '待开始',
@@ -11,7 +12,7 @@ const statusLabels: Record<Task['status'], string> = {
   FAILED: '失败',
   CANCELLED: '已取消',
 };
-export type TaskGraphDetail = {
+export type TaskGraphDetail = DetailReadState & {
   run: Pick<
     Run,
     | 'plan'
@@ -44,6 +45,7 @@ export function TaskGraph({
 }) {
   const tasks = detail.tasks.filter((task) => task.parentTaskId);
   const root = detail.tasks.find((task) => !task.parentTaskId);
+  const incomplete = detail.detailCoverage?.tasks.complete === false;
   const pendingPlan =
     detail.run.plan && (!detail.run.authorized || detail.run.acceptedPlanVersion !== detail.run.plan.version)
       ? detail.run.plan
@@ -88,8 +90,12 @@ export function TaskGraph({
         <Icon name="spark" size={15} />
         {rootLabel}
         {root && <span>· {taskStatus(root)}</span>}
+        {!root && incomplete && <span>· 记录暂不可读</span>}
       </div>
-      {pendingPlan && (
+      {incomplete && (
+        <p className="field-help">任务记录不完整，仅展示已读任务；完整依赖关系与完成数量仍未知。</p>
+      )}
+      {pendingPlan && !incomplete && (
         <div className="graph-single" role="status">
           {awaitingPlan
             ? pendingPlan.tasks.length
@@ -103,25 +109,27 @@ export function TaskGraph({
       {!tasks.length
         ? !pendingPlan && (
             <div className="graph-single">
-              {readOnly
-                ? '已归档，未创建子任务。'
-                : ended
-                  ? '任务已结束，未创建子任务。'
-                  : root?.phase === 'planning'
-                    ? ['READY', 'RUNNING'].includes(detail.run.status) &&
-                      ['READY', 'RUNNING'].includes(root.status)
-                      ? '正在制定计划，子任务尚未创建。'
-                      : '尚未创建子任务。'
-                    : detail.run.execution?.kind === 'docker-agent'
-                      ? '内部调度由 Agent 终端管理'
-                      : '单 Agent 执行'}
+              {incomplete
+                ? '当前未能读取子任务，不能判断是否存在或已完成。'
+                : readOnly
+                  ? '已归档，未创建子任务。'
+                  : ended
+                    ? '任务已结束，未创建子任务。'
+                    : root?.phase === 'planning'
+                      ? ['READY', 'RUNNING'].includes(detail.run.status) &&
+                        ['READY', 'RUNNING'].includes(root.status)
+                        ? '正在制定计划，子任务尚未创建。'
+                        : '尚未创建子任务。'
+                      : detail.run.execution?.kind === 'docker-agent'
+                        ? '内部调度由 Agent 终端管理'
+                        : '单 Agent 执行'}
             </div>
           )
         : [...new Set(tasks.map((task) => ranks.get(task.id) || 0))]
             .sort((a, b) => a - b)
             .map((rank) => (
               <div className="graph-level" key={rank}>
-                <span className="graph-rank">阶段 {rank + 1}</span>
+                <span className="graph-rank">{incomplete ? '已读任务' : `阶段 ${rank + 1}`}</span>
                 {tasks
                   .filter((task) => ranks.get(task.id) === rank)
                   .map((task) => {
@@ -146,13 +154,15 @@ export function TaskGraph({
               </div>
             ))}
       <small className="graph-caption">
-        {awaitingPlan
-          ? '接受计划后按依赖顺序创建并执行子任务'
-          : pendingPlan
-            ? '保留计划供查看，子任务尚未创建'
-            : readOnly || ended
-              ? '已保存任务依赖与状态记录'
-              : '任务按依赖顺序推进'}
+        {incomplete
+          ? '修复后重试读取，原任务与运行状态保持不变'
+          : awaitingPlan
+            ? '接受计划后按依赖顺序创建并执行子任务'
+            : pendingPlan
+              ? '保留计划供查看，子任务尚未创建'
+              : readOnly || ended
+                ? '已保存任务依赖与状态记录'
+                : '任务按依赖顺序推进'}
       </small>
     </div>
   );

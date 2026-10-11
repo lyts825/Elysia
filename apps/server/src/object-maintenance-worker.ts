@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { objectAuditHeader } from './object-maintenance-audit.js';
 import {
   createObjectCleanupPlan,
   executeObjectCleanup,
@@ -29,15 +29,14 @@ const record = (value: unknown) => {
 };
 let progress: ObjectMaintenanceProgress | undefined;
 let response: unknown;
+let preparingPlan = false;
 try {
   if (input.report) {
+    preparingPlan = true;
+    const header = objectAuditHeader(input.plan);
+    preparingPlan = false;
     report = openSync(input.report, 'wx', 0o600);
-    record({
-      type: 'started',
-      format: 1,
-      createdAt: new Date().toISOString(),
-      planHash: createHash('sha256').update(JSON.stringify(input.plan)).digest('hex'),
-    });
+    record(header);
   }
   const options = {
     cancelled: () => Atomics.load(cancellation, 0) !== 0,
@@ -62,7 +61,9 @@ try {
     ...(result?.status === 'cancelled'
       ? {}
       : {
-          failureReason: result?.failureReason ?? (input.report ? 'audit_write_failed' : 'worker_failed'),
+          failureReason:
+            result?.failureReason ??
+            (preparingPlan ? 'plan_invalid' : input.report ? 'audit_write_failed' : 'worker_failed'),
         }),
     ...(error instanceof Error && error.message === '对象维护要求当前数据格式，请先执行 db:migrate'
       ? { guidance: error.message }

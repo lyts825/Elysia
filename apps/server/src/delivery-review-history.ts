@@ -12,6 +12,7 @@ import type {
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactMetadata, deliveryFingerprintFromArtifacts } from './delivery-fingerprint.js';
+import { cachedDeliveryRead } from './delivery-read-cache.js';
 
 export type DeliveryBaseline = {
   version: 1;
@@ -100,20 +101,26 @@ export function captureDeliveryBaseline(
   store: Store,
   run: Run,
   root: Task,
-  artifacts = deliveryArtifactMetadata(store, run.id),
+  artifacts?: DeliveryArtifactMetadata[],
 ): DeliveryBaseline {
-  return {
-    version: 1,
-    fingerprint: deliveryFingerprintFromArtifacts(run, root, artifacts),
-    rootTaskId: root.id,
-    status: root.status,
-    deliverablesHash: hash(stable(root.spec.deliverables)),
-    deliverablesCount: root.spec.deliverables.length,
-    criteriaHash: hash(stable(root.spec.acceptanceCriteria)),
-    criteriaCount: root.spec.acceptanceCriteria.length,
-    resultHash: hash(stable(root.result ?? null)),
-    artifacts,
+  const capture = (): DeliveryBaseline => {
+    const metadata = artifacts ?? deliveryArtifactMetadata(store, run.id);
+    return {
+      version: 1,
+      fingerprint: deliveryFingerprintFromArtifacts(run, root, metadata),
+      rootTaskId: root.id,
+      status: root.status,
+      deliverablesHash: hash(stable(root.spec.deliverables)),
+      deliverablesCount: root.spec.deliverables.length,
+      criteriaHash: hash(stable(root.spec.acceptanceCriteria)),
+      criteriaCount: root.spec.acceptanceCriteria.length,
+      resultHash: hash(stable(root.result ?? null)),
+      artifacts: metadata,
+    };
   };
+  return artifacts
+    ? capture()
+    : cachedDeliveryRead(store, `baseline:${run.id}:${root.id}:${root.revision}`, capture);
 }
 export function appendDeliveryReview(
   store: Store,
@@ -259,36 +266,41 @@ export function deliveryArtifactChanges(
   }
   if (current.fingerprint !== expectedCurrentFingerprint)
     throw new AppError('DELIVERY_CHANGED', '交付内容已变化，请重新读取后查看产物变更', false, null, 409);
-  const { before, summary } = reviewComparison(store, run.id, reviewId, current);
+  const comparison = cachedDeliveryRead(store, `changes:${run.id}:${reviewId}:${current.fingerprint}`, () => {
+    const { before, summary } = reviewComparison(store, run.id, reviewId, current);
+    const items: DeliveryArtifactChange[] = [];
+    if (!before || summary.status === 'unknown') return { summary, items, known: false };
+    const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
+    const present = new Map(current.artifacts.map((artifact) => [artifact.id, artifact]));
+    const keys = [...new Set([...previous.keys(), ...present.keys()])].sort((a, b) =>
+      a.localeCompare(b, 'en'),
+    );
+    for (const artifactId of keys) {
+      const prior = previous.get(artifactId) ?? null,
+        after = present.get(artifactId) ?? null;
+      if (prior && after && stable(prior) === stable(after)) continue;
+      items.push({
+        artifactId,
+        kind: prior ? (after ? 'changed' : 'removed') : 'added',
+        before: prior,
+        after,
+        currentArtifactId: after?.id ?? null,
+      });
+    }
+    return { summary, items, known: true };
+  });
   const response = {
     runId: run.id,
     reviewId,
     currentFingerprint: current.fingerprint,
-    changeSummary: summary,
+    changeSummary: comparison.summary,
   };
-  if (!before || summary.status === 'unknown') return { ...response, items: [], page: null };
-  const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
-  const present = new Map(current.artifacts.map((artifact) => [artifact.id, artifact]));
-  const keys = [...new Set([...previous.keys(), ...present.keys()])].sort((a, b) => a.localeCompare(b, 'en'));
-  const items: DeliveryArtifactChange[] = [];
-  let total = 0;
-  for (const artifactId of keys) {
-    const prior = previous.get(artifactId) ?? null,
-      after = present.get(artifactId) ?? null;
-    if (prior && after && stable(prior) === stable(after)) continue;
-    if (total++ < offset || items.length === 20) continue;
-    items.push({
-      artifactId,
-      kind: prior ? (after ? 'changed' : 'removed') : 'added',
-      before: prior,
-      after,
-      currentArtifactId: after?.id ?? null,
-    });
-  }
+  if (!comparison.known) return { ...response, items: [], page: null };
+  const total = comparison.items.length;
   const hasMore = offset + 20 < total;
   return {
     ...response,
-    items,
+    items: comparison.items.slice(offset, offset + 20),
     page: { offset, limit: 20, total, hasMore, nextOffset: hasMore ? offset + 20 : null },
   };
 }

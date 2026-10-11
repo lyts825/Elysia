@@ -4,6 +4,25 @@ export type ProjectionReadIssue = {
   retryable: true;
 };
 export type ProjectionReadCoverage = { complete: boolean; unavailable: number };
+export type DetailCollectionCoverage = ProjectionReadCoverage & {
+  total: number;
+  /** Selected conversation records do not validate every historical body. */
+  scope: 'all' | 'selected';
+};
+export type RunDetailCoverage = {
+  tasks: DetailCollectionCoverage;
+  requests: DetailCollectionCoverage;
+  operations: DetailCollectionCoverage;
+};
+export type RunStopCurrentResult = {
+  runId: string;
+  interrupted: boolean;
+  schedulingPaused: true;
+  persistentPauseRecorded: false;
+  localExecutionStopped: boolean;
+  replayed: boolean;
+  message: string;
+};
 export type RecordPage = {
   total: number;
   limit: number;

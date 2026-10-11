@@ -25,6 +25,7 @@ export function PlanAlignmentPanel({
   proposedChoice,
   busy,
   archived,
+  readOnlyReason,
   changeAssignment,
   readyAssignment,
   accept,
@@ -182,13 +183,15 @@ export function PlanAlignmentPanel({
       <div className="plan-footer">
         <span>
           <Icon name="lock" size={13} />
-          {archived
-            ? '已归档，计划仅供查看'
-            : ended
-              ? '任务已结束，计划仅供查看'
-              : run.authorized
-                ? '执行范围已接受'
-                : '接受这个版本后执行'}
+          {readOnlyReason
+            ? '执行记录不完整，计划仅供查看'
+            : archived
+              ? '已归档，计划仅供查看'
+              : ended
+                ? '任务已结束，计划仅供查看'
+                : run.authorized
+                  ? '执行范围已接受'
+                  : '接受这个版本后执行'}
         </span>
         {pending && (
           <button

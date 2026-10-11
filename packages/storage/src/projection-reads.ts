@@ -77,6 +77,10 @@ export class ProjectionReads {
           value.revision !== metadata?.revision ||
           (value.runId ?? null) !== metadata?.run_id ||
           !states[table].includes(value.status) ||
+          (table === 'tasks' &&
+            (!value.spec || typeof value.spec !== 'object' || Array.isArray(value.spec))) ||
+          (table === 'requests' &&
+            (!value.manifest || typeof value.manifest !== 'object' || Array.isArray(value.manifest))) ||
           (table === 'runs' && (typeof value.objective !== 'string' || typeof value.title !== 'string'))
         )
           throw new Error('Invalid legacy read fields');
@@ -106,6 +110,16 @@ export class ProjectionReads {
     if (this.has(table, id))
       throw new AppError(projectionIssue.code, projectionIssue.message, true, null, 422);
     throw new AppError('NOT_FOUND', '记录不存在', false, null, 404);
+  }
+  /** Keep healthy records readable without touching the original business bodies. */
+  collection<T extends Entity>(table: Exclude<ProjectionTable, 'runs'>, runId: string): T[] {
+    const rows = this.store.db
+      .prepare(`SELECT id FROM ${table} WHERE run_id=? AND ${this.available(table)} ORDER BY rowid`)
+      .all(runId) as { id: string }[];
+    return rows.flatMap(({ id }) => {
+      const row = this.read<T>(table, id);
+      return row ? [row] : [];
+    });
   }
   batch(table: ProjectionTable, runId?: string) {
     const rows = this.store.db

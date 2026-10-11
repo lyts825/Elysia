@@ -169,9 +169,12 @@ const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGr
 const TaskRecovery = deferredPanel(() => import('./TaskRecovery').then((m) => m.TaskRecovery), '分支恢复');
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
+import { detailReadReason, type DetailReadState } from './DetailReadState';
+import { DetailReadNotice } from './DetailReadNotice';
+import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import { useDrawerFocus, useViewportMatch } from './ResponsiveLayout';
-type Detail = {
+type Detail = DetailReadState & {
   run: Run;
   tasks: Task[];
   agents: Agent[];
@@ -513,7 +516,10 @@ function App({
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
   const legacyTerminal = !terminalSurface && detail?.run.execution?.kind === 'docker-agent';
-  const runReadOnly = archived || legacyTerminal;
+  const detailReadOnlyReason = detailReadReason(detail);
+  const runReadOnly = archived || legacyTerminal || !!detailReadOnlyReason;
+  const [retryingDetailRun, setRetryingDetailRun] = useState('');
+  const detailRetryRun = useRef('');
   const [feedbackTime, setFeedbackTime] = useState(Date.now);
   const hasRateWait =
     !!detail &&
@@ -563,7 +569,7 @@ function App({
     client,
     runId,
     rootAgent,
-    ready && !!detail && detail.run.execution?.kind !== 'docker-agent',
+    ready && !!detail && !detailReadOnlyReason && detail.run.execution?.kind !== 'docker-agent',
   );
   const [contextSnapshot, setContextSnapshot] = useState<ContextSnapshot>();
   const [contextReading, setContextReading] = useState(false);
@@ -581,8 +587,12 @@ function App({
       (detail.agents.find((agent) => agent.id === contextReadAgent.agentId)?.revision || 0) >
         contextReadAgent.agentRevision);
   const contextAgent =
-    contextReadAgent && contextReadStale
-      ? { ...contextReadAgent, safeToConfigure: false, configureReason: '会话已更新，请重新读取上下文设置。' }
+    contextReadAgent && (contextReadStale || detailReadOnlyReason)
+      ? {
+          ...contextReadAgent,
+          safeToConfigure: false,
+          configureReason: detailReadOnlyReason || '会话已更新，请重新读取上下文设置。',
+        }
       : contextReadAgent;
   useEffect(() => () => contextReadController.current?.abort(), [runId]);
   useEffect(() => {
@@ -594,6 +604,7 @@ function App({
       ? modelSwitchReason(detail, archived, rootAgent.taskId)
       : '模型正在准备中。';
   const decisionDisabledReason = (operation: Operation) => {
+    if (detailReadOnlyReason) return detailReadOnlyReason;
     if (legacyTerminal) return '旧终端记录仅供查看，请在 Agent 终端入口创建新任务。';
     if (archived) return '请先恢复归档记录，再提交核验决定。';
     if (
@@ -1000,9 +1011,10 @@ function App({
     if (ready && runListFullSummary.current) void refresh();
   }, [modal, ready, refresh]);
   const refreshDetail = useCallback(
-    async (trailing = false, forceSummary = false) => {
+    async (trailing = false, forceSummary = false, retryProjections = false) => {
       const wanted = activeRunId.current;
       if (!wanted) return;
+      if (!retryProjections && detailRetryRun.current === wanted) return;
       const position = historyPosition.current;
       const before = position.runId === wanted ? position.before : '';
       const around = position.runId === wanted ? position.around : undefined;
@@ -1013,13 +1025,16 @@ function App({
           ? detailSnapshot.current.messages.map((message) => message.id)
           : [];
       return detailReads.current.run(
-        `${wanted}:${before}:${around || ''}:${full}:${retained.join(',')}`,
+        `${wanted}:${before}:${around || ''}:${full}:${retained.join(',')}:${retryProjections}`,
         async (signal) => {
           const request = ++detailRequest.current;
           let result: Detail;
           try {
-            const read = (cursor: string, anchor?: string) =>
-              api<Detail>(
+            let retryUnreadable = retryProjections;
+            const read = (cursor: string, anchor?: string) => {
+              const retryQuery = retryUnreadable ? '&retryProjections=true' : '';
+              retryUnreadable = false;
+              return api<Detail>(
                 '/runs/' +
                   wanted +
                   `?messageLimit=${messageHistoryPageSize}&view=conversation` +
@@ -1029,11 +1044,13 @@ function App({
                     : cursor
                       ? '&beforeMessage=' + encodeURIComponent(cursor)
                       : '') +
-                  (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : ''),
+                  (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : '') +
+                  retryQuery,
                 undefined,
                 undefined,
                 signal,
               );
+            };
             try {
               result = await read(before, around);
             } catch (issue) {
@@ -1106,7 +1123,9 @@ function App({
                 .sort((a, b) => a.seq - b.seq)
                 .slice(-100);
               return old.run.revision > result.run.revision
-                ? { ...old, messages, messagePage: result.messagePage, events }
+                ? detailReadReason(result)
+                  ? { ...result, run: old.run, messages, events }
+                  : { ...old, messages, messagePage: result.messagePage, events }
                 : { ...result, messages, events };
             });
           }
@@ -1152,6 +1171,18 @@ function App({
       return (await refreshDetail(false, true)) === true && activeRunId.current === wanted;
     } finally {
       if (activeRunId.current === wanted) setSummaryLoading(false);
+    }
+  }
+  async function retryDetailRecords() {
+    const wanted = activeRunId.current;
+    if (!wanted || detailRetryRun.current) return;
+    detailRetryRun.current = wanted;
+    setRetryingDetailRun(wanted);
+    try {
+      await refreshDetail(false, true, true);
+    } finally {
+      detailRetryRun.current = '';
+      setRetryingDetailRun('');
     }
   }
   async function openContext(agentId: string) {
@@ -2266,7 +2297,11 @@ function App({
                       onClick={() => void runAction('resume')}
                     >
                       <Icon name="play" size={14} />
-                      {feedback.control === 'retry' ? '重试' : '恢复'}
+                      {detail.localExecutionStopped
+                        ? '恢复本机调度'
+                        : feedback.control === 'retry'
+                          ? '重试'
+                          : '恢复'}
                     </button>
                   )
                 )}
@@ -2282,6 +2317,27 @@ function App({
                 )}
               </div>
             </div>
+            <DetailReadNotice
+              key={detail.run.id}
+              detail={detail}
+              busy={busy || retryingDetailRun === detail.run.id}
+              retry={() => void retryDetailRecords()}
+              stop={
+                !archived && !legacyTerminal && !['DONE', 'CANCELLED'].includes(detail.run.status)
+                  ? async () => {
+                      let result: RunStopCurrentResult | undefined;
+                      await act(async () => {
+                        result = await mutation<RunStopCurrentResult>('/runs/' + detail.run.id + '/actions', {
+                          action: 'stop_current',
+                          expectedRevision: detail.run.revision,
+                        });
+                      });
+                      if (!result) throw new Error('停止请求未确认，请检查提示后重试。');
+                      return result;
+                    }
+                  : undefined
+              }
+            />
             <div
               key={detail.run.id}
               className={'run-layout' + (previewOpen ? ' preview-open' : '') + (isChat ? ' chat-layout' : '')}
@@ -2565,7 +2621,9 @@ function App({
                           <p>
                             {detail.operations.some((o) => o.taskId === t.id && o.status === 'INTENT')
                               ? '正在执行工具，结果会自动更新…'
-                              : '正在等待模型响应…'}
+                              : detail.detailCoverage?.operations.complete === false
+                                ? '部分操作记录无法读取，正在等待可用进度…'
+                                : '正在等待模型响应…'}
                           </p>
                         </div>
                       </div>
@@ -2595,8 +2653,9 @@ function App({
                       assignments={assignments}
                       assignmentReady={assignmentReady}
                       proposedChoice={proposedChoice}
-                      busy={busy}
-                      archived={runReadOnly}
+                      busy={busy || !!detailReadOnlyReason}
+                      archived={archived || legacyTerminal}
+                      readOnlyReason={detailReadOnlyReason}
                       changeAssignment={(key, choice) =>
                         setAssignmentDrafts((old) => ({
                           ...old,
@@ -2607,6 +2666,7 @@ function App({
                         setAssignmentReady((old) => (old[key] === valid ? old : { ...old, [key]: valid }))
                       }
                       accept={() =>
+                        !runReadOnly &&
                         void act(() =>
                           mutation('/runs/' + runId + '/plan/accept', {
                             expectedRevision: detail.run.revision,
@@ -2844,15 +2904,19 @@ function App({
                         }
                       }}
                       placeholder={
-                        legacyTerminal
-                          ? '旧终端记录仅供查看'
-                          : archived
-                            ? '恢复归档后可继续对话'
-                            : isChat
-                              ? '继续对话…'
-                              : '回答问题，或补充需求…'
+                        detailReadOnlyReason
+                          ? '执行记录暂不可读，输入仍可保留为草稿'
+                          : legacyTerminal
+                            ? '旧终端记录仅供查看'
+                            : archived
+                              ? '恢复归档后可继续对话'
+                              : isChat
+                                ? '继续对话…'
+                                : '回答问题，或补充需求…'
                       }
-                      disabled={runReadOnly || ['DONE', 'CANCELLED'].includes(detail.run.status)}
+                      disabled={
+                        archived || legacyTerminal || ['DONE', 'CANCELLED'].includes(detail.run.status)
+                      }
                     />
                     {!isChat &&
                       !runReadOnly &&
@@ -2887,25 +2951,31 @@ function App({
                               ? () => setModal('model:' + rootAgent.id)
                               : undefined
                           }
-                          projection={liveContext.projection}
+                          projection={detailReadOnlyReason ? undefined : liveContext.projection}
                           contextLoading={liveContext.loading}
-                          contextError={liveContext.error}
+                          contextError={detailReadOnlyReason || liveContext.error}
                           onRequestContext={() => void liveContext.request()}
                           onOpenContext={() => rootAgent && void openContext(rootAgent.id)}
-                          contextDisabled={!rootAgent || detail.run.execution?.kind === 'docker-agent'}
+                          contextDisabled={
+                            !!detailReadOnlyReason ||
+                            !rootAgent ||
+                            detail.run.execution?.kind === 'docker-agent'
+                          }
                         />
                         <span className="reply-hint">
                           {busy
                             ? '正在提交…'
                             : legacyTerminal
                               ? '旧终端记录 · 只读'
-                              : archived
-                                ? '已归档，保留全部对话记录'
-                                : isChat
-                                  ? 'Ctrl + Enter 发送 · 独立会话自动保存'
-                                  : detail.run.execution?.kind === 'docker-agent'
-                                    ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
-                                    : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
+                              : detailReadOnlyReason
+                                ? '执行操作暂不可用 · 输入草稿保留'
+                                : archived
+                                  ? '已归档，保留全部对话记录'
+                                  : isChat
+                                    ? 'Ctrl + Enter 发送 · 独立会话自动保存'
+                                    : detail.run.execution?.kind === 'docker-agent'
+                                      ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
+                                      : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
                         </span>
                       </div>
                       <button
@@ -3028,11 +3098,16 @@ function App({
                         <div className="panel-heading">
                           <h3>执行拓扑</h3>
                           <span>
-                            {detail.tasks.filter((t) => t.status === 'DONE').length}/{detail.tasks.length}{' '}
-                            完成
+                            {detail.detailCoverage?.tasks.complete === false
+                              ? `已读 ${detail.tasks.length} 条 · 完整进度未知`
+                              : `${detail.tasks.filter((t) => t.status === 'DONE').length}/${detail.tasks.length} 完成`}
                           </span>
                         </div>
-                        <TaskGraph detail={detail} archived={runReadOnly} selectTask={openTaskDetails} />
+                        <TaskGraph
+                          detail={detail}
+                          archived={archived || legacyTerminal}
+                          selectTask={openTaskDetails}
+                        />
                         <div className="panel-heading">
                           <h3>任务列表</h3>
                           <span>按任务查看进度与结果</span>
@@ -3159,7 +3234,10 @@ function App({
                                     ? isChat
                                       ? '助手'
                                       : '总代理'
-                                    : task?.spec.title}
+                                    : task?.spec.title ||
+                                      (detail.detailCoverage?.tasks.complete === false
+                                        ? '任务记录暂不可读'
+                                        : '代理')}
                                 </strong>
                                 <p>
                                   {a.providerBinding.label} · {a.providerBinding.model}
@@ -3296,7 +3374,11 @@ function App({
                             </div>
                           ))}
                         {!detail.operations.some((o) => o.status === 'UNCERTAIN') && (
-                          <p className="muted small">当前没有待核验副作用</p>
+                          <p className="muted small">
+                            {detail.detailCoverage?.operations.complete === false
+                              ? '操作记录不完整，无法判断是否还有待核验副作用。'
+                              : '当前没有待核验副作用'}
+                          </p>
                         )}
                         {detail.recordsLimited && !detail.summaryDeferred && (
                           <RecordHistory

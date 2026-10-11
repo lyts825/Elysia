@@ -61,6 +61,7 @@ import { registerTerminalLogSearchRoutes } from './terminal-log-search.js';
 import { TerminalControlService, registerTerminalControl, terminalAppCatalog } from './terminal-control.js';
 import { registerCliManagement } from './cli-management.js';
 import { RunReads, registerRunRecordRoutes } from './run-reads.js';
+import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads.js';
 import { registerTaskCenter } from './task-center.js';
 import { registerContextPreview } from './context-preview.js';
 import { registerLocalAgentRoutes } from './local-agents.js';
@@ -810,6 +811,12 @@ export function createServer(
     return promise;
   });
   const runReads = new RunReads(store);
+  const executionReadOnlyReason = '部分执行记录暂时无法读取，当前仅供查看。修复后请重试读取。';
+  const executionCommand = <T>(runId: string, body: unknown, route: string, work: (body: any) => T) => {
+    // Preflight outside the business transaction so quarantined failures survive a rejected command.
+    runReads.assertExecutionReadable(runId);
+    return command(body, route, work);
+  };
   registerRunRecordRoutes(app, store);
   registerTaskCenter(app, store);
   registerContextPreview(app, store);
@@ -867,6 +874,7 @@ export function createServer(
   });
   const assertTerminalMutable = (runId: string) => {
     const run = store.require<Run>('runs', runId);
+    runReads.assertExecutionReadable(run.id);
     management.assertMutable(run.id, run.projectId);
     invariant(
       !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
@@ -883,6 +891,7 @@ export function createServer(
       });
     const run = store.require<Run>('runs', request.params.id);
     revision(body, run);
+    runReads.assertExecutionReadable(run.id);
     management.assertMutable(run.id, run.projectId);
     invariant(
       !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
@@ -891,7 +900,7 @@ export function createServer(
     );
     invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后再验收');
     const commit = await terminal.prepareAcceptance(run.id, body.expectedRevision);
-    return command(body, request.url, () => {
+    return executionCommand(run.id, body, request.url, () => {
       assertTerminalMutable(run.id);
       return commit();
     });
@@ -918,7 +927,7 @@ export function createServer(
       body.outcome,
       body.note,
     );
-    return command(body, request.url, () => {
+    return executionCommand(run.id, body, request.url, () => {
       assertTerminalMutable(run.id);
       return commit();
     });
@@ -943,11 +952,12 @@ export function createServer(
     revision(body, run);
     invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
     const commit = await terminal.prepareContinuation(run.id, body.expectedRevision, body.mode, body.text);
-    const result = command(body, request.url, () => {
+    const result = executionCommand(run.id, body, request.url, () => {
       assertTerminalMutable(run.id);
       invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
       return commit();
     });
+    executor.releaseLocalStop(run.id);
     executor.resume(run.id);
     return result;
   });
@@ -1069,9 +1079,10 @@ export function createServer(
       return sourced;
     });
   });
-  app.get<{ Params: { id: string } }>('/api/runs/:id/context', async (request) =>
-    contextBoundaries(kernel.contextSnapshot(request.params.id)),
-  );
+  app.get<{ Params: { id: string } }>('/api/runs/:id/context', async (request) => {
+    runReads.assertExecutionReadable(request.params.id);
+    return contextBoundaries(kernel.contextSnapshot(request.params.id));
+  });
   app.post<{ Params: { id: string } }>('/api/runs/:id/context', async (request) => {
     const body = z
       .object({
@@ -1082,7 +1093,7 @@ export function createServer(
         policy: ContextPolicy,
       })
       .parse(request.body);
-    return command(body, request.url, () => {
+    return executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       const agent = store.require<Agent>('agents', body.agentId);
       management.assertMutable(run.id, run.projectId);
@@ -1117,7 +1128,7 @@ export function createServer(
           .get(request.params.id) as { n: number }
       ).n,
     );
-    const run = store.require<Run>('runs', request.params.id);
+    let run = store.require<Run>('runs', request.params.id);
     const query = z
       .object({
         messageLimit: z.coerce.number().int().min(40).max(240).optional(),
@@ -1126,9 +1137,14 @@ export function createServer(
         retainedMessages: z.string().max(8880).optional(),
         view: z.literal('conversation').optional(),
         summary: z.literal('deferred').optional(),
+        retryProjections: z.enum(['true', 'false']).optional(),
       })
       .strict()
       .parse(request.query);
+    if (query.retryProjections === 'true') {
+      await runReads.retry(run.id);
+      run = store.require<Run>('runs', request.params.id);
+    }
     invariant(
       !(query.beforeMessage || query.aroundMessage) || query.messageLimit !== undefined,
       'MESSAGE_CURSOR_LIMIT',
@@ -1158,6 +1174,8 @@ export function createServer(
         : query.aroundMessage
           ? store.messageAroundPage<Message>(run.id, query.messageLimit, query.aroundMessage)
           : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
+    const records =
+      query.view === 'conversation' ? { tasks: runReads.tasks(run.id) } : runReads.executionRecords(run.id);
     const conversation =
       query.view === 'conversation'
         ? runReads.conversation(
@@ -1166,10 +1184,26 @@ export function createServer(
             query.summary === 'deferred',
           )
         : undefined;
+    let scope: 'all' | 'selected' = conversation ? 'selected' : 'all';
+    let contexts: ContextSnapshot['agents'] = [];
+    if (options.surface !== 'terminal' && query.summary !== 'deferred' && !runReads.hasUnavailable(run.id)) {
+      try {
+        contexts = contextBoundaries(kernel.contextSnapshot(run.id)).agents;
+      } catch (error) {
+        // Legacy context calculation may reach an older body outside this message page.
+        runReads.executionRecords(run.id);
+        scope = 'all';
+        if (!runReads.hasUnavailable(run.id)) throw error;
+      }
+    }
+    const unavailable = runReads.hasUnavailable(run.id);
+    // Context expansion can discover an older damaged request after the first usage projection.
+    if (conversation && 'usageSummary' in conversation && unavailable)
+      conversation.usageSummary = runReads.usage(run.id);
     return {
       run,
       eventCursor,
-      ...(options.surface === 'terminal'
+      ...(options.surface === 'terminal' && !unavailable
         ? {
             terminalRuntime: {
               executor: executor.runtimeSnapshot(run.id),
@@ -1177,29 +1211,28 @@ export function createServer(
             },
           }
         : {}),
-      readOnly: options.surface === 'native' && run.execution?.kind === 'docker-agent',
-      readOnlyReason:
-        options.surface === 'native' && run.execution?.kind === 'docker-agent'
+      readOnly: unavailable || (options.surface === 'native' && run.execution?.kind === 'docker-agent'),
+      localExecutionStopped: executor.isLocallyStopped(run.id),
+      readOnlyReason: unavailable
+        ? executionReadOnlyReason
+        : options.surface === 'native' && run.execution?.kind === 'docker-agent'
           ? '旧版终端任务保留为只读历史，请在 Agent 终端入口创建独立任务'
           : null,
-      tasks: store.all<Task>('tasks', run.id),
+      tasks: records.tasks,
       agents: store.all<Agent>('agents', run.id),
-      contexts:
-        options.surface === 'terminal' ||
-        query.summary === 'deferred' ||
-        conversation?.readCoverage.complete === false
-          ? []
-          : contextBoundaries(kernel.contextSnapshot(run.id)).agents,
+      contexts,
       ...history,
       ...(conversation
         ? conversation
         : {
             artifacts: store.all<Artifact>('artifacts', run.id),
             snapshots: store.all('snapshots', run.id),
-            requests: store.all<RequestRecord>('requests', run.id),
-            operations: store.all<Operation>('tool_operations', run.id),
+            requests: 'requests' in records ? records.requests : [],
+            operations: 'operations' in records ? records.operations : [],
             decisions: store.all('decisions', run.id),
           }),
+      readCoverage: runReads.readCoverage(run.id),
+      detailCoverage: runReads.detailCoverage(run.id, scope),
       events: store.events(
         run.id,
         Math.max(
@@ -1224,7 +1257,7 @@ export function createServer(
         contract: Contract.optional(),
       })
       .parse(request.body);
-    const result = command(body, request.url, () => {
+    const result = executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       // Plain messages append to the inbox and cannot overwrite a run; streaming status
       // revisions may advance while the user is typing. Contract edits remain optimistic.
@@ -1279,6 +1312,7 @@ export function createServer(
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
       });
     const run = store.require<Run>('runs', request.params.id);
+    runReads.assertExecutionReadable(run.id);
     management.assertMutable(run.id, run.projectId);
     revision(body, run);
     invariant(
@@ -1300,7 +1334,7 @@ export function createServer(
       const choice = body.assignments.find((a) => a.key === task.key) ?? task;
       bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice, apiCatalog));
     }
-    const result = command(body, request.url, () =>
+    const result = executionCommand(run.id, body, request.url, () =>
       planAlignment.accept(
         request.params.id,
         body.version,
@@ -1317,7 +1351,7 @@ export function createServer(
       .object({
         commandId: z.string().uuid(),
         expectedRevision: z.number().int(),
-        action: z.enum(['start', 'pause', 'resume', 'cancel', 'switch_model', 'resume_task']),
+        action: z.enum(['start', 'pause', 'resume', 'cancel', 'switch_model', 'resume_task', 'stop_current']),
         taskId: z.string().optional(),
         providerId: ModelChoice.shape.providerId.optional(),
         model: ModelChoice.shape.model,
@@ -1338,10 +1372,34 @@ export function createServer(
       'MODEL_SWITCH_CHOICE',
       '模型选择仅用于显式模型切换',
     );
-    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
-      return command(body, request.url, () => {
+    if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId)) {
+      const result = command(body, request.url, () => {
         throw new AppError('COMMAND_MISSING', '命令结果不存在');
       });
+      if (body.action !== 'stop_current') return result;
+      const localExecutionStopped = executor.isLocallyStopped(request.params.id);
+      return {
+        ...(result as RunStopCurrentResult),
+        replayed: true,
+        localExecutionStopped,
+        message: localExecutionStopped
+          ? '这是原停止命令的历史结果；当前进程仍在抑制此任务调度，未记录持久暂停或取消。'
+          : '这是原停止命令的历史结果；当前进程未抑制此任务调度。本次重放未再次停止执行，如需停止请发起新的停止操作。',
+      } satisfies RunStopCurrentResult;
+    }
+    if (body.action === 'stop_current') {
+      const run = store.require<Run>('runs', request.params.id);
+      management.assertMutable(run.id, run.projectId);
+      invariant(!body.taskId, 'STOP_RUN_SCOPE', '停止当前执行作用于本机当前任务，不能指定其他代理');
+      invariant(
+        body.expectedRevision >= 0 && body.expectedRevision <= run.revision,
+        'REVISION_CONFLICT',
+        '任务版本已变化，请重新读取',
+      );
+      const stopped = await executor.stopCurrent(run.id);
+      return command(body, request.url, () => stopped);
+    }
+    runReads.assertExecutionReadable(request.params.id);
     let binding: ProviderConfig | undefined;
     if (switching) {
       const run = store.require<Run>('runs', request.params.id);
@@ -1360,7 +1418,7 @@ export function createServer(
         apiCatalog,
       );
     }
-    const result = command(body, request.url, () => {
+    const result = executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
       management.assertMutable(run.id, run.projectId);
@@ -1398,10 +1456,13 @@ export function createServer(
         return switched;
       }
       invariant(body.action !== 'switch_model', 'MODEL_SWITCH_CHOICE', '模型选择未完成');
+      invariant(body.action !== 'stop_current', 'STOP_RUN_SCOPE', '停止当前执行需使用本机停止入口');
       return kernel.action(run.id, body.action, body.taskId);
     });
     if (!switching && ['pause', 'cancel'].includes(body.action))
       await executor.interrupt(request.params.id, body.taskId);
+    if (['start', 'resume', 'resume_task'].includes(body.action) || body.switchMode === 'resume')
+      executor.releaseLocalStop(request.params.id);
     if (!switching || body.action === 'resume' || body.switchMode === 'resume')
       executor.resume(request.params.id);
     return result;
@@ -1419,7 +1480,7 @@ export function createServer(
         note: z.string().min(1),
       })
       .parse(request.body);
-    return command(body, request.url, () => {
+    return executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
       management.assertMutable(run.id, run.projectId);

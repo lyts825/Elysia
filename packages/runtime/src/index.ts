@@ -28,6 +28,7 @@ import type {
   RuntimeQueueReason,
 } from '../../contracts/src/terminal-runtime.js';
 import type { TerminalResourcePool } from './terminal-resources.js';
+import type { RunStopCurrentResult } from '../../contracts/src/run-reads.js';
 export interface ExecutorAdapter {
   capabilities: { recursive: boolean; recoverable: boolean };
   start(): void;
@@ -44,6 +45,7 @@ export class NativeExecutor implements ExecutorAdapter {
   >();
   private timer?: ReturnType<typeof setInterval>;
   private stopped = false;
+  private locallyStopped = new Set<string>();
   private ticking = false;
   private toolActive = 0;
   private runtimeRevision = 0;
@@ -70,6 +72,42 @@ export class NativeExecutor implements ExecutorAdapter {
   }
   resume(_runId: string) {
     void this.tick();
+  }
+  isLocallyStopped(runId: string) {
+    return this.locallyStopped.has(runId);
+  }
+  /** Only an explicitly authorized, readable start/resume may release this hold. */
+  releaseLocalStop(runId: string) {
+    this.locallyStopped.delete(runId);
+  }
+  async stopCurrent(runId: string): Promise<RunStopCurrentResult> {
+    this.locallyStopped.add(runId);
+    const active = [...this.active.entries()].filter(([, value]) => value.runId === runId);
+    for (const [, value] of active) value.controller.abort();
+    const stopped = await Promise.allSettled([
+      Promise.resolve().then(() => this.terminalInterrupt?.(runId)),
+      Promise.resolve().then(() => {
+        const rows = this.kernel.store.db.prepare('SELECT id FROM tasks WHERE run_id=?').all(runId) as {
+          id: string;
+        }[];
+        return this.gateway.processes.cancel(
+          new Set([...rows.map((row) => row.id), ...active.map(([key]) => key)]),
+        );
+      }),
+      ...active.map(([, value]) => value.promise),
+    ]);
+    const interrupted = stopped.every((result) => result.status === 'fulfilled');
+    return {
+      runId,
+      interrupted,
+      schedulingPaused: true,
+      persistentPauseRecorded: false,
+      localExecutionStopped: true,
+      replayed: false,
+      message: interrupted
+        ? '本机当前执行已停止，后续调度已在当前进程内抑制。未记录持久暂停或取消；重启后此抑制不再有效，修复记录后需显式继续。'
+        : '已在当前进程内抑制后续调度，但部分当前执行未能确认停止。未记录持久暂停或取消；重启后此抑制不再有效，可再次尝试停止。',
+    };
   }
   private queueReason(task: Task, run: Run): RuntimeQueueReason {
     if (this.active.size >= 4) return 'global-concurrency';
@@ -102,6 +140,7 @@ export class NativeExecutor implements ExecutorAdapter {
   private schedulableRun(run: Run) {
     return (
       this.acceptRun(run) &&
+      !this.locallyStopped.has(run.id) &&
       !run.archived &&
       ['READY', 'RUNNING'].includes(run.status) &&
       (!run.projectId || !this.kernel.store.require<Project>('projects', run.projectId).archived)
@@ -109,7 +148,9 @@ export class NativeExecutor implements ExecutorAdapter {
   }
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
-    for (const task of this.kernel.store.stateCandidates<Task>('tasks', ['READY'])) {
+    for (const task of this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
+      excludeRunIds: [...this.locallyStopped],
+    })) {
       if (task.status !== 'READY' || this.active.has(task.id)) continue;
       const run = this.kernel.store.require<Run>('runs', task.runId);
       if (this.schedulableRun(run))
@@ -160,7 +201,7 @@ export class NativeExecutor implements ExecutorAdapter {
     this.capacityController.abort();
     if (this.timer) clearInterval(this.timer);
     for (const run of this.kernel.store
-      .stateCandidates<Run>('runs', ['READY', 'RUNNING'])
+      .stateCandidates<Run>('runs', ['READY', 'RUNNING'], { excludeRunIds: [...this.locallyStopped] })
       .filter((r) => this.acceptRun(r) && ['READY', 'RUNNING'].includes(r.status)))
       this.kernel.action(run.id, 'pause');
     for (const value of this.active.values()) value.controller.abort();
@@ -178,8 +219,9 @@ export class NativeExecutor implements ExecutorAdapter {
     this.ticking = true;
     try {
       for (let run of this.kernel.store
-        .schedulerRunCandidates()
+        .schedulerRunCandidates(Date.now(), [...this.locallyStopped])
         .filter((r) => this.acceptRun(r) && !r.archived && !['DONE', 'CANCELLED'].includes(r.status))) {
+        if (this.locallyStopped.has(run.id)) continue;
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
         if (
           this.kernel.store.hasPendingInbox(run.id) &&
@@ -217,7 +259,9 @@ export class NativeExecutor implements ExecutorAdapter {
           continue;
         }
       }
-      const tasks = this.kernel.store.stateCandidates<Task>('tasks', ['READY']);
+      const tasks = this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
+        excludeRunIds: [...this.locallyStopped],
+      });
       if (
         this.terminalResources &&
         tasks.some((task) => {
@@ -229,11 +273,14 @@ export class NativeExecutor implements ExecutorAdapter {
       if (this.stopped) return;
       for (const candidate of tasks) {
         if (this.active.size >= 4) break;
+        // A stop may arrive while terminal capacity is being refreshed above.
+        if (this.locallyStopped.has(candidate.runId)) continue;
         const task = this.kernel.store.get<Task>('tasks', candidate.id);
         if (!task || task.status !== 'READY') continue;
         if (this.active.has(task.id)) continue;
         const run = this.kernel.store.get<Run>('runs', task.runId);
         if (!run) continue;
+        if (this.locallyStopped.has(run.id)) continue;
         if (!this.acceptRun(run)) continue;
         if (run.archived || !['READY', 'RUNNING'].includes(run.status)) continue;
         if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
@@ -779,6 +826,7 @@ export class NativeExecutor implements ExecutorAdapter {
     return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
   }
   private resumeRateLimited(runId: string) {
+    if (this.locallyStopped.has(runId)) return;
     this.kernel.store.tx(() => {
       const store = this.kernel.store;
       let run = store.require<Run>('runs', runId);

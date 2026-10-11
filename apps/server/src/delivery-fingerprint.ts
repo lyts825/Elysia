@@ -1,11 +1,16 @@
 import type { Artifact, Run, Task } from '../../../packages/contracts/src/index.js';
 import type { DeliveryArtifactMetadata } from '../../../packages/contracts/src/workflow.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';
+import { cachedDeliveryRead } from './delivery-read-cache.js';
+
+export function deliveryArtifactRows(store: Store, runId: string) {
+  return cachedDeliveryRead(store, `artifacts:${runId}`, () => store.all<Artifact>('artifacts', runId));
+}
 
 export function deliveryArtifactMetadata(
   store: Store,
   runId: string,
-  artifacts = store.all<Artifact>('artifacts', runId),
+  artifacts = deliveryArtifactRows(store, runId),
 ): DeliveryArtifactMetadata[] {
   const legacy = new Set(
     (

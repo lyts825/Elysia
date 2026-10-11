@@ -174,7 +174,9 @@ function RecordItem({ runId, kind, record }: { runId: string; kind: string; reco
               null,
               2,
             )
-          : '正在读取完整记录…'}
+          : error
+            ? '完整记录暂不可读，已读摘要仍保留。'
+            : '正在读取完整记录…'}
       </pre>
     </details>
   );

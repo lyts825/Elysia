@@ -11,6 +11,7 @@ export type PlanAlignmentProps = {
   proposedChoice: (task: TaskSpec) => AgentModelAssignment;
   busy: boolean;
   archived: boolean;
+  readOnlyReason?: string;
   changeAssignment: (key: string, choice: AgentModelAssignment) => void;
   readyAssignment: (key: string, valid: boolean) => void;
   accept: () => void;

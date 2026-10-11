@@ -1,6 +1,7 @@
 import type { Event, Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
+import { detailReadReason, type DetailReadState } from './DetailReadState';
 
-type FeedbackDetail = {
+type FeedbackDetail = DetailReadState & {
   run: Run;
   tasks: Task[];
   operations: Operation[];
@@ -89,6 +90,8 @@ export function rateWaitText(
 }
 
 export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = Date.now()): RunFeedback {
+  if (detailReadReason(detail))
+    return { text: '部分执行记录无法读取；请查看读取提示并重试，运行状态保持原记录' };
   const { run, tasks, operations, events } = detail;
   const noun = run.kind === 'chat' ? '独立对话' : '任务';
   const terminal = run.status === 'DONE' || run.status === 'CANCELLED';
@@ -99,6 +102,24 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     };
   if (run.status === 'CANCELLED') return { text: `已取消，记录保留；继续工作可新建${noun}`, action: 'new' };
   if (run.status === 'DONE') return { text: '交付已完成，可查看产物与验证记录', action: 'artifacts' };
+  if (detail.localExecutionStopped) {
+    if (
+      detail.requests?.some((record) => record.status === 'UNKNOWN') ||
+      operations.some((record) => record.status === 'UNCERTAIN')
+    )
+      return { text: '本机调度已停止；请先核验未确定的请求或操作，再恢复执行', action: 'artifacts' };
+    if (run.reason === 'plan') return { text: '本机调度已停止；请先核对待接受的计划', action: 'plan' };
+    const blocked = tasks.find((task) =>
+      ['dependency_failed', 'no_progress'].includes(task.waitReason || ''),
+    );
+    if (blocked)
+      return {
+        text: '本机调度已停止；请先处理阻塞分支，再明确恢复',
+        action: 'tasks',
+        blockedTaskId: blocked.id,
+      };
+    return { text: '本机调度已停止，记录已可读取；明确恢复后才继续，累计预算保持', control: 'resume' };
+  }
 
   const uncertain = operations.filter(
     (operation) =>

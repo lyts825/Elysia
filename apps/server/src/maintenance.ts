@@ -64,6 +64,7 @@ let selection: Selection = 'all';
 let argument: string | undefined;
 let hasSelection = false;
 let reportArgument: string | undefined;
+let planArgument: string | undefined;
 for (let index = 3; index < process.argv.length; index++) {
   const value = process.argv[index];
   if (value === '--surface' || value.startsWith('--surface=')) {
@@ -77,6 +78,11 @@ for (let index = 3; index < process.argv.length; index++) {
     if (action !== 'objects-cleanup' || reportArgument || !requested || requested.startsWith('--'))
       throw new Error('--report 只能用于 objects-cleanup，并指定一次审计 JSONL 路径');
     reportArgument = requested;
+  } else if (value === '--plan' || value.startsWith('--plan=')) {
+    const requested = value === '--plan' ? process.argv[++index] : value.slice('--plan='.length);
+    if (action !== 'objects-audit' || planArgument || !requested || requested.startsWith('--'))
+      throw new Error('--plan 只能用于 objects-audit，并指定一次原清理计划 JSON 路径');
+    planArgument = requested;
   } else if (value.startsWith('--') || argument) throw new Error('未知或重复的维护参数：' + value);
   else argument = value;
 }
@@ -201,15 +207,30 @@ const configuredDirectory = dataDirectory();
 if (action === 'objects-audit') {
   if (!argument || hasSelection) throw new Error('objects-audit 需要审计 JSONL 文件，不接受 --surface');
   const report = path.resolve(argument);
-  const audit = inspectObjectAudit(report);
+  let plan: unknown;
+  if (planArgument) {
+    const filename = path.resolve(planArgument),
+      stat = lstatSync(filename);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024)
+      throw new Error('维护计划须为不超过 2 MiB 的普通 JSON 文件');
+    try {
+      plan = JSON.parse(readFileSync(filename, 'utf8'));
+    } catch {
+      throw new Error('维护计划不是有效 JSON');
+    }
+  }
+  const audit = inspectObjectAudit(report, plan);
   console.log(
     stable({
       report,
+      ...(planArgument ? { plan: path.resolve(planArgument) } : {}),
       audit,
-      message: 'deleted 仅计已配对确认的删除；unknownInFlight 须重新核验，同计划重试不会回滚已删除对象。',
+      message:
+        'deleted 仅计日志内配对的删除；只有 binding.status=verified 表示已与原计划摘要、数据范围和候选核对，未核验当前磁盘。unbound 未绑定，mismatch/invalid 不可视为已核验。unknownInFlight 须重新核验，同计划重试不会回滚已删除对象。',
     }),
   );
-  if (!audit.available) process.exitCode = 1;
+  if (!audit.available || audit.binding.status === 'mismatch' || audit.binding.status === 'invalid')
+    process.exitCode = 1;
 } else if (action === 'stop') {
   if (!existsSync(path.join(configuredDirectory, 'service.lock')))
     throw new Error('未找到正在运行的 Elysia 服务');

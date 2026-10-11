@@ -7,11 +7,21 @@ import {
   type RequestRecord,
   type Artifact,
   type Message,
+  type Task,
 } from '../../../packages/contracts/src/index.js';
-import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads.js';
+import type {
+  RecordPage,
+  RunUsageSummary,
+  RunListItem,
+  RunDetailCoverage,
+} from '../../../packages/contracts/src/run-reads.js';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
 import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
-import { projectionReads, type ProjectionReads } from '../../../packages/storage/src/projection-reads.js';
+import {
+  projectionIssue,
+  projectionReads,
+  type ProjectionReads,
+} from '../../../packages/storage/src/projection-reads.js';
 
 type Table = 'runs' | 'requests' | 'tool_operations';
 type Metadata = { id: string; revision: number; rowid: number; value: any };
@@ -85,6 +95,48 @@ export class RunReads {
   private projections: ProjectionReads;
   constructor(private store: Store) {
     this.projections = projectionReads(store);
+  }
+  tasks(runId: string) {
+    return this.projections.collection<Task>('tasks', runId);
+  }
+  executionRecords(runId: string) {
+    return {
+      tasks: this.tasks(runId),
+      requests: this.projections.collection<RequestRecord>('requests', runId),
+      operations: this.projections.collection<Operation>('tool_operations', runId),
+    };
+  }
+  detailCoverage(runId: string, scope: 'all' | 'selected'): RunDetailCoverage {
+    const section = (table: 'tasks' | 'requests' | 'tool_operations', selectedScope: 'all' | 'selected') => ({
+      ...this.projections.coverage(table, runId),
+      total: this.count(table, runId),
+      scope: selectedScope,
+    });
+    return {
+      tasks: section('tasks', 'all'),
+      requests: section('requests', scope),
+      operations: section('tool_operations', scope),
+    };
+  }
+  hasUnavailable(runId: string) {
+    return !this.projections.coverage(undefined, runId).complete;
+  }
+  readCoverage(runId: string) {
+    return this.projections.coverage(undefined, runId);
+  }
+  retry(runId: string) {
+    return this.projections.retry(runId);
+  }
+  assertExecutionReadable(runId: string) {
+    this.executionRecords(runId);
+    if (this.hasUnavailable(runId))
+      throw new AppError(
+        projectionIssue.code,
+        '部分执行记录暂时无法读取，当前仅供查看。修复后请重试读取。',
+        true,
+        null,
+        422,
+      );
   }
   private recordVersion(table: 'requests' | 'tool_operations' | 'artifacts', runId: string) {
     const rows = this.store.db
@@ -255,7 +307,7 @@ export class RunReads {
           }),
     };
   }
-  private count(table: Table, runId?: string) {
+  private count(table: Table | 'tasks', runId?: string) {
     return Number(
       (
         this.store.db

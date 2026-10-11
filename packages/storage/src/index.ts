@@ -729,7 +729,9 @@ export class Store {
             if (!rows.length) break;
             for (const row of rows)
               if (!row.indexed_id) {
-                const entity = reads ? reads.read<Run>('runs', row.id) : this.get<Message>('messages', row.id);
+                const entity = reads
+                  ? reads.read<Run>('runs', row.id)
+                  : this.get<Message>('messages', row.id);
                 if (entity) {
                   this.historySearchProjection(table, entity);
                   this.refreshReadProjection(table, entity);
@@ -892,6 +894,7 @@ export class Store {
       unarchived?: boolean;
       waitReasons?: string[];
       resumeBefore?: number;
+      excludeRunIds?: readonly string[];
     } = {},
   ): T[] {
     if (!statuses.length) return [];
@@ -912,6 +915,9 @@ export class Store {
             `(json_extract(data,'$.schedulerVersion') IS NOT 1 OR json_extract(data,'$.readModel.rateResumeAt')<=?)`,
           ]
         : []),
+      ...(options.excludeRunIds?.length
+        ? [`${table === 'runs' ? 'id' : 'run_id'} NOT IN (SELECT value FROM json_each(?))`]
+        : []),
     ];
     const rows = this.db
       .prepare(`SELECT id,data,content FROM ${table} WHERE ${clauses.join(' AND ')} ORDER BY rowid`)
@@ -920,6 +926,7 @@ export class Store {
         ...(options.runId ? [options.runId] : []),
         ...(table === 'tasks' ? (options.waitReasons ?? []) : []),
         ...(table === 'tasks' && options.resumeBefore !== undefined ? [options.resumeBefore] : []),
+        ...(options.excludeRunIds?.length ? [JSON.stringify(options.excludeRunIds)] : []),
       ) as {
       id: string;
       data: string;
@@ -950,7 +957,7 @@ export class Store {
     };
   }
   /** Pick maintenance work from redundant metadata before expanding any idle history. */
-  schedulerRunCandidates(at = Date.now()): Run[] {
+  schedulerRunCandidates(at = Date.now(), excludeRunIds: readonly string[] = []): Run[] {
     const status = (alias: string) =>
       `COALESCE(json_extract(${alias}.data,'$.status'),json_extract(${alias}.data,'$.readModel.status'))`;
     const reason =
@@ -990,9 +997,12 @@ export class Store {
                 COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))='rate_limit')
             ))
           ))
-        ))) ORDER BY r.rowid`,
+        ))) ${excludeRunIds.length ? 'AND r.id NOT IN (SELECT value FROM json_each(?))' : ''} ORDER BY r.rowid`,
       )
-      .all(at, at) as { id: string; projection_version: number | null }[];
+      .all(at, at, ...(excludeRunIds.length ? [JSON.stringify(excludeRunIds)] : [])) as {
+      id: string;
+      projection_version: number | null;
+    }[];
     return rows.flatMap(({ id: key, projection_version }) => {
       const run = this.get<Run>('runs', key);
       if (!run) return [];

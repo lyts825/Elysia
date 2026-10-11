@@ -11,6 +11,7 @@ import {
 } from '../../../packages/contracts/src/workflow.js';
 import { id, now, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryReviewReads } from './delivery-summary.js';
+import { initializeDeliveryReadCache } from './delivery-read-cache.js';
 import {
   appendDeliveryReview,
   captureDeliveryBaseline,
@@ -115,6 +116,7 @@ export function registerDeliveryLifecycle(
   assertMutable: (runId: string | null, projectId?: string) => void,
 ) {
   initializeDeliveryReviewHistory(store);
+  initializeDeliveryReadCache(store);
   const summaries = deliveryReviewReads(store);
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/reviews', (request) => {
     const query = z.object({ before: z.string().uuid().optional() }).strict().parse(request.query);
