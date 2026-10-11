@@ -48,10 +48,16 @@ export const RunSourceSelection = z
   .strict();
 export type RunSourceSelection = z.infer<typeof RunSourceSelection>;
 export type DeliveryReviewStatus = 'unreviewed' | 'accepted' | 'changes_requested' | 'stale';
+export interface DeliveryReviewIssue {
+  code: 'DELIVERY_UNREADABLE';
+  message: string;
+  retryable: true;
+}
 export interface DeliveryReviewSummary {
   runId: string;
   reviewStatus: DeliveryReviewStatus | null;
   reviewedAt: string | null;
+  reviewIssue?: DeliveryReviewIssue;
 }
 export const RunDeliveryItems = z.array(z.string().trim().min(1).max(2000)).min(1).max(40);
 export const DeliveryReviewInput = z

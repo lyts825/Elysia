@@ -8,6 +8,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 
 import { readReviewDraft, type ReviewDraft } from './ReviewDraft';
+import { readReviewCriteria } from './ReviewCriteria';
 
 export function DeliveryUserReview({
   value,
@@ -32,14 +33,23 @@ export function DeliveryUserReview({
   saved: (value: DeliveryReviewState) => void;
   children: (note: (criterion: DeliveryCriterion) => ReactNode) => ReactNode;
 }) {
-  const { mutation } = useSurfaceClient();
+  const { api, mutation } = useSurfaceClient();
   const draft = useMemo(() => readReviewDraft(rawDraft, value), [rawDraft, value]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [busy, setBusy] = useState(false),
+    [reconciling, setReconciling] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
     [conflict, setConflict] = useState(false);
+  const reconcileRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setReconciling(false);
+    return () => {
+      reconcileRequest.current?.abort();
+      reconcileRequest.current = null;
+    };
+  }, [value.runId, value.runRevision, value.rootRevision, value.fingerprint, readVersion]);
   useEffect(() => {
     setConflict(false);
     setError('');
@@ -56,7 +66,47 @@ export function DeliveryUserReview({
     draftRef.current = updated;
     changeDraft(raw);
   };
-  const readonly = disabled || reading || busy;
+  const readonly = disabled || reading || busy || reconciling;
+  async function reconcile() {
+    if (readonly || conflict || reconcileRequest.current) return;
+    const controller = new AbortController();
+    reconcileRequest.current = controller;
+    const before = draftRef.current;
+    const token = JSON.stringify(before);
+    setReconciling(true);
+    setError('');
+    try {
+      const criteria = await readReviewCriteria(api, value, before.criteriaNotes, controller.signal);
+      if (controller.signal.aborted) return;
+      if (JSON.stringify(draftRef.current) !== token) {
+        setError('复核草稿已变化，请核对最新输入后重试。');
+        return;
+      }
+      const kept = before.criteriaNotes.filter(
+        (note) => !note.unknownStandard && criteria.get(note.index)?.text === note.text,
+      );
+      const detached = before.criteriaNotes.filter((note) => !kept.includes(note));
+      patch({
+        fingerprint: value.fingerprint,
+        decision: '',
+        criteriaNotes: kept,
+        unlinked: [
+          ...before.unlinked,
+          ...detached.map((note) => ({ ...note, fingerprint: before.fingerprint })),
+        ],
+      });
+    } catch (issue) {
+      if (!controller.signal.aborted) {
+        setError(issue instanceof Error ? issue.message : '验收项读取失败，备注草稿已保留。');
+        if (issue instanceof ApiError && issue.status === 409) setConflict(true);
+      }
+    } finally {
+      if (reconcileRequest.current === controller) {
+        reconcileRequest.current = null;
+        setReconciling(false);
+      }
+    }
+  }
   const noteEditor = (criterion: DeliveryCriterion) => {
     if (changed) return null;
     const current = draft.criteriaNotes.find((item) => item.index === criterion.index);
@@ -150,35 +200,22 @@ export function DeliveryUserReview({
                 ? '交付版本已变化，旧结论不适用于当前版本。输入已保留，请重新核对证据。'
                 : '保存时记录已变化。请重新读取交付；当前输入已保留。'}
             </p>
-            <button type="button" className="secondary" disabled={reading || busy} onClick={reload}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={reading || busy || reconciling}
+              onClick={reload}
+            >
               重新读取交付
             </button>
             {changed && !reading && (
               <button
                 type="button"
                 className="secondary"
-                disabled={disabled || busy}
-                onClick={() => {
-                  const kept = draft.criteriaNotes.filter(
-                    (note) =>
-                      !note.unknownStandard &&
-                      value.criteria.some(
-                        (criterion) => criterion.index === note.index && criterion.text === note.text,
-                      ),
-                  );
-                  const detached = draft.criteriaNotes.filter((note) => !kept.includes(note));
-                  patch({
-                    fingerprint: value.fingerprint,
-                    decision: '',
-                    criteriaNotes: kept,
-                    unlinked: [
-                      ...draft.unlinked,
-                      ...detached.map((note) => ({ ...note, fingerprint: draft.fingerprint })),
-                    ],
-                  });
-                }}
+                disabled={readonly || conflict}
+                onClick={() => void reconcile()}
               >
-                已核对新版本，保留备注重新决定
+                {reconciling ? '正在核对备注对应的验收项…' : '已核对新版本，保留备注重新决定'}
               </button>
             )}
           </div>

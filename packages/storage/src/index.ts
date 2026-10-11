@@ -193,7 +193,35 @@ function projection(table: Table, entity: any) {
     ...(['runs', 'tasks', 'requests', 'tool_operations', 'inbox'].includes(table)
       ? { status: entity.status }
       : {}),
-    ...(table === 'tasks' ? { schedulerVersion: 1 } : {}),
+    ...(table === 'tasks'
+      ? {
+          schedulerVersion: 1,
+          deliverySemanticHash: hash(
+            stable({
+              id: entity.id,
+              status: entity.status,
+              deliverables: entity.spec?.deliverables,
+              acceptanceCriteria: entity.spec?.acceptanceCriteria,
+              result: entity.result ?? null,
+            }),
+          ),
+        }
+      : {}),
+    ...(table === 'artifacts'
+      ? {
+          deliverySemanticHash: hash(
+            stable({
+              id: entity.id,
+              taskId: entity.taskId,
+              name: entity.name,
+              version: entity.version,
+              hash: entity.hash,
+              mediaType: entity.mediaType,
+              verified: entity.verified,
+            }),
+          ),
+        }
+      : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
     ...(table === 'runs' ? { sourceRunId: entity.source?.runId } : {}),
     ...(table === 'runs'
@@ -845,7 +873,7 @@ export class Store {
   }
   /** Upgrade redundant read metadata without changing compressed business content or revision. */
   refreshReadProjection(
-    table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
+    table: 'runs' | 'tasks' | 'artifacts' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
     entity: Entity,
   ) {
     this.db

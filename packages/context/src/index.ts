@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
+import { builtinResourcePath } from './resources.js';
 import {
   AppError,
   ContextRuntimeMetrics,
@@ -98,7 +98,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const runtimeReserveTokens = provider.authMode === 'codex' ? 16384 : 0;
   const inputBudgetTokens = Math.max(0, windowTokens - provider.outputLimit - CONTEXT_SAFETY_TOKENS);
   const prompt = (name: string) =>
-    readFileSync(path.join(process.cwd(), 'prompts', name + '.md'), 'utf8')
+    readFileSync(builtinResourcePath('prompts', name + '.md'), 'utf8')
       .replace(/\r\n/g, '\n')
       .trim();
   const tools = [...definitions].sort((a, b) => a.name.localeCompare(b.name, 'en'));

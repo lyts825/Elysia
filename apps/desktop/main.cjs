@@ -150,7 +150,9 @@ if (!app.requestSingleInstanceLock()) {
             ...process.env,
             ELYSIA_DATA_DIR: data,
             ELYSIA_DESKTOP: '1',
-            ...(prepared ? { ELYSIA_WEB_ROOT: prepared.build.web } : {}),
+            ...(prepared
+              ? { ELYSIA_WEB_ROOT: prepared.build.web, ELYSIA_RESOURCE_ROOT: prepared.build.resources }
+              : {}),
           },
         },
       );

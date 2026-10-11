@@ -16,7 +16,12 @@ function waitForLaunchBuild(channel, enabled) {
     const message = (value) => {
       if (value?.type === 'desktop-build-error') finish(new Error(value.message || '构建失败'));
       if (value?.type === 'desktop-build-ready') {
-        if (!value.build || typeof value.build.server !== 'string' || typeof value.build.web !== 'string')
+        if (
+          !value.build ||
+          typeof value.build.server !== 'string' ||
+          typeof value.build.web !== 'string' ||
+          typeof value.build.resources !== 'string'
+        )
           return finish(new Error('启动构建结果无效'));
         finish(undefined, value);
       }

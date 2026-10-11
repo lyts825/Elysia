@@ -99,9 +99,13 @@ export function registerDeliveryLifecycle(
 ) {
   const summaries = deliveryReviewReads(store);
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/summary', async (request) => {
-    z.object({}).strict().parse(request.query);
+    const query = z
+      .object({ retry: z.enum(['true', 'false']).optional() })
+      .strict()
+      .parse(request.query);
     if (!store.db.prepare('SELECT 1 FROM runs WHERE id=?').get(request.params.id))
       throw new AppError('NOT_FOUND', '任务不存在', false, null, 404);
+    if (query.retry === 'true') summaries.retryFailures(request.params.id);
     return summaries.read(() => summaries.cached(request.params.id), request.params.id);
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id/revisions', (request) => {

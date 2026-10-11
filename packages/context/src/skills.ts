@@ -5,6 +5,7 @@ import { AppError } from '../../contracts/src/index.js';
 import { Store } from '../../storage/src/index.js';
 import { importedLibrary, localItem, localItemText } from './local-library.js';
 import { parseDocument } from 'yaml';
+import { builtinResourcePath } from './resources.js';
 
 export interface SkillSummary {
   id: string;
@@ -86,7 +87,7 @@ function readSkill(id: string, metadataOnly = false): LoadedSkill {
     throw new AppError('SKILL_NOT_FOUND', `未注册的技能：${id}`);
   let source: string;
   try {
-    const root = realpathSync(path.resolve(process.cwd(), 'skills'));
+    const root = realpathSync(builtinResourcePath('skills'));
     const file = realpathSync(path.join(root, id, 'SKILL.md'));
     const relative = path.relative(root, file);
     if (relative.startsWith('..') || path.isAbsolute(relative))

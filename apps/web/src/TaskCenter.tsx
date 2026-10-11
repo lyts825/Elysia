@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow';
@@ -51,6 +51,7 @@ export function TaskCenter({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const retryReviews = useRef(false);
   const [opening, setOpening] = useState('');
   const [notifications, setNotifications] = useState<boolean>();
   const [notifySupported, setNotifySupported] = useState(false);
@@ -94,6 +95,8 @@ export function TaskCenter({
         if (state.projectId) query.set('projectId', state.projectId);
         if (state.query?.trim()) query.set('query', state.query.trim());
         if (surface === 'native' && state.reviewFilter) query.set('reviewFilter', state.reviewFilter);
+        if (surface === 'native' && retryReviews.current) query.set('retryReviews', 'true');
+        retryReviews.current = false;
         if (state.before) query.set('before', state.before);
         const value = await api<TaskCenterPage>(
           '/task-center?' + query,
@@ -257,6 +260,26 @@ export function TaskCenter({
             </button>
           </div>
         )}
+        {result?.reviewCoverage && !result.reviewCoverage.complete && (
+          <div className="task-center-review-issue" role="status">
+            <p>
+              {result.reviewCoverage.unavailable} 项复核状态暂不可读取。
+              {state.reviewFilter
+                ? '当前结果与总数仅包含已知状态的匹配项，筛选结果可能不完整。'
+                : '任务记录仍可打开，暂不归入任何复核状态。'}
+            </p>
+            <button
+              className="text-button"
+              disabled={loading}
+              onClick={() => {
+                retryReviews.current = true;
+                setRetry((value) => value + 1);
+              }}
+            >
+              重试读取异常复核
+            </button>
+          </div>
+        )}
         <div className="task-center-list" aria-busy={loading}>
           {result?.items.map((item) => (
             <button
@@ -264,7 +287,7 @@ export function TaskCenter({
               className="task-center-row"
               aria-label={
                 item.title +
-                (item.reviewStatus
+                (item.reviewStatus || item.reviewIssue
                   ? '，打开交付复核'
                   : item.category === 'waiting'
                     ? '，回答问题'
@@ -275,7 +298,7 @@ export function TaskCenter({
               disabled={!!opening}
               onClick={() => {
                 setOpening(item.id);
-                void openRun(item.id, item.reviewStatus ? 'review' : item.category)
+                void openRun(item.id, item.reviewStatus || item.reviewIssue ? 'review' : item.category)
                   .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
                   .finally(() => setOpening(''));
               }}
@@ -289,14 +312,18 @@ export function TaskCenter({
                   {projects.find((project) => project.id === item.projectId)?.name ||
                     (item.kind === 'chat' ? '独立对话' : '项目任务')}
                 </small>
-                {item.reviewStatus && (
-                  <small className="task-center-review-status">
-                    用户复核：{reviewStatusLabels[item.reviewStatus]}
-                  </small>
+                {item.reviewIssue ? (
+                  <small className="field-error">用户复核：暂不可读 · {item.reviewIssue.message}</small>
+                ) : (
+                  item.reviewStatus && (
+                    <small className="task-center-review-status">
+                      用户复核：{reviewStatusLabels[item.reviewStatus]}
+                    </small>
+                  )
                 )}
               </span>
-              {item.reviewStatus ? (
-                <span className="task-center-action">复核</span>
+              {item.reviewStatus || item.reviewIssue ? (
+                <span className="task-center-action">{item.reviewIssue ? '检查' : '复核'}</span>
               ) : (
                 ['waiting', 'verification'].includes(item.category) && (
                   <span className="task-center-action">{item.category === 'waiting' ? '回答' : '核验'}</span>
@@ -313,7 +340,11 @@ export function TaskCenter({
         </div>
       </div>
       <footer className="modal-footer task-center-pagination">
-        <span role="status">{result ? `共 ${result.page.total} 项` : '每页最多 40 项'}</span>
+        <span role="status">
+          {result
+            ? `${state.reviewFilter && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
+            : '每页最多 40 项'}
+        </span>
         <button
           className="secondary"
           disabled={loading || !state.trail.length}

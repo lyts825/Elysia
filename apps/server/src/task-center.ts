@@ -130,12 +130,15 @@ export class TaskCenterReads {
         BEGIN UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'; END;
       `);
     }
-    this.store.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS task_center_delivery_review_update
-      AFTER UPDATE OF review_status,reviewed_at ON delivery_review_summary_v1
-      WHEN NEW.review_status IS NOT OLD.review_status OR NEW.reviewed_at IS NOT OLD.reviewed_at
+    this.store.tx(() =>
+      this.store.db.exec(`
+      DROP TRIGGER IF EXISTS task_center_delivery_review_update;
+      CREATE TRIGGER task_center_delivery_review_update
+      AFTER UPDATE OF review_status,reviewed_at,issue_code ON delivery_review_summary_v1
+      WHEN NEW.review_status IS NOT OLD.review_status OR NEW.reviewed_at IS NOT OLD.reviewed_at OR NEW.issue_code IS NOT OLD.issue_code
       BEGIN ${this.refreshSql('NEW.run_id')} END;
-    `);
+    `),
+    );
   }
   private refreshSql(runId: string) {
     // seq is allocated even on upsert, so observations can continue across process restarts.
@@ -270,6 +273,7 @@ export class TaskCenterReads {
       updatedAt: row.updated_at,
       ...(review.reviewStatus ? { reviewStatus: review.reviewStatus } : {}),
       ...(review.reviewedAt ? { reviewedAt: review.reviewedAt } : {}),
+      ...(review.reviewIssue ? { reviewIssue: review.reviewIssue } : {}),
       ...(expected && expected === row.notification_status && row.notification_revision > 0
         ? { notification: { status: expected, revision: row.notification_revision } }
         : {}),
@@ -282,8 +286,10 @@ export class TaskCenterReads {
     projectId?: string;
     query?: string;
     reviewFilter?: DeliveryReviewStatus;
+    retryReviews?: 'true' | 'false';
   }): Promise<TaskCenterPage> {
     await this.warm();
+    if (query.retryReviews === 'true') this.delivery.retryFailures();
     return this.delivery.read(() => {
       let position: number | undefined;
       if (query.before) {
@@ -298,18 +304,28 @@ export class TaskCenterReads {
         'deleted=0',
         'archived=0',
         ...(query.filter === 'all' ? [] : ['category=?']),
-        ...(query.reviewFilter
-          ? ['run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)']
-          : []),
         ...(query.projectId ? ['project_id=?'] : []),
         ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
       ];
       const params = [
         ...(query.filter === 'all' ? [] : [query.filter]),
-        ...(query.reviewFilter ? [query.reviewFilter] : []),
         ...(query.projectId ? [query.projectId] : []),
         ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
       ];
+      const unavailable = Number(
+        (
+          this.store.db
+            .prepare(
+              `SELECT COUNT(*) n FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}
+        AND run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE issue_code IS NOT NULL)`,
+            )
+            .get(...params) as { n: number }
+        ).n,
+      );
+      if (query.reviewFilter) {
+        clauses.push('run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)');
+        params.push(query.reviewFilter);
+      }
       const total = Number(
         (
           this.store.db
@@ -326,6 +342,7 @@ export class TaskCenterReads {
         selected = rows.slice(0, query.limit);
       return {
         items: selected.map((row) => this.item(row)),
+        reviewCoverage: { complete: unavailable === 0, unavailable },
         page: {
           total,
           limit: query.limit,
@@ -394,6 +411,7 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
         .object({
           filter: z.enum(categories).default('all'),
           reviewFilter: z.enum(reviewStatuses).optional(),
+          retryReviews: z.enum(['true', 'false']).optional(),
           limit: z.coerce.number().int().min(1).max(100).default(40),
           before: z.string().uuid().optional(),
           projectId: z.string().uuid().optional(),

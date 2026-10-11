@@ -134,6 +134,12 @@
 .task-center-error span {
   flex: 1;
 }
+.task-center-review-issue {
+  margin-bottom: 14px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.7;
+}
 .task-center-pagination > span {
   margin-right: auto;
   color: var(--muted);
