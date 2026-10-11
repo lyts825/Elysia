@@ -58,9 +58,9 @@ type EvidenceReader = (
 function conflict(code: string, message: string): never {
   throw new AppError(code, message, false, null, 409);
 }
-function sourceState(store: Store, runId: string) {
-  const run = store.require<Run>('runs', runId),
-    root = store.require<Task>('tasks', run.rootTaskId);
+function sourceState(store: Store, runId: string, known?: { run: Run; root: Task; fingerprint: string }) {
+  const run = known?.run ?? store.require<Run>('runs', runId),
+    root = known?.root ?? store.require<Task>('tasks', run.rootTaskId);
   invariant(
     (run.execution?.kind ?? 'native') === 'native' && root.runId === run.id,
     'SOURCE_RESOLUTION_SCOPE',
@@ -77,7 +77,7 @@ function sourceState(store: Store, runId: string) {
   }
   const notes = (run.source?.reviewNotes ?? []).map((note) => ReviewSourceNote.parse(note));
   invariant(notes.length <= 40, 'SOURCE_RESOLUTION_SCOPE', '来源备注数量无效');
-  const fingerprint = deliveryFingerprint(store, run, root);
+  const fingerprint = known?.fingerprint ?? deliveryFingerprint(store, run, root);
   const project = run.projectId
     ? store.get<{ id: string; revision: number; archived: boolean }>('projects', run.projectId)
     : undefined;
@@ -137,6 +137,9 @@ function view(store: Store, state: ReturnType<typeof sourceState>): SourceNoteRe
       return { noteIndex, sourceNote, resolution };
     }),
   };
+}
+export function sourceNoteResolutionsFor(store: Store, run: Run, root: Task, fingerprint: string) {
+  return view(store, sourceState(store, run.id, { run, root, fingerprint }));
 }
 /** Manual follow-up conclusions are independent of execution and saved acceptance decisions. */
 export function registerSourceNoteResolutions(

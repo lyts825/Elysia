@@ -25,6 +25,7 @@ import {
 import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { projectionReads } from './projection-reads.js';
+import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -39,8 +40,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
-export const STORAGE_SCHEMA_VERSION = 4;
-export const STORAGE_MIN_READER_VERSION = '0.25.0-preview.1';
+export const STORAGE_SCHEMA_VERSION = 5;
+export const STORAGE_MIN_READER_VERSION = '1.0.0-preview.1';
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'id'
@@ -269,6 +270,7 @@ function references(value: unknown, identifiers: Set<string>): boolean {
   );
 }
 export class Store {
+  readonly recovery: ExecutionRecovery;
   db: DatabaseSync;
   directory: string;
   private depth = 0;
@@ -285,9 +287,10 @@ export class Store {
     );
     try {
       this.migrate();
+      this.recovery = new ExecutionRecovery(this);
       this.requestStreams = new RequestStreams(this.db);
       this.historySearchSchema();
-      for (const table of ['runs', 'tasks', 'inbox'])
+      for (const table of ['runs', 'tasks', 'inbox', 'requests', 'tool_operations', 'attempts'])
         this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_${table}_state ON ${table}(
           COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status')));`);
       this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_inbox_pending ON inbox(run_id)
@@ -424,7 +427,7 @@ export class Store {
           throw new AppError('DATABASE_CORRUPT', '数据库迁移完整性检查失败');
         this.db.exec('PRAGMA user_version=3;');
       });
-    if (version < STORAGE_SCHEMA_VERSION)
+    if (version < 4)
       this.tx(() => {
         // These chunks are authoritative content. Version 4 prevents pre-chunk readers
         // from silently treating the empty compatibility field as a complete response.
@@ -446,6 +449,11 @@ export class Store {
         CREATE INDEX run_source_parent ON runs(json_extract(data,'$.sourceRunId'));
         PRAGMA user_version=4;
       `);
+      });
+    if (version < 5)
+      this.tx(() => {
+        initializeExecutionRecovery(this.db);
+        this.db.exec('PRAGMA user_version=5;');
       });
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
@@ -494,6 +502,9 @@ export class Store {
   get<T>(table: Table, key: string): T | undefined {
     const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
     return row && this.decodeRow(table, row);
+  }
+  getExecutionHold(runId: string) {
+    return this.recovery.get(runId);
   }
   require<T>(table: Table, key: string): T {
     const value = this.get<T>(table, key);
@@ -895,11 +906,17 @@ export class Store {
       waitReasons?: string[];
       resumeBefore?: number;
       excludeRunIds?: readonly string[];
+      excludeExecutionHolds?: boolean;
     } = {},
   ): T[] {
     if (!statuses.length) return [];
     const state = `COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))`;
     const clauses = [
+      ...(options.excludeExecutionHolds
+        ? [
+            `NOT EXISTS(SELECT 1 FROM execution_holds_v1 h WHERE h.run_id=${table === 'runs' ? 'runs.id' : `${table}.run_id`})`,
+          ]
+        : []),
       `(${state} IS NULL OR ${state} ${options.exclude ? 'NOT ' : ''}IN (${statuses.map(() => '?').join(',')}))`,
       ...(options.runId ? ['run_id=?'] : []),
       ...(options.unarchived
@@ -972,6 +989,7 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT r.id,json_extract(r.data,'$.readModelVersion') projection_version FROM runs r WHERE
+        NOT EXISTS(SELECT 1 FROM execution_holds_v1 h WHERE h.run_id=r.id) AND
         COALESCE(json_extract(r.data,'$.archived'),json_extract(r.data,'$.readModel.archived'),0)=0
         AND (${status('r')} IS NULL OR (${status('r')} NOT IN ('DONE','CANCELLED') AND (
           (${status('r')} IN ('READY','RUNNING') AND EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id
@@ -1348,9 +1366,9 @@ export class Store {
     this.tx(() => {
       this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(key);
       if (table === 'projects') {
-        const draftKey = `draft:setup:project:${key}`;
-        for (const prefix of ['workbench:v1:', 'workbench-index:v1:'])
-          this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + draftKey);
+        for (const draftKey of [`draft:setup:project:${key}`, `draft:project-board:${key}`])
+          for (const prefix of ['workbench:v1:', 'workbench-index:v1:'])
+            this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + draftKey);
       }
       this.deleteCommands(new Set([key]));
       this.collectObjects();

@@ -100,6 +100,15 @@ import { Icon } from './Icon';
 import { EmptyArtwork } from './Brand';
 import { Modal, ModalErrorContext } from './Modal';
 import { WorkspaceHome } from './WorkspaceHome';
+import { projectBoardKey, readProjectBoardDraft, writeProjectBoardDraft } from './ProjectBoardDraft';
+const ProjectWorkbench = deferredPanel(
+  () => import('./ProjectWorkbench').then((m) => m.ProjectWorkbench),
+  '项目交付工作台',
+);
+const ProjectItemSetup = deferredPanel(
+  () => import('./ProjectItemSetup').then((m) => m.ProjectItemSetup),
+  '交付项任务设置',
+);
 const WorkspaceManager = deferredPanel(
   () => import('./WorkspaceManager').then((m) => m.WorkspaceManager),
   '工作区管理',
@@ -1279,6 +1288,7 @@ function App({
   useEffect(() => {
     if (!ready) return;
     const keys = [newDraftKey(projectId), runSetupDraftKey(projectId)];
+    if (projectId && !terminalSurface) keys.push(projectBoardKey(projectId));
     if (runId)
       keys.push(
         `draft:run:${runId}`,
@@ -1742,6 +1752,7 @@ function App({
       cache.remove([
         newDraftKey(deleted.id),
         runSetupDraftKey(deleted.id),
+        projectBoardKey(deleted.id),
         `collapsed:project:${deleted.id}`,
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
@@ -1854,6 +1865,42 @@ function App({
         )}
       </StartupTransition>
     );
+  const workspaceHome = (
+    <WorkspaceHome
+      project={project}
+      providers={providers}
+      modelChoice={homeModel}
+      changeModel={changeHomeModel}
+      modelReady={
+        terminalSurface
+          ? !!terminalProfile && (!project || !!projectPreferences)
+          : !!project || homeModelValid
+      }
+      setModelReady={updateHomeModelReady}
+      contextReady={!!project || homeContextValid}
+      contextControl={
+        <button
+          type="button"
+          className="context-meter"
+          disabled={busy}
+          onClick={() => setModal('new-context')}
+          title={contextPolicyLabel(homeContext)}
+        >
+          窗口 {homeContext.mode === 'manual' ? '手动' : '托管'}
+        </button>
+      }
+      draft={draft}
+      setDraft={setDraft}
+      busy={busy}
+      openSettings={() => setModal('settings')}
+      start={startConversation}
+      terminal={terminalSurface}
+      terminalProfiles={terminalProfiles}
+      terminalProfileId={terminalProfile?.id}
+      changeTerminalProfile={(id) => cache.set(profileSelectionKey, id)}
+      openProject={() => setModal('project')}
+    />
+  );
   return (
     <div
       className={
@@ -1956,6 +2003,13 @@ function App({
             if (terminalSurface && !id) return;
             selectProject(id);
             if (objective !== undefined) cache.set(newDraftKey(id), objective);
+            if (id && !terminalSurface)
+              void cache
+                .ensureKey(projectBoardKey(id))
+                .then(() => {
+                  writeProjectBoardDraft(cache, id, (value) => ({ ...value, freeOpen: true }));
+                })
+                .catch((issue) => setError(issue instanceof Error ? issue.message : '项目草稿无法读取'));
           }}
           files={(target) => {
             selectProject(target.id);
@@ -2059,18 +2113,31 @@ function App({
               {narrowLayout && <span>会话</span>}
             </button>
             <Icon name="folder" size={16} />
-            <span
-              className="breadcrumb-project"
-              title={project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
-            >
-              {project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
-            </span>
+            {project && !terminalSurface ? (
+              <button
+                type="button"
+                className="breadcrumb-project quiet-button"
+                title="返回项目交付工作台"
+                onClick={() => selectProject(project.id)}
+              >
+                {project.name}
+              </button>
+            ) : (
+              <span
+                className="breadcrumb-project"
+                title={project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
+              >
+                {project?.name || (terminalSurface ? 'Agent 终端' : '独立对话')}
+              </span>
+            )}
             <span className="slash">/</span>
             <strong title={detail?.run.objective}>
               {detail
                 ? detail.run.title || detail.run.objective
                 : project
-                  ? '新建任务'
+                  ? terminalSurface
+                    ? '新建任务'
+                    : '交付工作台'
                   : terminalSurface
                     ? '选择项目'
                     : '新建对话'}
@@ -2133,40 +2200,34 @@ function App({
           </div>
         )}
         {!runId ? (
-          <WorkspaceHome
-            project={project}
-            providers={providers}
-            modelChoice={homeModel}
-            changeModel={changeHomeModel}
-            modelReady={
-              terminalSurface
-                ? !!terminalProfile && (!project || !!projectPreferences)
-                : !!project || homeModelValid
-            }
-            setModelReady={updateHomeModelReady}
-            contextReady={!!project || homeContextValid}
-            contextControl={
-              <button
-                type="button"
-                className="context-meter"
-                disabled={busy}
-                onClick={() => setModal('new-context')}
-                title={contextPolicyLabel(homeContext)}
-              >
-                窗口 {homeContext.mode === 'manual' ? '手动' : '托管'}
-              </button>
-            }
-            draft={draft}
-            setDraft={setDraft}
-            busy={busy}
-            openSettings={() => setModal('settings')}
-            start={startConversation}
-            terminal={terminalSurface}
-            terminalProfiles={terminalProfiles}
-            terminalProfileId={terminalProfile?.id}
-            changeTerminalProfile={(id) => cache.set(profileSelectionKey, id)}
-            openProject={() => setModal('project')}
-          />
+          project && !terminalSurface ? (
+            <ProjectWorkbench
+              key={project.id}
+              project={project}
+              cache={cache}
+              raw={cacheState.entries[projectBoardKey(project.id)]?.value}
+              freeComposer={workspaceHome}
+              launch={() => setModal('project-item-run')}
+              openTaskCenter={() => {
+                setTaskCenterState((value) => ({ ...value, projectId: project.id, before: '', trail: [] }));
+                setModal('task-center');
+              }}
+              openRun={async (id, review) => {
+                const epoch = navigationEpoch.current;
+                const target = await api<Run>('/runs/' + id + '/header');
+                if (
+                  epoch !== navigationEpoch.current ||
+                  navigation.current.runId ||
+                  navigation.current.projectId !== project.id
+                )
+                  return;
+                selectRun(target);
+                if (review) setTaskCenterTarget({ id, category: 'review', epoch: navigationEpoch.current });
+              }}
+            />
+          ) : (
+            workspaceHome
+          )
         ) : detail ? (
           <>
             <div className="run-toolbar" inert={detailsOverlayOpen}>
@@ -2324,6 +2385,15 @@ function App({
               detail={detail}
               busy={busy || retryingDetailRun === detail.run.id}
               retry={() => void retryDetailRecords()}
+              finished={['DONE', 'CANCELLED'].includes(detail.run.status)}
+              clearHold={
+                !archived &&
+                !legacyTerminal &&
+                ['DONE', 'CANCELLED'].includes(detail.run.status) &&
+                detail.localExecutionStopped
+                  ? () => runAction('resume')
+                  : undefined
+              }
               stop={
                 !archived && !legacyTerminal && !['DONE', 'CANCELLED'].includes(detail.run.status)
                   ? async () => {
@@ -3549,6 +3619,42 @@ function App({
                   selectRun={selectRun}
                 />
               )}
+              {modal === 'project-item-run' && project && !terminalSurface && (
+                <ProjectItemSetup
+                  key={project.id}
+                  projectId={project.id}
+                  projectName={project.name}
+                  cache={cache}
+                  providers={providers}
+                  modelChoice={homeModel}
+                  contextPolicy={homeContext}
+                  busy={busy}
+                  close={() => setModal('')}
+                  settings={() => setModal('project-item-run-settings')}
+                  submit={(body, sentLaunch) =>
+                    act(async () => {
+                      const created = await mutation<Run>('/runs', {
+                        ...body,
+                        objective: sentLaunch.objective,
+                        kind: 'task',
+                        projectId: project.id,
+                        projectDelivery: {
+                          itemId: sentLaunch.itemId,
+                          expectedRevision: sentLaunch.expectedRevision,
+                        },
+                      });
+                      const current = readProjectBoardDraft(cache.get(projectBoardKey(project.id)));
+                      if (JSON.stringify(current.launch) === JSON.stringify(sentLaunch))
+                        writeProjectBoardDraft(cache, project.id, (value) => ({
+                          ...value,
+                          launch: undefined,
+                        }));
+                      selectRun(created);
+                      setModal('');
+                    })
+                  }
+                />
+              )}
               {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
                 <RunModal
                   key={runSetupKey}
@@ -3638,7 +3744,10 @@ function App({
                     </div>
                   </Modal>
                 ))}
-              {(modal === 'settings' || modal === 'run-settings' || modal === 'handoff-settings') &&
+              {(modal === 'settings' ||
+                modal === 'run-settings' ||
+                modal === 'handoff-settings' ||
+                modal === 'project-item-run-settings') &&
                 !terminalSurface && (
                   <React.Suspense
                     fallback={
@@ -3646,7 +3755,13 @@ function App({
                         title="模型与连接"
                         close={() =>
                           setModal(
-                            modal === 'run-settings' ? 'run' : modal === 'handoff-settings' ? 'handoff' : '',
+                            modal === 'run-settings'
+                              ? 'run'
+                              : modal === 'handoff-settings'
+                                ? 'handoff'
+                                : modal === 'project-item-run-settings'
+                                  ? 'project-item-run'
+                                  : '',
                           )
                         }
                       >
@@ -3660,7 +3775,13 @@ function App({
                       providers={providers}
                       close={() =>
                         setModal(
-                          modal === 'run-settings' ? 'run' : modal === 'handoff-settings' ? 'handoff' : '',
+                          modal === 'run-settings'
+                            ? 'run'
+                            : modal === 'handoff-settings'
+                              ? 'handoff'
+                              : modal === 'project-item-run-settings'
+                                ? 'project-item-run'
+                                : '',
                         )
                       }
                       updated={() => refresh(true)}

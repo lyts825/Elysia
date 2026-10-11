@@ -772,6 +772,9 @@ export function SessionSidebar({
                       ? `此项目及${projectCounts ? `其 ${projectCount(dialog.target.item.id)} 个` : '关联'}对话、消息和产物登记将被永久删除。`
                       : '此对话、消息、调用和产物登记将被永久删除。'}
                     无法恢复，原始项目资料目录会保留。
+                    {dialog.target.kind === 'project' &&
+                      localSurface === 'native' &&
+                      '项目交付计划、关联记录和冻结清单也会删除，请先导出需要保留的清单。'}
                   </p>
                 )}
               </div>

@@ -42,6 +42,7 @@ export function RunModal({
   beforeForm,
   changed,
   submitDisabled = false,
+  initialRequirements,
 }: {
   providers: SelectableProvider[];
   objective: string;
@@ -60,6 +61,7 @@ export function RunModal({
   beforeForm?: ReactNode;
   changed?: (draft: RunSetupDraft) => void;
   submitDisabled?: boolean;
+  initialRequirements?: { deliverables: string; acceptanceCriteria: string };
 }) {
   const { surface: localSurface } = useSurfaceClient();
   const executionKind = localSurface === 'terminal' ? 'docker-agent' : 'native';
@@ -67,8 +69,12 @@ export function RunModal({
   const [defaultsBusy, setDefaultsBusy] = useState(false);
   const [appliedDefaults, setAppliedDefaults] = useState<NativeProjectDefaults>();
   const [expanded, setExpanded] = useState(false);
-  const [deliverables, setDeliverables] = useState(initial?.deliverables ?? '');
-  const [acceptanceCriteria, setAcceptanceCriteria] = useState(initial?.acceptanceCriteria ?? '');
+  const [deliverables, setDeliverables] = useState(
+    initial?.deliverables ?? initialRequirements?.deliverables ?? '',
+  );
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(
+    initial?.acceptanceCriteria ?? initialRequirements?.acceptanceCriteria ?? '',
+  );
   const [choice, setChoice] = useState<ModelChoice>(() => initial?.choice ?? modelChoice),
     [planMode, setPlanMode] = useState(initial?.planMode ?? true),
     [terminalProfile, setTerminalProfile] = useState<AgentTerminalProfile>(() =>

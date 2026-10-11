@@ -27,6 +27,7 @@ const handoffDraftKey = /^draft:handoff:([^:\s/\\]+)$/;
 const deliveryReviewDraftKey = /^draft:delivery-review:([^:\s/\\]+)$/;
 const sourceResolutionDraftKey = /^draft:source-resolutions:([^:\s/\\]+)$/;
 const projectSetupDraftKey = /^draft:setup:project:([^:\s/\\]+)$/;
+const projectBoardDraftKey = /^draft:project-board:([^:\s/\\]+)$/;
 const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
   .string()
@@ -40,6 +41,7 @@ const keySchema = z
       deliveryReviewDraftKey.test(key) ||
       sourceResolutionDraftKey.test(key) ||
       projectSetupDraftKey.test(key) ||
+      projectBoardDraftKey.test(key) ||
       terminalDraftKey.test(key),
     '工作台缓存键无效',
   );
@@ -61,6 +63,8 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const board = projectBoardDraftKey.exec(key);
+  if (board) return { table: 'projects', id: board[1] };
   const setup = projectSetupDraftKey.exec(key);
   if (setup) return { table: 'projects', id: setup[1] };
   const review = deliveryReviewDraftKey.exec(key);

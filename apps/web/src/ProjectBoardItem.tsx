@@ -1,0 +1,301 @@
+import { useEffect, useState } from 'react';
+import type {
+  ProjectDeliveryBoard,
+  ProjectDeliveryItem,
+  ProjectDeliveryAttempts,
+  ProjectDeliveryReadiness,
+} from '../../../packages/contracts/src/project-delivery';
+import { useSurfaceClient } from './SurfaceClientContext';
+import { ProjectRunList, reviewLabels, executionLabel } from './ProjectRunList';
+export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
+  unlinked: '尚未关联执行',
+  unconfirmed: '待确认符合项目标准',
+  not_done: '执行未完成',
+  review_pending: '等待人工复核',
+  review_stale: '交付已变化，需重新复核',
+  changes_requested: '人工复核需修改',
+  source_feedback_pending: '原意见尚未全部复验通过',
+  unavailable: '部分记录无法读取',
+  ready: '可纳入项目交付',
+};
+export function ProjectBoardItem({
+  board,
+  item,
+  busy,
+  note,
+  changeNote,
+  query,
+  changeQuery,
+  openRun,
+  createRun,
+  action,
+}: {
+  board: ProjectDeliveryBoard;
+  item: ProjectDeliveryItem;
+  busy: boolean;
+  note: string;
+  changeNote: (value: string) => void;
+  query: string;
+  changeQuery: (value: string) => void;
+  openRun: (id: string, review?: boolean) => void;
+  createRun: () => void;
+  action: (path: string, body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const { api } = useSurfaceClient();
+  const [linking, setLinking] = useState(false),
+    [attempts, setAttempts] = useState<ProjectDeliveryAttempts>(),
+    [error, setError] = useState('');
+  const [before, setBefore] = useState(''),
+    [trail, setTrail] = useState<string[]>([]),
+    [retry, setRetry] = useState(0),
+    [loading, setLoading] = useState(false);
+  const base = `/projects/${board.projectId}/delivery-board/items/${item.id}`;
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    setAttempts(undefined);
+    void api<ProjectDeliveryAttempts>(
+      base + '/runs' + (before ? '?before=' + encodeURIComponent(before) : ''),
+      undefined,
+      undefined,
+      controller.signal,
+    )
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (
+          result.projectId !== board.projectId ||
+          result.itemId !== item.id ||
+          result.boardRevision !== board.revision
+        )
+          throw Error('项目计划已变化，请刷新工作台后读取关联执行。');
+        setAttempts(result);
+      })
+      .catch((issue) => {
+        if (!controller.signal.aborted) setError(issue instanceof Error ? issue.message : '关联执行读取失败');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [api, base, before, board.revision, board.projectId, item.id, retry]);
+  const current = item.current;
+  const writable = !busy && !board.archived;
+  return (
+    <section className="project-item-detail" aria-label="交付项详情">
+      <div className="project-section-heading">
+        <div>
+          <h2>{item.title}</h2>
+          <p>
+            {item.required ? '必需交付项' : '可选交付项'} · 标准版本 {item.itemRevision}
+          </p>
+        </div>
+        <span className={'project-readiness ' + (item.readiness === 'ready' ? 'ready' : '')}>
+          {readinessLabels[item.readiness]}
+        </span>
+      </div>
+      {item.description && <p className="project-prose">{item.description}</p>}
+      <div className="project-form-columns">
+        <div>
+          <h3>交付物</h3>
+          <ol>
+            {item.deliverables.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ol>
+        </div>
+        <div>
+          <h3>项目验收标准</h3>
+          <ol>
+            {item.acceptanceCriteria.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+      <div className="project-actions">
+        <button type="button" className="primary" disabled={!writable} onClick={createRun}>
+          从此交付项创建任务
+        </button>
+        <button type="button" className="secondary" disabled={!writable} onClick={() => setLinking(!linking)}>
+          {linking ? '收起关联选择' : '关联已有执行'}
+        </button>
+      </div>
+      {linking && (
+        <ProjectRunList
+          projectId={board.projectId}
+          query={query}
+          changeQuery={changeQuery}
+          openRun={openRun}
+          busy={busy}
+          choose={(runId) =>
+            void action(base + '/runs', { runId, makeCurrent: false }).then((ok) => {
+              if (ok) setLinking(false);
+            })
+          }
+        />
+      )}
+      <section className="project-current">
+        <h3>当前交付候选</h3>
+        {!current ? (
+          <p>选择一次已关联执行作为当前候选，历史尝试会保留。</p>
+        ) : (
+          <>
+            <strong>{current.title}</strong>
+            <dl className="project-status-grid">
+              <div>
+                <dt>执行</dt>
+                <dd>{current.missing ? '源任务已删除' : executionLabel(current.status)}</dd>
+              </div>
+              <div>
+                <dt>人工交付复核</dt>
+                <dd>{current.reviewStatus ? reviewLabels[current.reviewStatus] : '未复核'}</dd>
+              </div>
+              <div>
+                <dt>原意见复验</dt>
+                <dd>
+                  {current.sourceNotes.unavailable
+                    ? '部分无法读取'
+                    : `${current.sourceNotes.resolved}/${current.sourceNotes.total} 已解决`}
+                  {current.sourceNotes.stale > 0 && `，${current.sourceNotes.stale} 条需重核`}
+                </dd>
+              </div>
+              <div>
+                <dt>符合项目标准</dt>
+                <dd>
+                  {item.confirmation && !item.confirmationStale
+                    ? `已确认标准版本 ${item.confirmation.itemRevision}`
+                    : '需明确确认'}
+                </dd>
+              </div>
+            </dl>
+            {current.issue && <p className="field-error">{current.issue}</p>}
+            {item.confirmationStale && (
+              <p className="field-error">
+                项目标准或当前交付已变化，原确认仍保留，不能据此判定当前候选可交付。
+              </p>
+            )}
+            {!current.missing && (
+              <div className="project-actions">
+                <button type="button" className="secondary" onClick={() => openRun(current.runId)}>
+                  查看执行
+                </button>
+                <button type="button" className="secondary" onClick={() => openRun(current.runId, true)}>
+                  检查交付与原意见复验
+                </button>
+              </div>
+            )}
+            {current.fingerprint && current.reviewId && current.reviewStatus === 'accepted' && (
+              <div className="project-confirm">
+                <label>
+                  符合性确认说明
+                  <textarea
+                    value={note}
+                    maxLength={1000}
+                    onChange={(e) => changeNote(e.target.value)}
+                    placeholder="说明当前交付如何覆盖此处的项目标准（可选）"
+                  />
+                </label>
+                <p className="field-help">
+                  请对照上方项目标准和任务原交付确认。此操作绑定当前交付指纹与项目标准版本，不会修改任务复核。
+                </p>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!writable || !!current.issue || current.missing || !!current.executionHold}
+                  onClick={() =>
+                    void action(base + '/confirm', {
+                      expectedItemRevision: item.itemRevision,
+                      runId: current.runId,
+                      expectedFingerprint: current.fingerprint,
+                      expectedReviewId: current.reviewId,
+                      note,
+                    })
+                  }
+                >
+                  确认当前候选符合此项目标准
+                </button>
+              </div>
+            )}
+            {item.confirmation?.note && (
+              <details>
+                <summary>已保存的符合性说明</summary>
+                <p className="project-prose">{item.confirmation.note}</p>
+              </details>
+            )}
+          </>
+        )}
+      </section>
+      <h3>关联执行 · {item.attemptCount} 次</h3>
+      {loading && <p role="status">正在读取关联执行…</p>}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      {attempts?.items.map((attempt) => (
+        <article className="project-run-row" key={attempt.runId}>
+          <div>
+            <strong>{attempt.title}</strong>
+            <p>
+              {attempt.missing ? '源任务已删除' : executionLabel(attempt.status)} ·{' '}
+              {attempt.reviewStatus ? reviewLabels[attempt.reviewStatus] : '未复核'}
+              {attempt.current && ' · 当前候选'}
+            </p>
+          </div>
+          <div className="project-actions">
+            {!attempt.missing && (
+              <button type="button" className="secondary" onClick={() => openRun(attempt.runId)}>
+                打开
+              </button>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              disabled={!writable || attempt.current || attempt.missing || !!attempt.issue}
+              onClick={() => void action(base + '/current', { runId: attempt.runId })}
+            >
+              设为当前候选
+            </button>
+          </div>
+        </article>
+      ))}
+      <div className="project-actions">
+        <button
+          type="button"
+          className="secondary"
+          disabled={loading || !trail.length}
+          onClick={() => {
+            setBefore(trail.at(-1) || '');
+            setTrail(trail.slice(0, -1));
+          }}
+        >
+          上一页
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={loading || !attempts?.page.hasMore}
+          onClick={() => {
+            setTrail([...trail, before]);
+            setBefore(attempts?.page.nextBefore || '');
+          }}
+        >
+          下一页
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={loading}
+          onClick={() => {
+            setBefore('');
+            setTrail([]);
+            setRetry((n) => n + 1);
+          }}
+        >
+          重读关联执行
+        </button>
+      </div>
+    </section>
+  );
+}

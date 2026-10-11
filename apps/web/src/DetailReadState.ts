@@ -1,9 +1,10 @@
-import type { RunDetailCoverage } from '../../../packages/contracts/src/run-reads';
+import type { RunDetailCoverage, ExecutionHold } from '../../../packages/contracts/src/run-reads';
 
 export type DetailReadState = {
   readOnly?: boolean;
   readOnlyReason?: string | null;
   localExecutionStopped?: boolean;
+  executionHold?: ExecutionHold | null;
   detailCoverage?: RunDetailCoverage;
 };
 

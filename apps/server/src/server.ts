@@ -69,6 +69,8 @@ import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 import { RunSourceSelection, RunDeliveryItems } from '../../../packages/contracts/src/workflow.js';
 import { attachRunSource, captureRunSource, registerWorkflow } from './workflow.js';
+import { ProjectDeliveryBinding } from '../../../packages/contracts/src/project-delivery.js';
+import { attachProjectDeliveryRun, registerProjectDelivery } from './project-delivery.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -814,6 +816,7 @@ export function createServer(
   const executionReadOnlyReason = '部分执行记录暂时无法读取，当前仅供查看。修复后请重试读取。';
   const executionCommand = <T>(runId: string, body: unknown, route: string, work: (body: any) => T) => {
     // Preflight outside the business transaction so quarantined failures survive a rejected command.
+    store.recovery.assertReadable(runId);
     runReads.assertExecutionReadable(runId);
     return command(body, route, work);
   };
@@ -955,9 +958,10 @@ export function createServer(
     const result = executionCommand(run.id, body, request.url, () => {
       assertTerminalMutable(run.id);
       invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
-      return commit();
+      const result = commit();
+      executor.releaseLocalStop(run.id);
+      return result;
     });
-    executor.releaseLocalStop(run.id);
     executor.resume(run.id);
     return result;
   });
@@ -992,6 +996,7 @@ export function createServer(
         }),
         inputs: z.array(z.string()).default([]),
         source: RunSourceSelection.optional(),
+        projectDelivery: ProjectDeliveryBinding.optional(),
         deliverables: RunDeliveryItems.optional(),
         acceptanceCriteria: RunDeliveryItems.optional(),
       })
@@ -1006,6 +1011,15 @@ export function createServer(
         (options.surface !== 'terminal' && body.kind === 'task' && body.execution.kind === 'native'),
       'SOURCE_SURFACE',
       '带来源创建仅支持原生项目任务，请重新确认项目与授权范围',
+    );
+    invariant(
+      !body.projectDelivery ||
+        (options.surface !== 'terminal' &&
+          !!body.projectId &&
+          body.kind === 'task' &&
+          body.execution.kind === 'native'),
+      'PROJECT_RUN_SCOPE',
+      '项目交付项仅能关联本项目的原生任务',
     );
     invariant(
       (!body.deliverables && !body.acceptanceCriteria) ||
@@ -1073,10 +1087,10 @@ export function createServer(
         body.planMode,
         execution,
       );
-      if (!source) return created;
-      const sourced = attachRunSource(store, created, source);
-      kernel.event(sourced.id, 'run.updated', sourced);
-      return sourced;
+      const result = source ? attachRunSource(store, created, source) : created;
+      if (source) kernel.event(result.id, 'run.updated', result);
+      if (body.projectDelivery) attachProjectDeliveryRun(store, result, body.projectDelivery);
+      return result;
     });
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id/context', async (request) => {
@@ -1213,6 +1227,7 @@ export function createServer(
         : {}),
       readOnly: unavailable || (options.surface === 'native' && run.execution?.kind === 'docker-agent'),
       localExecutionStopped: executor.isLocallyStopped(run.id),
+      executionHold: store.getExecutionHold(run.id),
       readOnlyReason: unavailable
         ? executionReadOnlyReason
         : options.surface === 'native' && run.execution?.kind === 'docker-agent'
@@ -1383,8 +1398,8 @@ export function createServer(
         replayed: true,
         localExecutionStopped,
         message: localExecutionStopped
-          ? '这是原停止命令的历史结果；当前进程仍在抑制此任务调度，未记录持久暂停或取消。'
-          : '这是原停止命令的历史结果；当前进程未抑制此任务调度。本次重放未再次停止执行，如需停止请发起新的停止操作。',
+          ? '这是原停止命令的历史结果；当前仍存在执行抑制，持久状态请以当前任务提示为准。本次重放未重复停止。'
+          : '这是原停止命令的历史结果；当前没有执行抑制。本次重放未再次停止执行，如需停止请发起新的停止操作。',
       } satisfies RunStopCurrentResult;
     }
     if (body.action === 'stop_current') {
@@ -1418,6 +1433,7 @@ export function createServer(
         apiCatalog,
       );
     }
+    let releasedFinishedHold = false;
     const result = executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
       revision(body, run);
@@ -1427,6 +1443,30 @@ export function createServer(
         'ARCHIVED',
         '请先恢复归档的对话或项目',
       );
+      if (
+        body.action === 'resume' &&
+        !switching &&
+        !body.taskId &&
+        ['DONE', 'CANCELLED'].includes(run.status) &&
+        store.getExecutionHold(run.id)
+      ) {
+        invariant(!executorHasActive(executor, run.id), 'STOP_IN_PROGRESS', '当前执行尚未停止，请稍后再恢复');
+        executor.releaseLocalStop(run.id);
+        releasedFinishedHold = true;
+        return run;
+      }
+      if (['start', 'resume', 'resume_task'].includes(body.action) || body.switchMode === 'resume') {
+        if (store.getExecutionHold(run.id)) {
+          invariant(
+            !executorHasActive(executor, run.id),
+            'STOP_IN_PROGRESS',
+            '当前执行尚未停止，请稍后再恢复',
+          );
+          if (store.getExecutionHold(run.id)?.reason === 'recovery_unreadable') kernel.recover(run.id);
+        }
+        // The hold release and the authorized action commit together, or both roll back.
+        executor.releaseLocalStop(run.id);
+      }
       if (body.action === 'resume_task') {
         invariant(
           body.taskId && !executorHasActive(executor, run.id, body.taskId),
@@ -1461,9 +1501,7 @@ export function createServer(
     });
     if (!switching && ['pause', 'cancel'].includes(body.action))
       await executor.interrupt(request.params.id, body.taskId);
-    if (['start', 'resume', 'resume_task'].includes(body.action) || body.switchMode === 'resume')
-      executor.releaseLocalStop(request.params.id);
-    if (!switching || body.action === 'resume' || body.switchMode === 'resume')
+    if (!releasedFinishedHold && (!switching || body.action === 'resume' || body.switchMode === 'resume'))
       executor.resume(request.params.id);
     return result;
   });
@@ -1567,6 +1605,7 @@ export function createServer(
     (projectId) => terminalControl?.removeProjectPreferences(projectId),
   );
   if (options.surface !== 'terminal') registerWorkflow(app, store, management.assertMutable);
+  if (options.surface !== 'terminal') registerProjectDelivery(app, store, management.assertMutable);
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
       boundedStreams

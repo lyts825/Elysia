@@ -1024,7 +1024,7 @@ export class DockerAgentService {
       ),
     );
   }
-  private async clearEnvironmentFile(operation: Operation) {
+  private async clearEnvironmentFile(operation: Pick<Operation, 'id'>) {
     invariant(/^[a-f0-9-]{36}$/.test(operation.id), 'TERMINAL_STATE_SCOPE', '终端状态路径无效');
     const root = path.resolve(this.store.directory, 'terminal-state'),
       folder = path.resolve(root, operation.id),
@@ -1046,28 +1046,55 @@ export class DockerAgentService {
     }
   }
   async recover() {
-    for (const operation of this.store
-      .all<Operation>('tool_operations')
-      .filter((op) => op.name === 'terminal_agent')) {
-      if (!/^[a-f0-9-]{36}$/.test(operation.id)) continue;
+    // Known environment files need cleanup even after a terminal operation completed.
+    // Enumerate actual folders and small SQL ownership metadata, not every historical body.
+    const stateRoot = path.join(this.store.directory, 'terminal-state');
+    let folders: string[] = [];
+    try {
+      folders = await fs.readdir(stateRoot);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    for (const key of folders) {
+      if (!/^[a-f0-9-]{36}$/.test(key)) continue;
+      const row = this.store.db
+        .prepare(
+          `SELECT id,run_id runId,json_extract(data,'$.readModel.name') name,
+        json_extract(data,'$.readModel.taskId') taskId FROM tool_operations WHERE id=?`,
+        )
+        .get(key) as { id: string; runId: string; name: string | null; taskId: string | null } | undefined;
+      if (!row) continue;
+      if (!row.name)
+        this.store.recovery.apply<Operation>('tool_operations', key, (operation) => {
+          row.name = operation.name;
+          row.taskId = operation.taskId;
+          this.store.refreshReadProjection('tool_operations', operation);
+        });
+      if (row.name !== 'terminal_agent') continue;
       try {
-        await this.clearEnvironmentFile(operation);
+        await this.clearEnvironmentFile(row);
       } catch (error: any) {
         if (error.code !== 'ENOENT')
           this.kernel.event(
-            operation.runId,
+            row.runId,
             'terminal.environment_cleanup_failed',
-            { operationId: operation.id, message: '已知终端临时环境文件尚未清理，请检查数据目录权限' },
-            operation.taskId,
-            operation.attemptId,
+            { operationId: row.id, message: '已知终端临时环境文件尚未清理，请检查数据目录权限' },
+            row.taskId ?? undefined,
           );
       }
     }
-    for (const operation of this.store
-      .all<Operation>('tool_operations')
-      .filter((op) => op.name === 'terminal_agent' && ['INTENT', 'UNCERTAIN'].includes(op.status))) {
-      const task = this.store.require<Task>('tasks', operation.taskId);
-      const run = this.store.require<Run>('runs', task.runId);
+    for (const key of this.store.recovery.candidates('tool_operations', ['INTENT', 'UNCERTAIN'])) {
+      let operation: Operation | undefined, task: Task | undefined, run: Run | undefined;
+      this.store.recovery.apply<Operation>('tool_operations', key, (value) => {
+        if (value.name !== 'terminal_agent' || !['INTENT', 'UNCERTAIN'].includes(value.status)) return;
+        const owner = this.store.recovery.read<Task>('tasks', value.taskId);
+        const ownerRun = this.store.recovery.read<Run>('runs', owner.runId);
+        invariant(owner.runId === value.runId, 'RECOVERY_SCOPE', '恢复记录归属不一致');
+        operation = value;
+        task = owner;
+        run = ownerRun;
+      });
+      if (!operation || !task || !run) continue;
       this.resources.hold(
         task.id,
         undefined,
@@ -1079,16 +1106,24 @@ export class DockerAgentService {
       } catch {
         /* Keep uncertain state even when Docker is unavailable. */
       }
-      this.store.tx(() => {
+      const recoveredTask = task,
+        recoveredOperation = operation;
+      this.store.recovery.apply<Operation>('tool_operations', operation.id, (currentOperation) => {
+        if (
+          currentOperation.revision !== recoveredOperation.revision ||
+          !['INTENT', 'UNCERTAIN'].includes(currentOperation.status)
+        )
+          return;
         this.store.put('tool_operations', {
-          ...this.store.require<Operation>('tool_operations', operation.id),
+          ...currentOperation,
           status: 'UNCERTAIN',
           error: '服务曾中断；终端副作用需要核验，不会自动重跑',
         });
-        const current = this.store.require<Task>('tasks', task.id);
+        const current = this.store.recovery.read<Task>('tasks', recoveredTask.id);
+        this.store.recovery.read('agents', current.agentId);
         if (!['DONE', 'CANCELLED'].includes(current.status))
-          this.kernel.wait(current, 'terminal_verification');
-        this.runtimePhase(current, 'verification', operation.id);
+          this.kernel.updateTask(current, 'WAITING', { waitReason: 'terminal_verification', waitingFor: [] });
+        this.runtimePhase(current, 'verification', currentOperation.id);
       });
     }
     const rows = this.store.db
@@ -1097,7 +1132,10 @@ export class DockerAgentService {
     for (const row of rows) {
       const runtime = JSON.parse(row.value) as TerminalTaskRuntime;
       if (!['preparing', 'starting', 'running', 'finalizing'].includes(runtime.phase)) continue;
-      const task = this.store.get<Task>('tasks', runtime.taskId);
+      let task: Task | undefined;
+      this.store.recovery.apply<Task>('tasks', runtime.taskId, (value) => {
+        task = value;
+      });
       if (!task || this.active.has(task.id)) continue;
       const phase: TerminalRuntimePhase =
         task.waitReason === 'terminal_verification'

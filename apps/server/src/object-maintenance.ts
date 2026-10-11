@@ -301,6 +301,24 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         scan.state.recordsScanned++;
       }
     }
+    for (const table of [
+      'project_delivery_boards_v1',
+      'project_delivery_manifests_v1',
+      'project_delivery_links_v1',
+    ]) {
+      if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
+      scan.phase('references', surface, table);
+      const column = table === 'project_delivery_links_v1' ? 'title' : 'data';
+      for (const row of database.prepare(`SELECT ${column} value FROM ${table}`).iterate() as Iterable<{
+        value: string;
+      }>) {
+        scan.check();
+        if (typeof row.value !== 'string' || Buffer.byteLength(row.value) > MAX_RECORD_BYTES)
+          throw new Error('维护项目交付记录超过读取上限或格式无效');
+        references(column === 'data' ? JSON.parse(row.value) : row.value, retained);
+        scan.state.recordsScanned++;
+      }
+    }
     scan.phase('references', surface, 'storage_meta');
     for (const row of database.prepare('SELECT key,value FROM storage_meta').iterate() as Iterable<{
       key: string;

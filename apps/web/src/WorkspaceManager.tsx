@@ -42,7 +42,7 @@ export function WorkspaceManager({
   projectCounts?: Record<string, number>;
   changeListArchive?: (archived: boolean) => void;
 }) {
-  const { mutation } = useSurfaceClient();
+  const { mutation, surface } = useSurfaceClient();
   const [tab, setTab] = useState(initial),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -165,7 +165,7 @@ export function WorkspaceManager({
           onClick={() =>
             setConfirmation({
               title: `删除项目「${p.name}」？`,
-              description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。原始资料目录 ${p.workspaceRoot} 保留。`,
+              description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。${surface === 'native' ? '项目交付计划、关联记录和冻结清单也会删除，请先导出需要保留的清单。' : ''}原始资料目录 ${p.workspaceRoot} 保留。`,
               action: async () => {
                 const result = await mutation<{ deletedRunIds: string[] }>(
                   '/projects/' + p.id,

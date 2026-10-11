@@ -7,21 +7,47 @@ export function DetailReadNotice({
   retry,
   busy,
   stop,
+  finished = false,
+  clearHold,
 }: {
   detail: DetailReadState;
   retry: () => void;
   busy: boolean;
   stop?: () => Promise<RunStopCurrentResult>;
+  finished?: boolean;
+  clearHold?: () => Promise<boolean>;
 }) {
   const [stopping, setStopping] = useState(false),
     [stopped, setStopped] = useState<RunStopCurrentResult>();
   const [error, setError] = useState('');
+  const [clearing, setClearing] = useState(false);
   const reason = detailReadReason(detail);
   if (!reason && !detail.localExecutionStopped) return null;
   return (
     <section className="detail-read-notice" role="status" aria-label="详情读取不完整">
-      <strong>{reason ? '部分执行记录无法读取' : '本机调度已停止'}</strong>
-      <p>{reason || '记录已可读取，但此次本机调度仍已停止。请核验待处理事项，再明确恢复执行。'}</p>
+      <strong>
+        {reason
+          ? '部分执行记录无法读取'
+          : detail.executionHold?.reason === 'recovery_unreadable'
+            ? '异常恢复已停止自动执行'
+            : '本机调度已停止'}
+      </strong>
+      <p>
+        {reason ||
+          (finished
+            ? '任务已结束，仍保留停止标记。核验后可明确解除标记；不会重新执行，也不会改变已完成或已取消状态。'
+            : '记录已可读取，但此次本机调度仍已停止。请核验待处理事项，再明确恢复执行。')}
+      </p>
+      {detail.executionHold && (
+        <p className="field-help">
+          {finished
+            ? detail.executionHold.reason === 'recovery_unreadable'
+              ? '先前因记录无法核验而保存了停止调度标记。'
+              : '先前已保存停止调度标记。'
+            : detail.executionHold.message}
+          {detail.executionHold.issueCount > 0 && `（${detail.executionHold.issueCount} 项需核对）`}
+        </p>
+      )}
       {reason && (
         <details>
           <summary>查看分区读取情况</summary>
@@ -42,9 +68,33 @@ export function DetailReadNotice({
         </details>
       )}
       {reason && (
-        <button type="button" className="secondary" disabled={busy || stopping} onClick={retry}>
+        <button type="button" className="secondary" disabled={busy || stopping || clearing} onClick={retry}>
           {busy ? '正在重试读取…' : '重试读取此任务的异常记录'}
         </button>
+      )}
+      {finished && clearHold && detail.localExecutionStopped && (
+        <>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || stopping || clearing || !!reason}
+            onClick={async () => {
+              if (busy || stopping || clearing || reason) return;
+              setClearing(true);
+              setError('');
+              try {
+                if (!(await clearHold())) setError('解除停止标记尚未确认，请查看错误提示后重试。');
+              } catch (issue) {
+                setError(issue instanceof Error ? issue.message : '解除停止标记尚未确认，请重试。');
+              } finally {
+                setClearing(false);
+              }
+            }}
+          >
+            {clearing ? '正在核验并解除标记…' : '解除停止标记（不执行）'}
+          </button>
+          {reason && <p className="field-help">请先修复并重试读取异常记录，再解除停止标记。</p>}
+        </>
       )}
       {stop && !!reason && (
         <>
@@ -67,11 +117,17 @@ export function DetailReadNotice({
           >
             {stopping ? '正在停止当前执行…' : '停止当前执行'}
           </button>
-          <p className="field-help">仅停止此任务的本机执行，不记录持久暂停或取消；现有请求仍可能结算。</p>
+          <p className="field-help">
+            先保存此任务的停止调度记录，再中断本机执行；不会把原任务状态改为已取消，现有请求仍可能结算。
+          </p>
         </>
       )}
       {(stop || detail.localExecutionStopped) && (
-        <p className="field-help">应用重启后不会保留此次调度抑制。修复记录不会自动恢复执行。</p>
+        <p className="field-help">
+          {finished
+            ? '停止标记在重开应用后仍有效。修复记录不会自动解除；解除已结束任务的标记不会启动执行。'
+            : '停止调度记录在重开应用后仍有效。修复记录不会自动恢复，核验通过后需明确恢复执行。'}
+        </p>
       )}
       {stopped && (
         <p className={stopped.interrupted ? 'field-help' : 'field-error'} role="status">

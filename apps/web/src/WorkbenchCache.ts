@@ -20,6 +20,7 @@ const validKey = (key: string) =>
     key === 'draft:chat' ||
     key === 'draft:setup:chat' ||
     /^draft:setup:project:[^:\s/\\]+$/.test(key) ||
+    /^draft:project-board:[^:\s/\\]+$/.test(key) ||
     /^draft:(?:handoff|delivery-review|source-resolutions):[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
     /^settings:selected-terminal-profile:[^:\s/\\]+$/.test(key) ||
@@ -310,6 +311,8 @@ export class WorkbenchCache {
       if (match) return !projectIds.has(match[1]);
       const setup = /^draft:setup:project:(.+)$/.exec(key);
       if (setup) return !projectIds.has(setup[1]);
+      const board = /^draft:project-board:(.+)$/.exec(key);
+      if (board) return !projectIds.has(board[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
       const terminalDraft = /^draft:terminal-(?:continuation|recovery):([^:]+)(?::[^:]+)?$/.exec(key);
       const handoffDraft = /^draft:(?:handoff|delivery-review|source-resolutions):([^:]+)$/.exec(key);

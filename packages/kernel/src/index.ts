@@ -1523,11 +1523,15 @@ export class Kernel {
       }
     });
   }
-  recover() {
-    this.store.tx(() => {
-      for (const r of this.store.requestLedger().filter((r) => r.status === 'RESERVED'))
-        this.settle(r.id, null, '服务中断，用量待核验');
-      for (const op of this.store.all<any>('tool_operations').filter((o) => o.status === 'INTENT')) {
+  recover(runId?: string) {
+    const recovery = this.store.recovery;
+    for (const key of recovery.candidates('requests', ['RESERVED'], runId))
+      recovery.apply<RequestRecord>('requests', key, (request) => {
+        if (request.status === 'RESERVED') this.settle(request.id, null, '服务中断，用量待核验');
+      });
+    for (const key of recovery.candidates('tool_operations', ['INTENT'], runId))
+      recovery.apply<Operation>('tool_operations', key, (op) => {
+        if (op.status !== 'INTENT') return;
         this.store.put('tool_operations', { ...op, status: 'UNCERTAIN' });
         this.event(
           op.runId,
@@ -1535,28 +1539,48 @@ export class Kernel {
           { operationId: op.id, reason: '副作用结果待核验' },
           op.taskId,
         );
-      }
-      for (const task of this.store
-        .all<Task>('tasks')
-        .filter((t) => t.status === 'RUNNING' || t.status === 'VERIFYING')) {
-        const pending = this.store
-          .all<any>('tool_operations', task.runId)
-          .some((o) => o.taskId === task.id && o.status === 'UNCERTAIN');
-        this.wait(task, pending ? 'verification' : 'interrupted');
-      }
-      for (const a of this.store.all<Attempt>('attempts').filter((a) => a.status === 'ACTIVE'))
-        this.store.put('attempts', { ...a, status: 'WAITING', lease: null });
-      // Older archival kept the rate reason after pausing its root task. Restoring
-      // the archive must expose the saved pause instead of implying automatic retry.
-      for (const run of this.store
-        .all<Run>('runs')
-        .filter((r) => r.status === 'WAITING' && r.reason === 'rate_limit')) {
-        const root = this.store.require<Task>('tasks', run.rootTaskId);
-        if (root.status === 'WAITING' && root.waitReason === 'paused')
+      });
+    for (const key of recovery.candidates('tasks', ['READY', 'RUNNING', 'VERIFYING', 'WAITING'], runId))
+      recovery.apply<Task>('tasks', key, (task) => {
+        const run = recovery.read<Run>('runs', task.runId);
+        const agent = recovery.read<Agent>('agents', task.agentId);
+        invariant(
+          agent.runId === task.runId && agent.taskId === task.id,
+          'RECOVERY_SCOPE',
+          '恢复记录归属不一致',
+        );
+        if (!['RUNNING', 'VERIFYING'].includes(task.status)) return;
+        const pending = this.store.db
+          .prepare(
+            `SELECT 1 FROM tool_operations WHERE run_id=?
+          AND json_extract(data,'$.readModel.taskId')=?
+          AND COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))='UNCERTAIN' LIMIT 1`,
+          )
+          .get(task.runId, task.id);
+        const reason = pending ? 'verification' : 'interrupted';
+        // Recovery does not rebuild a graph/checkpoint from all historical bodies.
+        // Preserve the last checkpoint and normalize only the interrupted live records.
+        this.updateTask(task, 'WAITING', { waitReason: reason, waitingFor: [] });
+        if (task.id === run.rootTaskId) this.updateRun(run, { status: 'WAITING', reason });
+        this.event(task.runId, 'decision.required', { taskId: task.id, reason }, task.id);
+      });
+    for (const key of recovery.candidates('attempts', ['ACTIVE'], runId))
+      recovery.apply<Attempt>('attempts', key, (attempt) => {
+        if (attempt.status === 'ACTIVE')
+          this.store.put('attempts', { ...attempt, status: 'WAITING', lease: null });
+      });
+    for (const key of recovery.candidates('runs', ['READY', 'RUNNING', 'WAITING'], runId))
+      recovery.apply<Run>('runs', key, (run) => {
+        const root = recovery.read<Task>('tasks', run.rootTaskId);
+        invariant(root.runId === run.id, 'RECOVERY_SCOPE', '恢复记录归属不一致');
+        if (
+          run.status === 'WAITING' &&
+          run.reason === 'rate_limit' &&
+          root.status === 'WAITING' &&
+          root.waitReason === 'paused'
+        )
           this.updateRun(run, { reason: 'paused' });
-      }
-      for (const run of this.store.all<Run>('runs').filter((r) => r.status === 'RUNNING'))
-        this.updateRun(run, { status: 'WAITING', reason: 'interrupted' });
-    });
+        if (run.status === 'RUNNING') this.updateRun(run, { status: 'WAITING', reason: 'interrupted' });
+      });
   }
 }

@@ -549,13 +549,21 @@ export class ToolGateway {
     return this.kernel.store;
   }
   async recoverOperations() {
-    for (const operation of this.store
-      .all<Operation>('tool_operations')
-      .filter(
-        (o) => o.status === 'UNCERTAIN' && ['write', 'apply_patch', 'materialize_artifact'].includes(o.name),
-      )) {
-      const task = this.store.require<Task>('tasks', operation.taskId),
-        evidence = operation.evidence;
+    for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN'])) {
+      let operation: Operation | undefined, task: Task | undefined;
+      this.store.recovery.apply<Operation>('tool_operations', key, (value) => {
+        if (
+          value.status !== 'UNCERTAIN' ||
+          !['write', 'apply_patch', 'materialize_artifact'].includes(value.name)
+        )
+          return;
+        const owner = this.store.recovery.read<Task>('tasks', value.taskId);
+        invariant(owner.runId === value.runId, 'RECOVERY_SCOPE', '恢复记录归属不一致');
+        task = owner;
+        operation = value;
+      });
+      if (!operation || !task) continue;
+      const evidence = operation.evidence;
       if (!evidence || typeof evidence.path !== 'string' || typeof evidence.afterHash !== 'string') continue;
       try {
         const file = await this.path(task, evidence.path);
@@ -567,19 +575,31 @@ export class ToolGateway {
         }
         if (actualHash !== evidence.afterHash && actualHash !== evidence.beforeHash) continue;
         const applied = actualHash === evidence.afterHash;
-        this.store.tx(() => {
+        const recoveredTask = task,
+          recoveredOperation = operation;
+        this.store.recovery.apply<Operation>('tool_operations', operation.id, (currentOperation) => {
+          const task = this.store.recovery.read<Task>('tasks', recoveredTask.id);
+          if (
+            currentOperation.revision !== recoveredOperation.revision ||
+            currentOperation.status !== 'UNCERTAIN'
+          )
+            return;
           const updated = this.store.put('tool_operations', {
-            ...operation,
+            ...currentOperation,
             status: applied ? ('DONE' as const) : ('FAILED' as const),
             result: applied
               ? { source: file, hash: actualHash, recovered: true }
               : { error: '核验原文哈希，写入未应用', recovered: true },
           });
-          this.kernel.event(task.runId, 'tool.completed', updated, task.id, operation.attemptId);
+          this.kernel.event(task.runId, 'tool.completed', updated, task.id, currentOperation.attemptId);
           if (
-            !this.store
-              .all<Operation>('tool_operations', task.runId)
-              .some((o) => o.taskId === task.id && o.status === 'UNCERTAIN') &&
+            !this.store.db
+              .prepare(
+                `SELECT 1 FROM tool_operations WHERE run_id=?
+              AND json_extract(data,'$.readModel.taskId')=?
+              AND COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))='UNCERTAIN' LIMIT 1`,
+              )
+              .get(task.runId, task.id) &&
             task.status === 'WAITING' &&
             task.waitReason === 'verification'
           )

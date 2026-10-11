@@ -18,9 +18,15 @@ export type RunStopCurrentResult = {
   runId: string;
   interrupted: boolean;
   schedulingPaused: true;
-  persistentPauseRecorded: false;
+  persistentPauseRecorded: boolean;
   localExecutionStopped: boolean;
   replayed: boolean;
+  message: string;
+};
+export type ExecutionHold = {
+  reason: 'user_stop' | 'recovery_unreadable';
+  since: string;
+  issueCount: number;
   message: string;
 };
 export type RecordPage = {

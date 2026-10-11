@@ -48,7 +48,8 @@ export const supportedSchema = (version: unknown): version is number =>
 export const dataFormat = (version: number): DataFormat => ({
   name: 'elysia-sqlite',
   version,
-  minimumReaderVersion: version === 4 ? STORAGE_MIN_READER_VERSION : '0.24.0-preview.1',
+  minimumReaderVersion:
+    version >= 5 ? STORAGE_MIN_READER_VERSION : version === 4 ? '0.25.0-preview.1' : '0.24.0-preview.1',
 });
 export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   if (!entry.dataFormat) {
