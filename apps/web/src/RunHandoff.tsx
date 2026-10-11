@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ContextPolicy, Project, Run } from '../../../packages/contracts/src/index';
-import type {
-  SourceArtifact,
-  SourceMessage,
-  SourceOptions,
-  RunSourceSnapshot,
+import {
+  sourceTextByteLength,
+  sourceTextLimitBytes,
+  type SourceArtifact,
+  type SourceMessage,
+  type SourceOptions,
+  type RunSourceSnapshot,
 } from '../../../packages/contracts/src/workflow';
 import type { ModelChoice, SelectableProvider } from './ModelPicker';
 import { RunModal, type RunSetupDraft } from './RunSetupModal';
@@ -173,9 +175,7 @@ export function RunHandoff({
       });
     return () => controller.abort();
   }, [api, run.id, messageBefore, artifactBefore, retry]);
-  const selectedBytes = new TextEncoder().encode(
-    draft.feedback + draft.messages.map((message) => message.text).join('\n'),
-  ).length;
+  const selectedBytes = sourceTextByteLength(draft.messages, draft.feedback);
   const canContinue =
     !!selectedProject &&
     !!draft.objective.trim() &&
@@ -183,7 +183,7 @@ export function RunHandoff({
     !!options &&
     !error &&
     !loading &&
-    selectedBytes <= 16384 &&
+    selectedBytes <= sourceTextLimitBytes &&
     draft.messages.length + draft.artifacts.length > 0;
   const selectionPreview = (
     <section className="workflow-source" aria-label="带入内容预览">
@@ -355,8 +355,9 @@ export function RunHandoff({
             />
           )}
           <p className="field-help">
-            每类最多选择 10 项；消息总量最多 16 KiB。当前已选 {draft.messages.length} 条消息、
-            {draft.artifacts.length} 个产物。
+            每类最多选择 10 项。当前已选 {draft.messages.length} 条消息、{draft.artifacts.length} 个产物。
+            消息正文与修改意见合计 {selectedBytes.toLocaleString()} / {sourceTextLimitBytes.toLocaleString()}{' '}
+            字节（UTF-8，最多 16 KiB）。
           </p>
           {error && (
             <p className="field-error" role="alert">
@@ -366,9 +367,9 @@ export function RunHandoff({
               </button>
             </p>
           )}
-          {selectedBytes > 16384 && (
+          {selectedBytes > sourceTextLimitBytes && (
             <p className="field-error" role="alert">
-              选定消息超过 16 KiB，请减少选择。
+              消息正文与修改意见合计超过 16 KiB，请减少选择或精简意见。
             </p>
           )}
           {messageIssue && (

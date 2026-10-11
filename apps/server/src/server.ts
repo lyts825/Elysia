@@ -1576,7 +1576,7 @@ export function createServer(
       signal: fileRequestSignal(request, reply),
     });
   });
-  const webRoot = path.join(process.cwd(), 'apps', 'web', 'dist');
+  const webRoot = process.env.ELYSIA_WEB_ROOT || path.join(process.cwd(), 'apps', 'web', 'dist');
   if (options.serveWeb !== false && existsSync(webRoot)) {
     void app.register(staticFiles, { root: webRoot });
     app.setNotFoundHandler((request, reply) => {

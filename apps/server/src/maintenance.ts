@@ -1,12 +1,10 @@
 import {
   Store,
-  acquireLock,
   dataDirectory,
   id,
   now,
   stable,
   STORAGE_SCHEMA_VERSION,
-  STORAGE_MIN_READER_VERSION,
 } from '../../../packages/storage/src/index.js';
 import { VERSION } from '../../../packages/contracts/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
@@ -19,54 +17,32 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
-  mkdirSync,
   mkdtempSync,
-  cpSync,
-  renameSync,
   readdirSync,
-  rmSync,
   lstatSync,
   realpathSync,
 } from 'node:fs';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { backup, DatabaseSync } from 'node:sqlite';
 
-type Surface = 'native' | 'terminal';
-type Selection = Surface | 'all';
-type DataFormat = { name: 'elysia-sqlite'; version: number; minimumReaderVersion: string };
-type SurfaceBackup = { path: string; schemaVersion: number; dataFormat?: DataFormat; includes: string[] };
-type BackupMetadata = {
-  appVersion: string;
-  backupFormatVersion: 1;
-  schemaVersion: number;
-  createdAt: string;
-  includes: string[];
-  workspacesRetainedAt: string;
-  surface: Selection;
-  surfaces: Partial<Record<Surface, SurfaceBackup>>;
-};
-const fileNames = ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs'];
-const supportedSchema = (version: unknown): version is number =>
-  Number.isInteger(version) && Number(version) >= 1 && Number(version) <= STORAGE_SCHEMA_VERSION;
-const dataFormat = (version: number): DataFormat => ({
-  name: 'elysia-sqlite',
-  version,
-  minimumReaderVersion: version === 4 ? STORAGE_MIN_READER_VERSION : '0.24.0-preview.1',
-});
-function validateDataFormat(entry: SurfaceBackup, required: boolean) {
-  if (!entry.dataFormat) {
-    if (required || entry.schemaVersion >= 4) throw new Error('备份缺少数据格式及最低读取版本');
-    return;
-  }
-  const expected = dataFormat(entry.schemaVersion);
-  if (
-    entry.dataFormat.name !== expected.name ||
-    entry.dataFormat.version !== expected.version ||
-    entry.dataFormat.minimumReaderVersion !== expected.minimumReaderVersion
-  )
-    throw new Error('备份数据格式或最低读取版本不相容');
-}
+import {
+  type Surface,
+  type Selection,
+  type SurfaceBackup,
+  type BackupMetadata,
+  assertSurfacePath,
+  surfaceDirectory,
+  assertDirectory,
+  canonicalDestination,
+  isWithin,
+  prepareSurface,
+  copyDirectory,
+  removeStage,
+  backupSurfaces,
+  installPrepared,
+  acquireSurfaceLocks,
+  recoverPreparedInstall,
+} from './maintenance-storage.js';
+import { prepareStartupUpgrade } from './startup-storage.js';
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -210,224 +186,6 @@ async function terminalMaintenance(directory: string) {
   }
 }
 
-function isWithin(root: string, candidate: string, allowRoot = false) {
-  const relative = path.relative(root, candidate);
-  return (
-    (allowRoot || Boolean(relative)) &&
-    relative !== '..' &&
-    !relative.startsWith('..' + path.sep) &&
-    !path.isAbsolute(relative)
-  );
-}
-
-function canonicalDestination(destination: string): string {
-  if (existsSync(destination)) return realpathSync(destination);
-  const parent = path.dirname(destination);
-  if (parent === destination) return destination;
-  return path.join(canonicalDestination(parent), path.basename(destination));
-}
-
-function surfaceDirectory(root: string, surface: Surface) {
-  return surface === 'native' ? root : path.join(root, 'surfaces', 'terminal');
-}
-
-function assertDirectory(directory: string) {
-  const stat = lstatSync(directory);
-  if (!stat.isDirectory() || stat.isSymbolicLink())
-    throw new Error('维护目录不能是链接或特殊文件：' + directory);
-}
-
-function assertSurfacePath(root: string, surface: Surface) {
-  if (surface === 'native') return;
-  for (const item of [path.join(root, 'surfaces'), surfaceDirectory(root, surface)])
-    if (existsSync(item)) assertDirectory(item);
-}
-
-async function snapshotDatabase(source: string, target: string, expectedVersion?: number) {
-  if (!lstatSync(source).isFile() || lstatSync(source).isSymbolicLink())
-    throw new Error('数据库不能是链接或特殊文件');
-  // SQLite backup includes committed WAL pages without upgrading or changing its source.
-  const database = new DatabaseSync(source, { readOnly: true });
-  try {
-    await backup(database, target);
-  } finally {
-    database.close();
-  }
-  const snapshot = new DatabaseSync(target);
-  try {
-    const mode = snapshot.prepare('PRAGMA journal_mode=DELETE').get() as any;
-    if (mode.journal_mode !== 'delete') throw new Error('无法生成独立备份数据库');
-  } finally {
-    snapshot.close();
-  }
-  const validation = new DatabaseSync(target, { readOnly: true });
-  try {
-    const version = Number((validation.prepare('PRAGMA user_version').get() as any).user_version);
-    if (!supportedSchema(version)) throw new Error('备份 schema 不相容');
-    if (expectedVersion !== undefined && version !== expectedVersion)
-      throw new Error('备份版本与元数据不一致');
-    const integrity = validation.prepare('PRAGMA integrity_check').all() as any[];
-    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok')
-      throw new Error('备份数据库完整性检查失败');
-    return version;
-  } finally {
-    validation.close();
-  }
-}
-
-function copyDirectory(source: string, target: string) {
-  assertDirectory(source);
-  mkdirSync(target, { recursive: true });
-  for (const name of readdirSync(source)) {
-    const from = path.join(source, name);
-    const to = path.join(target, name);
-    const stat = lstatSync(from);
-    if (stat.isSymbolicLink()) throw new Error('备份对象和日志不能包含链接：' + from);
-    if (stat.isDirectory()) copyDirectory(from, to);
-    else if (stat.isFile()) {
-      const digest = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
-      const before = digest(from);
-      cpSync(from, to);
-      if (digest(to) !== before || digest(from) !== before) throw new Error('备份文件发生变化：' + from);
-    } else throw new Error('备份对象和日志不能包含特殊文件：' + from);
-  }
-}
-
-async function prepareSurface(source: string, target: string, expectedVersion?: number, migrate = false) {
-  assertDirectory(source);
-  mkdirSync(target, { recursive: true });
-  let schemaVersion = await snapshotDatabase(
-    path.join(source, 'state.db'),
-    path.join(target, 'state.db'),
-    expectedVersion,
-  );
-  copyDirectory(path.join(source, 'objects'), path.join(target, 'objects'));
-  const includes = ['state.db', 'objects'];
-  if (existsSync(path.join(source, 'logs'))) {
-    copyDirectory(path.join(source, 'logs'), path.join(target, 'logs'));
-    includes.push('logs');
-  }
-  if (migrate) {
-    // Migrate and validate only the prepared copy; a bad second surface cannot alter the first.
-    const store = new Store(target);
-    try {
-      const integrity = store.db.prepare('PRAGMA integrity_check').all() as any[];
-      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok')
-        throw new Error('恢复数据库完整性检查失败');
-    } finally {
-      store.close();
-    }
-    const standalone = path.join(target, 'prepared.db');
-    schemaVersion = await snapshotDatabase(path.join(target, 'state.db'), standalone, STORAGE_SCHEMA_VERSION);
-    for (const name of ['state.db', 'state.db-wal', 'state.db-shm'])
-      rmSync(path.join(target, name), { force: true });
-    renameSync(standalone, path.join(target, 'state.db'));
-  }
-  return { schemaVersion, dataFormat: dataFormat(schemaVersion), includes };
-}
-
-function backupSurfaces(source: string): Partial<Record<Surface, SurfaceBackup>> {
-  const metadata = JSON.parse(readFileSync(path.join(source, 'backup.json'), 'utf8'));
-  if (!supportedSchema(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
-  const modern = metadata.backupFormatVersion !== undefined;
-  if (
-    modern &&
-    (metadata.backupFormatVersion !== 1 ||
-      typeof metadata.appVersion !== 'string' ||
-      !metadata.appVersion.trim())
-  )
-    throw new Error('备份封装格式或应用版本无效');
-  if (!modern && metadata.schemaVersion >= 4) throw new Error('备份缺少封装格式与应用版本');
-  // Legacy backups have only the native root. Never infer a terminal backup from its filename.
-  if (!modern && metadata.surface === undefined && metadata.surfaces === undefined)
-    return { native: { path: '.', schemaVersion: metadata.schemaVersion, includes: metadata.includes } };
-  if (!['native', 'terminal', 'all'].includes(metadata.surface) || !metadata.surfaces)
-    throw new Error('备份入口元数据无效');
-  const selected: Partial<Record<Surface, SurfaceBackup>> = {};
-  for (const [name, value] of Object.entries(metadata.surfaces)) {
-    if (!['native', 'terminal'].includes(name)) throw new Error('备份包含未知入口');
-    const entry = value as SurfaceBackup;
-    const expectedPath = metadata.surface === 'all' && name === 'terminal' ? 'surfaces/terminal' : '.';
-    if (
-      !entry ||
-      entry.path !== expectedPath ||
-      !supportedSchema(entry.schemaVersion) ||
-      !Array.isArray(entry.includes) ||
-      !entry.includes.includes('state.db') ||
-      !entry.includes.includes('objects') ||
-      (metadata.surface !== 'all' && name !== metadata.surface)
-    )
-      throw new Error('备份入口元数据不一致');
-    validateDataFormat(entry, modern);
-    selected[name as Surface] = entry;
-  }
-  const primary = metadata.surface === 'terminal' ? selected.terminal : selected.native;
-  if (!primary || primary.schemaVersion !== metadata.schemaVersion) throw new Error('备份入口不完整');
-  return selected;
-}
-
-function removeStage(stage: string, directory: string) {
-  if (
-    path.dirname(path.resolve(stage)) !== path.resolve(directory) ||
-    !path.basename(stage).startsWith('.maintenance-')
-  )
-    throw new Error('维护暂存路径越界');
-  rmSync(stage, { recursive: true, force: true });
-}
-
-function installPrepared(directory: string, stage: string, surfaces: Surface[]) {
-  const backupsDirectory = path.join(directory, 'backups');
-  if (existsSync(backupsDirectory)) assertDirectory(backupsDirectory);
-  const archive = path.join(directory, 'backups', 'before-restore-' + path.basename(stage));
-  const moved: { from: string; to: string }[] = [];
-  const installed: string[] = [];
-  mkdirSync(archive, { recursive: true });
-  try {
-    for (const surface of surfaces) {
-      assertSurfacePath(directory, surface);
-      const destination = surfaceDirectory(directory, surface);
-      const archived = surfaceDirectory(archive, surface);
-      mkdirSync(destination, { recursive: true });
-      mkdirSync(archived, { recursive: true });
-      for (const name of fileNames) {
-        const from = path.join(destination, name);
-        const to = path.join(archived, name);
-        if (!isWithin(directory, from) || !isWithin(archive, to)) throw new Error('恢复归档路径越界');
-        if (existsSync(from)) {
-          if (lstatSync(from).isSymbolicLink()) throw new Error('当前数据不能是链接：' + from);
-          renameSync(from, to);
-          moved.push({ from, to });
-        }
-      }
-    }
-    for (const surface of surfaces) {
-      const prepared = surfaceDirectory(stage, surface);
-      const destination = surfaceDirectory(directory, surface);
-      for (const name of ['state.db', 'objects', 'logs']) {
-        const from = path.join(prepared, name);
-        const to = path.join(destination, name);
-        if (existsSync(from)) {
-          renameSync(from, to);
-          installed.push(to);
-        }
-      }
-    }
-    writeFileSync(path.join(archive, 'archive.json'), stable({ createdAt: now(), surfaces }));
-    return archive;
-  } catch (error) {
-    try {
-      for (const installedPath of installed.reverse()) {
-        if (!isWithin(directory, installedPath)) throw new Error('恢复回滚路径越界');
-        rmSync(installedPath, { recursive: true, force: true });
-      }
-      for (const item of moved.reverse()) renameSync(item.to, item.from);
-    } catch (rollbackError) {
-      throw new Error('恢复及回滚失败；原数据保留于 ' + archive, { cause: rollbackError });
-    }
-    throw error;
-  }
-}
-
 const configuredDirectory = dataDirectory();
 if (action === 'stop') {
   if (!existsSync(path.join(configuredDirectory, 'service.lock')))
@@ -444,11 +202,13 @@ if (action === 'stop') {
   );
   console.log('已请求服务在安全边界停止（两个入口整体停止）');
 } else {
-  // One process owns both surfaces, so all maintenance shares the root service lock.
-  const release = acquireLock(configuredDirectory);
+  // Preflight both surface locks before backup, recovery, migration or terminal maintenance.
+  const release = acquireSurfaceLocks(configuredDirectory);
   const directory = realpathSync(configuredDirectory);
   try {
+    recoverPreparedInstall(directory);
     if (terminalActions.includes(action)) {
+      await prepareStartupUpgrade(directory, ['terminal']);
       console.log(stable(await terminalMaintenance(directory)));
     } else if (action === 'migrate') {
       const surfaces: Surface[] =
@@ -460,11 +220,8 @@ if (action === 'stop') {
                 : []),
             ]
           : [selection];
-      for (const surface of surfaces) {
-        assertSurfacePath(directory, surface);
-        const store = new Store(surfaceDirectory(directory, surface));
-        store.close();
-      }
+      const backup = await prepareStartupUpgrade(directory, surfaces);
+      if (backup) console.log('升级前备份：' + backup);
       console.log(
         'schema v' + STORAGE_SCHEMA_VERSION + ' 迁移完成（' + surfaces.join('、') + '）：' + directory,
       );

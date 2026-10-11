@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AgentTerminalProfile,
   Budget,
+  Permissions,
   minimumContextWindowTokens,
   type ContextPolicy,
   type TerminalConnectionView,
@@ -19,26 +20,9 @@ import type { NativeProjectDefaults } from '../../../packages/contracts/src/work
 import { RunConfirmation } from './RunConfirmation';
 import { TaskRequirements, requirementLines, validRequirements } from './TaskRequirements';
 import './workflow.css';
+import type { RunSetupDraft } from './RunSetupDraft';
+export type { RunSetupDraft } from './RunSetupDraft';
 const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
-
-export type RunSetupDraft = {
-  planMode: boolean;
-  executionKind: 'native' | 'docker-agent';
-  terminalProfile: AgentTerminalProfile;
-  choice: ModelChoice;
-  contextPolicy: ContextPolicy;
-  write: boolean;
-  exec: boolean;
-  urls: string;
-  inputs: string;
-  writePaths: string;
-  maxRequests: number;
-  maxTokens: number;
-  concurrency: number;
-  maxCost?: number | null;
-  deliverables?: string;
-  acceptanceCriteria?: string;
-};
 
 export function RunModal({
   providers,
@@ -66,7 +50,7 @@ export function RunModal({
   projectId?: string;
   close: () => void;
   busy: boolean;
-  submit: (body: any) => void;
+  submit: (body: any, draft: RunSetupDraft) => void;
   settings: (draft: RunSetupDraft) => void;
   initial?: RunSetupDraft;
   modelChoice: ModelChoice;
@@ -109,10 +93,26 @@ export function RunModal({
   );
   const chat = kind === 'chat';
   const terminal = !chat && executionKind === 'docker-agent';
+  const lines = (s: string) =>
+    s
+      .split('\n')
+      .map((v) => v.trim())
+      .filter(Boolean);
+  const permissionsValid =
+    chat ||
+    terminal ||
+    Permissions.safeParse({
+      read: true,
+      write,
+      exec,
+      urls: lines(urls),
+      writePaths: lines(writePaths),
+    }).success;
   const setupReady = terminal
     ? AgentTerminalProfile.safeParse(terminalProfile).success
     : modelReady &&
       contextValid &&
+      permissionsValid &&
       Budget.safeParse({ maxRequests, maxTokens, maxCost }).success &&
       (chat || (concurrency >= 1 && concurrency <= 4 && Number.isInteger(concurrency)));
   const requirementsReady =
@@ -168,11 +168,6 @@ export function RunModal({
     setMaxCost(defaults.budget.maxCost);
     setConcurrency(defaults.concurrency);
   };
-  const lines = (s: string) =>
-    s
-      .split('\n')
-      .map((v) => v.trim())
-      .filter(Boolean);
   return (
     <Modal
       title={chat ? '新建独立对话' : '新建项目任务'}
@@ -197,40 +192,48 @@ export function RunModal({
           )
             return;
           edited.current = true;
-          submit({
-            ...(terminal ? {} : { ...choice, contextPolicy: context }),
-            planMode: terminal ? false : planMode,
-            execution: terminal ? { kind: 'docker-agent', profile: terminalProfile } : { kind: 'native' },
-            inputs: lines(inputs),
-            ...(!chat && !terminal
-              ? {
-                  ...(requirementLines(deliverables).length
-                    ? { deliverables: requirementLines(deliverables) }
-                    : {}),
-                  ...(requirementLines(acceptanceCriteria).length
-                    ? { acceptanceCriteria: requirementLines(acceptanceCriteria) }
-                    : {}),
-                }
-              : {}),
-            permissionProfile: chat
-              ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
-              : terminal
-                ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
-                : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
-            budget: { maxRequests, maxTokens, maxCost },
-            limits: {
-              maxDepth: chat ? 0 : 2,
-              maxAgents: chat ? 1 : 12,
-              concurrency: chat ? 1 : concurrency,
-              toolConcurrency: 4,
-              maxSteps: 20,
-              maxMinutes: terminal ? Math.ceil(terminalProfile.timeoutMs / 60000) : 30,
+          submit(
+            {
+              ...(terminal ? {} : { ...choice, contextPolicy: context }),
+              planMode: terminal ? false : planMode,
+              execution: terminal ? { kind: 'docker-agent', profile: terminalProfile } : { kind: 'native' },
+              inputs: lines(inputs),
+              ...(!chat && !terminal
+                ? {
+                    ...(requirementLines(deliverables).length
+                      ? { deliverables: requirementLines(deliverables) }
+                      : {}),
+                    ...(requirementLines(acceptanceCriteria).length
+                      ? { acceptanceCriteria: requirementLines(acceptanceCriteria) }
+                      : {}),
+                  }
+                : {}),
+              permissionProfile: chat
+                ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
+                : terminal
+                  ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
+                  : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
+              budget: { maxRequests, maxTokens, maxCost },
+              limits: {
+                maxDepth: chat ? 0 : 2,
+                maxAgents: chat ? 1 : 12,
+                concurrency: chat ? 1 : concurrency,
+                toolConcurrency: 4,
+                maxSteps: 20,
+                maxMinutes: terminal ? Math.ceil(terminalProfile.timeoutMs / 60000) : 30,
+              },
             },
-          });
+            currentDraft,
+          );
         }}
       >
         <div className="form-body">
           {beforeForm}
+          {!permissionsValid && (
+            <p className="field-error" role="alert">
+              网页授权须为有效 URL，最多 40 项；请核对本次执行范围后创建。
+            </p>
+          )}
           {compact && appliedDefaults && (
             <RunConfirmation
               projectName={projectName}

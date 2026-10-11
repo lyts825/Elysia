@@ -1,14 +1,14 @@
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { Store, acquireLock, dataDirectory } from '../../../packages/storage/src/index.js';
+import { Store, dataDirectory } from '../../../packages/storage/src/index.js';
 import { VERSION } from '../../../packages/contracts/src/index.js';
 import { createServer } from './server.js';
 import { listenLocal } from './listen.js';
-import { createSurfaceServer, terminalDataDirectory } from './surfaces.js';
+import { createSurfaceServer } from './surfaces.js';
+import { openStartupStores } from './startup-storage.js';
 
 const directory = dataDirectory();
 let release: (() => void) | undefined;
-let releaseTerminal: (() => void) | undefined;
 let store: Store | undefined;
 let terminalStore: Store | undefined;
 let server: ReturnType<typeof createServer> | undefined;
@@ -26,7 +26,6 @@ function close() {
     const released = await Promise.allSettled([
       Promise.resolve().then(() => store?.close()),
       Promise.resolve().then(() => terminalStore?.close()),
-      Promise.resolve().then(() => releaseTerminal?.()),
       Promise.resolve().then(() => release?.()),
     ]);
     if (process.connected) process.disconnect();
@@ -35,11 +34,11 @@ function close() {
   })());
 }
 try {
-  release = acquireLock(directory);
-  store = new Store(directory);
-  const terminalDirectory = terminalDataDirectory(store.directory);
-  releaseTerminal = acquireLock(terminalDirectory);
-  terminalStore = new Store(terminalDirectory);
+  const opened = await openStartupStores(directory);
+  release = opened.release;
+  store = opened.native;
+  terminalStore = opened.terminal;
+  if (opened.backup) console.log('升级前备份：' + opened.backup);
   const preferredPort = Number(process.env.ELYSIA_PORT ?? 4317);
   const dev = process.env.ELYSIA_DEV === '1';
   const surfaces = await createSurfaceServer(store, terminalStore, { port: preferredPort });

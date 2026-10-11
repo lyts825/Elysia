@@ -18,6 +18,8 @@ const validKey = (key: string) =>
   key.length <= 240 &&
   (preferenceKeys.has(key) ||
     key === 'draft:chat' ||
+    key === 'draft:setup:chat' ||
+    /^draft:setup:project:[^:\s/\\]+$/.test(key) ||
     /^draft:(?:handoff|delivery-review):[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
     /^settings:selected-terminal-profile:[^:\s/\\]+$/.test(key) ||
@@ -160,6 +162,11 @@ export class WorkbenchCache {
     this.activeKeys = new Set(wanted);
     await this.readKeys(wanted, overwrite);
   }
+  async ensureKey(key: string, reload = false) {
+    this.activeKeys.add(key);
+    if (reload) this.loadedKeys.delete(key);
+    await this.readKeys([key]);
+  }
   private async readKeys(keys: string[], overwrite = false) {
     const wanted = [...new Set(keys.filter((key) => typeof key === 'string' && validKey(key)))];
     const newKeys = wanted.filter(
@@ -301,6 +308,8 @@ export class WorkbenchCache {
       if (selection) return selection[1] !== 'home' && !projectIds.has(selection[1]);
       const match = /^(?:draft|collapsed):project:(.+)$/.exec(key);
       if (match) return !projectIds.has(match[1]);
+      const setup = /^draft:setup:project:(.+)$/.exec(key);
+      if (setup) return !projectIds.has(setup[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
       const terminalDraft = /^draft:terminal-(?:continuation|recovery):([^:]+)(?::[^:]+)?$/.exec(key);
       const handoffDraft = /^draft:(?:handoff|delivery-review):([^:]+)$/.exec(key);
@@ -397,3 +406,5 @@ export class WorkbenchCache {
 }
 
 export const newDraftKey = (projectId: string) => (projectId ? `draft:project:${projectId}` : 'draft:chat');
+export const runSetupDraftKey = (projectId: string) =>
+  projectId ? `draft:setup:project:${projectId}` : 'draft:setup:chat';

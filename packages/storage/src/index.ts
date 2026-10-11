@@ -1295,6 +1295,11 @@ export class Store {
       throw new AppError('PROJECT_NOT_EMPTY', '请先删除项目内的对话');
     this.tx(() => {
       this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(key);
+      if (table === 'projects') {
+        const draftKey = `draft:setup:project:${key}`;
+        for (const prefix of ['workbench:v1:', 'workbench-index:v1:'])
+          this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + draftKey);
+      }
       this.deleteCommands(new Set([key]));
       this.collectObjects();
     });

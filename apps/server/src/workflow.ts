@@ -17,6 +17,8 @@ import {
 } from '../../../packages/contracts/src/index.js';
 import {
   NativeProjectDefaults,
+  sourceTextByteLength,
+  sourceTextLimitBytes,
   type NativeProjectDefaultsView,
   type RunSourceSelection,
   type RunSourceSnapshot,
@@ -31,7 +33,7 @@ import {
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecycle.js';
 
-const textLimit = 16 * 1024;
+const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
 const publicArtifact = (a: Artifact): SourceArtifact => ({
   id: a.id,
@@ -211,7 +213,7 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
     };
   });
   invariant(
-    Buffer.byteLength(stable(messages) + selection.feedback, 'utf8') <= textLimit,
+    sourceTextByteLength(messages, selection.feedback) <= textLimit,
     'SOURCE_TEXT_LIMIT',
     '所选正文与修订说明合计超过 16 KiB，请减少消息选择',
   );

@@ -18,6 +18,15 @@ export interface NativeProjectDefaultsView {
   defaults: NativeProjectDefaults | null;
 }
 export type NativeProjectDefaultsRecord = NativeProjectDefaultsView;
+export const sourceTextLimitBytes = 16 * 1024;
+/** Count captured public text only; source metadata has its own snapshot size limit. */
+export function sourceTextByteLength(messages: readonly { text: string }[], feedback: string): number {
+  const encoder = new TextEncoder();
+  return messages.reduce(
+    (bytes, message) => bytes + encoder.encode(message.text).length,
+    encoder.encode(feedback.trim()).length,
+  );
+}
 export const RunSourceSelection = z
   .object({
     runId: z.string().uuid(),

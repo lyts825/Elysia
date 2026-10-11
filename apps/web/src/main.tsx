@@ -14,8 +14,10 @@ import {
 import { SurfaceClientContext, SurfaceRootContext, useSurfaceClient } from './SurfaceClientContext';
 import { SurfaceSwitcher } from './SurfaceSwitcher';
 import { deferredPanel } from './DeferredPanel';
-import type { RunSetupDraft } from './RunSetupModal';
-const RunModal = deferredPanel(() => import('./RunSetupModal').then((m) => m.RunModal), '任务设置');
+const RunModal = deferredPanel(
+  () => import('./PersistentRunSetup').then((m) => m.PersistentRunSetup),
+  '任务设置',
+);
 const RunHandoff = deferredPanel(() => import('./RunHandoff').then((m) => m.RunHandoff), '任务交接');
 const SourceSummary = deferredPanel(() => import('./RunHandoff').then((m) => m.SourceSummary), '来源摘要');
 const RunRevisionLinks = deferredPanel(
@@ -99,7 +101,7 @@ const WorkspaceManager = deferredPanel(
   '工作区管理',
 );
 import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
-import { WorkbenchCache, newDraftKey, type CacheEntry } from './WorkbenchCache';
+import { WorkbenchCache, newDraftKey, runSetupDraftKey, type CacheEntry } from './WorkbenchCache';
 import { ConversationScroll } from './ConversationScroll';
 import { ConversationHistoryState } from './ConversationHistoryState';
 const ConversationSearch = React.lazy(() =>
@@ -283,7 +285,6 @@ function App({
     [previewTaskId, setPreviewTaskId] = useState(''),
     [modal, setModalState] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
-    [runSetup, setRunSetup] = useState<{ key: string; draft: RunSetupDraft } | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const [cacheState, setCacheState] = useState<{
     entries: Record<string, CacheEntry>;
@@ -500,7 +501,7 @@ function App({
             : undefined;
   const readIssue = readSource ? readIssues[readSource] : undefined;
   const project = projects.find((p) => p.id === projectId);
-  const runSetupKey = JSON.stringify([projectId, project ? 'task' : 'chat', draft]);
+  const runSetupKey = runSetupDraftKey(projectId);
   const isChat = detail?.run.kind === 'chat';
   const archived = !!detail?.run.archived || !!project?.archived;
   const legacyTerminal = !terminalSurface && detail?.run.execution?.kind === 'docker-agent';
@@ -1230,7 +1231,7 @@ function App({
   }, [connect]);
   useEffect(() => {
     if (!ready) return;
-    const keys = [newDraftKey(projectId)];
+    const keys = [newDraftKey(projectId), runSetupDraftKey(projectId)];
     if (runId)
       keys.push(
         `draft:run:${runId}`,
@@ -1683,6 +1684,7 @@ function App({
       );
       cache.remove([
         newDraftKey(deleted.id),
+        runSetupDraftKey(deleted.id),
         `collapsed:project:${deleted.id}`,
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
@@ -3412,6 +3414,10 @@ function App({
               )}
               {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
                 <RunModal
+                  key={runSetupKey}
+                  cache={cache}
+                  draftKey={runSetupKey}
+                  persistence={cacheState}
                   objective={draft}
                   kind={project ? 'task' : 'chat'}
                   projectName={project?.name}
@@ -3421,14 +3427,13 @@ function App({
                   contextPolicy={homeContext}
                   terminalTemplate={terminalProfile}
                   terminalConnections={terminalControl?.connections || []}
-                  initial={runSetup?.key === runSetupKey ? runSetup.draft : undefined}
-                  changed={(configuration) => setRunSetup({ key: runSetupKey, draft: configuration })}
                   close={() => {
                     setModal('');
                   }}
                   busy={busy}
-                  submit={(body) =>
+                  submit={(body, sentSetup) =>
                     act(async () => {
+                      const sentObjective = draft;
                       const run = await mutation<Run>('/runs', {
                         ...body,
                         objective: draft,
@@ -3436,14 +3441,13 @@ function App({
                         projectId: projectId || null,
                       });
                       selectRun(run);
-                      setDraft('');
-                      setRunSetup(null);
+                      if (cache.get(draftKey) === sentObjective) cache.set(draftKey, '');
+                      if (cache.get(runSetupKey) === sentSetup) cache.set(runSetupKey, '');
                       setModal('');
                     })
                   }
-                  settings={(configuration) => {
+                  settings={() => {
                     if (actionPending.current) return;
-                    setRunSetup({ key: runSetupKey, draft: configuration });
                     setModal('run-settings');
                   }}
                 />

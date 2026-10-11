@@ -14,6 +14,7 @@ const maxEntryBytes = 2 * 1024 * 1024;
 const maxEncodedBytes = Math.ceil(maxEntryBytes / 3) * 4 + 1024;
 const fixedKeys = new Set([
   'draft:chat',
+  'draft:setup:chat',
   'collapsed:sidebar',
   'collapsed:projects',
   'collapsed:chats',
@@ -24,6 +25,7 @@ const entityKey = /^(draft:(project|run)|collapsed:project|pinned:run|unread:run
 const terminalSelectionKey = /^settings:selected-terminal-profile:([^:\s/\\]+)$/;
 const handoffDraftKey = /^draft:handoff:([^:\s/\\]+)$/;
 const deliveryReviewDraftKey = /^draft:delivery-review:([^:\s/\\]+)$/;
+const projectSetupDraftKey = /^draft:setup:project:([^:\s/\\]+)$/;
 const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
   .string()
@@ -35,6 +37,7 @@ const keySchema = z
       terminalSelectionKey.test(key) ||
       handoffDraftKey.test(key) ||
       deliveryReviewDraftKey.test(key) ||
+      projectSetupDraftKey.test(key) ||
       terminalDraftKey.test(key),
     '工作台缓存键无效',
   );
@@ -56,6 +59,8 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const setup = projectSetupDraftKey.exec(key);
+  if (setup) return { table: 'projects', id: setup[1] };
   const review = deliveryReviewDraftKey.exec(key);
   if (review) return { table: 'runs', id: review[1] };
   const handoff = handoffDraftKey.exec(key);

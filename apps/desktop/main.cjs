@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url');
 const { attachServices } = require('./services.cjs');
 const { allowedLocalNavigation } = require('./navigation.cjs');
 const { createStartupDiagnostics } = require('./startup-diagnostics.cjs');
+const { waitForLaunchBuild } = require('./launch-handshake.cjs');
 const root = path.resolve(__dirname, '../..');
 const iconPath = path.join(
   root,
@@ -48,16 +49,9 @@ if (!app.requestSingleInstanceLock()) {
   if (process.send) process.send({ type: 'desktop-focused' }, () => app.quit());
   else app.quit();
 } else {
-  let launchMarks;
-  try {
-    launchMarks = JSON.parse((process.env.ELYSIA_LAUNCH_MARKS || '').slice(0, 4096));
-  } catch {}
-  diagnostics = createStartupDiagnostics(data, {
-    id: process.env.ELYSIA_LAUNCH_ID,
-    startedAt: process.env.ELYSIA_LAUNCH_STARTED_AT,
-    build: process.env.ELYSIA_LAUNCH_BUILD,
-    marks: launchMarks,
-  });
+  const launchBuild = waitForLaunchBuild(process, process.env.ELYSIA_LAUNCH_HANDSHAKE === '1');
+  // Attach immediately: a launcher failure may arrive before Electron's ready event.
+  launchBuild.catch(() => {});
   app.on('second-instance', () => {
     if (window) {
       if (window.isMinimized()) window.restore();
@@ -75,6 +69,19 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
+      const prepared = await launchBuild;
+      let launchMarks = prepared?.marks;
+      if (!prepared) {
+        try {
+          launchMarks = JSON.parse((process.env.ELYSIA_LAUNCH_MARKS || '').slice(0, 4096));
+        } catch {}
+      }
+      diagnostics = createStartupDiagnostics(data, {
+        id: process.env.ELYSIA_LAUNCH_ID,
+        startedAt: process.env.ELYSIA_LAUNCH_STARTED_AT,
+        build: prepared?.build.mode || process.env.ELYSIA_LAUNCH_BUILD,
+        marks: launchMarks,
+      });
       Menu.setApplicationMenu(null);
       window = new BrowserWindow({
         title: 'Elysia',
@@ -132,12 +139,19 @@ if (!app.requestSingleInstanceLock()) {
       const dev = process.env.ELYSIA_DEV === '1';
       backend = spawn(
         process.env.ELYSIA_NODE_BINARY || 'node',
-        dev ? ['--import', 'tsx', 'apps/server/src/index.ts'] : ['apps/server/dist/apps/server/src/index.js'],
+        dev
+          ? ['--import', 'tsx', 'apps/server/src/index.ts']
+          : [prepared?.build.server || 'apps/server/dist/apps/server/src/index.js'],
         {
           cwd: root,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-          env: { ...process.env, ELYSIA_DATA_DIR: data, ELYSIA_DESKTOP: '1' },
+          env: {
+            ...process.env,
+            ELYSIA_DATA_DIR: data,
+            ELYSIA_DESKTOP: '1',
+            ...(prepared ? { ELYSIA_WEB_ROOT: prepared.build.web } : {}),
+          },
         },
       );
       let failed = false;
@@ -192,6 +206,7 @@ if (!app.requestSingleInstanceLock()) {
       });
     })
     .catch((error) => {
+      if (process.send && process.connected) process.send({ type: 'desktop-error', message: error.message });
       dialog.showErrorBox('Elysia', error.message);
       void shutdown();
     });
