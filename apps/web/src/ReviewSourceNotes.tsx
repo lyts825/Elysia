@@ -1,5 +1,12 @@
 import type { ReviewSourceNote } from '../../../packages/contracts/src/workflow';
+import { useState } from 'react';
 import { reviewNoteKey } from './ReviewSourceState';
+import { deferredPanel } from './DeferredPanel';
+
+const OriginalReview = deferredPanel(
+  () => import('./OriginalReview').then((m) => m.OriginalReview),
+  '原复核记录',
+);
 
 export function ReviewSourceNoteBody({
   note,
@@ -52,17 +59,36 @@ export function ReviewSourceNotes({
   notes,
   remove,
   disabled,
+  sourceRunId,
 }: {
   notes: ReviewSourceNote[];
   remove?: (index: number) => void;
   disabled?: boolean;
+  sourceRunId?: string;
 }) {
+  const [selected, setSelected] = useState<{ runId: string; note: ReviewSourceNote }>();
+  const visible =
+    selected &&
+    selected.runId === sourceRunId &&
+    notes.some((note) => reviewNoteKey(note) === reviewNoteKey(selected.note))
+      ? selected
+      : undefined;
   return (
     <section aria-label="已加入的复核备注">
       <h4>已加入 {notes.length} 条复核备注</h4>
       {notes.map((note, index) => (
         <div className="workflow-selection" key={reviewNoteKey(note) + index}>
           <ReviewSourceNoteBody note={note} compact />
+          {sourceRunId && note.origin === 'saved' && note.reviewId && (
+            <button
+              type="button"
+              className="text-button"
+              disabled={disabled}
+              onClick={() => setSelected({ runId: sourceRunId, note })}
+            >
+              查看原复核
+            </button>
+          )}
           {remove && (
             <button type="button" className="text-button" disabled={disabled} onClick={() => remove(index)}>
               移除此带入备注
@@ -70,6 +96,14 @@ export function ReviewSourceNotes({
           )}
         </div>
       ))}
+      {visible && (
+        <OriginalReview
+          key={`${visible.runId}:${visible.note.reviewId}`}
+          runId={visible.runId}
+          note={visible.note}
+          close={() => setSelected(undefined)}
+        />
+      )}
     </section>
   );
 }

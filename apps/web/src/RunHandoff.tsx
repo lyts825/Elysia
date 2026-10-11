@@ -113,7 +113,9 @@ export function SourceSummary({
           {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
         </p>
       ))}
-      {!!source.reviewNotes?.length && <ReviewSourceNotes notes={source.reviewNotes} />}
+      {!!source.reviewNotes?.length && (
+        <ReviewSourceNotes notes={source.reviewNotes} sourceRunId={source.runId} />
+      )}
       <details>
         <summary>来源快照校验信息</summary>
         <small>SHA256 {source.hash}</small>

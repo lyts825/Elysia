@@ -4,7 +4,7 @@ import type {
   DeliveryReviewHistoryDetail,
 } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
-import { DeliveryChanges } from './DeliveryChanges';
+import { ReviewRecord } from './ReviewRecord';
 
 export function ReviewHistory({
   runId,
@@ -164,38 +164,12 @@ export function ReviewHistory({
             </button>
           </div>
           {visibleDetail && (
-            <section className="workflow-history-detail" aria-label="历史复核详情">
-              <h4>
-                {visibleDetail.review.decision === 'accepted' ? '已采纳' : '需修改'} ·{' '}
-                {visibleDetail.review.reviewedAt}
-              </h4>
-              <DeliveryChanges value={visibleDetail.changeSummary} />
-              {renderNotes ? (
-                renderNotes(visibleDetail)
-              ) : (
-                <>
-                  {!!visibleDetail.review.note && (
-                    <p className="workflow-prose">整体备注：{visibleDetail.review.note}</p>
-                  )}
-                  {visibleDetail.review.criteriaNotes.map((note) => (
-                    <div key={note.index}>
-                      <strong>
-                        原第 {note.index + 1} 项 · {note.criterionText ?? '旧标准内容未记录'}
-                      </strong>
-                      <p className="workflow-prose">{note.note}</p>
-                    </div>
-                  ))}
-                </>
-              )}
-              <details>
-                <summary>版本与来源信息</summary>
-                <small>
-                  复核记录 {visibleDetail.item.id}
-                  <br />
-                  交付指纹 {visibleDetail.review.fingerprint}
-                </small>
-              </details>
-            </section>
+            <ReviewRecord
+              value={visibleDetail}
+              renderNotes={renderNotes}
+              reload={() => void read(visibleDetail.item.id)}
+              reading={!!opening}
+            />
           )}
         </>
       )}

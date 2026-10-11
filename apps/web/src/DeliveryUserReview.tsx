@@ -10,6 +10,7 @@ import { ApiError } from './api';
 import { readReviewDraft, type ReviewDraft } from './ReviewDraft';
 import { readReviewCriteria } from './ReviewCriteria';
 import { DeliveryChanges } from './DeliveryChanges';
+import { ArtifactChanges } from './ArtifactChanges';
 
 export function DeliveryUserReview({
   value,
@@ -195,6 +196,15 @@ export function DeliveryUserReview({
         </p>
         {value.userReview && <p className="field-help">上次保存：{value.userReview.reviewedAt}</p>}
         <DeliveryChanges value={value.changeSummary} />
+        {value.userReview?.reviewId && (
+          <ArtifactChanges
+            runId={value.runId}
+            reviewId={value.userReview.reviewId}
+            fingerprint={value.fingerprint}
+            reload={reload}
+            reading={reading}
+          />
+        )}
         {(changed || conflict) && (
           <div className="inline-warning" role="alert">
             <p>

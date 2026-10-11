@@ -1,7 +1,12 @@
 import type { Artifact, Run, Task } from '../../../packages/contracts/src/index.js';
+import type { DeliveryArtifactMetadata } from '../../../packages/contracts/src/workflow.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';
 
-export function deliveryArtifactMetadata(store: Store, runId: string) {
+export function deliveryArtifactMetadata(
+  store: Store,
+  runId: string,
+  artifacts = store.all<Artifact>('artifacts', runId),
+): DeliveryArtifactMetadata[] {
   const legacy = new Set(
     (
       store.db
@@ -11,7 +16,7 @@ export function deliveryArtifactMetadata(store: Store, runId: string) {
         .all(runId) as { id: string }[]
     ).map((item) => item.id),
   );
-  return store.all<Artifact>('artifacts', runId).map((artifact) => {
+  return artifacts.map((artifact) => {
     if (legacy.has(artifact.id)) store.refreshReadProjection('artifacts', artifact);
     return {
       id: artifact.id,
@@ -39,7 +44,7 @@ export function deliveryFingerprintFromArtifacts(
       deliverables: root.spec.deliverables,
       acceptanceCriteria: root.spec.acceptanceCriteria,
       result: root.result ?? null,
-      artifacts: artifacts.sort((a, b) => a.id.localeCompare(b.id, 'en')),
+      artifacts: [...artifacts].sort((a, b) => a.id.localeCompare(b.id, 'en')),
     }),
   );
 }

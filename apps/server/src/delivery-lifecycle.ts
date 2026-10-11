@@ -14,7 +14,9 @@ import { deliveryReviewReads } from './delivery-summary.js';
 import {
   appendDeliveryReview,
   captureDeliveryBaseline,
+  type DeliveryBaseline,
   deliveryChanges,
+  deliveryArtifactChanges,
   deliveryReviewHistory,
   deliveryReviewHistoryDetail,
   ensureCurrentReviewSnapshot,
@@ -39,8 +41,12 @@ function revision(expected: number, actual: number) {
     );
 }
 
-export function deliveryUserState(store: Store, run: Run, root: Task): DeliveryReviewState {
-  const baseline = captureDeliveryBaseline(store, run, root);
+export function deliveryUserState(
+  store: Store,
+  run: Run,
+  root: Task,
+  baseline: DeliveryBaseline = captureDeliveryBaseline(store, run, root),
+): DeliveryReviewState {
   const fingerprint = baseline.fingerprint;
   const reviewId = ensureCurrentReviewSnapshot(store, run);
   return {
@@ -124,6 +130,28 @@ export function registerDeliveryLifecycle(
       );
     },
   );
+  app.get<{ Params: { id: string; reviewId: string } }>(
+    '/api/runs/:id/delivery/reviews/:reviewId/artifact-changes',
+    (request) => {
+      const params = z.object({ id: z.string().uuid(), reviewId: z.string().uuid() }).parse(request.params);
+      const query = z
+        .object({
+          expectedCurrentFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+          offset: z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+        })
+        .strict()
+        .parse(request.query);
+      return store.tx(() =>
+        deliveryArtifactChanges(
+          store,
+          nativeRun(store, params.id),
+          params.reviewId,
+          query.expectedCurrentFingerprint,
+          query.offset,
+        ),
+      );
+    },
+  );
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/summary', async (request) => {
     const query = z
       .object({ retry: z.enum(['true', 'false']).optional() })
@@ -187,7 +215,7 @@ export function registerDeliveryLifecycle(
         appendDeliveryReview(store, run.id, review, baseline);
         const updated = store.put<Run>('runs', { ...run, deliveryReview: review }, run.revision);
         store.event(run.id, 'run.updated', updated);
-        return deliveryUserState(store, updated, root);
+        return deliveryUserState(store, updated, root, baseline);
       },
     );
   });

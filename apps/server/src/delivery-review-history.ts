@@ -1,6 +1,9 @@
 import { AppError, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import { z } from 'zod';
 import type {
+  DeliveryArtifactChange,
+  DeliveryArtifactChangePage,
+  DeliveryArtifactMetadata,
   DeliveryChangeSummary,
   DeliveryReviewHistory,
   DeliveryReviewHistoryDetail,
@@ -10,7 +13,7 @@ import type {
 import { hash, id, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactMetadata, deliveryFingerprintFromArtifacts } from './delivery-fingerprint.js';
 
-type Baseline = {
+export type DeliveryBaseline = {
   version: 1;
   fingerprint: string;
   rootTaskId: string;
@@ -20,7 +23,7 @@ type Baseline = {
   criteriaHash: string;
   criteriaCount: number;
   resultHash: string;
-  artifacts: ReturnType<typeof deliveryArtifactMetadata>;
+  artifacts: DeliveryArtifactMetadata[];
 };
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const baselineSchema = z.object({
@@ -48,7 +51,7 @@ const baselineSchema = z.object({
     .refine((items) => new Set(items.map((artifact) => artifact.id)).size === items.length),
 });
 /** Stored comparison metadata may come from older or damaged records; never infer a comparison from it. */
-function readBaseline(raw: string): Baseline | undefined {
+function readBaseline(raw: string): DeliveryBaseline | undefined {
   try {
     const parsed = baselineSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : undefined;
@@ -93,8 +96,12 @@ export function initializeDeliveryReviewHistory(store: Store) {
     CREATE INDEX IF NOT EXISTS delivery_review_history_run ON delivery_review_history_v1(run_id);
   `);
 }
-export function captureDeliveryBaseline(store: Store, run: Run, root: Task): Baseline {
-  const artifacts = deliveryArtifactMetadata(store, run.id);
+export function captureDeliveryBaseline(
+  store: Store,
+  run: Run,
+  root: Task,
+  artifacts = deliveryArtifactMetadata(store, run.id),
+): DeliveryBaseline {
   return {
     version: 1,
     fingerprint: deliveryFingerprintFromArtifacts(run, root, artifacts),
@@ -112,7 +119,7 @@ export function appendDeliveryReview(
   store: Store,
   runId: string,
   review: DeliveryUserReview,
-  baseline: Baseline | null,
+  baseline: DeliveryBaseline | null,
   origin: DeliveryReviewHistoryItem['origin'] = 'saved',
 ): DeliveryUserReview {
   const snapshot = { ...review, reviewId: review.reviewId ?? id() };
@@ -183,19 +190,7 @@ const unknown = (
   fields: null,
   artifacts: null,
 });
-export function deliveryChanges(
-  store: Store,
-  runId: string,
-  reviewId: string,
-  current: Baseline | null,
-): DeliveryChangeSummary {
-  const row = store.db
-    .prepare('SELECT baseline_json,fingerprint FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
-    .get(runId, reviewId) as { baseline_json: string | null; fingerprint: string } | undefined;
-  if (!row?.baseline_json) return unknown('baseline_missing', 'unknown');
-  const before = readBaseline(row.baseline_json);
-  if (!before || before.fingerprint !== row.fingerprint) return unknown('baseline_invalid', 'unknown');
-  if (!current) return unknown('current_unreadable', 'known');
+function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): DeliveryChangeSummary {
   const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
   let added = 0,
     changed = 0;
@@ -217,6 +212,85 @@ export function deliveryChanges(
   if (unchanged && (Object.values(fields).some(Boolean) || Object.values(artifacts).some(Boolean)))
     return unknown('baseline_invalid', 'unknown');
   return { baseline: 'known', status: unchanged ? 'unchanged' : 'changed', fields, artifacts };
+}
+function reviewComparison(store: Store, runId: string, reviewId: string, current: DeliveryBaseline | null) {
+  const row = store.db
+    .prepare('SELECT baseline_json,fingerprint FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
+    .get(runId, reviewId) as { baseline_json: string | null; fingerprint: string } | undefined;
+  if (!row?.baseline_json) return { summary: unknown('baseline_missing', 'unknown') };
+  const before = readBaseline(row.baseline_json);
+  if (!before || before.fingerprint !== row.fingerprint)
+    return { summary: unknown('baseline_invalid', 'unknown') };
+  return {
+    before,
+    summary: current ? compareBaselines(before, current) : unknown('current_unreadable', 'known'),
+  };
+}
+export function deliveryChanges(
+  store: Store,
+  runId: string,
+  reviewId: string,
+  current: DeliveryBaseline | null,
+): DeliveryChangeSummary {
+  return reviewComparison(store, runId, reviewId, current).summary;
+}
+/** A page is pinned to one immutable review and one current delivery fingerprint. */
+export function deliveryArtifactChanges(
+  store: Store,
+  run: Run,
+  reviewId: string,
+  expectedCurrentFingerprint: string,
+  offset = 0,
+): DeliveryArtifactChangePage {
+  if (
+    !store.db
+      .prepare('SELECT 1 FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
+      .get(run.id, reviewId)
+  )
+    throw new AppError('NOT_FOUND', '复核历史不存在', false, null, 404);
+  let current: DeliveryBaseline;
+  try {
+    const root = store.get<Task>('tasks', run.rootTaskId);
+    if (!root || root.runId !== run.id) throw new Error('Current delivery unavailable');
+    current = captureDeliveryBaseline(store, run, root);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'ERR_SQLITE_ERROR') throw error;
+    throw new AppError('DELIVERY_UNREADABLE', '当前交付暂时无法读取，请修复记录后重试。', true, null, 422);
+  }
+  if (current.fingerprint !== expectedCurrentFingerprint)
+    throw new AppError('DELIVERY_CHANGED', '交付内容已变化，请重新读取后查看产物变更', false, null, 409);
+  const { before, summary } = reviewComparison(store, run.id, reviewId, current);
+  const response = {
+    runId: run.id,
+    reviewId,
+    currentFingerprint: current.fingerprint,
+    changeSummary: summary,
+  };
+  if (!before || summary.status === 'unknown') return { ...response, items: [], page: null };
+  const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
+  const present = new Map(current.artifacts.map((artifact) => [artifact.id, artifact]));
+  const keys = [...new Set([...previous.keys(), ...present.keys()])].sort((a, b) => a.localeCompare(b, 'en'));
+  const items: DeliveryArtifactChange[] = [];
+  let total = 0;
+  for (const artifactId of keys) {
+    const prior = previous.get(artifactId) ?? null,
+      after = present.get(artifactId) ?? null;
+    if (prior && after && stable(prior) === stable(after)) continue;
+    if (total++ < offset || items.length === 20) continue;
+    items.push({
+      artifactId,
+      kind: prior ? (after ? 'changed' : 'removed') : 'added',
+      before: prior,
+      after,
+      currentArtifactId: after?.id ?? null,
+    });
+  }
+  const hasMore = offset + 20 < total;
+  return {
+    ...response,
+    items,
+    page: { offset, limit: 20, total, hasMore, nextOffset: hasMore ? offset + 20 : null },
+  };
 }
 export function deliveryReviewHistory(store: Store, run: Run, before?: string): DeliveryReviewHistory {
   ensureCurrentReviewSnapshot(store, run);
@@ -268,7 +342,7 @@ export function deliveryReviewHistoryDetail(
     .prepare(`SELECT ${itemColumns},review_json FROM delivery_review_history_v1 WHERE run_id=? AND id=?`)
     .get(run.id, reviewId) as (HistoryRow & { review_json: string }) | undefined;
   if (!row) throw new AppError('NOT_FOUND', '复核历史不存在', false, null, 404);
-  let current: Baseline | null = null,
+  let current: DeliveryBaseline | null = null,
     root: Task | undefined;
   try {
     root = store.get<Task>('tasks', run.rootTaskId);

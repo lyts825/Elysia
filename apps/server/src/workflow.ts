@@ -32,6 +32,8 @@ import {
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryUserState, registerDeliveryLifecycle } from './delivery-lifecycle.js';
+import { deliveryArtifactMetadata } from './delivery-fingerprint.js';
+import { captureDeliveryBaseline } from './delivery-review-history.js';
 import { captureReviewSource } from './review-source.js';
 
 const textLimit = sourceTextLimitBytes;
@@ -306,8 +308,7 @@ function deliveryPage(offset: number, limit: number, total: number): DeliveryPag
   const hasMore = offset + limit < total;
   return { offset, limit, total, hasMore, nextOffset: hasMore ? offset + limit : null };
 }
-function publicEvidence(store: Store, runId: string, evidence: Evidence): DeliveryEvidence {
-  const artifact = evidence.type === 'artifact' ? store.get<Artifact>('artifacts', evidence.ref) : undefined;
+function publicEvidence(runId: string, evidence: Evidence, artifact?: Artifact): DeliveryEvidence {
   return {
     type: evidence.type,
     ref: evidence.ref.slice(0, 1000),
@@ -324,8 +325,10 @@ function criterionEvidence(
   indices: number[],
   offset: number,
   limit: number,
+  artifacts?: Map<string, Artifact>,
 ) {
   const groups = new Map(indices.map((index) => [index, { total: 0, evidence: [] as DeliveryEvidence[] }]));
+  const references = new Map<string, Artifact | undefined>();
   for (const raw of rawEvidence) {
     if (!raw || typeof raw !== 'object') continue;
     const group = groups.get((raw as { criterion?: number }).criterion!);
@@ -333,8 +336,19 @@ function criterionEvidence(
     const parsed = Evidence.safeParse(raw);
     if (!parsed.success) continue;
     const position = group.total++;
-    if (position >= offset && group.evidence.length < limit)
-      group.evidence.push(publicEvidence(store, runId, parsed.data));
+    if (position >= offset && group.evidence.length < limit) {
+      const evidence = parsed.data;
+      let artifact: Artifact | undefined;
+      if (evidence.type === 'artifact') {
+        if (artifacts) artifact = artifacts.get(evidence.ref);
+        else {
+          if (!references.has(evidence.ref))
+            references.set(evidence.ref, store.get<Artifact>('artifacts', evidence.ref));
+          artifact = references.get(evidence.ref);
+        }
+      }
+      group.evidence.push(publicEvidence(runId, evidence, artifact));
+    }
   }
   return groups;
 }
@@ -370,6 +384,16 @@ export function deliveryReview(
   expectedRootRevision?: number,
 ): DeliveryReview {
   const { run, root, result, rawEvidence } = deliveryState(store, runId, expectedRootRevision);
+  // The fingerprint already requires every artifact. Reuse that one request-local
+  // snapshot for evidence references and the visible page as well.
+  const artifactRows = store.all<Artifact>('artifacts', run.id);
+  const artifactMap = new Map(artifactRows.map((artifact) => [artifact.id, artifact]));
+  const baseline = captureDeliveryBaseline(
+    store,
+    run,
+    root,
+    deliveryArtifactMetadata(store, run.id, artifactRows),
+  );
   const criteriaPage = deliveryPage(criteriaOffset, 40, root.spec.acceptanceCriteria.length);
   const items = root.spec.acceptanceCriteria.slice(criteriaOffset, criteriaOffset + criteriaPage.limit);
   const groups = criterionEvidence(
@@ -379,6 +403,7 @@ export function deliveryReview(
     items.map((_, index) => index + criteriaOffset),
     0,
     2,
+    artifactMap,
   );
   const criteria = items.map((text, pageIndex) => {
     const index = criteriaOffset + pageIndex,
@@ -391,9 +416,15 @@ export function deliveryReview(
       evidencePage: deliveryPage(0, 2, group.total),
     };
   });
-  const artifacts = store.entityPage<Artifact>('artifacts', 20, beforeArtifact, run.id);
+  const boundary = beforeArtifact
+    ? artifactRows.findIndex((artifact) => artifact.id === beforeArtifact)
+    : artifactRows.length;
+  if (boundary < 0)
+    throw new AppError('RECORD_CURSOR_MISSING', '记录位置已失效，请返回最新', false, null, 409);
+  const selected = artifactRows.slice(Math.max(0, boundary - 20), boundary).reverse();
+  const hasMore = boundary > 20;
   return {
-    ...deliveryUserState(store, run, root),
+    ...deliveryUserState(store, run, root, baseline),
     runId: run.id,
     runRevision: run.revision,
     rootTaskId: root.id,
@@ -407,8 +438,14 @@ export function deliveryReview(
     criteriaPage,
     criteriaHasMore: criteriaPage.hasMore,
     evidenceTruncated: criteria.some((criterion) => criterion.evidencePage.hasMore),
-    artifacts: artifacts.items.map(publicArtifact),
-    artifactPage: artifacts.page,
+    artifacts: selected.map(publicArtifact),
+    artifactPage: {
+      total: artifactRows.length,
+      limit: 20,
+      before: beforeArtifact ?? null,
+      hasMore,
+      nextBefore: hasMore ? selected.at(-1)!.id : null,
+    },
     source: run.source
       ? {
           runId: run.source.runId,

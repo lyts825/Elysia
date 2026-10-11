@@ -143,6 +143,33 @@ export interface DeliveryChangeSummary {
   } | null;
   artifacts: { added: number; removed: number; changed: number } | null;
 }
+/** Immutable comparison metadata; it does not promise that an old object is still available. */
+export interface DeliveryArtifactMetadata {
+  id: string;
+  taskId: string;
+  name: string;
+  version: number;
+  hash: string;
+  mediaType: string;
+  verified: boolean;
+}
+export interface DeliveryArtifactChange {
+  artifactId: string;
+  kind: 'added' | 'removed' | 'changed';
+  before: DeliveryArtifactMetadata | null;
+  after: DeliveryArtifactMetadata | null;
+  /** Only the artifact in the current run may use the existing preview entry point. */
+  currentArtifactId: string | null;
+}
+export interface DeliveryArtifactChangePage {
+  runId: string;
+  reviewId: string;
+  currentFingerprint: string;
+  changeSummary: DeliveryChangeSummary;
+  items: DeliveryArtifactChange[];
+  /** Unknown comparison metadata has no page, rather than a misleading zero total. */
+  page: DeliveryPage | null;
+}
 export interface DeliveryReviewHistoryItem {
   id: string;
   decision: DeliveryUserReview['decision'];

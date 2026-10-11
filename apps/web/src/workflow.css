@@ -52,7 +52,8 @@
   color: var(--muted);
 }
 .workflow-history-detail,
-.workflow-change-summary {
+.workflow-change-summary,
+.workflow-artifact-change {
   padding: 12px;
   margin-block: 12px;
   border: 1px solid var(--border);
