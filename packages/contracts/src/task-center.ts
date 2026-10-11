@@ -1,5 +1,6 @@
 import type { Run, Message } from './index.js';
 import type { RecordPage } from './run-reads.js';
+import type { DeliveryReviewStatus } from './workflow.js';
 
 export type TaskCenterCategory = 'running' | 'waiting' | 'verification' | 'done' | 'failed' | 'paused';
 export type TaskCenterItem = {
@@ -13,6 +14,8 @@ export type TaskCenterItem = {
   changeRevision: number;
   reason?: string;
   updatedAt?: string;
+  reviewStatus?: DeliveryReviewStatus;
+  reviewedAt?: string;
   /** A current meaningful transition, never advanced by title or archive edits. */
   notification?: { status: 'DONE' | 'WAITING' | 'FAILED' | 'UNCERTAIN'; revision: number };
 };

@@ -38,6 +38,18 @@ import { recallContext } from '../../context/src/index.js';
 import { fileMediaType, isBinaryFile } from '../../contracts/src/files.js';
 import { PlanAlignmentHost, type PlanAlignmentLoader } from './module-host.js';
 const text = z.string().max(2 * 1024 * 1024);
+const fileHash = z
+  .string()
+  .regex(
+    /^[a-f0-9]{64}$/,
+    'expectedHash 必须为 64 位小写 SHA-256 哈希；新文件请在 write / materialize_artifact 中传 JSON null（不加引号），不能传字符串 "null"。',
+  )
+  .describe('已有文件的 64 位小写 SHA-256 哈希，必须使用 read 或上次写入返回的真实哈希。');
+const newOrExistingFileHash = fileHash
+  .nullable()
+  .describe(
+    '已有文件使用真实的 64 位小写 SHA-256 哈希；新文件传 JSON null（不加引号），不能传字符串 "null"。',
+  );
 const schemas = {
   load_skill: z.object({ id: z.string().min(1).max(160) }),
   list_skills: z.object({
@@ -98,16 +110,13 @@ const schemas = {
   materialize_artifact: z.object({
     artifactId: z.string(),
     path: z.string().min(1),
-    expectedHash: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .nullable(),
+    expectedHash: newOrExistingFileHash,
   }),
   search: z.object({ path: z.string().default('.'), query: z.string().min(1).max(200) }),
-  write: z.object({ path: z.string(), content: text, expectedHash: z.string().nullable() }),
+  write: z.object({ path: z.string(), content: text, expectedHash: newOrExistingFileHash }),
   apply_patch: z.object({
     path: z.string(),
-    expectedHash: z.string(),
+    expectedHash: fileHash,
     oldText: z.string().min(1),
     newText: text,
   }),
@@ -159,10 +168,12 @@ const descriptions: Record<CoreToolName, string> = {
   read_artifact:
     '读取本任务、已验收或用户选中的同 run 来源产物。文字按offset/limit分页（UTF-16位置，最多30000），用返回nextOffset继续，不拆开Unicode字符。二进制返回元信息；已选来源文件可在有写入授权时用materialize_artifact复制到任务目录。',
   materialize_artifact:
-    '将用户明确选中的不可变来源产物复制到当前任务允许写入的路径，最多8MiB，支持二进制。expectedHash为目标现有文件哈希，新文件为null；需要读取和写入权限，执行文件或程序仍需单独命令授权。',
+    '将用户明确选中的不可变来源产物复制到当前任务允许写入的路径，最多8MiB，支持二进制。expectedHash为目标现有文件的64位小写SHA-256哈希，新文件传JSON null（不加引号），不能传字符串"null"；需要读取和写入权限，执行文件或程序仍需单独命令授权。',
   search: '按字面文本搜索授权项目文件。',
-  write: '原子写文件，expectedHash 为当前哈希，新文件为 null。',
-  apply_patch: '用唯一原文与预期哈希修改文件。',
+  write:
+    '原子写文件。已有文件的 expectedHash 必须使用 read 或上次写入返回的64位小写SHA-256哈希；新文件传 JSON null（不加引号），不能传字符串"null"。',
+  apply_patch:
+    '用唯一原文修改已有文件，expectedHash 必须使用 read 或上次写入返回的64位小写SHA-256哈希；不接受 null 或字符串"null"。',
   exec: '执行明确的程序和参数，cwd 必须在本任务工作区；无密钥环境，超时清理进程树。',
   fetch_url: '抓取明确授权 URL，防止访问私网，记录快照。',
   artifact: '登记本任务文件为版本化产物，返回 artifact ID。',

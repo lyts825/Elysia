@@ -1,12 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import {
-  AppError,
-  invariant,
-  type Artifact,
-  type Run,
-  type Task,
-} from '../../../packages/contracts/src/index.js';
+import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import {
   DeliveryReviewInput,
   type DeliveryReviewState,
@@ -15,7 +9,10 @@ import {
   type RunRevisions,
   type RunSourceSnapshot,
 } from '../../../packages/contracts/src/workflow.js';
-import { hash, now, stable, type Store } from '../../../packages/storage/src/index.js';
+import { now, type Store } from '../../../packages/storage/src/index.js';
+import { deliveryFingerprint } from './delivery-fingerprint.js';
+import { deliveryReviewReads } from './delivery-summary.js';
+export { deliveryFingerprint } from './delivery-fingerprint.js';
 
 const isNative = (run: Run) => (run.execution?.kind ?? 'native') === 'native';
 function nativeRun(store: Store, runId: string) {
@@ -34,30 +31,6 @@ function revision(expected: number, actual: number) {
     );
 }
 
-/** Reviews bind to delivery content, never to the review itself or unrelated run metadata. */
-export function deliveryFingerprint(store: Store, run: Run, root: Task) {
-  const artifacts = store.all<Artifact>('artifacts', run.id).map((artifact) => ({
-    id: artifact.id,
-    taskId: artifact.taskId,
-    name: artifact.name,
-    version: artifact.version,
-    hash: artifact.hash,
-    mediaType: artifact.mediaType,
-    verified: artifact.verified,
-  }));
-  return hash(
-    stable({
-      version: 1,
-      runId: run.id,
-      rootTaskId: root.id,
-      status: root.status,
-      deliverables: root.spec.deliverables,
-      acceptanceCriteria: root.spec.acceptanceCriteria,
-      result: root.result ?? null,
-      artifacts: artifacts.sort((a, b) => a.id.localeCompare(b.id, 'en')),
-    }),
-  );
-}
 export function deliveryUserState(store: Store, run: Run, root: Task): DeliveryReviewState {
   const fingerprint = deliveryFingerprint(store, run, root);
   return {
@@ -124,6 +97,13 @@ export function registerDeliveryLifecycle(
   store: Store,
   assertMutable: (runId: string | null, projectId?: string) => void,
 ) {
+  const summaries = deliveryReviewReads(store);
+  app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/summary', async (request) => {
+    z.object({}).strict().parse(request.query);
+    if (!store.db.prepare('SELECT 1 FROM runs WHERE id=?').get(request.params.id))
+      throw new AppError('NOT_FOUND', '任务不存在', false, null, 404);
+    return summaries.read(() => summaries.cached(request.params.id), request.params.id);
+  });
   app.get<{ Params: { id: string } }>('/api/runs/:id/revisions', (request) => {
     const query = z.object({ before: z.string().uuid().optional() }).strict().parse(request.query);
     return runRevisions(store, request.params.id, query.before);
@@ -143,7 +123,7 @@ export function registerDeliveryLifecycle(
         assertMutable(run.id, run.projectId ?? undefined);
         invariant(!run.archived, 'RUN_ARCHIVED', '请先恢复归档记录再复核');
         invariant(
-          run.kind === 'task' && run.status === 'DONE' && root.status === 'DONE',
+          run.kind === 'task' && !!run.projectId && run.status === 'DONE' && root.status === 'DONE',
           'DELIVERY_NOT_DONE',
           '只有已交付的原生项目任务可以记录用户复核',
         );
@@ -161,7 +141,11 @@ export function registerDeliveryLifecycle(
         const review: DeliveryUserReview = {
           decision: body.decision,
           note: body.note,
-          criteriaNotes: body.criteriaNotes,
+          criteriaNotes: body.criteriaNotes.map(({ index, note }) => ({
+            index,
+            note,
+            criterionText: root.spec.acceptanceCriteria[index],
+          })),
           fingerprint,
           reviewedAt: now(),
           rootTaskId: root.id,

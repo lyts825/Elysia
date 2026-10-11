@@ -28,6 +28,10 @@ const DeliveryReview = deferredPanel(
   () => import('./DeliveryReview').then((m) => m.DeliveryReview),
   '交付验收',
 );
+const DeliveryStatusCard = deferredPanel(
+  () => import('./DeliveryStatusCard').then((m) => m.DeliveryStatusCard),
+  '复核状态',
+);
 const PreviewPanel = deferredPanel(() => import('./PreviewPanel').then((m) => m.PreviewPanel), '预览');
 const PreviewDock = deferredPanel(() => import('./PreviewDock').then((m) => m.PreviewDock), '预览分屏');
 const ProjectFiles = deferredPanel(() => import('./ProjectFiles').then((m) => m.ProjectFiles), '项目文件');
@@ -1501,7 +1505,15 @@ function App({
     if (!target || !detail || detail.run.id !== target.id) return;
     setTaskCenterTarget(undefined);
     if (target.epoch !== navigationEpoch.current) return;
-    if (target.category === 'verification') {
+    if (
+      target.category === 'review' &&
+      !terminalSurface &&
+      detail.run.kind === 'task' &&
+      detail.run.status === 'DONE' &&
+      detail.run.execution?.kind !== 'docker-agent'
+    ) {
+      setModal('delivery');
+    } else if (target.category === 'verification') {
       const operation = detail.operations.find(
         (item) =>
           item.status === 'UNCERTAIN' &&
@@ -2385,7 +2397,11 @@ function App({
                   )}
                   {detail.run.source && <SourceSummary source={detail.run.source} />}
                   {!terminalSurface && !legacyTerminal && (
-                    <RunRevisionLinks key={detail.run.id} runId={detail.run.id} openRun={selectRun} />
+                    <RunRevisionLinks
+                      key={`revisions:${detail.run.id}`}
+                      runId={detail.run.id}
+                      openRun={selectRun}
+                    />
                   )}
                   {!isChat && (
                     <div className="system-note">
@@ -2555,7 +2571,7 @@ function App({
                   ))}
                   {detail.run.plan && (
                     <PlanAlignmentLoader
-                      key={detail.run.id}
+                      key={`plan:${detail.run.id}`}
                       anchorRef={planRef}
                       detail={detail}
                       providers={providers}
@@ -2730,20 +2746,29 @@ function App({
                           />
                         </div>
                       ))}
-                  {!isChat && detail.run.status === 'DONE' && (
-                    <div className="delivery-card">
-                      <Icon name="check" size={24} />
-                      <div>
-                        <h3>交付已通过证据核验</h3>
-                        <p>查看右侧产物和差异，复核内容是否符合你的目标。</p>
-                        {!terminalSurface && !legacyTerminal && (
-                          <button className="text-button" onClick={() => setModal('delivery')}>
-                            逐项查看交付与验收
-                          </button>
-                        )}
+                  {!isChat &&
+                    detail.run.status === 'DONE' &&
+                    (!terminalSurface && !legacyTerminal ? (
+                      <DeliveryStatusCard
+                        key={`delivery:${detail.run.id}`}
+                        runId={detail.run.id}
+                        version={`${detail.run.revision}:${detail.tasks.find((task) => task.id === detail.run.rootTaskId)?.revision}:${detail.recordVersions?.artifacts}`}
+                        open={() => setModal('delivery')}
+                      />
+                    ) : (
+                      <div className="delivery-card">
+                        <Icon name="check" size={24} />
+                        <div>
+                          <h3>交付已通过证据核验</h3>
+                          <p>查看右侧产物和差异，复核内容是否符合你的目标。</p>
+                          {!terminalSurface && !legacyTerminal && (
+                            <button className="text-button" onClick={() => setModal('delivery')}>
+                              逐项查看交付与验收
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    ))}
                 </ConversationScroll>
                 {['DONE', 'CANCELLED'].includes(detail.run.status) ? (
                   <div className="conversation-ended">
@@ -3317,6 +3342,12 @@ function App({
             modelChoice={homeModel}
             contextPolicy={homeContext}
             value={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
+            reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
+            backToReview={
+              detail.run.status === 'DONE' && detail.run.kind === 'task'
+                ? () => setModal('delivery')
+                : undefined
+            }
             change={(value) => cache.set(`draft:handoff:${detail.run.id}`, value)}
             close={() => setModal('')}
             settings={() => setModal('handoff-settings')}

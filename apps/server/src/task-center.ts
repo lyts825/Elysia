@@ -7,6 +7,8 @@ import type {
   TaskCenterChanges,
 } from '../../../packages/contracts/src/task-center.js';
 import type { Store } from '../../../packages/storage/src/index.js';
+import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow.js';
+import { deliveryReviewReads, type DeliveryReviewReads } from './delivery-summary.js';
 
 type Row = {
   seq: number;
@@ -26,6 +28,7 @@ type Row = {
   notification_revision: number;
 };
 const categories = ['all', 'running', 'waiting', 'verification', 'done', 'failed', 'paused'] as const;
+const reviewStatuses = ['unreviewed', 'accepted', 'changes_requested', 'stale'] as const;
 const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const state = (alias: string) =>
   `COALESCE(json_extract(${alias ? alias + '.' : ''}data,'$.readModel.status'),json_extract(${alias ? alias + '.' : ''}data,'$.status'))`;
@@ -35,7 +38,9 @@ const waitReason = (alias: string) =>
 /** A small persistent current-state read model; historical bodies are warmed only on explicit access. */
 export class TaskCenterReads {
   private warming?: Promise<void>;
+  private delivery: DeliveryReviewReads;
   constructor(private store: Store) {
+    this.delivery = deliveryReviewReads(store);
     const status = state('r');
     const runReason = "COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))";
     const tasks = (condition: string) => `EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id AND ${condition})`;
@@ -125,6 +130,12 @@ export class TaskCenterReads {
         BEGIN UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'; END;
       `);
     }
+    this.store.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS task_center_delivery_review_update
+      AFTER UPDATE OF review_status,reviewed_at ON delivery_review_summary_v1
+      WHEN NEW.review_status IS NOT OLD.review_status OR NEW.reviewed_at IS NOT OLD.reviewed_at
+      BEGIN ${this.refreshSql('NEW.run_id')} END;
+    `);
   }
   private refreshSql(runId: string) {
     // seq is allocated even on upsert, so observations can continue across process restarts.
@@ -235,6 +246,7 @@ export class TaskCenterReads {
     this.store.db.prepare('DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=?').run(through);
   }
   private item(row: Row): TaskCenterItem {
+    const review = this.delivery.cached(row.run_id);
     const expected =
       row.category === 'verification'
         ? 'UNCERTAIN'
@@ -256,6 +268,8 @@ export class TaskCenterReads {
       changeRevision: row.seq,
       ...(row.reason ? { reason: row.reason } : {}),
       updatedAt: row.updated_at,
+      ...(review.reviewStatus ? { reviewStatus: review.reviewStatus } : {}),
+      ...(review.reviewedAt ? { reviewedAt: review.reviewedAt } : {}),
       ...(expected && expected === row.notification_status && row.notification_revision > 0
         ? { notification: { status: expected, revision: row.notification_revision } }
         : {}),
@@ -267,98 +281,109 @@ export class TaskCenterReads {
     before?: string;
     projectId?: string;
     query?: string;
+    reviewFilter?: DeliveryReviewStatus;
   }): Promise<TaskCenterPage> {
     await this.warm();
-    let position: number | undefined;
-    if (query.before) {
-      const row = this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
-        | { position: number }
-        | undefined;
-      if (!row)
-        throw new AppError('RECORD_CURSOR_MISSING', '任务位置已失效，请返回最新列表', false, null, 409);
-      position = row.position;
-    }
-    const clauses = [
-      'deleted=0',
-      'archived=0',
-      ...(query.filter === 'all' ? [] : ['category=?']),
-      ...(query.projectId ? ['project_id=?'] : []),
-      ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
-    ];
-    const params = [
-      ...(query.filter === 'all' ? [] : [query.filter]),
-      ...(query.projectId ? [query.projectId] : []),
-      ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
-    ];
-    const total = Number(
-      (
-        this.store.db
-          .prepare(`SELECT COUNT(*) n FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}`)
-          .get(...params) as { n: number }
-      ).n,
-    );
-    const rows = this.store.db
-      .prepare(
-        `SELECT * FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}${position === undefined ? '' : ' AND position<?'} ORDER BY position DESC LIMIT ?`,
-      )
-      .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as Row[];
-    const hasMore = rows.length > query.limit,
-      selected = rows.slice(0, query.limit);
-    return {
-      items: selected.map((row) => this.item(row)),
-      page: {
-        total,
-        limit: query.limit,
-        before: query.before ?? null,
-        hasMore,
-        nextBefore: hasMore ? selected.at(-1)!.run_id : null,
-      },
-    };
+    return this.delivery.read(() => {
+      let position: number | undefined;
+      if (query.before) {
+        const row = this.store.db.prepare('SELECT rowid position FROM runs WHERE id=?').get(query.before) as
+          | { position: number }
+          | undefined;
+        if (!row)
+          throw new AppError('RECORD_CURSOR_MISSING', '任务位置已失效，请返回最新列表', false, null, 409);
+        position = row.position;
+      }
+      const clauses = [
+        'deleted=0',
+        'archived=0',
+        ...(query.filter === 'all' ? [] : ['category=?']),
+        ...(query.reviewFilter
+          ? ['run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)']
+          : []),
+        ...(query.projectId ? ['project_id=?'] : []),
+        ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
+      ];
+      const params = [
+        ...(query.filter === 'all' ? [] : [query.filter]),
+        ...(query.reviewFilter ? [query.reviewFilter] : []),
+        ...(query.projectId ? [query.projectId] : []),
+        ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
+      ];
+      const total = Number(
+        (
+          this.store.db
+            .prepare(`SELECT COUNT(*) n FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}`)
+            .get(...params) as { n: number }
+        ).n,
+      );
+      const rows = this.store.db
+        .prepare(
+          `SELECT * FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}${position === undefined ? '' : ' AND position<?'} ORDER BY position DESC LIMIT ?`,
+        )
+        .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as Row[];
+      const hasMore = rows.length > query.limit,
+        selected = rows.slice(0, query.limit);
+      return {
+        items: selected.map((row) => this.item(row)),
+        page: {
+          total,
+          limit: query.limit,
+          before: query.before ?? null,
+          hasMore,
+          nextBefore: hasMore ? selected.at(-1)!.run_id : null,
+        },
+      };
+    });
   }
   /** Verify one queued notification against current state without expanding its Run. */
   async itemById(runId: string): Promise<{ item: TaskCenterItem | null }> {
     await this.warm();
-    const row = this.store.db
-      .prepare('SELECT * FROM task_center_changes_v1 WHERE run_id=? AND deleted=0 AND archived=0')
-      .get(runId) as Row | undefined;
-    return { item: row ? this.item(row) : null };
+    return this.delivery.read(() => {
+      const row = this.store.db
+        .prepare('SELECT * FROM task_center_changes_v1 WHERE run_id=? AND deleted=0 AND archived=0')
+        .get(runId) as Row | undefined;
+      return { item: row ? this.item(row) : null };
+    }, runId);
   }
   async changes(after: number | undefined, limit: number): Promise<TaskCenterChanges> {
     await this.warm();
-    this.store.tx(() => this.prune());
-    const latest = Number(
-      (
-        this.store.db
-          .prepare(
-            "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='task_center_changes_v1'),0) n",
-          )
-          .get() as { n: number }
-      ).n,
-    );
-    const floor = Number(
-      (
-        this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-floor:v1'").get() as {
-          value: string;
-        }
-      ).value,
-    );
-    if (after === undefined) return { items: [], cursor: latest, hasMore: false, baseline: true };
-    if (after < floor || after > latest)
-      return { items: [], cursor: latest, hasMore: false, baseline: true, resetRequired: true };
-    const rows = this.store.db
-      .prepare('SELECT * FROM task_center_changes_v1 WHERE seq>? ORDER BY seq LIMIT ?')
-      .all(after, limit + 1) as Row[];
-    const hasMore = rows.length > limit,
-      selected = rows.slice(0, limit);
-    return {
-      items: selected.map((row) => ({
-        id: row.run_id,
-        changeRevision: row.seq,
-        item: row.deleted || row.archived ? null : this.item(row),
-      })),
-      cursor: hasMore ? selected.at(-1)!.seq : latest,
-      hasMore,
-    };
+    return this.delivery.read(() => {
+      this.prune();
+      const latest = Number(
+        (
+          this.store.db
+            .prepare(
+              "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='task_center_changes_v1'),0) n",
+            )
+            .get() as { n: number }
+        ).n,
+      );
+      const floor = Number(
+        (
+          this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-floor:v1'").get() as {
+            value: string;
+          }
+        ).value,
+      );
+      if (after === undefined) return { items: [], cursor: latest, hasMore: false, baseline: true };
+      if (after < floor || after > latest)
+        return { items: [], cursor: latest, hasMore: false, baseline: true, resetRequired: true };
+      const rows = this.store.db
+        .prepare('SELECT * FROM task_center_changes_v1 WHERE seq>? ORDER BY seq LIMIT ?')
+        .all(after, limit + 1) as Row[];
+      const hasMore = rows.length > limit,
+        selected = rows.slice(0, limit);
+      return {
+        items: selected.map((row) => ({
+          id: row.run_id,
+          changeRevision: row.seq,
+          item: row.deleted || row.archived ? null : this.item(row),
+        })),
+        cursor: hasMore ? selected.at(-1)!.seq : latest,
+        hasMore,
+      };
+    });
   }
 }
 export function registerTaskCenter(app: FastifyInstance, store: Store) {
@@ -368,6 +393,7 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
       z
         .object({
           filter: z.enum(categories).default('all'),
+          reviewFilter: z.enum(reviewStatuses).optional(),
           limit: z.coerce.number().int().min(1).max(100).default(40),
           before: z.string().uuid().optional(),
           projectId: z.string().uuid().optional(),

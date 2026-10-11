@@ -1,6 +1,7 @@
 .task-center-body {
   padding: 18px 22px;
-  min-height: 280px;
+  min-height: 0;
+  overflow: auto;
 }
 .task-center-filters {
   display: flex;
@@ -42,6 +43,24 @@
   display: flex;
   gap: 10px;
   margin-top: 14px;
+}
+.task-center-review-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+}
+.task-center-review-filter select {
+  width: auto;
+  max-width: 100%;
+}
+.task-center-review-filter small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-center-review-status {
+  color: var(--accent-strong) !important;
 }
 .task-center-search input {
   flex: 1;

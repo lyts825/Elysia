@@ -124,6 +124,8 @@ export function RunHandoff({
   submit,
   settings,
   busy,
+  reviewDraft,
+  backToReview,
 }: {
   run: Run;
   projects: Project[];
@@ -136,6 +138,8 @@ export function RunHandoff({
   submit: (body: Record<string, unknown>) => void;
   settings: () => void;
   busy: boolean;
+  reviewDraft?: unknown;
+  backToReview?: () => void;
 }) {
   const { api } = useSurfaceClient();
   const draft = useMemo(() => readDraft(value, run), [value, run.id]);
@@ -349,6 +353,7 @@ export function RunHandoff({
           {run.kind === 'task' && run.status === 'DONE' && (
             <ReviewFeedbackSelection
               runId={run.id}
+              localDraft={reviewDraft}
               feedback={draft.feedback}
               change={(feedback) => patch({ feedback })}
               disabled={busy}
@@ -547,6 +552,11 @@ export function RunHandoff({
           )}
         </div>
         <footer className="modal-footer">
+          {backToReview && (
+            <button type="button" className="secondary" onClick={backToReview} disabled={busy}>
+              返回复核，保留草稿
+            </button>
+          )}
           <button type="button" className="secondary" onClick={close} disabled={busy}>
             关闭并保留草稿
           </button>

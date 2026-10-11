@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
+import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow';
+import { reviewStatusLabels } from './ReviewStatus';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 import { Modal } from './Modal';
@@ -19,6 +21,7 @@ export type TaskCenterState = {
   trail: string[];
   projectId?: string;
   query?: string;
+  reviewFilter?: DeliveryReviewStatus;
 };
 const labels: Record<'all' | TaskCenterCategory, string> = {
   all: '全部',
@@ -39,7 +42,7 @@ export function TaskCenter({
   state: TaskCenterState;
   changeState: (state: TaskCenterState) => void;
   projects: Project[];
-  openRun: (id: string, category: TaskCenterCategory) => Promise<void>;
+  openRun: (id: string, category: TaskCenterCategory | 'review') => Promise<void>;
   close: () => void;
 }) {
   const client = useSurfaceClient();
@@ -90,6 +93,7 @@ export function TaskCenter({
         const query = new URLSearchParams({ filter: state.filter, limit: '40' });
         if (state.projectId) query.set('projectId', state.projectId);
         if (state.query?.trim()) query.set('query', state.query.trim());
+        if (surface === 'native' && state.reviewFilter) query.set('reviewFilter', state.reviewFilter);
         if (state.before) query.set('before', state.before);
         const value = await api<TaskCenterPage>(
           '/task-center?' + query,
@@ -119,7 +123,7 @@ export function TaskCenter({
       clearInterval(timer);
       clearTimeout(start);
     };
-  }, [api, state, changeState, retry]);
+  }, [api, state, changeState, retry, surface]);
   return (
     <Modal
       title="任务中心"
@@ -141,6 +145,31 @@ export function TaskCenter({
             </button>
           ))}
         </nav>
+        {surface === 'native' && (
+          <label className="task-center-review-filter">
+            用户复核状态
+            <select
+              aria-label="筛选用户复核状态"
+              value={state.reviewFilter || ''}
+              onChange={(event) =>
+                changeState({
+                  ...state,
+                  reviewFilter: (event.target.value || undefined) as DeliveryReviewStatus | undefined,
+                  before: '',
+                  trail: [],
+                })
+              }
+            >
+              <option value="">全部复核状态</option>
+              {Object.entries(reviewStatusLabels).map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <small>与执行状态、项目和搜索共同筛选。</small>
+          </label>
+        )}
         <div className="task-center-search">
           <input
             type="search"
@@ -235,16 +264,18 @@ export function TaskCenter({
               className="task-center-row"
               aria-label={
                 item.title +
-                (item.category === 'waiting'
-                  ? '，回答问题'
-                  : item.category === 'verification'
-                    ? '，核验操作'
-                    : '，打开对话')
+                (item.reviewStatus
+                  ? '，打开交付复核'
+                  : item.category === 'waiting'
+                    ? '，回答问题'
+                    : item.category === 'verification'
+                      ? '，核验操作'
+                      : '，打开对话')
               }
               disabled={!!opening}
               onClick={() => {
                 setOpening(item.id);
-                void openRun(item.id, item.category)
+                void openRun(item.id, item.reviewStatus ? 'review' : item.category)
                   .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
                   .finally(() => setOpening(''));
               }}
@@ -258,9 +289,18 @@ export function TaskCenter({
                   {projects.find((project) => project.id === item.projectId)?.name ||
                     (item.kind === 'chat' ? '独立对话' : '项目任务')}
                 </small>
+                {item.reviewStatus && (
+                  <small className="task-center-review-status">
+                    用户复核：{reviewStatusLabels[item.reviewStatus]}
+                  </small>
+                )}
               </span>
-              {['waiting', 'verification'].includes(item.category) && (
-                <span className="task-center-action">{item.category === 'waiting' ? '回答' : '核验'}</span>
+              {item.reviewStatus ? (
+                <span className="task-center-action">复核</span>
+              ) : (
+                ['waiting', 'verification'].includes(item.category) && (
+                  <span className="task-center-action">{item.category === 'waiting' ? '回答' : '核验'}</span>
+                )
               )}
               <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
             </button>

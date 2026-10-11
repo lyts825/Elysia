@@ -34,6 +34,28 @@
 .workflow-review-note {
   margin-top: 12px;
 }
+.workflow-note-choice {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  margin-block: 12px;
+}
+.workflow-note-choice > input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.workflow-note-choice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.delivery-card[data-review-status='changes_requested'],
+.delivery-card[data-review-status='stale'],
+.delivery-card[data-review-status='unknown'] {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
 .workflow-revision-row {
   display: flex;
   flex-wrap: wrap;

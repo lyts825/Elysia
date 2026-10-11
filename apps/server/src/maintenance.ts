@@ -43,6 +43,7 @@ import {
   recoverPreparedInstall,
 } from './maintenance-storage.js';
 import { prepareStartupUpgrade } from './startup-storage.js';
+import { createObjectCleanupPlan, executeObjectCleanup } from './object-maintenance.js';
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -77,6 +78,8 @@ if (
   ![
     'backup',
     'restore',
+    'objects-plan',
+    'objects-cleanup',
     ...terminalActions.filter((name) => !['terminal-inspect', 'terminal-cleanup-plan'].includes(name)),
   ].includes(action)
 )
@@ -207,7 +210,33 @@ if (action === 'stop') {
   const directory = realpathSync(configuredDirectory);
   try {
     recoverPreparedInstall(directory);
-    if (terminalActions.includes(action)) {
+    if (action === 'objects-plan' || action === 'objects-cleanup') {
+      if (!argument) throw new Error(action + ' 需要计划 JSON 文件路径');
+      const filename =
+        action === 'objects-plan' ? canonicalDestination(path.resolve(argument)) : path.resolve(argument);
+      if (action === 'objects-plan') {
+        if (filename === directory || isWithin(directory, filename))
+          throw new Error('请将清理计划保存到数据目录以外');
+        const plan = createObjectCleanupPlan(directory, selection);
+        writeFileSync(filename, stable(plan), { flag: 'wx' });
+        console.log(
+          stable({
+            plan: filename,
+            surfaces: plan.surfaces.map(({ candidates, ...entry }) => ({
+              ...entry,
+              candidateCount: candidates.length,
+            })),
+          }),
+        );
+      } else {
+        const stat = lstatSync(filename);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024)
+          throw new Error('维护计划须为不超过 2 MiB 的普通 JSON 文件');
+        console.log(
+          stable(executeObjectCleanup(directory, JSON.parse(readFileSync(filename, 'utf8')), selection)),
+        );
+      }
+    } else if (terminalActions.includes(action)) {
       await prepareStartupUpgrade(directory, ['terminal']);
       console.log(stable(await terminalMaintenance(directory)));
     } else if (action === 'migrate') {

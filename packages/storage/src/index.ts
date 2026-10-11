@@ -196,6 +196,18 @@ function projection(table: Table, entity: any) {
     ...(table === 'tasks' ? { schedulerVersion: 1 } : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
     ...(table === 'runs' ? { sourceRunId: entity.source?.runId } : {}),
+    ...(table === 'runs'
+      ? {
+          deliveryProjectionVersion: 1,
+          deliveryReview: entity.deliveryReview
+            ? {
+                decision: entity.deliveryReview.decision,
+                fingerprint: entity.deliveryReview.fingerprint,
+                reviewedAt: entity.deliveryReview.reviewedAt,
+              }
+            : null,
+        }
+      : {}),
     ...(table === 'requests' ? { requestLedgerVersion: 1, requestLedger: ledgerProjection(entity) } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages'

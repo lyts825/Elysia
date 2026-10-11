@@ -7,57 +7,7 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 
-type ReviewNote = { index: number; text: string; note: string };
-type ReviewDraft = {
-  fingerprint: string;
-  decision: '' | 'accepted' | 'changes_requested';
-  note: string;
-  criteriaNotes: ReviewNote[];
-  unlinked: { text: string; note: string }[];
-};
-function readDraft(raw: unknown, value: DeliveryReview): ReviewDraft {
-  const review = value.userReview;
-  const fallback: ReviewDraft = {
-    fingerprint: review?.fingerprint || value.fingerprint,
-    decision: review?.decision || '',
-    note: review?.note || '',
-    criteriaNotes: (review?.criteriaNotes || []).map((item) => ({
-      ...item,
-      text: review?.stale
-        ? `第 ${item.index + 1} 项（旧版本）`
-        : value.criteria.find((criterion) => criterion.index === item.index)?.text ||
-          `第 ${item.index + 1} 项`,
-    })),
-    unlinked: [],
-  };
-  if (typeof raw !== 'string' || !raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed.fingerprint !== 'string' ||
-      !['', 'accepted', 'changes_requested'].includes(parsed.decision) ||
-      typeof parsed.note !== 'string' ||
-      !Array.isArray(parsed.criteriaNotes)
-    )
-      return fallback;
-    return {
-      ...parsed,
-      criteriaNotes: parsed.criteriaNotes
-        .filter(
-          (item: ReviewNote) =>
-            Number.isInteger(item.index) && typeof item.text === 'string' && typeof item.note === 'string',
-        )
-        .slice(0, 40),
-      unlinked: Array.isArray(parsed.unlinked)
-        ? parsed.unlinked.filter(
-            (item: ReviewNote) => typeof item.text === 'string' && typeof item.note === 'string',
-          )
-        : [],
-    };
-  } catch {
-    return fallback;
-  }
-}
+import { readReviewDraft, type ReviewDraft } from './ReviewDraft';
 
 export function DeliveryUserReview({
   value,
@@ -83,7 +33,7 @@ export function DeliveryUserReview({
   children: (note: (criterion: DeliveryCriterion) => ReactNode) => ReactNode;
 }) {
   const { mutation } = useSurfaceClient();
-  const draft = useMemo(() => readDraft(rawDraft, value), [rawDraft, value]);
+  const draft = useMemo(() => readReviewDraft(rawDraft, value), [rawDraft, value]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [busy, setBusy] = useState(false),
@@ -113,6 +63,9 @@ export function DeliveryUserReview({
     return (
       <label className="workflow-review-note">
         我的复核备注
+        {current?.unknownStandard && (
+          <small className="field-help">此条旧备注未记录原标准，请核对当前验收项后保存。</small>
+        )}
         <textarea
           aria-label={`第 ${criterion.index + 1} 项复核备注`}
           value={current?.note || ''}
@@ -124,7 +77,14 @@ export function DeliveryUserReview({
               criteriaNotes: [
                 ...draft.criteriaNotes.filter((item) => item.index !== criterion.index),
                 ...(event.target.value
-                  ? [{ index: criterion.index, text: criterion.text, note: event.target.value }]
+                  ? [
+                      {
+                        index: criterion.index,
+                        text: criterion.text,
+                        note: event.target.value,
+                        unknownStandard: false,
+                      },
+                    ]
                   : []),
               ],
             })
@@ -199,17 +159,22 @@ export function DeliveryUserReview({
                 className="secondary"
                 disabled={disabled || busy}
                 onClick={() => {
-                  const kept = draft.criteriaNotes.filter((note) =>
-                    value.criteria.some(
-                      (criterion) => criterion.index === note.index && criterion.text === note.text,
-                    ),
+                  const kept = draft.criteriaNotes.filter(
+                    (note) =>
+                      !note.unknownStandard &&
+                      value.criteria.some(
+                        (criterion) => criterion.index === note.index && criterion.text === note.text,
+                      ),
                   );
                   const detached = draft.criteriaNotes.filter((note) => !kept.includes(note));
                   patch({
                     fingerprint: value.fingerprint,
                     decision: '',
                     criteriaNotes: kept,
-                    unlinked: [...draft.unlinked, ...detached],
+                    unlinked: [
+                      ...draft.unlinked,
+                      ...detached.map((note) => ({ ...note, fingerprint: draft.fingerprint })),
+                    ],
                   });
                 }}
               >
