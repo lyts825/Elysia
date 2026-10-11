@@ -132,7 +132,7 @@ import {
   type NavigationState,
 } from './NavigationState';
 import { defaultChoice, type ModelChoice } from './ModelPicker';
-import { modelSwitchReason, modelTaskCanContinue } from './ModelSwitchGuards';
+import { modelSwitchReason, modelTaskCanContinue, taskResumeReason } from './ModelSwitchGuards';
 const ModelSwitchModal = deferredPanel(
   () => import('./ModelSwitchModal').then((m) => m.ModelSwitchModal),
   '模型选择',
@@ -156,6 +156,7 @@ const NewContextWindowModal = deferredPanel(
 import { contextPolicyLabel } from './ContextLabel';
 import { validContextPolicy } from './ContextPolicyEditor';
 const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
+const TaskRecovery = deferredPanel(() => import('./TaskRecovery').then((m) => m.TaskRecovery), '分支恢复');
 import { agentOrder } from './agentOrder';
 import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
@@ -227,6 +228,8 @@ const reasons: Record<string, string> = {
   verification: '副作用待核验',
   limit: '达到运行上限',
   rate_limit: '等待账号额度',
+  dependency_failed: '依赖分支失败或已取消，等待局部恢复',
+  no_progress: '相同工具错误重复发生，已暂停此代理',
 };
 function Badge({ status }: { status: string }) {
   return (
@@ -516,10 +519,12 @@ function App({
     : undefined;
   const questions = detail ? currentQuestions(detail) : [];
   const resumeTask = detail?.tasks.find((task) => task.id === feedback?.resumeTaskId);
+  const taskDetailRefs = useRef(new Map<string, HTMLDivElement>());
+  const pendingTaskFocus = useRef<string | undefined>(undefined);
   const resumeTaskReason = legacyTerminal
     ? '旧终端记录仅供查看。'
     : detail && resumeTask
-      ? modelSwitchReason(detail, archived, resumeTask.id)
+      ? taskResumeReason(detail, archived, resumeTask.id)
       : '';
   const planRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
@@ -1605,10 +1610,29 @@ function App({
       case 'limits':
         setModal('limits');
         break;
+      case 'tasks':
+        openTaskDetails(feedback.blockedTaskId);
+        break;
       case 'new':
         startFromRun();
         break;
     }
+  };
+  const openTaskDetails = (taskId?: string) => {
+    pendingTaskFocus.current = taskId;
+    setPreviewOpen(false);
+    setDetailsCollapsed(false);
+    setDetailsDrawerOpen(true);
+    setTab('tasks');
+    void loadDetailedSummary();
+    requestAnimationFrame(() => {
+      const target = taskId ? taskDetailRefs.current.get(taskId) : undefined;
+      if (target) {
+        target.scrollIntoView({ block: 'start' });
+        target.focus({ preventScroll: true });
+        pendingTaskFocus.current = undefined;
+      }
+    });
   };
   const selectProject = (id: string) => {
     const owner = projects.find((p) => p.id === id);
@@ -2154,6 +2178,7 @@ function App({
                         archive: '查看归档',
                         limits: '查看限制',
                         settings: '管理模型用量',
+                        tasks: '查看阻塞分支',
                         new: isChat ? '新建独立对话' : '新建任务',
                       }[feedback.action]
                     }
@@ -2373,6 +2398,16 @@ function App({
                     </div>
                   )}
                   {visibleMessages.map((m) => {
+                    if (m.purpose === 'runtime_notice')
+                      return (
+                        <div className="system-note model-handoff" key={m.id} data-history-anchor={m.id}>
+                          <Icon name="history" size={14} />
+                          <details>
+                            <summary>运行提醒</summary>
+                            <pre>{m.text}</pre>
+                          </details>
+                        </div>
+                      );
                     if (m.purpose === 'model_handoff')
                       return (
                         <div className="system-note model-handoff" key={m.id} data-history-anchor={m.id}>
@@ -2950,13 +2985,28 @@ function App({
                             完成
                           </span>
                         </div>
-                        <TaskGraph detail={detail} archived={runReadOnly} />
+                        <TaskGraph detail={detail} archived={runReadOnly} selectTask={openTaskDetails} />
                         <div className="panel-heading">
                           <h3>任务列表</h3>
                           <span>按任务查看进度与结果</span>
                         </div>
                         {detail.tasks.map((t) => (
-                          <div className="task-detail" key={t.id}>
+                          <div
+                            className="task-detail"
+                            key={t.id}
+                            tabIndex={-1}
+                            ref={(element) => {
+                              if (!element) taskDetailRefs.current.delete(t.id);
+                              else {
+                                taskDetailRefs.current.set(t.id, element);
+                                if (pendingTaskFocus.current === t.id) {
+                                  element.scrollIntoView({ block: 'start' });
+                                  element.focus({ preventScroll: true });
+                                  pendingTaskFocus.current = undefined;
+                                }
+                              }
+                            }}
+                          >
                             <div>
                               <strong>{t.spec.title}</strong>
                               <Badge status={t.status} />
@@ -2992,6 +3042,16 @@ function App({
                                   {t.result.error}
                                 </p>
                               )}
+                            {(modelTaskCanContinue(t) || t.waitReason === 'dependency_failed') && (
+                              <TaskRecovery
+                                task={t}
+                                detail={detail}
+                                archived={runReadOnly}
+                                busy={busy}
+                                locate={openTaskDetails}
+                                resume={(id) => void runAction('resume_task', id)}
+                              />
+                            )}
                             <small>
                               {t.spec.providerId} · 深度 {t.depth}
                             </small>
@@ -3034,6 +3094,9 @@ function App({
                           const switchReason = legacyTerminal
                             ? '旧终端记录仅供查看。'
                             : modelSwitchReason(detail, archived, a.taskId);
+                          const continueReason = legacyTerminal
+                            ? '旧终端记录仅供查看。'
+                            : taskResumeReason(detail, archived, a.taskId);
                           return (
                             <div
                               className="agent-card"
@@ -3076,10 +3139,11 @@ function App({
                                     className="agent-preview-button"
                                     disabled={
                                       busy ||
-                                      !!switchReason ||
+                                      !!continueReason ||
                                       (!detail.run.authorized && task.phase !== 'planning')
                                     }
                                     onClick={() => void runAction('resume_task', task.id)}
+                                    title={continueReason || '仅恢复此代理，累计预算保持'}
                                   >
                                     继续此代理
                                   </button>

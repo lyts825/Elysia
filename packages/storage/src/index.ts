@@ -113,6 +113,10 @@ function projection(table: Table, entity: any) {
             waitReason: entity.waitReason,
             parentTaskId: entity.parentTaskId,
             waitingFor: entity.waitingFor,
+            dependencyNeedsDecision:
+              entity.waitReason === 'dependency_failed'
+                ? entity.dependencyBlock?.causes.length !== 0
+                : undefined,
             rateResumeAt: rateResumeAt(entity),
           }
         : table === 'tool_operations'
@@ -746,6 +750,11 @@ export class Store {
       "COALESCE(json_extract(t.data,'$.readModel.waitReason'),json_extract(t.data,'$.waitReason'))";
     const waitingFor =
       "COALESCE(json_extract(t.data,'$.readModel.waitingFor'),json_extract(t.data,'$.waitingFor'))";
+    const needsDecision = (alias: string) =>
+      `(${status(alias)} IN ('FAILED','CANCELLED') OR (${status(alias)}='WAITING' AND
+        (COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))='no_progress' OR
+          (COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))='dependency_failed' AND
+            json_extract(${alias}.data,'$.readModel.dependencyNeedsDecision') IS NOT 0))))`;
     const rows = this.db
       .prepare(
         `SELECT r.id,json_extract(r.data,'$.readModelVersion') projection_version FROM runs r WHERE
@@ -754,11 +763,17 @@ export class Store {
           (${status('r')} IN ('READY','RUNNING') AND EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id
             AND (${status('t')} IS NULL OR ${status('t')} IN ('READY','RUNNING','VERIFYING'))))
           OR EXISTS(SELECT 1 FROM inbox i WHERE i.run_id=r.id AND (json_extract(i.data,'$.status') IS NULL OR json_extract(i.data,'$.status')='PENDING'))
+          OR EXISTS(SELECT 1 FROM tasks t JOIN task_edges e ON e.task_id=t.id JOIN tasks d ON d.id=e.dependency_id
+            WHERE t.run_id=r.id AND ${status('t')}='READY' AND ${needsDecision('d')})
           OR EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id AND (
             ${status('t')} IS NULL OR (${status('t')}='WAITING' AND (
               (${reason}='children' AND (json_extract(t.data,'$.schedulerVersion') IS NOT 1 OR
+                EXISTS(SELECT 1 FROM json_each(${waitingFor}) w JOIN tasks c ON c.id=w.value WHERE ${needsDecision('c')}) OR
                 NOT EXISTS(SELECT 1 FROM json_each(${waitingFor}) w LEFT JOIN tasks c ON c.id=w.value
                   WHERE c.id IS NULL OR ${status('c')} IS NULL OR ${status('c')} NOT IN ('DONE','FAILED','CANCELLED'))))
+              OR (${reason}='dependency_failed' AND NOT EXISTS(
+                SELECT 1 FROM task_edges e LEFT JOIN tasks d ON d.id=e.dependency_id
+                WHERE e.task_id=t.id AND (d.id IS NULL OR ${status('d')} IS NULL OR ${status('d')}<>'DONE')))
               OR (${reason}='rate_limit' AND (json_extract(t.data,'$.schedulerVersion') IS NOT 1
                 OR json_extract(t.data,'$.readModel.rateResumeAt')<=?))
               OR (${reason} IS NULL AND json_extract(t.data,'$.schedulerVersion') IS NOT 1)

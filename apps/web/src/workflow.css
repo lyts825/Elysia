@@ -1,6 +1,13 @@
 .workflow-body {
   min-height: 0;
 }
+.task-detail:focus {
+  outline: 2px solid var(--accent, #a56880);
+  outline-offset: 2px;
+}
+.task-recovery {
+  margin: 10px 0;
+}
 .workflow-body section + section {
   margin-top: 20px;
 }

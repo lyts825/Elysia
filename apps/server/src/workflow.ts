@@ -24,6 +24,9 @@ import {
   type SourceMessage,
   type SourceOptions,
   type DeliveryReview,
+  type DeliveryEvidence,
+  type DeliveryEvidencePage,
+  type DeliveryPage,
 } from '../../../packages/contracts/src/workflow.js';
 import { hash, id, now, stable, type Store } from '../../../packages/storage/src/index.js';
 
@@ -284,44 +287,119 @@ export function attachRunSource(store: Store, run: Run, source: RunSourceSnapsho
     });
   return store.put<Run>('runs', { ...run, source }, run.revision);
 }
-export function deliveryReview(store: Store, runId: string, beforeArtifact?: string): DeliveryReview {
+function deliveryState(store: Store, runId: string, expectedRootRevision?: number) {
   const run = nativeRun(store, runId),
     root = store.require<Task>('tasks', run.rootTaskId);
+  if (expectedRootRevision !== undefined) assertRevision(expectedRootRevision, root.revision);
   const result =
     root.result && typeof root.result === 'object' ? (root.result as Record<string, unknown>) : {};
   const rawEvidence = Array.isArray(result.evidence) ? result.evidence : [];
-  const evidence = rawEvidence.slice(0, 80).flatMap((raw) => {
+  return { run, root, result, rawEvidence };
+}
+function deliveryPage(offset: number, limit: number, total: number): DeliveryPage {
+  const hasMore = offset + limit < total;
+  return { offset, limit, total, hasMore, nextOffset: hasMore ? offset + limit : null };
+}
+function publicEvidence(store: Store, runId: string, evidence: Evidence): DeliveryEvidence {
+  const artifact = evidence.type === 'artifact' ? store.get<Artifact>('artifacts', evidence.ref) : undefined;
+  return {
+    type: evidence.type,
+    ref: evidence.ref.slice(0, 1000),
+    hash: evidence.hash?.slice(0, 100) ?? null,
+    note: evidence.note.slice(0, 1500),
+    artifact: artifact?.runId === runId ? publicArtifact(artifact) : null,
+  };
+}
+/** Count matching evidence before paging it; unrelated criteria cannot consume this page's budget. */
+function criterionEvidence(
+  store: Store,
+  runId: string,
+  rawEvidence: unknown[],
+  indices: number[],
+  offset: number,
+  limit: number,
+) {
+  const groups = new Map(indices.map((index) => [index, { total: 0, evidence: [] as DeliveryEvidence[] }]));
+  for (const raw of rawEvidence) {
+    if (!raw || typeof raw !== 'object') continue;
+    const group = groups.get((raw as { criterion?: number }).criterion!);
+    if (!group) continue;
     const parsed = Evidence.safeParse(raw);
-    return parsed.success ? [parsed.data] : [];
+    if (!parsed.success) continue;
+    const position = group.total++;
+    if (position >= offset && group.evidence.length < limit)
+      group.evidence.push(publicEvidence(store, runId, parsed.data));
+  }
+  return groups;
+}
+export function deliveryEvidencePage(
+  store: Store,
+  runId: string,
+  criterion: number,
+  offset = 0,
+  expectedRootRevision?: number,
+): DeliveryEvidencePage {
+  const { run, root, rawEvidence } = deliveryState(store, runId, expectedRootRevision);
+  invariant(
+    Number.isInteger(criterion) && criterion >= 0 && criterion < root.spec.acceptanceCriteria.length,
+    'CRITERION_SCOPE',
+    '验收项不存在，请重新读取交付记录',
+  );
+  const group = criterionEvidence(store, runId, rawEvidence, [criterion], offset, 20).get(criterion)!;
+  return {
+    runId: run.id,
+    runRevision: run.revision,
+    rootTaskId: root.id,
+    rootRevision: root.revision,
+    criterion,
+    evidence: group.evidence,
+    page: deliveryPage(offset, 20, group.total),
+  };
+}
+export function deliveryReview(
+  store: Store,
+  runId: string,
+  beforeArtifact?: string,
+  criteriaOffset = 0,
+  expectedRootRevision?: number,
+): DeliveryReview {
+  const { run, root, result, rawEvidence } = deliveryState(store, runId, expectedRootRevision);
+  const criteriaPage = deliveryPage(criteriaOffset, 40, root.spec.acceptanceCriteria.length);
+  const items = root.spec.acceptanceCriteria.slice(criteriaOffset, criteriaOffset + criteriaPage.limit);
+  const groups = criterionEvidence(
+    store,
+    runId,
+    rawEvidence,
+    items.map((_, index) => index + criteriaOffset),
+    0,
+    2,
+  );
+  const criteria = items.map((text, pageIndex) => {
+    const index = criteriaOffset + pageIndex,
+      group = groups.get(index)!;
+    return {
+      index,
+      text: text.slice(0, 2000),
+      evidence: group.evidence,
+      evidenceTotal: group.total,
+      evidencePage: deliveryPage(0, 2, group.total),
+    };
   });
   const artifacts = store.entityPage<Artifact>('artifacts', 20, beforeArtifact, run.id);
   return {
     runId: run.id,
     runRevision: run.revision,
     rootTaskId: root.id,
+    rootRevision: root.revision,
     status: run.status,
     summary: typeof result.summary === 'string' ? result.summary.slice(0, 6000) : '',
     verifiedAt: typeof result.verifiedAt === 'string' ? result.verifiedAt.slice(0, 100) : null,
     limitation:
       '此处展示提交时的文件、引用与命令结构核验记录，不表示内容正确、符合需求或已由用户验收；文件后续变化需重新核对。',
-    criteria: root.spec.acceptanceCriteria.slice(0, 40).map((text, index) => ({
-      index,
-      text: text.slice(0, 2000),
-      evidence: evidence
-        .filter((e) => e.criterion === index)
-        .map((e) => {
-          const artifact = e.type === 'artifact' ? store.get<Artifact>('artifacts', e.ref) : undefined;
-          return {
-            type: e.type,
-            ref: e.ref.slice(0, 1000),
-            hash: e.hash?.slice(0, 100) ?? null,
-            note: e.note.slice(0, 1500),
-            artifact: artifact?.runId === run.id ? publicArtifact(artifact) : null,
-          };
-        }),
-    })),
-    criteriaHasMore: root.spec.acceptanceCriteria.length > 40,
-    evidenceTruncated: rawEvidence.length > 80,
+    criteria,
+    criteriaPage,
+    criteriaHasMore: criteriaPage.hasMore,
+    evidenceTruncated: criteria.some((criterion) => criterion.evidencePage.hasMore),
     artifacts: artifacts.items.map(publicArtifact),
     artifactPage: artifacts.page,
     source: run.source
@@ -351,9 +429,47 @@ export function registerWorkflow(
     return sourceOptions(store, request.params.id, query.beforeMessage, query.beforeArtifact);
   });
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery', async (request) => {
-    const query = z.object({ beforeArtifact: z.string().uuid().optional() }).strict().parse(request.query);
-    return deliveryReview(store, request.params.id, query.beforeArtifact);
+    const query = z
+      .object({
+        beforeArtifact: z.string().uuid().optional(),
+        criteriaOffset: z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+        expectedRootRevision: z.coerce.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .parse(request.query);
+    return deliveryReview(
+      store,
+      request.params.id,
+      query.beforeArtifact,
+      query.criteriaOffset,
+      query.expectedRootRevision,
+    );
   });
+  app.get<{ Params: { id: string; index: string } }>(
+    '/api/runs/:id/delivery/criteria/:index/evidence',
+    async (request) => {
+      const criterion = z.coerce
+        .number()
+        .int()
+        .nonnegative()
+        .max(Number.MAX_SAFE_INTEGER)
+        .parse(request.params.index);
+      const query = z
+        .object({
+          offset: z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+          expectedRootRevision: z.coerce.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .parse(request.query);
+      return deliveryEvidencePage(
+        store,
+        request.params.id,
+        criterion,
+        query.offset,
+        query.expectedRootRevision,
+      );
+    },
+  );
   const view = (project: Project): NativeProjectDefaultsView => ({
     projectId: project.id,
     revision: project.revision,

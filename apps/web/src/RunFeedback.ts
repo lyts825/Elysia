@@ -11,9 +11,10 @@ type FeedbackDetail = {
 export type RunFeedback = {
   text: string;
   displayStatus?: 'WAITING';
-  action?: 'artifacts' | 'plan' | 'reply' | 'questions' | 'archive' | 'limits' | 'settings' | 'new';
+  action?: 'artifacts' | 'plan' | 'reply' | 'questions' | 'archive' | 'limits' | 'settings' | 'new' | 'tasks';
   control?: 'pause' | 'resume' | 'retry';
   resumeTaskId?: string;
+  blockedTaskId?: string;
   limit?: {
     code: string;
     message: string;
@@ -206,24 +207,46 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
         : timedRateTasks.length
           ? '等待前置任务完成，再按记录时间重新检查'
           : '未记录有效重试时间，可暂停后恢复重新检查';
+  const blocked = tasks.filter(
+    (task) =>
+      task.status === 'WAITING' && ['dependency_failed', 'no_progress'].includes(task.waitReason || ''),
+  );
   const control = ['READY', 'RUNNING'].includes(run.status)
     ? 'pause'
-    : run.status === 'FAILED'
-      ? 'retry'
-      : run.status === 'WAITING' &&
-          ['paused', 'interrupted', 'rate_limit', 'subscription_limit', 'terminal_unavailable'].includes(
-            run.reason || '',
-          )
-        ? run.reason === 'rate_limit' && rootTimed
-          ? 'pause'
-          : 'resume'
-        : undefined;
+    : blocked.length
+      ? undefined
+      : run.status === 'FAILED'
+        ? 'retry'
+        : run.status === 'WAITING' &&
+            ['paused', 'interrupted', 'rate_limit', 'subscription_limit', 'terminal_unavailable'].includes(
+              run.reason || '',
+            )
+          ? run.reason === 'rate_limit' && rootTimed
+            ? 'pause'
+            : 'resume'
+          : undefined;
   if (uncertain)
     return {
       text: `${run.reason === 'paused' ? '已暂停；' : ''}${uncertain} 项副作用待核验，请检查本机证据`,
       action: 'artifacts',
       control,
     };
+  if (blocked.length) {
+    const stalled = blocked.find((task) => task.waitReason === 'no_progress');
+    const dependency = blocked.find((task) => task.waitReason === 'dependency_failed');
+    const active = tasks.some((task) => ['READY', 'RUNNING', 'VERIFYING'].includes(task.status));
+    return {
+      text: stalled
+        ? `相同工具错误重复发生，${stalled.spec.title} 已暂停；请检查后局部继续${active ? '，其他分支仍在推进' : ''}`
+        : dependency?.dependencyBlock?.causes.length
+          ? `依赖分支失败或已取消，请定位来源后恢复${active ? '；其他分支仍在推进' : ''}`
+          : '依赖恢复中，等待完成；无需恢复父任务',
+      displayStatus: active ? undefined : 'WAITING',
+      action: 'tasks',
+      blockedTaskId: stalled?.id || dependency?.id,
+      control: active && ['READY', 'RUNNING'].includes(run.status) ? 'pause' : undefined,
+    };
+  }
   if (run.status === 'FAILED')
     return { text: run.reason ? `执行失败：${run.reason}` : '执行失败，可按已有授权重试', control };
   const root = tasks.find((task) => task.id === run.rootTaskId);

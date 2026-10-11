@@ -9,8 +9,10 @@ import {
   type ToolCall,
   type Operation,
   type Project,
+  type Artifact,
+  type Snapshot,
 } from '../../contracts/src/index.js';
-import { id, stable } from '../../storage/src/index.js';
+import { hash, id, stable } from '../../storage/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
 import { ToolGateway } from '../../tools/src/index.js';
 import { compileContext, requestDifference } from '../../context/src/index.js';
@@ -214,7 +216,6 @@ export class NativeExecutor implements ExecutorAdapter {
           await this.interrupt(run.id);
           continue;
         }
-        this.kernel.wakeChildren(run.id);
       }
       const tasks = this.kernel.store.stateCandidates<Task>('tasks', ['READY']);
       if (
@@ -294,15 +295,18 @@ export class NativeExecutor implements ExecutorAdapter {
       return {
         error: e instanceof Error ? e.message : String(e),
         code: e instanceof AppError ? e.code : 'TOOL_ERROR',
+        retryable: e instanceof AppError ? e.retryable : false,
       };
     } finally {
       this.toolActive--;
     }
   }
   async executeCalls(task: Task, attempt: Attempt, calls: ToolCall[], signal: AbortSignal) {
+    const outcomes: { call: ToolCall; result: unknown }[] = [];
     const orchestration = new Set([
       'write',
       'apply_patch',
+      'materialize_artifact',
       'clarify',
       'propose_plan',
       'spawn_task',
@@ -317,19 +321,153 @@ export class NativeExecutor implements ExecutorAdapter {
         this.kernel.store.tx(() =>
           this.kernel.appendMessage(task, 'tool', stable(result), { callId: call.id }),
         );
+        outcomes.push({ call, result });
       }
     } else {
       const results = await Promise.allSettled(calls.map((call) => this.tool(task, attempt, call, signal)));
       for (let i = 0; i < calls.length; i++) {
         const r = results[i];
-        if (r.status === 'fulfilled')
+        if (r.status === 'fulfilled') {
           this.kernel.store.tx(() =>
             this.kernel.appendMessage(task, 'tool', stable(r.value), { callId: calls[i].id }),
           );
-        else throw r.reason;
+          outcomes.push({ call: calls[i], result: r.value });
+        } else throw r.reason;
       }
     }
+    this.observeToolFailures(task, outcomes);
     this.kernel.checkpoint(attempt.id);
+  }
+  private observeToolFailures(task: Task, outcomes: { call: ToolCall; result: unknown }[]) {
+    // Only known, non-transient validation/authorization failures count. Polls, provider
+    // limits, unknown side effects and generic I/O errors must keep their own recovery rules.
+    const deterministic = new Set([
+      'TOOL_ARGUMENTS',
+      'TOOL_DENIED',
+      'TOOL_UNKNOWN',
+      'TASK_KEY_EXISTS',
+      'TASK_SCOPE',
+      'SPAWN_DENIED',
+      'DEPENDENCY_MISSING',
+      'WAIT_SCOPE',
+      'CYCLE',
+      'MODEL_BINDING',
+      'PERMISSION_DENIED',
+      'EXEC_DENIED',
+      'PATH_ESCAPE',
+      'ARTIFACT_SCOPE',
+      'CRITERION_SCOPE',
+      'ACCEPTANCE_INCOMPLETE',
+    ]);
+    const failures = outcomes.flatMap(({ call, result }) => {
+      if (call.name === 'join_tasks') {
+        const joined = (result as { result?: any } | null)?.result;
+        const children = Array.isArray(joined)
+          ? joined
+          : joined?.waiting === false
+            ? joined.children
+            : undefined;
+        if (
+          Array.isArray(children) &&
+          children.some(
+            (child) =>
+              ['FAILED', 'CANCELLED'].includes(child.status) ||
+              (child.status === 'WAITING' &&
+                (child.waitReason === 'no_progress' ||
+                  (child.waitReason === 'dependency_failed' && child.dependencyBlock?.causes.length !== 0))),
+          )
+        )
+          return [{ call, code: 'CHILDREN_BLOCKED' }];
+      }
+      const failure = result as { error?: unknown; code?: string; retryable?: boolean } | null;
+      return failure?.error && failure.code && !failure.retryable && deterministic.has(failure.code)
+        ? [{ call, code: failure.code }]
+        : [];
+    });
+    if (!failures.length) return;
+    const store = this.kernel.store;
+    store.tx(() => {
+      task = store.require<Task>('tasks', task.id);
+      if (task.status !== 'RUNNING') return;
+      const run = store.require<Run>('runs', task.runId);
+      const mutating = new Set([
+        'write',
+        'apply_patch',
+        'materialize_artifact',
+        'exec',
+        'artifact',
+        'integrate_worktrees',
+        'mcp_call',
+      ]);
+      const progressKey = hash(
+        stable({
+          contract: run.contract,
+          authorized: run.authorized,
+          acceptedPlanVersion: run.acceptedPlanVersion,
+          tasks: store.all<Task>('tasks', task.runId).map((t) => ({
+            id: t.id,
+            spec: t.spec,
+            phase: t.phase,
+            workspace: t.workspace,
+            result: t.result,
+            status: ['READY', 'RUNNING'].includes(t.status) ? 'ACTIVE' : t.status,
+            waitReason: t.status === 'WAITING' ? t.waitReason : undefined,
+          })),
+          artifacts: store.all<Artifact>('artifacts', task.runId).map((a) => [a.id, a.revision]),
+          snapshots: store.all<Snapshot>('snapshots', task.runId).map((s) => [s.id, s.revision]),
+          operations: store
+            .all<Operation>('tool_operations', task.runId)
+            .filter((o) => o.status === 'DONE' && mutating.has(o.name))
+            .map((o) => [o.id, o.revision]),
+        }),
+      );
+      const state: NonNullable<Task['noProgress']> =
+        task.noProgress?.progressKey === progressKey
+          ? structuredClone(task.noProgress)
+          : { progressKey, failures: [], warned: false };
+      const warnedBefore = state.warned;
+      for (const { call, code } of failures) {
+        let args: unknown = call.arguments.trim();
+        try {
+          args = JSON.parse(call.arguments);
+          if (call.name === 'join_tasks' && Array.isArray((args as any)?.taskIds))
+            args = { ...(args as object), taskIds: [...(args as any).taskIds].sort() };
+        } catch {
+          /* Invalid JSON is fingerprinted as raw text. */
+        }
+        const fingerprint = hash(stable({ tool: call.name, args, code }));
+        const prior = state.failures.find((failure) => failure.fingerprint === fingerprint);
+        if (prior?.lastCallId === call.id) continue;
+        state.failures = state.failures.filter((failure) => failure.fingerprint !== fingerprint);
+        state.failures.push({
+          fingerprint,
+          tool: call.name,
+          code,
+          count: (prior?.count ?? 0) + 1,
+          lastCallId: call.id,
+        });
+        state.failures = state.failures.slice(-8);
+      }
+      const repeated = state.failures.find((failure) => failure.count >= 2);
+      const stopped = state.failures.find((failure) => failure.count >= 3);
+      if (repeated && !state.warned) {
+        state.warned = true;
+        this.kernel.appendMessage(
+          task,
+          'user',
+          `运行提醒：${repeated.tool} 已连续产生相同确定性错误 ${repeated.code}，相关状态没有进展。请修正参数或权限；继续相同错误将暂停该分支。已有任务：` +
+            stable(
+              store
+                .all<Task>('tasks', task.runId)
+                .map((t) => ({ taskId: t.id, key: t.spec.key, status: t.status })),
+            ),
+          { purpose: 'runtime_notice' },
+        );
+      }
+      this.kernel.updateTask(task, task.status, { noProgress: state });
+      // Give the model one correction turn even when a single response repeated many invalid calls.
+      if (stopped && warnedBefore) this.kernel.wait(store.require<Task>('tasks', task.id), 'no_progress');
+    });
   }
   async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
     const history = this.kernel.history(task),
@@ -637,6 +775,7 @@ export class NativeExecutor implements ExecutorAdapter {
         store.require<Task>('tasks', task.id).phase === 'planning'
           ? '请使用 planning 阶段的工具：关键需求缺口用 clarify，需求明确后用 propose_plan。普通文本不改变完成状态。'
           : '请在已授权范围执行；有关键需求缺口可用 clarify，完成后提供产物证据并 submit_result。普通文本不改变完成状态。',
+        { purpose: 'runtime_notice' },
       );
     }
     task = store.require('tasks', task.id);
@@ -654,24 +793,27 @@ export class NativeExecutor implements ExecutorAdapter {
   private resumeRateLimited(runId: string) {
     this.kernel.store.tx(() => {
       const store = this.kernel.store;
-      const run = store.require<Run>('runs', runId);
-      if (
-        run.archived ||
-        (!['READY', 'RUNNING'].includes(run.status) &&
-          !(run.status === 'WAITING' && run.reason === 'rate_limit')) ||
-        (run.projectId && store.require<Project>('projects', run.projectId).archived)
-      )
+      let run = store.require<Run>('runs', runId);
+      if (run.archived || (run.projectId && store.require<Project>('projects', run.projectId).archived))
         return;
-      for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], {
-        runId: run.id,
-        waitReasons: ['rate_limit'],
-        resumeBefore: Date.now(),
-      })) {
-        const resumeAt = this.rateLimitResumeAt(task);
-        if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
-        if (task.status === 'WAITING' && task.waitReason === 'rate_limit')
-          this.kernel.updateTask(task, 'READY', { waitReason: undefined });
-      }
+      if (
+        ['READY', 'RUNNING'].includes(run.status) ||
+        (run.status === 'WAITING' && run.reason === 'rate_limit')
+      )
+        for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], {
+          runId: run.id,
+          waitReasons: ['rate_limit'],
+          resumeBefore: Date.now(),
+        })) {
+          const resumeAt = this.rateLimitResumeAt(task);
+          if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
+          if (task.status === 'WAITING' && task.waitReason === 'rate_limit')
+            this.kernel.updateTask(task, 'READY', { waitReason: undefined });
+        }
+      // Reconcile dependencies before selecting an expired runnable branch, so a recovered
+      // dependency resumes it in this tick without reviving an unrelated future cooldown.
+      this.kernel.wakeChildren(run.id);
+      run = store.require<Run>('runs', runId);
       if (
         run.status === 'WAITING' &&
         run.reason === 'rate_limit' &&

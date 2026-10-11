@@ -6,6 +6,7 @@ import { RecordHistory } from './RecordHistory';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { deferredPanel } from './DeferredPanel';
 import { ToolActivity } from './ToolActivity';
+import { DeliveryCriteria } from './DeliveryCriteria';
 import './workflow.css';
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -77,44 +78,30 @@ export function DeliveryReview({
                 <p className="workflow-prose">{value.summary}</p>
               </section>
             )}
-            <section aria-label="逐项验收">
-              <h3>逐项验收</h3>
-              {value.criteria.map((criterion) => (
-                <article className="workflow-criterion" key={criterion.index}>
-                  <h4>
-                    {criterion.index + 1}. {criterion.text}
-                  </h4>
-                  {!criterion.evidence.length && (
-                    <p className="field-help">此项尚无关联证据，请结合产物复核。</p>
+            <DeliveryCriteria
+              key={`${runId}:${value.runRevision}:${value.rootRevision}:${retry}`}
+              initial={value}
+              reload={() => setRetry((v) => v + 1)}
+              evidence={(evidence, index) => (
+                <div className="workflow-evidence" key={index}>
+                  <strong>
+                    {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]}
+                  </strong>
+                  <p className="workflow-prose">{evidence.note || evidence.ref}</p>
+                  <code>{evidence.ref}</code>
+                  {evidence.hash && <small>SHA256 {evidence.hash}</small>}
+                  {evidence.artifact && file(evidence.artifact)}
+                  {evidence.type === 'file' && openFile && (
+                    <button className="text-button" onClick={() => openFile(value.rootTaskId, evidence.ref)}>
+                      打开当前工作区文件
+                    </button>
                   )}
-                  {criterion.evidence.map((evidence, index) => (
-                    <div className="workflow-evidence" key={index}>
-                      <strong>
-                        {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]}
-                      </strong>
-                      <p className="workflow-prose">{evidence.note || evidence.ref}</p>
-                      <code>{evidence.ref}</code>
-                      {evidence.hash && <small>SHA256 {evidence.hash}</small>}
-                      {evidence.artifact && file(evidence.artifact)}
-                      {evidence.type === 'file' && openFile && (
-                        <button
-                          className="text-button"
-                          onClick={() => openFile(value.rootTaskId, evidence.ref)}
-                        >
-                          打开当前工作区文件
-                        </button>
-                      )}
-                      {evidence.type === 'command' && (
-                        <CommandEvidence runId={runId} operationId={evidence.ref} />
-                      )}
-                    </div>
-                  ))}
-                </article>
-              ))}
-              {(value.criteriaHasMore || value.evidenceTruncated) && (
-                <p className="field-help">此处仅显示有界摘要；其余内容请结合任务约定和完整任务记录复核。</p>
+                  {evidence.type === 'command' && (
+                    <CommandEvidence runId={runId} operationId={evidence.ref} />
+                  )}
+                </div>
               )}
-            </section>
+            />
             <section aria-label="交付文件">
               <h3>交付文件</h3>
               {value.artifacts.map(file)}

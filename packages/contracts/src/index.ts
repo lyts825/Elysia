@@ -4,7 +4,7 @@ import { terminalResourcePresets } from './terminal-runtime.js';
 import type { NativeProjectDefaults, RunSourceSnapshot } from './workflow.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '0.24.0-preview.1';
+export const VERSION = '0.24.1-preview.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -361,6 +361,21 @@ export interface Task extends Entity {
   baseline: string | null;
   waitReason?: string;
   waitingFor: string[];
+  /** Failed dependency paths, retained while the selected branch is being recovered. */
+  dependencyBlock?: {
+    causes: {
+      taskId: string;
+      status: 'FAILED' | 'CANCELLED' | 'WAITING';
+      waitReason?: 'no_progress';
+      chain: string[];
+    }[];
+  };
+  /** Bounded deterministic tool failures since the last material state change. */
+  noProgress?: {
+    progressKey: string;
+    failures: { fingerprint: string; tool: string; code: string; count: number; lastCallId: string }[];
+    warned: boolean;
+  };
   rateLimit?: {
     resumeAt: number;
     source?: 'account' | 'provider';
@@ -400,7 +415,7 @@ export interface ToolCall {
 }
 export interface Message extends Entity {
   sourceInboxId?: string;
-  purpose?: 'model_handoff';
+  purpose?: 'model_handoff' | 'runtime_notice';
   handoffHistoryRef?: string;
   requestId?: string;
   contentRef?: string;

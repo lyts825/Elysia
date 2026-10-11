@@ -49,7 +49,7 @@ export class Kernel {
           ...extra,
           status,
           ...(['DONE', 'CANCELLED', 'FAILED'].includes(status) || bindingChanged
-            ? { rateLimit: undefined }
+            ? { rateLimit: undefined, dependencyBlock: undefined }
             : {}),
         },
         task.revision,
@@ -753,6 +753,7 @@ export class Kernel {
         '用户已接受计划 v' +
           version +
           '。请按验收项执行；子任务已由内核创建，请先等待其交付，然后集成并核验。',
+        { purpose: 'runtime_notice' },
       );
       return run;
     });
@@ -863,6 +864,12 @@ export class Kernel {
           '等待对象越界或为自身',
         );
       this.checkGraph(this.graph(task.runId, { id: task.id, deps: ids }));
+      if (reason === 'children') {
+        const children = ids.map((key) => this.store.require<Task>('tasks', key));
+        // A failed branch is actionable immediately, even when another branch is still running.
+        if (children.some((child) => this.childNeedsDecision(child)))
+          return { waiting: false, reason: 'dependency_failed', children: this.childResults(children) };
+      }
       this.updateTask(this.store.require('tasks', task.id), 'WAITING', {
         waitReason: reason,
         waitingFor: ids,
@@ -990,7 +997,8 @@ export class Kernel {
     invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
     invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
     invariant(
-      task.runId === run.id && ['WAITING', 'FAILED'].includes(task.status),
+      task.runId === run.id &&
+        (['WAITING', 'FAILED'].includes(task.status) || (task.status === 'CANCELLED' && !!task.parentTaskId)),
       'MODEL_SWITCH_DENIED',
       '请选择处于等待或失败状态的代理',
     );
@@ -1015,9 +1023,16 @@ export class Kernel {
     );
     const restartable =
       task.status === 'FAILED' ||
-      ['paused', 'interrupted', 'limit', 'rate_limit', 'subscription_limit', 'terminal_unavailable'].includes(
-        task.waitReason ?? '',
-      );
+      task.status === 'CANCELLED' ||
+      [
+        'paused',
+        'interrupted',
+        'limit',
+        'rate_limit',
+        'subscription_limit',
+        'terminal_unavailable',
+        'no_progress',
+      ].includes(task.waitReason ?? '');
     return { run, task, history, restartable };
   }
   resumeTask(runId: string, taskId: string) {
@@ -1030,7 +1045,11 @@ export class Kernel {
       );
       invariant(restartable, 'TASK_RESUME_DECISION', '请先处理当前计划、问题、子任务或核验');
       invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
-      this.updateTask(task, 'READY', { waitReason: undefined, waitingFor: [] });
+      this.updateTask(task, 'READY', {
+        waitReason: undefined,
+        waitingFor: [],
+        ...(task.waitReason === 'no_progress' ? { noProgress: undefined } : {}),
+      });
       return this.updateRun(run, {
         status: run.status === 'RUNNING' ? 'RUNNING' : 'READY',
         reason: undefined,
@@ -1086,6 +1105,7 @@ export class Kernel {
         mode === 'resume' ? 'READY' : restartable ? 'WAITING' : task.status,
         {
           rateLimit: undefined,
+          noProgress: undefined,
           spec: {
             ...task.spec,
             providerId: binding.id,
@@ -1256,9 +1276,10 @@ export class Kernel {
           );
         }
         invariant(run.authorized || root.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
-        for (const t of tasks.filter(
+        const restarting = tasks.filter(
           (t) =>
             t.status === 'FAILED' ||
+            (t.status === 'CANCELLED' && t.id === taskId) ||
             (t.status === 'WAITING' &&
               [
                 'paused',
@@ -1267,13 +1288,27 @@ export class Kernel {
                 'rate_limit',
                 'subscription_limit',
                 'terminal_unavailable',
+                'no_progress',
               ].includes(t.waitReason ?? '')),
-        )) {
+        );
+        // A failed/blocked branch must not use broad resume to bypass local verification.
+        // Interrupted streams retain their existing explicit continuation semantics and reserves.
+        for (const task of restarting)
+          if (['FAILED', 'CANCELLED'].includes(task.status) || task.waitReason === 'no_progress')
+            invariant(
+              !this.taskNeedsVerification(task),
+              'TASK_VERIFICATION_REQUIRED',
+              '请先核验该代理的请求用量或操作结果，再恢复',
+            );
+        for (const t of restarting) {
           if (t.status === 'FAILED' && run.kind !== 'chat') {
             const agent = this.store.require<Agent>('agents', t.agentId);
             this.store.put('agents', { ...agent, sessionId: id() });
           }
-          this.updateTask(t, 'READY', { waitReason: undefined });
+          this.updateTask(t, 'READY', {
+            waitReason: undefined,
+            ...(t.waitReason === 'no_progress' ? { noProgress: undefined } : {}),
+          });
         }
         this.updateRun(this.store.require('runs', runId), {
           status: 'READY',
@@ -1387,21 +1422,106 @@ export class Kernel {
       this.updateRun(this.store.require('runs', runId), { status: 'READY', reason: undefined });
     });
   }
+  private childNeedsDecision(task: Task) {
+    return (
+      ['FAILED', 'CANCELLED'].includes(task.status) ||
+      (task.status === 'WAITING' &&
+        (task.waitReason === 'no_progress' ||
+          (task.waitReason === 'dependency_failed' && task.dependencyBlock?.causes.length !== 0)))
+    );
+  }
+  private childResults(tasks: Task[]) {
+    return tasks.map((task) => ({
+      id: task.id,
+      key: task.spec.key,
+      status: task.status,
+      waitReason: task.waitReason,
+      dependencyBlock: task.dependencyBlock,
+      noProgress: task.noProgress,
+      result: task.result,
+    }));
+  }
+  private taskNeedsVerification(task: Task) {
+    return (
+      this.store
+        .stateCandidates<RequestRecord>('requests', ['RESERVED', 'UNKNOWN'], { runId: task.runId })
+        .some((request) => request.taskId === task.id) ||
+      this.store
+        .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: task.runId })
+        .some((operation) => operation.taskId === task.id)
+    );
+  }
+  private reconcileDependencies(runId: string) {
+    const tasks = this.store.all<Task>('tasks', runId),
+      byId = new Map(tasks.map((task) => [task.id, task]));
+    type Cause = NonNullable<Task['dependencyBlock']>['causes'][number];
+    const causesFor = (task: Task, chain: string[] = []): Cause[] => {
+      if (chain.includes(task.id)) return [];
+      const path = [...chain, task.id];
+      if (task.status === 'FAILED' || task.status === 'CANCELLED')
+        return [{ taskId: task.id, status: task.status, chain: path }];
+      if (task.status === 'WAITING' && task.waitReason === 'no_progress')
+        return [{ taskId: task.id, status: 'WAITING', waitReason: 'no_progress', chain: path }];
+      if (task.status === 'DONE') return [];
+      return this.dependencies(task).flatMap((key) => {
+        const dependency = byId.get(key);
+        return dependency ? causesFor(dependency, path) : [];
+      });
+    };
+    for (const task of tasks) {
+      if (task.status !== 'READY' && !(task.status === 'WAITING' && task.waitReason === 'dependency_failed'))
+        continue;
+      const dependencies = this.dependencies(task),
+        causes = dependencies.flatMap((key) => {
+          const dependency = byId.get(key);
+          return dependency ? causesFor(dependency, [task.id]) : [];
+        });
+      if (causes.length) {
+        if (task.waitReason !== 'dependency_failed') this.wait(task, 'dependency_failed');
+        if (stable(task.dependencyBlock?.causes) !== stable(causes))
+          this.updateTask(this.store.require<Task>('tasks', task.id), 'WAITING', {
+            dependencyBlock: { causes },
+          });
+      } else if (task.waitReason === 'dependency_failed') {
+        if (dependencies.every((key) => byId.get(key)?.status === 'DONE')) {
+          if (this.taskNeedsVerification(task)) {
+            this.wait(task, 'verification');
+            this.updateTask(this.store.require<Task>('tasks', task.id), 'WAITING', {
+              dependencyBlock: undefined,
+            });
+          } else {
+            this.updateTask(task, 'READY', {
+              waitReason: undefined,
+              waitingFor: [],
+              dependencyBlock: undefined,
+            });
+          }
+        } else if (task.dependencyBlock?.causes.length) {
+          this.updateTask(task, 'WAITING', { dependencyBlock: { causes: [] } });
+        }
+      }
+    }
+  }
   wakeChildren(runId: string) {
     this.store.tx(() => {
+      this.reconcileDependencies(runId);
       for (const task of this.store.stateCandidates<Task>('tasks', ['WAITING'], {
         runId,
         waitReasons: ['children'],
       })) {
         const children = task.waitingFor.map((key) => this.store.require<Task>('tasks', key));
-        if (children.every((c) => ['DONE', 'FAILED', 'CANCELLED'].includes(c.status))) {
+        const needsDecision = children.some((child) => this.childNeedsDecision(child));
+        if (needsDecision || children.every((c) => ['DONE', 'FAILED', 'CANCELLED'].includes(c.status))) {
           this.appendMessage(
             task,
             'user',
-            '等待的子任务已结束：' +
-              stable(children.map((c) => ({ id: c.id, status: c.status, result: c.result }))),
+            (needsDecision
+              ? '子任务出现失败或阻塞，请根据部分结果处理失败分支；已完成产物应保留，不要重复执行：'
+              : '等待的子任务已结束：') + stable(this.childResults(children)),
+            { purpose: 'runtime_notice' },
           );
-          this.updateTask(task, 'READY', { waitingFor: [], waitReason: undefined });
+          if (needsDecision && this.taskNeedsVerification(task)) this.wait(task, 'verification');
+          else this.updateTask(task, 'READY', { waitingFor: [], waitReason: undefined });
         }
       }
     });

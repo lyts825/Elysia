@@ -23,11 +23,25 @@ export type TaskGraphDetail = {
     | 'archived'
     | 'reason'
   >;
-  tasks: Pick<Task, 'id' | 'parentTaskId' | 'spec' | 'status' | 'phase'>[];
+  tasks: Pick<Task, 'id' | 'parentTaskId' | 'spec' | 'status' | 'phase' | 'waitReason'>[];
   edges: { taskId: string; dependencyId: string }[];
 };
+const taskStatus = (task: TaskGraphDetail['tasks'][number]) =>
+  task.status === 'WAITING' && task.waitReason === 'dependency_failed'
+    ? '依赖阻塞'
+    : task.status === 'WAITING' && task.waitReason === 'no_progress'
+      ? '重复错误暂停'
+      : statusLabels[task.status];
 
-export function TaskGraph({ detail, archived = false }: { detail: TaskGraphDetail; archived?: boolean }) {
+export function TaskGraph({
+  detail,
+  archived = false,
+  selectTask,
+}: {
+  detail: TaskGraphDetail;
+  archived?: boolean;
+  selectTask?: (id: string) => void;
+}) {
   const tasks = detail.tasks.filter((task) => task.parentTaskId);
   const root = detail.tasks.find((task) => !task.parentTaskId);
   const pendingPlan =
@@ -70,10 +84,10 @@ export function TaskGraph({ detail, archived = false }: { detail: TaskGraphDetai
           : '总代理 · 集成与验收';
   return (
     <div className="task-graph">
-      <div className="graph-root" title={root ? `${rootLabel} · ${statusLabels[root.status]}` : rootLabel}>
+      <div className="graph-root" title={root ? `${rootLabel} · ${taskStatus(root)}` : rootLabel}>
         <Icon name="spark" size={15} />
         {rootLabel}
-        {root && <span>· {statusLabels[root.status]}</span>}
+        {root && <span>· {taskStatus(root)}</span>}
       </div>
       {pendingPlan && (
         <div className="graph-single" role="status">
@@ -112,13 +126,20 @@ export function TaskGraph({ detail, archived = false }: { detail: TaskGraphDetai
                   .filter((task) => ranks.get(task.id) === rank)
                   .map((task) => {
                     const names = dependencies(task.id).map((dependency) => dependency.spec.title);
-                    const status = statusLabels[task.status];
+                    const status = taskStatus(task);
                     return (
                       <div className="graph-node" key={task.id} title={`${task.spec.title} · ${status}`}>
                         <span className={'status-dot ' + task.status.toLowerCase()} aria-hidden="true" />
                         <span>{task.spec.title}</span>
                         <span>{status}</span>
                         {names.length > 0 && <small>依赖：{names.join('、')}</small>}
+                        {(selectTask && ['FAILED', 'CANCELLED'].includes(task.status)) ||
+                        (selectTask &&
+                          ['dependency_failed', 'no_progress'].includes(task.waitReason || '')) ? (
+                          <button className="text-button" onClick={() => selectTask?.(task.id)}>
+                            查看原因与恢复
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}

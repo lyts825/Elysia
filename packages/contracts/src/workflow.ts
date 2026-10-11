@@ -82,15 +82,40 @@ export interface DeliveryEvidence {
   note: string;
   artifact: SourceArtifact | null;
 }
+export interface DeliveryPage {
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+}
+export interface DeliveryCriterion {
+  index: number;
+  text: string;
+  evidence: DeliveryEvidence[];
+  evidenceTotal: number;
+  evidencePage: DeliveryPage;
+}
+export interface DeliveryEvidencePage {
+  runId: string;
+  runRevision: number;
+  rootTaskId: string;
+  rootRevision: number;
+  criterion: number;
+  evidence: DeliveryEvidence[];
+  page: DeliveryPage;
+}
 export interface DeliveryReview {
   runId: string;
   runRevision: number;
   rootTaskId: string;
+  rootRevision: number;
   status: string;
   summary: string;
   verifiedAt: string | null;
   limitation: string;
-  criteria: { index: number; text: string; evidence: DeliveryEvidence[] }[];
+  criteria: DeliveryCriterion[];
+  criteriaPage: DeliveryPage;
   criteriaHasMore: boolean;
   evidenceTruncated: boolean;
   artifacts: SourceArtifact[];
