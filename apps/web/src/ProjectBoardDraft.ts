@@ -22,6 +22,15 @@ const launchContent = z.object({
   deliverables: z.string(),
   acceptanceCriteria: z.string(),
 });
+const edit = z.object({
+  basedOn: z.number().int().nonnegative(),
+  goal: z.string(),
+  scope: z.string(),
+  nonGoals: z.string(),
+  items: z.array(item).max(40),
+  baseline: plan.optional(),
+  baselineOmitted: z.literal('size').optional(),
+});
 const shape = z.object({
   version: z.literal(1),
   tab: z.enum(['overview', 'items', 'executions', 'manifests']),
@@ -31,17 +40,8 @@ const shape = z.object({
   query: z.string(),
   freeOpen: z.boolean(),
   editing: z.boolean().default(false),
-  edit: z
-    .object({
-      basedOn: z.number().int().nonnegative(),
-      goal: z.string(),
-      scope: z.string(),
-      nonGoals: z.string(),
-      items: z.array(item).max(40),
-      baseline: plan.optional(),
-      baselineOmitted: z.literal('size').optional(),
-    })
-    .optional(),
+  edit: edit.optional(),
+  planImportUndo: edit.optional(),
   launch: z
     .object({
       itemId: z.string(),

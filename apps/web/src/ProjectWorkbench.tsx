@@ -14,6 +14,7 @@ import {
   type ProjectBoardDraft,
 } from './ProjectBoardDraft';
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
+import { importProjectPlan } from './project-plan-transfer';
 import { ProjectBoardItem, readinessLabels } from './ProjectBoardItem';
 import { ProjectRunList } from './ProjectRunList';
 import { ProjectManifests } from './ProjectManifests';
@@ -140,8 +141,10 @@ export function ProjectWorkbench({
     try {
       writeProjectBoardDraft(cache, project.id, update);
       setDraftError('');
+      return true;
     } catch (issue) {
       setDraftError(issue instanceof Error ? issue.message : '保存草稿失败');
+      return false;
     }
   };
   const action = async (path: string, body: Record<string, unknown>, method = 'POST') => {
@@ -354,9 +357,31 @@ export function ProjectWorkbench({
           </nav>
           {draft.editing && draft.edit ? (
             <ProjectBoardEditor
+              key={project.id}
               edit={draft.edit}
               board={board}
               busy={busy || board.archived || !!error}
+              canRestorePlan={!!draft.planImportUndo}
+              applyPlan={(file) =>
+                change((value) => {
+                  if (!value.edit || JSON.stringify(value.edit) !== JSON.stringify(draft!.edit))
+                    throw Error('项目计划草稿已变化，请重新核对后应用。原输入和导入预览已保留。');
+                  if (value.planImportUndo)
+                    throw Error('已有导入前原稿备份，请先恢复原稿或成功保存项目计划，再导入另一份计划。');
+                  return {
+                    ...value,
+                    edit: importProjectPlan(file, value.edit),
+                    planImportUndo: structuredClone(value.edit),
+                  };
+                })
+              }
+              restorePlan={() =>
+                change((value) => {
+                  if (!value.planImportUndo || JSON.stringify(value.edit) !== JSON.stringify(draft!.edit))
+                    throw Error('项目计划草稿已变化，请重新核对后恢复。当前输入已保留。');
+                  return { ...value, edit: value.planImportUndo, planImportUndo: undefined };
+                })
+              }
               change={(edit) => change((value) => ({ ...value, edit }))}
               close={() => change((value) => ({ ...value, editing: false }))}
               save={() => {
@@ -369,7 +394,7 @@ export function ProjectWorkbench({
                   if (ok)
                     change((value) =>
                       JSON.stringify(value.edit) === sent
-                        ? { ...value, edit: undefined, editing: false }
+                        ? { ...value, edit: undefined, planImportUndo: undefined, editing: false }
                         : value,
                     );
                 });
@@ -394,7 +419,9 @@ export function ProjectWorkbench({
                       type="button"
                       className="secondary danger"
                       disabled={busy}
-                      onClick={() => change((value) => ({ ...value, edit: undefined }))}
+                      onClick={() =>
+                        change((value) => ({ ...value, edit: undefined, planImportUndo: undefined }))
+                      }
                     >
                       放弃项目计划草稿
                     </button>

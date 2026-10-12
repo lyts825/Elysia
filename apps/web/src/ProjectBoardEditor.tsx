@@ -7,6 +7,8 @@ import type { ProjectBoardEdit } from './ProjectBoardDraft';
 import { boardLines, boardSnapshot } from './ProjectBoardDraft';
 import { mergeProjectPlan, type MergeChoices } from './ProjectDraftMerge';
 import { ProjectDraftComparison } from './ProjectDraftComparison';
+import { ProjectPlanTransfer } from './ProjectPlanTransfer';
+import type { ProjectPlanTransfer as PlanFile } from './project-plan-transfer';
 
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
@@ -28,6 +30,9 @@ export function ProjectBoardEditor({
   change,
   save,
   close,
+  canRestorePlan,
+  applyPlan,
+  restorePlan,
 }: {
   edit: ProjectBoardEdit;
   busy: boolean;
@@ -35,6 +40,9 @@ export function ProjectBoardEditor({
   change: (edit: ProjectBoardEdit) => void;
   save: () => void;
   close: () => void;
+  canRestorePlan: boolean;
+  applyPlan: (file: PlanFile) => boolean;
+  restorePlan: () => boolean;
 }) {
   const current = boardSnapshot(board);
   const comparisonKey = JSON.stringify([board.revision, current, edit]);
@@ -63,6 +71,15 @@ export function ProjectBoardEditor({
       <p className="field-help">
         保存只更新项目说明和交付项，不会重写已创建任务。已有关联候选需按变更后的标准重新确认。
       </p>
+      <ProjectPlanTransfer
+        key={board.projectId}
+        projectId={board.projectId}
+        edit={edit}
+        busy={busy}
+        canRestore={canRestorePlan}
+        apply={applyPlan}
+        restore={restorePlan}
+      />
       {edit.baselineOmitted && (
         <p className="field-help" role="status">
           此草稿正文较大，原始基线因保存容量限制未保留；用户输入完整保留。保存仍校验计划版本，若计划变化，所有差异需逐项明确选择。

@@ -229,11 +229,28 @@ export class ProjectUsageReads {
         )
         .all(projectId, after) as { id: string; position: number }[];
       if (!rows.length) return;
-      for (const row of rows) {
+      const backfill = () => {
+        for (const row of rows) {
+          this.checkOpen(signal);
+          this.projections.read('requests', row.id, true);
+        }
         this.checkOpen(signal);
-        this.projections.read('requests', row.id, true);
-        after = row.position;
+      };
+      // Commit one short batch while each record retains its own failure-isolating savepoint.
+      // A caller-owned SQLite transaction must remain open, including on a failed batch.
+      if (this.store.db.isTransaction) {
+        this.store.db.exec('SAVEPOINT project_usage_warm_batch');
+        try {
+          backfill();
+          this.store.db.exec('RELEASE project_usage_warm_batch');
+        } catch (error) {
+          this.store.db.exec('ROLLBACK TO project_usage_warm_batch; RELEASE project_usage_warm_batch');
+          throw error;
+        }
+      } else {
+        this.store.tx(backfill);
       }
+      after = rows.at(-1)!.position;
       await yieldRead();
     }
   }

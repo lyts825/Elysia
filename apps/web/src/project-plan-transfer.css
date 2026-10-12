@@ -1,0 +1,32 @@
+.project-plan-transfer {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.project-workbench input.project-plan-file-input {
+  display: none;
+}
+.project-plan-preview {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.project-plan-preview-content {
+  max-height: 440px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.project-plan-preview p,
+.project-plan-preview h4 {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.project-plan-preview-content section + section {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+}
