@@ -1,0 +1,29 @@
+.project-draft-backup {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.project-workbench input.project-draft-backup-file {
+  display: none;
+}
+.project-draft-backup-preview {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.project-draft-backup p,
+.project-draft-backup summary,
+.project-draft-backup pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.project-draft-backup pre {
+  max-height: 400px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}

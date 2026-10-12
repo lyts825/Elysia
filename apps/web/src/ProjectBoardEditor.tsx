@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type RefObject } from 'react';
 import {
   ProjectDeliveryBoardInput,
   type ProjectDeliveryBoard,
@@ -7,7 +7,7 @@ import type { ProjectBoardEdit } from './ProjectBoardDraft';
 import { boardLines, boardSnapshot } from './ProjectBoardDraft';
 import { mergeProjectPlan, type MergeChoices } from './ProjectDraftMerge';
 import { ProjectDraftComparison } from './ProjectDraftComparison';
-import { ProjectPlanTransfer } from './ProjectPlanTransfer';
+import { ProjectPlanTransfer, type PlanImportLifecycle } from './ProjectPlanTransfer';
 import type { ProjectPlanTransfer as PlanFile, ProjectPlanImportPreflight } from './project-plan-transfer';
 
 export function boardEditPayload(edit: ProjectBoardEdit) {
@@ -35,6 +35,7 @@ export function ProjectBoardEditor({
   restorePlan,
   inspectPlan,
   exportOriginal,
+  planLifecycle,
 }: {
   edit: ProjectBoardEdit;
   busy: boolean;
@@ -47,6 +48,7 @@ export function ProjectBoardEditor({
   restorePlan: () => boolean;
   inspectPlan: (file: PlanFile) => ProjectPlanImportPreflight;
   exportOriginal: () => void;
+  planLifecycle: RefObject<PlanImportLifecycle | null>;
 }) {
   const current = boardSnapshot(board);
   const comparisonKey = JSON.stringify([board.revision, current, edit]);
@@ -85,6 +87,7 @@ export function ProjectBoardEditor({
         restore={restorePlan}
         inspect={inspectPlan}
         exportOriginal={exportOriginal}
+        lifecycle={planLifecycle}
       />
       {edit.baselineOmitted && (
         <p className="field-help" role="status">

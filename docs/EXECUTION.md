@@ -1,5 +1,39 @@
 # Elysia 首版执行文档
 
+## 当前迭代：v1.3.0 读取控制与原稿恢复
+
+2026-10-12，46de82a / v1.2.0 → v1.3.0，沿用codex/initial-build，开始时工作区干净。用户授权落地上一轮建议：用量主动取消与旧结果标识、带项目绑定的原稿备份恢复、临时导入预览离开提示，补10k × 64 KiB完整入口和实际启动流程验收。备份恢复属于兼容新能力，合并交付1.3.0。主代理负责版本/架构边界/整合/提交；读取代理负责取消分页状态和单组大正文；备份代理负责协议/预览/保护/恢复；独立代理负责冻结1.2和最终生产UI、真实launcher链路。
+
+| 里程碑 | 状态 | 验收 |
+| --- | --- | --- |
+| 用量读取控制 | 已完成 | 首次/刷新/翻页cancel不自动重读；保留上次summary和成功游标/trail，明确旧结果，重试与迟到/切项目验收通过 |
+| 原稿备份恢复 | 已完成 | 绑定项目/入口/workbenchScope版本JSON、严格限额/格式、完整预览；先保护原稿再仅恢复cache，真实CAS/双窗口/离开/失败边界验收通过 |
+| 预览离开提示 | 已完成 | 未应用preview/reading说明临时性质，返回/工作台tab明确选择；编辑稿和undo保留，迟到回调不覆盖 |
+| 大正文/启动验收 | 已完成 | 10k64KiB完整HTTP原15秒/正常轮询/取消及SHA保持；实际launch冷/缓存/重复启动/构建版本一致/安全关闭通过，物理前台另列 |
+| 1.3.0本地交付 | 已完成 | 最小相关验证、最终类型/构建/UI和敏感模式核对通过；对应提交由本地v1.3.0标签定位，发布与缺口分列 |
+
+备份设计：保留原TXT出口，新增项目、入口及服务workbenchScope绑定的JSON；最大draftRaw 200000字符、文件640 KiB有效UTF-8。恢复前原稿使用当前浏览器同来源localStorage一层独立副本，先写入并逐字读回成功才替换本机草稿，容量/禁用失败拒绝；已有不同副本需另存并明确替换。保护和替换整体使用同来源Web Locks排他区，锁内再次核对原稿/副本/组件代次，待锁离开可取消，缺少锁支持拒绝恢复。副本不属于服务端或全量备份，跨端口/不同来源不保证自动可见，另存绑定JSON可供后续导入；不新增旧reader未知的服务缓存key，不提高现有草稿限额。协议不带cache写入版本授权，恢复仍使用当前cache CAS，旧计划基线继续核对。
+
+仅隔离profile和验证材料，不调用模型或外网、不使用真实凭据，不重载正式窗口；正常launcher的隔离空vault初始化单列记录。既有历史被拒清理路径不重试。数据及诊断在既有忽略目录，正式源码/文档统一Git管理。
+
+读取已实现：请求意图与成功显示的summary/position/trail分离，仅success推进页面；首次、刷新和翻页提供主动取消，不因cancel改变请求依赖自动重读。loading/cancelled/failed标明上次结果和真实页码，明确重试保留请求目标，再次翻页从成功页发起；controller身份及signal阻断迟到结果。
+
+大正文单组完整入口：现有preview9精确10k × 64 KiB v1 seed，冻结1.2基线5.806s（NbHfpC）与当前5.754s（I9jjSy）均在原15秒内，5秒sidebar三GET正常；这是边界验证，不作为性能提升声明。当前warm5.657s、解压1.270s/10k、UPDATE1.430s、COMMIT2.250s/313批、汇总SQL29.45ms、UPDATE prepare1次，正文SHA/revision保持。独立同seed取消（CLxnoU）：服务开始读取后5ms取消意图，意图到server停止约50ms（Date.now整数毫秒跨进程口径），server处理abort后0.612ms停止，已回填64/余9936，停止后30ms无新增解压，正文保持；单条同步解压仍不能中断。无需新增用量准备API，后台路径未改。
+
+备份/保护9组助手验证通过（WvKAcE）：完整raw/空稿及旧v1基线/undo保留、项目/入口/profile绑定与缺失scope、内外层未知/损坏拒绝、200000字符与640KiB/UTF-8边界、配额/readback/cache失败、不同旧副本确认、原稿/代次/Abort核验与注入排他锁的两窗竞争。这是模拟接口验证，真实浏览器Web Locks、下载和缓存/计划CAS仍交独立生产UI验收。正式代码未添加测试文件。
+
+全类型、10份功能源码Prettier及server/Vite生产构建通过，主包index-DTrqBQfh.js433.87kB、ProjectWorkbench-BtnFV1zr.js91.47kB。11份package与contract VERSION一致1.3.0，schema6/minimumReader preview.6不变，无新依赖，后台/API路径未变。正式差异与敏感模式扫描通过；独立备份协议只读评审无阻塞。
+
+独立最终production UI8组通过：用量3组（bdJM8C）验证首次取消无伪结果/不自动重读、明确重试、翻页取消保留成功页与cursor、第二页刷新取消后next/prev正确、失败保持旧结果及跨项目迟到，1440/320无溢出。备份首组（kzv53e）实际绑定下载完整raw及8类非法/不匹配文件拒绝；该框架在还原Storage.prototype时把函数作为executeJavaScript返回值，IPC无法clone，修为void后仅补后4组（cxq9YK），未改产品或重复用量/已过拒绝组。
+
+备份后4组验证真实LS quota失败0cache写、缺少Locks拒绝、先保护B再恢复完整A且只改draft，原undo/清单等原文保留；同origin新窗口可预览保护副本，不同副本先真实下载并确认替换，B恢复后反向保护A；真实plan CAS409与cache CAS409保持remote及本机输入/保护副本。实际Navigator.locks held使两窗同key排队，仅一方成功/一次cache提交、另一方重新核对；queued期间切项目后释放锁，原稿与保护副本均无写。临时计划预览离开可取消或确认，恢复会取消未应用预览；root已目视1440和320恢复/冲突状态，排版可读。
+
+实际正常launcher3组（Kb4C3z）通过：隔离完整source/profile直接执行原scripts/launch.mjs，保留真实IPC与native single-instance；冷构建owner启动、重复打开不新增window/backend/build、safe stop后cached重开无重构。server/web/resources同immutable digest13e50739…，原生/终端/UI均1.3.0，served chunk/resource SHA及5份root dist对照一致。测试为避免干扰使用showInactive并抑制focus，实际visible=true/focused=false；不能据此宣称系统物理前台已验。
+
+正常subscription.load在隔离profile产生vault-read、vault-write空accounts、cached vault-read共3次，API-key操作0。原“全部credentials操作0”断言过严的failed result保留，不隐藏或重跑链路；最小Electron审计仅解密本轮QA文件，核验version1/accountsCount0/115字节，未输出raw、hostId值或密钥，audited-result另存。初次审计用新userData因OSCrypt profile key不同失败，改回原QA desktop userData通过，诊断保留。最终摘要status为passed_with_empty_vault_and_focus_note；模型、外网、正式凭据/profile操作均0，UI/大正文部分credentials操作0，launcher空初始化单列，不冒充全程0。
+
+本次正式提交由本地标签v1.3.0定位，未推送、公开发布或部署，正式窗口未重载。6个UI库完整性ok；验收端口60020/52930/57069/49704/58848及本任务Node/Electron进程确认0。失用baseline source.tar已核验绝对目标后精确单文件删除，必要基线、脚本、样本、报告、截图、原失败诊断及核验过的空vault保留在忽略目录，不入Git；历史被拒清理路径未触碰。正式交付物及引用已核对，无失用正式文件或临时依赖。
+
 ## 当前迭代：v1.2.0 读取余量与计划替换核对
 
 2026-10-12，cd8e47d / v1.1.0 → v1.2.0，沿用codex/initial-build，开始时工作区干净。用户授权落地上一轮建议：完整用量读取同夹具定位与优化、导入容量预检及完整原稿导出、当前草稿与导入计划的替换影响对照。因包含兼容新功能，目标采用1.2.0；不扩展计划库或自动执行，用量准备作业仅在定位优化后仍接近/超过原15秒期限时按证据决定。主代理负责版本、整合与交付；性能代理负责同夹具完整入口分段和直接瓶颈；计划代理负责无写入预检、原稿出口与对照；独立代理负责冻结1.1基线和最终生产UI验收。

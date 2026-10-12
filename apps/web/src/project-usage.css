@@ -51,3 +51,14 @@
   flex-wrap: wrap;
   overflow-wrap: anywhere;
 }
+.project-usage-read-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.project-usage-previous {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+}

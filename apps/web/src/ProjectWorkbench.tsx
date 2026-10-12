@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type {
   ProjectDeliveryBoard,
@@ -14,6 +14,8 @@ import {
   type ProjectBoardDraft,
 } from './ProjectBoardDraft';
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
+import { ProjectDraftBackup } from './ProjectDraftBackup';
+import type { PlanImportLifecycle } from './ProjectPlanTransfer';
 import { projectPlanImportDraft, projectPlanImportPreflight } from './project-plan-transfer';
 import { ProjectBoardItem, readinessLabels } from './ProjectBoardItem';
 import { ProjectRunList } from './ProjectRunList';
@@ -55,6 +57,13 @@ export function ProjectWorkbench({
     writing = useRef(false);
   const readRequest = useRef<AbortController | null>(null);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
+  const planLifecycle = useRef<PlanImportLifecycle | null>(null);
+  const [pendingLeave, setPendingLeave] = useState<() => boolean>();
+  useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
+  const leavePlan = (action: () => boolean) => {
+    if (planLifecycle.current?.hasPending()) setPendingLeave(() => action);
+    else action();
+  };
   useEffect(() => {
     live.current = true;
     return () => {
@@ -254,6 +263,19 @@ export function ProjectWorkbench({
           </button>
         </div>
       </header>
+      {loaded && (
+        <ProjectDraftBackup
+          key={project.id}
+          projectId={project.id}
+          cache={cache}
+          raw={raw}
+          busy={busy}
+          restored={() => {
+            planLifecycle.current?.discard();
+            setPendingLeave(undefined);
+          }}
+        />
+      )}
       {loading && (
         <DeliveryReadProgress
           label="项目交付状态"
@@ -355,17 +377,50 @@ export function ProjectWorkbench({
                 aria-current={activeTab === key ? 'page' : undefined}
                 className={activeTab === key ? 'active' : ''}
                 onClick={() =>
-                  change((value) => ({
-                    ...value,
-                    ...(key === 'usage' ? { usageOpen: true } : { tab: key, usageOpen: false }),
-                    editing: false,
-                  }))
+                  leavePlan(() =>
+                    change((value) => ({
+                      ...value,
+                      ...(key === 'usage' ? { usageOpen: true } : { tab: key, usageOpen: false }),
+                      editing: false,
+                    })),
+                  )
                 }
               >
                 {label}
               </button>
             ))}
           </nav>
+          {pendingLeave && (
+            <section className="project-plan-leave" aria-label="未应用导入预览离开确认">
+              <p>
+                离开将取消正在读取或尚未应用的导入预览；当前编辑内容和已应用的导入前原稿仍保留。返回后需重选计划文件。
+              </p>
+              <div className="project-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setPendingLeave(undefined)}
+                >
+                  留在当前预览
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    const lifecycle = planLifecycle.current;
+                    if (pendingLeave()) {
+                      lifecycle?.discard();
+                      setPendingLeave(undefined);
+                    }
+                  }}
+                >
+                  离开预览 · 保留编辑草稿
+                </button>
+              </div>
+            </section>
+          )}
           {draft.editing && draft.edit ? (
             <ProjectBoardEditor
               key={project.id}
@@ -373,6 +428,7 @@ export function ProjectWorkbench({
               board={board}
               busy={busy || board.archived || !!error}
               canRestorePlan={!!draft.planImportUndo}
+              planLifecycle={planLifecycle}
               exportOriginal={exportDraft}
               inspectPlan={(file) => {
                 try {
@@ -405,7 +461,7 @@ export function ProjectWorkbench({
                 })
               }
               change={(edit) => change((value) => ({ ...value, edit }))}
-              close={() => change((value) => ({ ...value, editing: false }))}
+              close={() => leavePlan(() => change((value) => ({ ...value, editing: false })))}
               save={() => {
                 const sent = JSON.stringify(draft!.edit);
                 void action(

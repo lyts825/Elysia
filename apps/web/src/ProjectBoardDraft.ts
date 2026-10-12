@@ -70,6 +70,22 @@ const shape = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .optional(),
 });
+const backupItem = item.strict();
+const backupPlan = plan.strict().extend({ items: z.array(backupItem).max(40) });
+const backupEdit = edit.strict().extend({
+  items: z.array(backupItem).max(40),
+  baseline: backupPlan.optional(),
+});
+const backupShape = shape.strict().extend({
+  edit: backupEdit.optional(),
+  planImportUndo: backupEdit.optional(),
+  launch: shape.shape.launch
+    .unwrap()
+    .strict()
+    .extend({ baseline: launchContent.strict().optional() })
+    .optional(),
+  manifest: shape.shape.manifest.unwrap().strict().optional(),
+});
 export type ProjectBoardDraft = z.infer<typeof shape>;
 export type ProjectBoardEdit = NonNullable<ProjectBoardDraft['edit']>;
 export type ProjectPlanSnapshot = z.infer<typeof plan>;
@@ -92,6 +108,17 @@ export function readProjectBoardDraft(raw: unknown): ProjectBoardDraft {
     return shape.parse(JSON.parse(raw));
   } catch {
     throw Error('项目工作台草稿格式或版本无法读取，原文已保留。请导出原稿后再明确清空。');
+  }
+}
+/** File recovery rejects unknown fields instead of silently losing part of a backup. */
+export function readProjectBoardBackupDraft(raw: string): ProjectBoardDraft {
+  if (raw.length > PROJECT_BOARD_DRAFT_LIMIT)
+    throw Error('备份中的工作台草稿超过 200000 字符，当前原稿未改动。');
+  if (!raw) return emptyBoardDraft();
+  try {
+    return backupShape.parse(JSON.parse(raw));
+  } catch {
+    throw Error('备份中的草稿格式或版本无法读取，或包含未知字段。当前原稿未改动。');
   }
 }
 /** Prepare without writing so import previews use the exact persistence rules. */

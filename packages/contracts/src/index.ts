@@ -4,7 +4,7 @@ import { terminalResourcePresets } from './terminal-runtime.js';
 import type { NativeProjectDefaults, RunSourceSnapshot, DeliveryUserReview } from './workflow.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';

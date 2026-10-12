@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { PROJECT_BOARD_DRAFT_LIMIT, type ProjectBoardEdit } from './ProjectBoardDraft';
 import {
   PROJECT_PLAN_FILE_LIMIT,
@@ -8,6 +8,7 @@ import {
   type ProjectPlanTransfer as PlanFile,
 } from './project-plan-transfer';
 import './project-plan-transfer.css';
+export type PlanImportLifecycle = { hasPending: () => boolean; discard: () => void };
 
 export function ProjectPlanTransfer({
   projectId,
@@ -18,6 +19,7 @@ export function ProjectPlanTransfer({
   restore,
   inspect,
   exportOriginal,
+  lifecycle,
 }: {
   projectId: string;
   edit: ProjectBoardEdit;
@@ -27,6 +29,7 @@ export function ProjectPlanTransfer({
   restore: () => boolean;
   inspect: (file: PlanFile) => ProjectPlanImportPreflight;
   exportOriginal: () => void;
+  lifecycle: RefObject<PlanImportLifecycle | null>;
 }) {
   const [preview, setPreview] = useState<{ file: PlanFile; name: string }>();
   const [reading, setReading] = useState(false),
@@ -34,7 +37,22 @@ export function ProjectPlanTransfer({
     [notice, setNotice] = useState(''),
     [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null),
-    generation = useRef(0);
+    generation = useRef(0),
+    pending = useRef(false);
+  useImperativeHandle(
+    lifecycle,
+    () => ({
+      hasPending: () => pending.current,
+      discard: () => {
+        generation.current++;
+        pending.current = false;
+        setReading(false);
+        setPreview(undefined);
+        setAcknowledgedKey('');
+      },
+    }),
+    [],
+  );
   const confirmationKey = JSON.stringify([edit, preview?.file]);
   const capacity = preview ? inspect(preview.file) : undefined;
   const canApply = capacity?.canApply === true;
@@ -50,9 +68,11 @@ export function ProjectPlanTransfer({
     setAcknowledgedKey('');
     setNotice('');
     setError('');
+    pending.current = true;
     if (file.size > PROJECT_PLAN_FILE_LIMIT) {
       setError('计划文件超过 192 KiB，原草稿未改动。');
       setReading(false);
+      pending.current = false;
       return;
     }
     setReading(true);
@@ -69,8 +89,10 @@ export function ProjectPlanTransfer({
       const result = readProjectPlanTransfer(raw);
       setPreview({ file: result, name: file.name });
     } catch (issue) {
-      if (request === generation.current)
+      if (request === generation.current) {
+        pending.current = false;
         setError(issue instanceof Error ? issue.message : '计划文件读取失败，原草稿未改动。');
+      }
     } finally {
       if (request === generation.current) setReading(false);
     }
@@ -134,6 +156,7 @@ export function ProjectPlanTransfer({
             onClick={() => {
               if (restore()) {
                 generation.current++;
+                pending.current = false;
                 setReading(false);
                 setPreview(undefined);
                 setAcknowledgedKey('');
@@ -147,6 +170,9 @@ export function ProjectPlanTransfer({
         )}
       </div>
       <p className="field-help">接受 version 1、最大 192 KiB、最多 40 个交付项。读取和预览均保留当前草稿。</p>
+      <p className="field-help">
+        未应用的导入预览仅在当前编辑页临时保留；离开或重开后需重选文件。编辑内容和已应用的导入前原稿仍保留。
+      </p>
       {reading && <p role="status">正在读取计划文件…</p>}
       {error && (
         <p className="field-error" role="alert">
@@ -276,6 +302,7 @@ export function ProjectPlanTransfer({
               disabled={busy || canRestore || !canApply || acknowledgedKey !== confirmationKey}
               onClick={() => {
                 if (apply(preview.file)) {
+                  pending.current = false;
                   setPreview(undefined);
                   setAcknowledgedKey('');
                   setNotice('已应用到本项目编辑草稿。请调整并核对，再保存项目计划。');
@@ -291,6 +318,7 @@ export function ProjectPlanTransfer({
               disabled={busy}
               onClick={() => {
                 generation.current++;
+                pending.current = false;
                 setPreview(undefined);
                 setAcknowledgedKey('');
                 setNotice('已取消导入预览，当前草稿未改动。');
