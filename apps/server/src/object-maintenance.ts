@@ -86,6 +86,8 @@ export type ObjectMaintenanceOptions = {
   cancelled?: () => boolean;
   onProgress?: (progress: ObjectMaintenanceProgress) => void;
   onAudit?: (event: ObjectMaintenanceAudit) => void;
+  // The worker atomically closes its read-only termination gate before any cleanup preflight.
+  beforePreflight?: () => void;
 };
 export type ObjectMaintenanceResult = ObjectMaintenanceProgress & {
   status: 'completed' | 'cancelled' | 'failed';
@@ -217,9 +219,12 @@ class Scan {
 // Fail closed for unusually large/corrupt records; never skip a reference-bearing value.
 const MAX_RECORD_BYTES = 64 * 1024 * 1024;
 const MAX_REFERENCES = 1_000_000;
-function decompress(content: Uint8Array) {
+function decompress(content: Uint8Array, scan: Scan) {
+  scan.check();
   if (content.byteLength > MAX_RECORD_BYTES) throw new Error('维护记录超过 64 MiB，已停止且未跳过引用');
-  return gunzipSync(content, { maxOutputLength: MAX_RECORD_BYTES });
+  const bytes = gunzipSync(content, { maxOutputLength: MAX_RECORD_BYTES });
+  scan.check();
+  return bytes;
 }
 
 function identity(file: string, database = false) {
@@ -231,18 +236,27 @@ function identity(file: string, database = false) {
 
 // Retain every object-looking string, including objects referenced by retained historical
 // snapshots and compressed text. This deliberately errs on the side of keeping extra files.
-function references(value: unknown, retained: Set<string>) {
-  if (typeof value === 'string') {
-    const ref = value.replaceAll('\\', '/');
-    if (objectPattern.test(ref)) {
-      retained.add(ref);
-      if (retained.size > MAX_REFERENCES) throw new Error('维护引用超过 100 万条，已停止且未跳过引用');
+function references(value: unknown, retained: Set<string>, scan: Scan) {
+  let visited = 0;
+  const visit = (item: unknown) => {
+    if ((visited++ & 255) === 0) scan.check();
+    if (typeof item === 'string') {
+      // A normalized object ref always has this exact length; avoid scanning large text twice.
+      if (item.length !== 75) return;
+      const ref = item.replaceAll('\\', '/');
+      if (objectPattern.test(ref)) {
+        retained.add(ref);
+        if (retained.size > MAX_REFERENCES) throw new Error('维护引用超过 100 万条，已停止且未跳过引用');
+      }
+    } else if (Array.isArray(item)) {
+      for (const child of item) visit(child);
+    } else if (item && typeof item === 'object') {
+      // JSON values only have own enumerable properties. Do not allocate every value up front.
+      for (const key in item) if (Object.hasOwn(item, key)) visit((item as Record<string, unknown>)[key]);
     }
-  } else if (Array.isArray(value)) {
-    for (const item of value) references(item, retained);
-  } else if (value && typeof value === 'object') {
-    for (const item of Object.values(value)) references(item, retained);
-  }
+  };
+  visit(value);
+  scan.check();
 }
 
 function readReferences(directory: string, scan: Scan, surface: Surface) {
@@ -262,7 +276,7 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         content: Uint8Array;
       }>) {
         scan.check();
-        references(JSON.parse(decompress(row.content).toString('utf8')), retained);
+        references(JSON.parse(decompress(row.content, scan).toString('utf8')), retained, scan);
         scan.state.recordsScanned++;
       }
     }
@@ -280,7 +294,7 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
           if (value === null) continue;
           if (typeof value !== 'string' || Buffer.byteLength(value) > MAX_RECORD_BYTES)
             throw new Error('维护复核历史超过读取上限或格式无效');
-          references(JSON.parse(value), retained);
+          references(JSON.parse(value), retained, scan);
         }
         scan.state.recordsScanned++;
       }
@@ -297,7 +311,7 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         scan.check();
         if (typeof row.data !== 'string' || Buffer.byteLength(row.data) > MAX_RECORD_BYTES)
           throw new Error('维护备注处理记录超过读取上限或格式无效');
-        references(JSON.parse(row.data), retained);
+        references(JSON.parse(row.data), retained, scan);
         scan.state.recordsScanned++;
       }
     }
@@ -315,7 +329,7 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         scan.check();
         if (typeof row.value !== 'string' || Buffer.byteLength(row.value) > MAX_RECORD_BYTES)
           throw new Error('维护项目交付记录超过读取上限或格式无效');
-        references(column === 'data' ? JSON.parse(row.value) : row.value, retained);
+        references(column === 'data' ? JSON.parse(row.value) : row.value, retained, scan);
         scan.state.recordsScanned++;
       }
     }
@@ -334,25 +348,25 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         if (row.key === 'local-agents:v1') throw new Error('本机代理库引用记录损坏，不能清理');
         continue;
       }
-      references(value, retained);
+      references(value, retained, scan);
     }
     scan.phase('references', surface, 'compressed_objects');
     for (const row of database
       .prepare('SELECT ref,hash,raw_size,content FROM compressed_objects')
       .iterate() as Iterable<{ ref: string; hash: string; raw_size: number; content: Uint8Array }>) {
       scan.check();
-      const bytes = decompress(row.content);
+      const bytes = decompress(row.content, scan);
       scan.state.recordsScanned++;
       if (hash(bytes) !== row.hash || bytes.length !== row.raw_size)
         throw new Error('压缩对象校验失败，不能清理');
-      references(row.ref, retained);
+      references(row.ref, retained, scan);
       let value: unknown;
       try {
         value = JSON.parse(bytes.toString('utf8'));
       } catch {
         continue;
       }
-      references(value, retained);
+      references(value, retained, scan);
     }
     return { retained, database: databaseIdentity };
   } finally {
@@ -506,6 +520,8 @@ export function executeObjectCleanup(
       assertSurfacePath(directory, entry.surface);
       const target = surfaceDirectory(directory, entry.surface),
         state = readReferences(target, scan, entry.surface);
+      options.beforePreflight?.();
+      scan.check();
       scan.phase('preflight', entry.surface);
       if (state.database !== entry.database) throw new Error('数据库已被替换，请重新预览');
       const seen = new Set<string>();

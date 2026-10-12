@@ -40,7 +40,8 @@ import { registerSourceNoteResolutions } from './source-note-resolutions.js';
 
 const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
-const publicArtifact = (a: Artifact): SourceArtifact => ({
+type PublicArtifact = Pick<Artifact, 'id' | 'runId' | 'name' | 'version' | 'hash' | 'mediaType' | 'verified'>;
+const publicArtifact = (a: PublicArtifact): SourceArtifact => ({
   id: a.id,
   name: a.name.slice(0, 300),
   version: a.version,
@@ -316,7 +317,7 @@ function deliveryPage(offset: number, limit: number, total: number): DeliveryPag
 function publicEvidence(
   runId: string,
   evidence: Evidence,
-  artifact?: Artifact,
+  artifact?: PublicArtifact,
   full = false,
 ): DeliveryEvidence {
   return {
@@ -338,7 +339,7 @@ function criterionEvidence(
   indices: number[],
   offset: number,
   limit: number,
-  artifacts?: Map<string, Artifact>,
+  artifacts?: Map<string, PublicArtifact>,
   full = false,
 ) {
   const groups = new Map(indices.map((index) => [index, { total: 0, evidence: [] as DeliveryEvidence[] }]));
@@ -352,7 +353,7 @@ function criterionEvidence(
     const position = group.total++;
     if (position >= offset && group.evidence.length < limit) {
       const evidence = parsed.data;
-      let artifact: Artifact | undefined;
+      let artifact: PublicArtifact | undefined;
       if (evidence.type === 'artifact') {
         if (artifacts) artifact = artifacts.get(evidence.ref);
         else {

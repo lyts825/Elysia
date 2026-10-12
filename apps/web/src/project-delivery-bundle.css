@@ -28,3 +28,19 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.project-bundle-progress {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.project-bundle-progress progress {
+  width: 100%;
+  max-width: 100%;
+  accent-color: var(--primary);
+}
+.project-bundle-progress small,
+.project-bundle-progress span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}

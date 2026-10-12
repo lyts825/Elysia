@@ -26,6 +26,7 @@ import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
+import { ArtifactDeliveryMetadataReads, serializeDeliveryArtifactMetadata } from './artifact-delivery-metadata.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -211,17 +212,7 @@ function projection(table: Table, entity: any) {
       : {}),
     ...(table === 'artifacts'
       ? {
-          deliverySemanticHash: hash(
-            stable({
-              id: entity.id,
-              taskId: entity.taskId,
-              name: entity.name,
-              version: entity.version,
-              hash: entity.hash,
-              mediaType: entity.mediaType,
-              verified: entity.verified,
-            }),
-          ),
+          deliverySemanticHash: hash(serializeDeliveryArtifactMetadata(entity)),
         }
       : {}),
     ...(table === 'runs' ? { archived: entity.archived } : {}),
@@ -276,6 +267,7 @@ export class Store {
   private depth = 0;
   private searchWork = new SearchWork();
   private requestStreams: RequestStreams;
+  private artifactDeliveryReads: ArtifactDeliveryMetadataReads;
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
     this.directory = realpathSync(directory);
@@ -287,6 +279,11 @@ export class Store {
     );
     try {
       this.migrate();
+      this.artifactDeliveryReads = new ArtifactDeliveryMetadataReads(
+        this.db,
+        (key) => this.require('artifacts', key),
+        (artifact) => this.refreshReadProjection('artifacts', artifact),
+      );
       this.recovery = new ExecutionRecovery(this);
       this.requestStreams = new RequestStreams(this.db);
       this.historySearchSchema();
@@ -517,6 +514,10 @@ export class Store {
         ? this.db.prepare(`SELECT data,content FROM ${table} WHERE run_id=? ORDER BY rowid`).all(runId)
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.decodeRow(table, r));
+  }
+  /** Full delivery identity needs all metadata, never all compressed artifact bodies. */
+  artifactDeliveryMetadata(runId: string) {
+    return this.tx(() => this.artifactDeliveryReads.read(runId));
   }
   /** Budget and scheduling reads never expand request manifests or stream text. */
   requestLedger(
@@ -891,9 +892,14 @@ export class Store {
     table: 'runs' | 'tasks' | 'artifacts' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
     entity: Entity,
   ) {
-    this.db
-      .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
-      .run(projection(table, entity), entity.id, entity.revision);
+    const refresh = () => {
+      const updated = this.db
+        .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
+        .run(projection(table, entity), entity.id, entity.revision);
+      if (table === 'artifacts' && updated.changes)
+        this.artifactDeliveryReads.write(entity as import('../../contracts/src/index.js').Artifact);
+    };
+    return table === 'artifacts' ? this.tx(refresh) : refresh();
   }
   /** Filter redundant state before expanding bodies. Legacy projections are warmed once. */
   stateCandidates<T extends Entity>(
@@ -1215,12 +1221,13 @@ export class Store {
           `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
         )
         .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
+      if (table === 'artifacts') this.artifactDeliveryReads.write(stored);
       if (clearStream) this.requestStreams.clear(entity.id);
       if (table === 'runs' || table === 'messages')
         this.historySearchProjection(table, next as unknown as Run | Message);
       return next;
     };
-    return clearStream ? this.tx(save) : save();
+    return clearStream || table === 'artifacts' ? this.tx(save) : save();
   }
   event(
     runId: string,

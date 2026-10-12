@@ -13,6 +13,7 @@ import {
   ProjectDeliveryBoardInput,
   ProjectDeliveryItemInput,
   ProjectDeliveryManifestInput,
+  ProjectDeliveryBundleJobInput,
   type ProjectDeliveryBinding,
   type ProjectDeliveryBoard,
   type ProjectDeliveryItem,
@@ -65,6 +66,12 @@ const commandSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
 });
 const attemptsLimit = 200;
+const bundleJobBinding = z
+  .object({
+    expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+    clientId: z.string().uuid().optional(),
+  })
+  .strict();
 function bundleRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -81,6 +88,15 @@ function bundleRequestSignal(request: FastifyRequest, reply: FastifyReply) {
       reply.raw.off('close', disconnect);
     },
   };
+}
+function bundleSessionHash(request: FastifyRequest) {
+  const session = request.headers.cookie
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('elysia_session='))
+    ?.slice('elysia_session='.length);
+  // The enclosing local-server authentication hook validates this cookie.
+  return hash(session ?? 'isolated-session');
 }
 function conflict(code: string, message: string): never {
   throw new AppError(code, message, false, null, 409);
@@ -785,6 +801,76 @@ export function registerProjectDelivery(
         return await bundles.plan(manifest, cancellation.signal);
       } finally {
         cancellation.detach();
+      }
+    },
+  );
+  app.post<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs',
+    (request, reply) => {
+      z.object({}).strict().parse(request.query);
+      const input = ProjectDeliveryBundleJobInput.parse(request.body);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, input.expectedManifestHash);
+      reply.status(202).header('Cache-Control', 'no-store');
+      return bundles.start(manifest, input, bundleSessionHash(request));
+    },
+  );
+  app.get<{ Params: { id: string; manifestId: string; jobId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs/:jobId',
+    (request, reply) => {
+      const { expectedManifestHash, clientId } = bundleJobBinding.parse(request.query);
+      z.string().uuid().parse(request.params.jobId);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      reply.header('Cache-Control', 'no-store');
+      return bundles.job(manifest, request.params.jobId, bundleSessionHash(request), clientId);
+    },
+  );
+  app.delete<{ Params: { id: string; manifestId: string; jobId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs/:jobId',
+    async (request, reply) => {
+      z.object({}).strict().parse(request.query);
+      const { expectedManifestHash, clientId } = bundleJobBinding.parse(request.body);
+      z.string().uuid().parse(request.params.jobId);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      reply.header('Cache-Control', 'no-store');
+      return bundles.cancel(manifest, request.params.jobId, bundleSessionHash(request), clientId);
+    },
+  );
+  app.get<{ Params: { id: string; manifestId: string; jobId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs/:jobId/file',
+    async (request, reply) => {
+      const { expectedManifestHash, clientId } = bundleJobBinding.parse(request.query);
+      z.string().uuid().parse(request.params.jobId);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      const cancellation = bundleRequestSignal(request, reply);
+      let bundle: ReturnType<ProjectDeliveryBundleService['send']> | undefined;
+      try {
+        bundle = bundles.send(
+          manifest,
+          request.params.jobId,
+          bundleSessionHash(request),
+          cancellation.signal,
+          clientId,
+        );
+        bundle.stream.once('close', cancellation.detach);
+        return reply
+          .type('application/zip')
+          .header('Cache-Control', 'no-store')
+          .header('Content-Disposition', `attachment; filename="project-delivery-${manifest.id}.zip"`)
+          .header('Content-Length', bundle.size)
+          .send(bundle.stream);
+      } catch (error) {
+        cancellation.detach();
+        // A rejected duplicate GET has acquired nothing and must not cancel the
+        // legitimate sender. Only clean up this request's successfully claimed ZIP.
+        if (bundle) {
+          await bundles.cancel(manifest, request.params.jobId, bundleSessionHash(request), clientId);
+          await bundle.dispose();
+        }
+        throw error;
       }
     },
   );

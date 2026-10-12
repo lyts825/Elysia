@@ -1,10 +1,11 @@
-import type { Artifact, Run, Task } from '../../../packages/contracts/src/index.js';
+import type { Run, Task } from '../../../packages/contracts/src/index.js';
 import type { DeliveryArtifactMetadata } from '../../../packages/contracts/src/workflow.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';
 import { cachedDeliveryRead } from './delivery-read-cache.js';
+import { serializeDeliveryArtifactMetadata } from '../../../packages/storage/src/artifact-delivery-metadata.js';
 
 export function deliveryArtifactRows(store: Store, runId: string) {
-  return cachedDeliveryRead(store, `artifacts:${runId}`, () => store.all<Artifact>('artifacts', runId));
+  return cachedDeliveryRead(store, `artifacts:${runId}`, () => store.artifactDeliveryMetadata(runId));
 }
 
 export function deliveryArtifactMetadata(
@@ -12,17 +13,7 @@ export function deliveryArtifactMetadata(
   runId: string,
   artifacts = deliveryArtifactRows(store, runId),
 ): DeliveryArtifactMetadata[] {
-  const legacy = new Set(
-    (
-      store.db
-        .prepare(
-          "SELECT id FROM artifacts WHERE run_id=? AND json_extract(data,'$.deliverySemanticHash') IS NULL",
-        )
-        .all(runId) as { id: string }[]
-    ).map((item) => item.id),
-  );
   return artifacts.map((artifact) => {
-    if (legacy.has(artifact.id)) store.refreshReadProjection('artifacts', artifact);
     return {
       id: artifact.id,
       taskId: artifact.taskId,
@@ -40,17 +31,34 @@ export function deliveryFingerprintFromArtifacts(
   root: Task,
   artifacts: ReturnType<typeof deliveryArtifactMetadata>,
 ) {
+  const fields = {
+    version: 1,
+    runId: run.id,
+    rootTaskId: root.id,
+    status: root.status,
+    deliverables: root.spec.deliverables,
+    acceptanceCriteria: root.spec.acceptanceCriteria,
+    result: root.result ?? null,
+    artifacts: artifacts,
+  };
+  const artifactJson =
+    '[' +
+    [...artifacts]
+      .sort((a, b) => a.id.localeCompare(b.id, 'en'))
+      .map(serializeDeliveryArtifactMetadata)
+      .join(',') +
+    ']';
+  // Preserve the v1 canonical bytes while avoiding repeated object-key sorts for all metadata.
   return hash(
-    stable({
-      version: 1,
-      runId: run.id,
-      rootTaskId: root.id,
-      status: root.status,
-      deliverables: root.spec.deliverables,
-      acceptanceCriteria: root.spec.acceptanceCriteria,
-      result: root.result ?? null,
-      artifacts: [...artifacts].sort((a, b) => a.id.localeCompare(b.id, 'en')),
-    }),
+    '{' +
+      Object.entries(fields)
+        .filter(([, value]) => value !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b, 'en'))
+        .map(
+          ([key, value]) => JSON.stringify(key) + ':' + (key === 'artifacts' ? artifactJson : stable(value)),
+        )
+        .join(',') +
+      '}',
   );
 }
 export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Task) {

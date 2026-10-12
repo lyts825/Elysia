@@ -1,19 +1,19 @@
-import { createHash } from 'node:crypto';
-import { createReadStream, promises as fs } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { AppError, type Artifact, type Run } from '../../../packages/contracts/src/index.js';
 import type {
   ProjectDeliveryBundlePlan,
   ProjectDeliveryManifest,
+  ProjectDeliveryBundleJob,
 } from '../../../packages/contracts/src/project-delivery.js';
 import type { SourceArtifact } from '../../../packages/contracts/src/workflow.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';
 import { ArtifactPreviewService } from './artifact-preview.js';
 import { projectDeliveryMarkdown } from './project-delivery-export.js';
+import { BundleJobStorage } from './project-delivery-bundle-jobs.js';
 
 export const PROJECT_DELIVERY_BUNDLE_MAX_BYTES = 64 * 1024 * 1024;
 const maxFiles = 800;
@@ -172,6 +172,7 @@ class ZipWriter {
   constructor(
     private handle: FileHandle,
     private signal: AbortSignal,
+    private progress?: (bytes: number) => void,
   ) {}
   private async write(bytes: Buffer) {
     if (this.offset + bytes.length > PROJECT_DELIVERY_BUNDLE_MAX_BYTES) throw tooLarge();
@@ -182,6 +183,7 @@ class ZipWriter {
       if (!bytesWritten) throw new Error('ZIP write made no progress');
       at += bytesWritten;
       this.offset += bytesWritten;
+      this.progress?.(this.offset);
     }
   }
   async add(name: string, stream: AsyncIterable<Buffer>, expectedSize: number, expectedHash: string) {
@@ -248,8 +250,23 @@ export class ProjectDeliveryBundleService {
   private lifetime = new AbortController();
   private active = 0;
   private jobs = new Set<Promise<void>>();
+  private temporary: BundleJobStorage;
+  private tracked = new Map<
+    string,
+    {
+      view: ProjectDeliveryBundleJob;
+      sessionHash: string;
+      controller: AbortController;
+      work?: Promise<void>;
+      disposing?: Promise<void>;
+      timer?: ReturnType<typeof setTimeout>;
+      bundle?: Awaited<ReturnType<ProjectDeliveryBundleService['bundle']>>;
+    }
+  >();
+  private work = new Set<Promise<void>>();
   constructor(private store: Store) {
     this.previews = new ArtifactPreviewService(store);
+    this.temporary = new BundleJobStorage(store.directory);
   }
   private acquire(signal?: AbortSignal) {
     this.lifetime.signal.throwIfAborted();
@@ -280,6 +297,7 @@ export class ProjectDeliveryBundleService {
     signal: AbortSignal,
     zip?: ZipWriter,
     remaining = PROJECT_DELIVERY_BUNDLE_MAX_BYTES,
+    progress?: (bytes: number) => void,
   ) {
     const resource = await this.previews.resource(source(this.store, manifest.projectId, selected), {
       signal,
@@ -299,6 +317,7 @@ export class ProjectDeliveryBundleService {
           if (size > resource.size || size > remaining)
             throw new AppError('OBJECT_CORRUPT', '产物正文大小不一致');
           digest.update(chunk);
+          progress?.(chunk.length);
         }
         if (size !== resource.size || digest.digest('hex') !== selected.frozen.hash)
           throw new AppError('OBJECT_CORRUPT', '产物正文与冻结 SHA-256 不一致');
@@ -311,14 +330,22 @@ export class ProjectDeliveryBundleService {
       await closed;
     }
   }
-  async plan(manifest: ProjectDeliveryManifest, signal?: AbortSignal): Promise<ProjectDeliveryBundlePlan> {
+  async plan(
+    manifest: ProjectDeliveryManifest,
+    signal?: AbortSignal,
+    progress?: (change: Partial<ProjectDeliveryBundleJob>) => void,
+  ): Promise<ProjectDeliveryBundlePlan> {
     const job = this.acquire(signal);
     try {
       const selected = selections(manifest),
         issues: ProjectDeliveryBundlePlan['issues'] = [];
       let totalBytes = 0;
+      let bytesDone = 0,
+        filesDone = 0;
+      progress?.({ filesTotal: selected.length, filesDone: 0, bytesDone: 0, bytesTotal: null });
       for (const row of selected) {
         job.signal.throwIfAborted();
+        progress?.({ currentFile: row.file.name });
         try {
           await this.consume(
             row,
@@ -326,6 +353,10 @@ export class ProjectDeliveryBundleService {
             job.signal,
             undefined,
             PROJECT_DELIVERY_BUNDLE_MAX_BYTES - totalBytes,
+            (bytes) => {
+              bytesDone += bytes;
+              progress?.({ bytesDone });
+            },
           );
         } catch (error) {
           job.signal.throwIfAborted();
@@ -334,6 +365,7 @@ export class ProjectDeliveryBundleService {
           if (Number.isSafeInteger(size?.size) && size!.size! >= 0) row.file.size = size!.size!;
         }
         totalBytes += row.file.size ?? 0;
+        progress?.({ filesDone: ++filesDone });
       }
       for (const row of selected.filter((row) => row.file.state === 'ready')) {
         try {
@@ -376,9 +408,19 @@ export class ProjectDeliveryBundleService {
       job.release();
     }
   }
-  async bundle(manifest: ProjectDeliveryManifest, signal?: AbortSignal) {
+  async bundle(
+    manifest: ProjectDeliveryManifest,
+    signal?: AbortSignal,
+    options?: {
+      jobId: string;
+      sessionHash: string;
+      progress?: (change: Partial<ProjectDeliveryBundleJob>) => void;
+    },
+  ) {
     const job = this.acquire(signal);
-    let directory: string | undefined, handle: FileHandle | undefined, stream: Readable | undefined;
+    let temporary: Awaited<ReturnType<BundleJobStorage['create']>> | undefined,
+      handle: FileHandle | undefined,
+      stream: Readable | undefined;
     let disposing: Promise<void> | undefined;
     const dispose = () =>
       (disposing ??= (async () => {
@@ -390,7 +432,7 @@ export class ProjectDeliveryBundleService {
           await handle?.close();
         } finally {
           handle = undefined;
-          if (directory) await fs.rm(directory, { recursive: true, force: true });
+          if (temporary) await temporary.dispose();
         }
       })().finally(job.release));
     try {
@@ -404,13 +446,22 @@ export class ProjectDeliveryBundleService {
           422,
         );
       job.signal.throwIfAborted();
-      directory = await fs.mkdtemp(path.join(os.tmpdir(), 'elysia-delivery-bundle-'));
-      const filename = path.join(directory, 'delivery.zip');
+      temporary = await this.temporary.create({
+        jobId: options?.jobId ?? randomUUID(),
+        projectId: manifest.projectId,
+        manifestId: manifest.id,
+        manifestHash: manifest.hash,
+        sessionHash: options?.sessionHash ?? hash('legacy-request'),
+      });
+      const filename = temporary.filename;
       handle = await fs.open(filename, 'wx', 0o600);
-      const zip = new ZipWriter(handle, job.signal);
+      const zip = new ZipWriter(handle, job.signal, (bytesDone) => options?.progress?.({ bytesDone }));
+      let filesDone = 0;
       for (const row of selected) {
         job.signal.throwIfAborted();
+        options?.progress?.({ currentFile: row.file.name });
         await this.consume(row, manifest, job.signal, zip, PROJECT_DELIVERY_BUNDLE_MAX_BYTES - zip.offset);
+        options?.progress?.({ filesDone: ++filesDone });
       }
       const files = selected.map((row) => row.file),
         docs = documents(manifest, files);
@@ -422,7 +473,17 @@ export class ProjectDeliveryBundleService {
       job.signal.throwIfAborted();
       await handle.close();
       handle = undefined;
-      stream = createReadStream(filename, { highWaterMark: 64 * 1024 });
+      // Open failures must reject preparation, before announcing a ready job.
+      handle = await fs.open(filename, 'r');
+      stream = handle.createReadStream({ highWaterMark: 64 * 1024 });
+      handle = undefined;
+      void finished(stream).catch(() => {});
+      stream.once('error', () =>
+        options?.progress?.({
+          stage: 'failed',
+          error: { code: 'PROJECT_BUNDLE_SEND_FAILED', message: '文件包无法发送，请重新检查后重试' },
+        }),
+      );
       const abort = () => {
         void dispose().catch(() => {});
       };
@@ -443,8 +504,252 @@ export class ProjectDeliveryBundleService {
   }
   async close() {
     this.lifetime.abort();
+    for (const tracked of this.tracked.values()) {
+      clearTimeout(tracked.timer);
+      tracked.controller.abort();
+      await tracked.bundle?.dispose();
+    }
+    await Promise.allSettled(this.work);
     await Promise.allSettled(this.jobs);
+    await this.temporary.ready.catch(() => {});
     await this.previews.close();
+  }
+
+  private bound(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
+    const job = this.tracked.get(jobId);
+    if (
+      !job ||
+      job.sessionHash !== sessionHash ||
+      job.view.clientId !== (clientId ?? null) ||
+      job.view.projectId !== manifest.projectId ||
+      job.view.manifestId !== manifest.id ||
+      job.view.manifestHash !== manifest.hash
+    )
+      throw new AppError(
+        'PROJECT_BUNDLE_JOB_GONE',
+        '文件包作业已结束或不属于当前会话，请重新检查',
+        false,
+        null,
+        410,
+      );
+    return job;
+  }
+  private expiry(job: ReturnType<ProjectDeliveryBundleService['bound']>, milliseconds: number) {
+    clearTimeout(job.timer);
+    job.view.expiresAt = new Date(Date.now() + milliseconds).toISOString();
+    job.timer = setTimeout(() => {
+      if (['completed', 'failed', 'cancelled'].includes(job.view.stage)) this.tracked.delete(job.view.id);
+      else {
+        job.view.stage = 'failed';
+        job.view.error = { code: 'PROJECT_BUNDLE_EXPIRED', message: '文件包作业已超时，请重新检查后重试' };
+        job.controller.abort();
+        job.disposing = job.bundle?.dispose();
+        void job.disposing?.catch(() => {});
+        this.expiry(job, 120_000);
+      }
+    }, milliseconds);
+    job.timer.unref();
+  }
+  job(
+    manifest: ProjectDeliveryManifest,
+    jobId: string,
+    sessionHash: string,
+    clientId?: string,
+  ): ProjectDeliveryBundleJob {
+    return structuredClone(this.bound(manifest, jobId, sessionHash, clientId).view);
+  }
+  async start(
+    manifest: ProjectDeliveryManifest,
+    input: { jobId: string; kind: 'check' | 'download'; clientId?: string },
+    sessionHash: string,
+  ) {
+    this.lifetime.signal.throwIfAborted();
+    if (this.tracked.has(input.jobId)) {
+      const old = this.bound(manifest, input.jobId, sessionHash, input.clientId);
+      if (old.view.kind !== input.kind)
+        throw new AppError(
+          'PROJECT_BUNDLE_JOB_CONFLICT',
+          '同一作业标识不能更改操作，请创建新作业',
+          false,
+          null,
+          409,
+        );
+      return structuredClone(old.view);
+    }
+    if (this.tracked.size >= 64)
+      throw new AppError('PROJECT_BUNDLE_BUSY', '正在核验或下载其他文件包，请稍后重试', true, null, 429);
+    const job = {
+      view: {
+        id: input.jobId,
+        clientId: input.clientId ?? null,
+        projectId: manifest.projectId,
+        manifestId: manifest.id,
+        manifestHash: manifest.hash,
+        kind: input.kind,
+        stage: 'verifying',
+        filesDone: 0,
+        filesTotal: 0,
+        bytesDone: 0,
+        bytesTotal: null,
+        currentFile: null,
+        expiresAt: '',
+      } as ProjectDeliveryBundleJob,
+      sessionHash,
+      controller: new AbortController(),
+    } as ReturnType<ProjectDeliveryBundleService['bound']>;
+    this.tracked.set(input.jobId, job);
+    this.expiry(job, 300_000);
+    // A fresh operation on the same frozen manifest supersedes abandoned work
+    // from a reload. Reserving its identity first also serializes concurrent retries.
+    for (const previous of this.tracked.values()) {
+      if (job.controller.signal.aborted) return structuredClone(job.view);
+      if (
+        previous !== job &&
+        input.clientId !== undefined &&
+        previous.view.clientId === input.clientId &&
+        previous.sessionHash === sessionHash &&
+        previous.view.projectId === manifest.projectId &&
+        previous.view.manifestId === manifest.id &&
+        previous.view.manifestHash === manifest.hash
+      ) {
+        if (!['completed', 'failed', 'cancelled'].includes(previous.view.stage))
+          await this.cancel(manifest, previous.view.id, sessionHash, input.clientId);
+        // A cancelled predecessor can still be closing its ZIP and holding a slot.
+        await previous.disposing;
+        await previous.work;
+        if (job.controller.signal.aborted) return structuredClone(job.view);
+      }
+    }
+    if (job.controller.signal.aborted) return structuredClone(job.view);
+    if (this.active >= 2) {
+      job.view.stage = 'failed';
+      job.view.error = { code: 'PROJECT_BUNDLE_BUSY', message: '正在核验或下载其他文件包，请稍后重试' };
+      this.expiry(job, 120_000);
+      throw new AppError('PROJECT_BUNDLE_BUSY', job.view.error.message, true, null, 429);
+    }
+    const signal = AbortSignal.any([job.controller.signal, this.lifetime.signal]);
+    const update = (change: Partial<ProjectDeliveryBundleJob>) => {
+      if (!signal.aborted && !['cancelled', 'failed', 'completed'].includes(job.view.stage)) {
+        Object.assign(job.view, change);
+        if (change.stage === 'failed') {
+          job.disposing = job.bundle?.dispose();
+          void job.disposing?.catch(() => {});
+          this.expiry(job, 120_000);
+        }
+      }
+    };
+    const work = (async () => {
+      try {
+        const plan = await this.plan(manifest, signal, update);
+        signal.throwIfAborted();
+        update({ plan, bytesTotal: plan.totalBytes, currentFile: null });
+        if (input.kind === 'check') {
+          update({ stage: 'completed' });
+          this.expiry(job, 120_000);
+          return;
+        }
+        if (!plan.canDownload)
+          throw new AppError(
+            plan.issues[0]?.code ?? 'PROJECT_BUNDLE_SOURCES',
+            plan.issues[0]?.message ?? '冻结来源无法打包',
+            false,
+            null,
+            422,
+          );
+        update({ stage: 'preparing', filesDone: 0, bytesDone: 0, bytesTotal: plan.archiveBytes });
+        const bundle = await this.bundle(manifest, signal, {
+          jobId: input.jobId,
+          sessionHash,
+          progress: update,
+        });
+        job.bundle = bundle;
+        if (signal.aborted) {
+          await bundle.dispose();
+          signal.throwIfAborted();
+        }
+        update({ stage: 'ready', currentFile: null, bytesDone: bundle.size, bytesTotal: bundle.size });
+        this.expiry(job, 60_000);
+      } catch (error) {
+        if (!signal.aborted) {
+          job.view.stage = 'failed';
+          job.view.error =
+            error instanceof AppError
+              ? { code: error.code, message: error.message }
+              : { code: 'PROJECT_BUNDLE_FAILED', message: '文件包处理失败，请重新检查后重试' };
+          this.expiry(job, 120_000);
+        }
+      }
+    })();
+    job.work = work;
+    this.work.add(work);
+    void work.finally(() => this.work.delete(work));
+    return structuredClone(job.view);
+  }
+  async cancel(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
+    const job = this.bound(manifest, jobId, sessionHash, clientId);
+    if (!['completed', 'failed', 'cancelled'].includes(job.view.stage)) {
+      job.view.stage = 'cancelled';
+      job.controller.abort();
+      job.disposing = job.bundle?.dispose();
+      await job.disposing;
+      this.expiry(job, 120_000);
+    }
+    return structuredClone(job.view);
+  }
+  send(
+    manifest: ProjectDeliveryManifest,
+    jobId: string,
+    sessionHash: string,
+    signal: AbortSignal,
+    clientId?: string,
+  ) {
+    const job = this.bound(manifest, jobId, sessionHash, clientId);
+    if (job.view.kind !== 'download' || job.view.stage !== 'ready' || !job.bundle)
+      throw new AppError(
+        'PROJECT_BUNDLE_JOB_NOT_READY',
+        '文件包未就绪或已被领取，请重新检查后重试',
+        false,
+        null,
+        409,
+      );
+    const bundle = job.bundle;
+    job.view.stage = 'sending';
+    job.view.bytesDone = 0;
+    this.expiry(job, 300_000);
+    const meter = new Transform({
+      transform(chunk, _encoding, callback) {
+        if (job.view.stage === 'sending') job.view.bytesDone += chunk.length;
+        callback(null, chunk);
+      },
+    });
+    const abort = () => {
+      void this.cancel(manifest, jobId, sessionHash, clientId).catch(() => {});
+      meter.destroy();
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    job.controller.signal.addEventListener('abort', () => meter.destroy(), { once: true });
+    bundle.stream.on('error', (error) => meter.destroy(error));
+    meter.once('end', () => {
+      if (job.view.stage === 'sending') {
+        job.view.stage = 'completed';
+        job.disposing = bundle.dispose();
+        void job.disposing.catch(() => {});
+        this.expiry(job, 120_000);
+      }
+    });
+    meter.once('close', () => {
+      signal.removeEventListener('abort', abort);
+      if (job.view.stage === 'sending') {
+        job.view.stage = 'failed';
+        job.view.error = { code: 'PROJECT_BUNDLE_SEND_FAILED', message: '文件包发送中断，请重新检查后重试' };
+        this.expiry(job, 120_000);
+      }
+      job.disposing = bundle.dispose();
+      void job.disposing.catch(() => {});
+    });
+    if (signal.aborted) abort();
+    else bundle.stream.pipe(meter);
+    return { stream: meter, size: bundle.size, dispose: bundle.dispose };
   }
 }
 

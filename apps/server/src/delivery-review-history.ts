@@ -13,6 +13,7 @@ import type {
 import { hash, id, stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactMetadata, deliveryFingerprintFromArtifacts } from './delivery-fingerprint.js';
 import { cachedDeliveryRead } from './delivery-read-cache.js';
+import { equalDeliveryArtifactMetadata } from '../../../packages/storage/src/artifact-delivery-metadata.js';
 
 export type DeliveryBaseline = {
   version: 1;
@@ -225,7 +226,7 @@ function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): 
   for (const artifact of current.artifacts) {
     const prior = previous.get(artifact.id);
     if (!prior) added++;
-    else if (stable(prior) !== stable(artifact)) changed++;
+    else if (!equalDeliveryArtifactMetadata(prior, artifact)) changed++;
     previous.delete(artifact.id);
   }
   const fields = {
@@ -300,7 +301,7 @@ export function deliveryArtifactChanges(
     for (const artifactId of keys) {
       const prior = previous.get(artifactId) ?? null,
         after = present.get(artifactId) ?? null;
-      if (prior && after && stable(prior) === stable(after)) continue;
+      if (prior && after && equalDeliveryArtifactMetadata(prior, after)) continue;
       items.push({
         artifactId,
         kind: prior ? (after ? 'changed' : 'removed') : 'added',

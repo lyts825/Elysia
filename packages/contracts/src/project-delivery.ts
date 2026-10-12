@@ -204,3 +204,31 @@ export interface ProjectDeliveryBundlePlan {
   }[];
   issues: { code: string; message: string }[];
 }
+
+/** Ephemeral export work, bound to one manifest and browser session. Not a delivery record. */
+export const ProjectDeliveryBundleJobInput = z
+  .object({
+    jobId: z.string().uuid(),
+    clientId: z.string().uuid().optional(),
+    expectedManifestHash: digest,
+    kind: z.enum(['check', 'download']),
+  })
+  .strict();
+export interface ProjectDeliveryBundleJob {
+  id: string;
+  clientId: string | null;
+  projectId: string;
+  manifestId: string;
+  manifestHash: string;
+  kind: 'check' | 'download';
+  stage: 'verifying' | 'preparing' | 'ready' | 'sending' | 'completed' | 'cancelled' | 'failed';
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  /** Unknown until the selected sizes have been read; exact ZIP size during preparation/send. */
+  bytesTotal: number | null;
+  currentFile: string | null;
+  expiresAt: string;
+  plan?: ProjectDeliveryBundlePlan;
+  error?: { code: string; message: string };
+}

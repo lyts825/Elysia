@@ -9,6 +9,13 @@ import {
   type ObjectMaintenanceProgress,
 } from './object-maintenance.js';
 import type { Selection } from './maintenance-storage.js';
+import {
+  OBJECT_CANCEL_FLAG,
+  OBJECT_CLEANUP_GATE,
+  OBJECT_READ_ONLY,
+  OBJECT_PROTECTED,
+  OBJECT_TERMINATING,
+} from './object-maintenance-control.js';
 
 const input = workerData as {
   directory: string;
@@ -39,7 +46,14 @@ try {
     record(header);
   }
   const options = {
-    cancelled: () => Atomics.load(cancellation, 0) !== 0,
+    cancelled: () => Atomics.load(cancellation, OBJECT_CANCEL_FLAG) !== 0,
+    beforePreflight: () => {
+      if (
+        Atomics.compareExchange(cancellation, OBJECT_CLEANUP_GATE, OBJECT_READ_ONLY, OBJECT_PROTECTED) ===
+        OBJECT_TERMINATING
+      )
+        Atomics.store(cancellation, OBJECT_CANCEL_FLAG, 1);
+    },
     onProgress: (value: ObjectMaintenanceProgress) => {
       progress = value;
       parentPort!.postMessage({ type: 'progress', value });

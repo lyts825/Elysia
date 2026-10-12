@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBundlePlan,
   ProjectDeliveryManifest,
+  ProjectDeliveryBundleJob,
 } from '../../../packages/contracts/src/project-delivery';
 import { useSurfaceClient } from './SurfaceClientContext';
+import { ApiError } from './api';
 import './project-delivery-bundle.css';
 
 const sizeLabel = (bytes: number | null) =>
@@ -17,37 +19,170 @@ const sizeLabel = (bytes: number | null) =>
 
 /** Mount one instance per immutable manifest; leaving the selection cancels all work. */
 export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryManifest }) {
-  const { api, apiBytes } = useSurfaceClient();
+  const { api, apiUrl } = useSurfaceClient();
   const [plan, setPlan] = useState<ProjectDeliveryBundlePlan>();
   const [working, setWorking] = useState<'check' | 'download' | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const operation = useRef<AbortController | null>(null);
+  const [progress, setProgress] = useState<ProjectDeliveryBundleJob>();
+  const operation = useRef<{ controller: AbortController; jobId: string } | null>(null);
+  const base = `/projects/${manifest.projectId}/delivery-manifests/${manifest.id}`;
+  const [clientId] = useState(() => {
+    const key = 'project-bundle-client:' + apiUrl(base);
+    try {
+      const saved = sessionStorage.getItem(key);
+      if (saved && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(saved))
+        return saved;
+      const created = crypto.randomUUID();
+      sessionStorage.setItem(key, created);
+      return created;
+    } catch {
+      return crypto.randomUUID();
+    }
+  });
+  const query = '?expectedManifestHash=' + encodeURIComponent(manifest.hash) + '&clientId=' + clientId;
+  const discard = (jobId: string) =>
+    api(base + '/bundle-jobs/' + jobId, { expectedManifestHash: manifest.hash, clientId }, 'DELETE').catch(
+      () => {},
+    );
   useEffect(
     () => () => {
-      operation.current?.abort();
+      const current = operation.current;
+      current?.controller.abort();
       operation.current = null;
+      if (current) void discard(current.jobId);
     },
     [],
   );
-  const base = `/projects/${manifest.projectId}/delivery-manifests/${manifest.id}`;
-  const query = '?expectedManifestHash=' + encodeURIComponent(manifest.hash);
-  const check = async () => {
-    if (operation.current) return;
-    const controller = new AbortController();
-    operation.current = controller;
-    setWorking('check');
-    setPlan(undefined);
-    setError('');
-    setNotice('');
-    try {
-      const result = await api<ProjectDeliveryBundlePlan>(
-        base + '/bundle-plan' + query,
+  const current = (controller: AbortController) =>
+    operation.current?.controller === controller && !controller.signal.aborted;
+  const assertJob = (job: ProjectDeliveryBundleJob, jobId: string, kind: 'check' | 'download') => {
+    if (
+      job.id !== jobId ||
+      job.clientId !== clientId ||
+      job.projectId !== manifest.projectId ||
+      job.manifestId !== manifest.id ||
+      job.manifestHash !== manifest.hash ||
+      job.kind !== kind
+    )
+      throw Error('返回的文件包作业不属于当前清单，请重新检查。');
+  };
+  const prepare = async (kind: 'check' | 'download', controller: AbortController, jobId: string) => {
+    // Let creation finish so even a late POST result can be explicitly cancelled.
+    let job = await api<ProjectDeliveryBundleJob>(
+      base + '/bundle-jobs',
+      {
+        jobId,
+        clientId,
+        expectedManifestHash: manifest.hash,
+        kind,
+      },
+      'POST',
+      AbortSignal.timeout(15_000),
+    );
+    if (!current(controller)) {
+      await discard(jobId);
+      return;
+    }
+    assertJob(job, jobId, kind);
+    for (;;) {
+      if (!current(controller)) return;
+      setProgress(job);
+      if (job.stage === 'failed') throw Error(job.error?.message || '文件包处理失败，请重新检查。');
+      if (job.stage === 'cancelled') throw Error('文件包作业已取消，请重新检查。');
+      if (job.stage === 'completed' || job.stage === 'ready') return job;
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          controller.signal.removeEventListener('abort', done);
+          resolve();
+        };
+        const timer = setTimeout(done, 250);
+        controller.signal.addEventListener('abort', done, { once: true });
+      });
+      if (!current(controller)) return;
+      job = await api<ProjectDeliveryBundleJob>(
+        base + '/bundle-jobs/' + jobId + query,
         undefined,
         undefined,
         controller.signal,
       );
-      if (operation.current !== controller || controller.signal.aborted) return;
+      assertJob(job, jobId, kind);
+    }
+  };
+  const receive = async (job: ProjectDeliveryBundleJob, controller: AbortController) => {
+    let idle: ReturnType<typeof setTimeout>;
+    const reading = new AbortController();
+    const renew = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => reading.abort(), 15_000);
+    };
+    renew();
+    try {
+      const response = await fetch(apiUrl(base + '/bundle-jobs/' + job.id + '/file' + query), {
+        credentials: 'same-origin',
+        signal: AbortSignal.any([controller.signal, reading.signal]),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new ApiError(
+          error?.message || `本机请求失败（HTTP ${response.status}），请重试。`,
+          'http',
+          response.status,
+          error?.code,
+        );
+      }
+      const length = Number(response.headers.get('Content-Length'));
+      if (
+        !Number.isSafeInteger(length) ||
+        length < 4 ||
+        length > 64 * 1024 * 1024 ||
+        length !== job.bytesTotal ||
+        !response.body
+      )
+        throw Error('交付包格式或大小异常，未发起下载，请重试检查。');
+      const bytes = new Uint8Array(length),
+        reader = response.body.getReader();
+      let received = 0;
+      controller.signal.throwIfAborted();
+      if (current(controller)) setProgress({ ...job, stage: 'sending', bytesDone: 0 });
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        renew();
+        if (received + chunk.value.length > length) {
+          await reader.cancel();
+          throw Error('交付包长度异常，请重新检查。');
+        }
+        bytes.set(chunk.value, received);
+        received += chunk.value.length;
+        if (current(controller)) setProgress({ ...job, stage: 'sending', bytesDone: received });
+      }
+      if (received !== length) throw Error('交付包发送中断，请重新检查后重试。');
+      return bytes;
+    } catch (issue) {
+      if (reading.signal.aborted && !controller.signal.aborted)
+        throw Error('文件包发送超过 15 秒未取得新数据，请重新检查后重试。');
+      throw issue;
+    } finally {
+      clearTimeout(idle!);
+    }
+  };
+  const check = async () => {
+    if (operation.current) return;
+    const controller = new AbortController();
+    const jobId = crypto.randomUUID();
+    operation.current = { controller, jobId };
+    setWorking('check');
+    setPlan(undefined);
+    setError('');
+    setNotice('');
+    setProgress(undefined);
+    try {
+      const job = await prepare('check', controller, jobId);
+      if (!job || !current(controller)) return;
+      const result = job.plan;
+      if (!result) throw Error('文件检查结果缺失，请重新检查。');
       if (
         result.projectId !== manifest.projectId ||
         result.manifestId !== manifest.id ||
@@ -59,10 +194,10 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
         result.canDownload ? '所选文件已通过检查，可以下载交付包。' : '部分条件未满足，请查看下方说明。',
       );
     } catch (issue) {
-      if (operation.current === controller && !controller.signal.aborted)
-        setError(issue instanceof Error ? issue.message : '文件检查失败，请重试。');
+      if (current(controller)) setError(issue instanceof Error ? issue.message : '文件检查失败，请重试。');
     } finally {
-      if (operation.current === controller) {
+      void discard(jobId);
+      if (operation.current?.controller === controller) {
         operation.current = null;
         setWorking(null);
       }
@@ -71,13 +206,17 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
   const download = async () => {
     if (!plan?.canDownload || operation.current) return;
     const controller = new AbortController();
-    operation.current = controller;
+    const jobId = crypto.randomUUID();
+    operation.current = { controller, jobId };
     setWorking('download');
     setError('');
     setNotice('');
+    setProgress(undefined);
     try {
-      const bytes = await apiBytes(base + '/bundle' + query, controller.signal);
-      if (operation.current !== controller || controller.signal.aborted) return;
+      const job = await prepare('download', controller, jobId);
+      if (!job || !current(controller)) return;
+      const bytes = await receive(job, controller);
+      if (!current(controller)) return;
       if (
         bytes.byteLength < 4 ||
         bytes.byteLength > Math.min(plan.maxBytes, 64 * 1024 * 1024) ||
@@ -95,22 +234,26 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice('交付包已生成并发起下载。保存后的 ZIP 可独立查看，请保留其中的清单和校验信息。');
     } catch (issue) {
-      if (operation.current === controller && !controller.signal.aborted) {
+      if (current(controller)) {
         setError(issue instanceof Error ? issue.message : '交付包下载失败，请重新检查文件。');
         setPlan(undefined);
       }
     } finally {
-      if (operation.current === controller) {
+      void discard(jobId);
+      if (operation.current?.controller === controller) {
         operation.current = null;
         setWorking(null);
       }
     }
   };
   const cancel = () => {
-    operation.current?.abort();
+    const old = operation.current;
+    old?.controller.abort();
     operation.current = null;
+    if (old) void discard(old.jobId);
     setWorking(null);
     setPlan(undefined);
+    setProgress(undefined);
     setNotice('本次请求已取消，未发起文件下载。可以重新检查后再试。');
     setError('');
   };
@@ -148,6 +291,30 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
             ? '正在重新核验并打包，完成后发起下载。'
             : notice}
       </p>
+      {working && progress && (
+        <div className="project-bundle-progress" role="status" aria-live="polite">
+          <strong>
+            {progress.stage === 'verifying'
+              ? '核验冻结文件'
+              : progress.stage === 'preparing'
+                ? '准备完整 ZIP'
+                : progress.stage === 'sending'
+                  ? '发送文件包'
+                  : '文件包已就绪'}
+          </strong>
+          <progress
+            max={progress.bytesTotal || undefined}
+            value={progress.bytesTotal ? progress.bytesDone : undefined}
+            aria-label="文件包进度"
+          />
+          <span>
+            文件 {progress.filesDone} / {progress.filesTotal} · {sizeLabel(progress.bytesDone)}
+            {progress.bytesTotal !== null ? ` / ${sizeLabel(progress.bytesTotal)}` : ' 已核验'}
+          </span>
+          {progress.currentFile && <small>当前文件：{progress.currentFile}</small>}
+          <small>准备与发送完成后才发起保存。可取消；刷新后可重新检查并重试。</small>
+        </div>
+      )}
       {error && (
         <p className="field-error" role="alert">
           {error}

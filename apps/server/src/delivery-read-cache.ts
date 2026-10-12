@@ -13,7 +13,13 @@ export function initializeDeliveryReadCache(store: Store) {
   store.db.exec(`
     INSERT OR IGNORE INTO storage_meta(key,value) VALUES('${marker}',lower(hex(randomblob(16))));
   `);
-  for (const table of ['runs', 'tasks', 'artifacts', 'delivery_review_history_v1']) {
+  for (const table of [
+    'runs',
+    'tasks',
+    'artifacts',
+    'artifact_delivery_metadata_v1',
+    'delivery_review_history_v1',
+  ]) {
     for (const operation of ['INSERT', 'UPDATE', 'DELETE']) {
       store.db.exec(`
         CREATE TRIGGER IF NOT EXISTS delivery_read_cache_${table}_${operation.toLowerCase()}
