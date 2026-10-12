@@ -8,7 +8,7 @@ import { boardLines, boardSnapshot } from './ProjectBoardDraft';
 import { mergeProjectPlan, type MergeChoices } from './ProjectDraftMerge';
 import { ProjectDraftComparison } from './ProjectDraftComparison';
 import { ProjectPlanTransfer } from './ProjectPlanTransfer';
-import type { ProjectPlanTransfer as PlanFile } from './project-plan-transfer';
+import type { ProjectPlanTransfer as PlanFile, ProjectPlanImportPreflight } from './project-plan-transfer';
 
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
@@ -33,6 +33,8 @@ export function ProjectBoardEditor({
   canRestorePlan,
   applyPlan,
   restorePlan,
+  inspectPlan,
+  exportOriginal,
 }: {
   edit: ProjectBoardEdit;
   busy: boolean;
@@ -43,6 +45,8 @@ export function ProjectBoardEditor({
   canRestorePlan: boolean;
   applyPlan: (file: PlanFile) => boolean;
   restorePlan: () => boolean;
+  inspectPlan: (file: PlanFile) => ProjectPlanImportPreflight;
+  exportOriginal: () => void;
 }) {
   const current = boardSnapshot(board);
   const comparisonKey = JSON.stringify([board.revision, current, edit]);
@@ -79,6 +83,8 @@ export function ProjectBoardEditor({
         canRestore={canRestorePlan}
         apply={applyPlan}
         restore={restorePlan}
+        inspect={inspectPlan}
+        exportOriginal={exportOriginal}
       />
       {edit.baselineOmitted && (
         <p className="field-help" role="status">

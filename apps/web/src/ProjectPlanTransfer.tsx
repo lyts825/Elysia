@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ProjectBoardEdit } from './ProjectBoardDraft';
+import { PROJECT_BOARD_DRAFT_LIMIT, type ProjectBoardEdit } from './ProjectBoardDraft';
 import {
   PROJECT_PLAN_FILE_LIMIT,
   exportProjectPlan,
   readProjectPlanTransfer,
+  type ProjectPlanImportPreflight,
   type ProjectPlanTransfer as PlanFile,
 } from './project-plan-transfer';
 import './project-plan-transfer.css';
@@ -15,6 +16,8 @@ export function ProjectPlanTransfer({
   canRestore,
   apply,
   restore,
+  inspect,
+  exportOriginal,
 }: {
   projectId: string;
   edit: ProjectBoardEdit;
@@ -22,14 +25,20 @@ export function ProjectPlanTransfer({
   canRestore: boolean;
   apply: (file: PlanFile) => boolean;
   restore: () => boolean;
+  inspect: (file: PlanFile) => ProjectPlanImportPreflight;
+  exportOriginal: () => void;
 }) {
   const [preview, setPreview] = useState<{ file: PlanFile; name: string }>();
   const [reading, setReading] = useState(false),
-    [acknowledged, setAcknowledged] = useState(false),
+    [acknowledgedKey, setAcknowledgedKey] = useState(''),
     [notice, setNotice] = useState(''),
     [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null),
     generation = useRef(0);
+  const confirmationKey = JSON.stringify([edit, preview?.file]);
+  const capacity = preview ? inspect(preview.file) : undefined;
+  const canApply = capacity?.canApply === true;
+  useEffect(() => setAcknowledgedKey(''), [confirmationKey]);
   useEffect(() => {
     return () => {
       generation.current++;
@@ -38,7 +47,7 @@ export function ProjectPlanTransfer({
   const read = async (file: File) => {
     const request = ++generation.current;
     setPreview(undefined);
-    setAcknowledged(false);
+    setAcknowledgedKey('');
     setNotice('');
     setError('');
     if (file.size > PROJECT_PLAN_FILE_LIMIT) {
@@ -127,7 +136,7 @@ export function ProjectPlanTransfer({
                 generation.current++;
                 setReading(false);
                 setPreview(undefined);
-                setAcknowledged(false);
+                setAcknowledgedKey('');
                 setError('');
                 setNotice('已恢复导入前原稿，项目保存状态未改变。');
               }
@@ -159,32 +168,104 @@ export function ProjectPlanTransfer({
           <p className="field-help">
             应用后可在本项目编辑。全部交付项使用新编号；保存后仍需重新关联任务和确认，现有任务与历史交付清单不会迁移到新编号。核对后仍需点击“保存项目计划”。
           </p>
+          <section className="project-plan-capacity" aria-label="导入草稿容量检查">
+            {capacity?.canApply ? (
+              <>
+                <p role="status">
+                  保留导入前原稿后，本项目草稿为 {capacity.characters.toLocaleString('zh-CN')} /{' '}
+                  {PROJECT_BOARD_DRAFT_LIMIT.toLocaleString('zh-CN')} 字符，可应用。
+                </p>
+                {capacity.baselineOmitted && (
+                  <p className="field-help">
+                    原始计划基线因容量限制未保留；输入和导入前原稿完整保留。计划版本变化时仍需逐项核对差异。
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="field-error" role="alert">
+                  {capacity?.error}
+                </p>
+                <p className="field-help">
+                  尚未替换当前草稿。可先下载完整原稿，再缩小导入计划或当前草稿；不会截断输入或移除导入前原稿。
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    try {
+                      exportOriginal();
+                      setError('');
+                      setNotice('已下载完整工作台原稿，当前草稿与导入预览未改变。');
+                    } catch (issue) {
+                      setError(
+                        issue instanceof Error ? issue.message : '原稿下载失败，当前草稿与导入预览已保留。',
+                      );
+                    }
+                  }}
+                >
+                  导出完整原稿 TXT
+                </button>
+              </>
+            )}
+          </section>
           <div className="project-plan-preview-content">
-            <h4>项目目标</h4>
-            <p>{preview.file.plan.goal || '（空）'}</p>
-            <h4>范围</h4>
-            <p>{preview.file.plan.scope.join('\n') || '（空）'}</p>
-            <h4>不做事项</h4>
-            <p>{preview.file.plan.nonGoals.join('\n') || '（空）'}</p>
-            {preview.file.plan.items.map((item, index) => (
-              <section key={index} aria-label={`导入交付项 ${index + 1}`}>
+            <h4>当前草稿 → 导入计划</h4>
+            {[
+              { label: '项目目标', current: edit.goal, imported: preview.file.plan.goal },
+              { label: '范围', current: edit.scope, imported: preview.file.plan.scope.join('\n') },
+              { label: '不做事项', current: edit.nonGoals, imported: preview.file.plan.nonGoals.join('\n') },
+            ].map(({ label, current, imported }) => (
+              <section key={label} aria-label={`${label}替换对照`}>
                 <h4>
-                  {index + 1}. {item.title} · {item.required ? '必需' : '可选'}
+                  {label} · {current === imported ? '文字一致' : '文字不同'}
                 </h4>
-                <p>{item.description || '（无说明）'}</p>
-                <strong>交付物</strong>
-                <p>{item.deliverables.join('\n')}</p>
-                <strong>验收标准</strong>
-                <p>{item.acceptanceCriteria.join('\n')}</p>
+                <div className="project-plan-comparison-columns">
+                  <div>
+                    <strong>当前草稿</strong>
+                    <p>{current || '（空）'}</p>
+                  </div>
+                  <div>
+                    <strong>导入计划</strong>
+                    <p>{imported || '（空）'}</p>
+                  </div>
+                </div>
               </section>
             ))}
+            <section aria-label="交付项替换对照">
+              <h4>交付项全部替换</h4>
+              <p>
+                当前 {edit.items.length} 项（必需 {edit.items.filter((item) => item.required).length} 项） →
+                导入 {preview.file.plan.items.length} 项（必需{' '}
+                {preview.file.plan.items.filter((item) => item.required).length} 项）。
+              </p>
+              <p className="field-help">
+                两侧独立列出全部内容，不按名称配对或合并。同名或文字一致的交付项也会生成新编号，原有关联不会迁移。
+              </p>
+              <div className="project-plan-comparison-columns">
+                <div>
+                  <h4>当前草稿交付项</h4>
+                  {!edit.items.length && <p>（无交付项）</p>}
+                  {edit.items.map((item, index) => (
+                    <PlanItemText key={item.id} item={item} index={index} side="当前草稿" />
+                  ))}
+                </div>
+                <div>
+                  <h4>导入计划交付项</h4>
+                  {!preview.file.plan.items.length && <p>（无交付项）</p>}
+                  {preview.file.plan.items.map((item, index) => (
+                    <PlanItemText key={index} item={item} index={index} side="导入" />
+                  ))}
+                </div>
+              </div>
+            </section>
           </div>
           <label className="check-row">
             <input
               type="checkbox"
-              checked={acknowledged}
-              disabled={busy}
-              onChange={(event) => setAcknowledged(event.target.checked)}
+              checked={acknowledgedKey === confirmationKey}
+              disabled={busy || !canApply}
+              onChange={(event) => setAcknowledgedKey(event.target.checked ? confirmationKey : '')}
             />
             <span>用此计划替换当前编辑内容；导入前原稿保留，可在保存前恢复。</span>
           </label>
@@ -192,11 +273,11 @@ export function ProjectPlanTransfer({
             <button
               type="button"
               className="primary"
-              disabled={busy || canRestore || !acknowledged}
+              disabled={busy || canRestore || !canApply || acknowledgedKey !== confirmationKey}
               onClick={() => {
                 if (apply(preview.file)) {
                   setPreview(undefined);
-                  setAcknowledged(false);
+                  setAcknowledgedKey('');
                   setNotice('已应用到本项目编辑草稿。请调整并核对，再保存项目计划。');
                   setError('');
                 }
@@ -211,7 +292,7 @@ export function ProjectPlanTransfer({
               onClick={() => {
                 generation.current++;
                 setPreview(undefined);
-                setAcknowledged(false);
+                setAcknowledgedKey('');
                 setNotice('已取消导入预览，当前草稿未改动。');
               }}
             >
@@ -220,6 +301,35 @@ export function ProjectPlanTransfer({
           </div>
         </section>
       )}
+    </section>
+  );
+}
+
+function PlanItemText({
+  item,
+  index,
+  side,
+}: {
+  item: ProjectBoardEdit['items'][number] | PlanFile['plan']['items'][number];
+  index: number;
+  side: '当前草稿' | '导入';
+}) {
+  return (
+    <section aria-label={`${side}交付项 ${index + 1}`}>
+      <h4>
+        {index + 1}. {item.title || '（未命名）'} · {item.required ? '必需' : '可选'}
+      </h4>
+      <p>{item.description || '（无说明）'}</p>
+      <strong>交付物</strong>
+      <p>
+        {(Array.isArray(item.deliverables) ? item.deliverables.join('\n') : item.deliverables) || '（空）'}
+      </p>
+      <strong>验收标准</strong>
+      <p>
+        {(Array.isArray(item.acceptanceCriteria)
+          ? item.acceptanceCriteria.join('\n')
+          : item.acceptanceCriteria) || '（空）'}
+      </p>
     </section>
   );
 }

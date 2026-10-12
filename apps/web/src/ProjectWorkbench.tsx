@@ -14,7 +14,7 @@ import {
   type ProjectBoardDraft,
 } from './ProjectBoardDraft';
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
-import { importProjectPlan } from './project-plan-transfer';
+import { projectPlanImportDraft, projectPlanImportPreflight } from './project-plan-transfer';
 import { ProjectBoardItem, readinessLabels } from './ProjectBoardItem';
 import { ProjectRunList } from './ProjectRunList';
 import { ProjectManifests } from './ProjectManifests';
@@ -213,6 +213,14 @@ export function ProjectWorkbench({
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const exportDraftSafely = () => {
+    try {
+      exportDraft();
+      setDraftError('');
+    } catch (issue) {
+      setDraftError(issue instanceof Error ? issue.message : '原稿下载失败，当前输入已保留。');
+    }
+  };
   return (
     <div className="project-workbench" aria-label="项目交付工作台">
       <header className="project-workbench-heading">
@@ -241,6 +249,9 @@ export function ProjectWorkbench({
           <button type="button" className="secondary" onClick={openTaskCenter}>
             任务中心
           </button>
+          <button type="button" className="secondary" disabled={!loaded} onClick={exportDraftSafely}>
+            导出工作台原稿 TXT
+          </button>
         </div>
       </header>
       {loading && (
@@ -260,7 +271,7 @@ export function ProjectWorkbench({
           {error || draftError || parseError}
           {parseError && (
             <div className="project-actions">
-              <button type="button" className="secondary" onClick={exportDraft}>
+              <button type="button" className="secondary" onClick={exportDraftSafely}>
                 导出原草稿
               </button>
               <button
@@ -362,17 +373,28 @@ export function ProjectWorkbench({
               board={board}
               busy={busy || board.archived || !!error}
               canRestorePlan={!!draft.planImportUndo}
+              exportOriginal={exportDraft}
+              inspectPlan={(file) => {
+                try {
+                  const current = readProjectBoardDraft(cache.get(projectBoardKey(project.id)));
+                  if (!current.edit || JSON.stringify(current.edit) !== JSON.stringify(draft!.edit))
+                    return {
+                      canApply: false,
+                      error: '项目计划草稿已变化，请重新核对。原输入和导入预览已保留。',
+                    };
+                  return projectPlanImportPreflight(current, file);
+                } catch (issue) {
+                  return {
+                    canApply: false,
+                    error: issue instanceof Error ? issue.message : '无法检查草稿容量，原稿已保留。',
+                  };
+                }
+              }}
               applyPlan={(file) =>
                 change((value) => {
                   if (!value.edit || JSON.stringify(value.edit) !== JSON.stringify(draft!.edit))
                     throw Error('项目计划草稿已变化，请重新核对后应用。原输入和导入预览已保留。');
-                  if (value.planImportUndo)
-                    throw Error('已有导入前原稿备份，请先恢复原稿或成功保存项目计划，再导入另一份计划。');
-                  return {
-                    ...value,
-                    edit: importProjectPlan(file, value.edit),
-                    planImportUndo: structuredClone(value.edit),
-                  };
+                  return projectPlanImportDraft(value, file);
                 })
               }
               restorePlan={() =>

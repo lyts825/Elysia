@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { ProjectDeliveryBoardInput } from '../../../packages/contracts/src/project-delivery';
-import { boardLines, type ProjectBoardEdit } from './ProjectBoardDraft';
+import {
+  boardLines,
+  prepareProjectBoardDraft,
+  type ProjectBoardDraft,
+  type ProjectBoardEdit,
+} from './ProjectBoardDraft';
 
 export const PROJECT_PLAN_FILE_LIMIT = 192 * 1024;
 const line = z
@@ -89,7 +94,11 @@ export function exportProjectPlan(edit: ProjectBoardEdit): string {
 }
 
 /** This is still a local edit on its original baseline; server CAS and merging stay intact. */
-export function importProjectPlan(file: ProjectPlanTransfer, original: ProjectBoardEdit): ProjectBoardEdit {
+export function importProjectPlan(
+  file: ProjectPlanTransfer,
+  original: ProjectBoardEdit,
+  assignId: () => string = () => crypto.randomUUID(),
+): ProjectBoardEdit {
   return {
     ...original,
     goal: file.plan.goal,
@@ -97,9 +106,48 @@ export function importProjectPlan(file: ProjectPlanTransfer, original: ProjectBo
     nonGoals: file.plan.nonGoals.join('\n'),
     items: file.plan.items.map((item) => ({
       ...item,
-      id: crypto.randomUUID(),
+      id: assignId(),
       deliverables: item.deliverables.join('\n'),
       acceptanceCriteria: item.acceptanceCriteria.join('\n'),
     })),
   };
+}
+
+export function projectPlanImportDraft(
+  draft: ProjectBoardDraft,
+  file: ProjectPlanTransfer,
+  assignId?: () => string,
+): ProjectBoardDraft {
+  if (!draft.edit) throw Error('项目计划草稿已变化，请重新核对后应用。原输入和导入预览已保留。');
+  if (draft.planImportUndo)
+    throw Error('已有导入前原稿备份，请先恢复原稿或成功保存项目计划，再导入另一份计划。');
+  return {
+    ...draft,
+    edit: importProjectPlan(file, draft.edit, assignId),
+    planImportUndo: structuredClone(draft.edit),
+  };
+}
+
+export type ProjectPlanImportPreflight =
+  | { canApply: true; characters: number; baselineOmitted: boolean }
+  | { canApply: false; error: string };
+
+export function projectPlanImportPreflight(
+  draft: ProjectBoardDraft,
+  file: ProjectPlanTransfer,
+): ProjectPlanImportPreflight {
+  try {
+    // New IDs are always 36 characters. Preview neither allocates real IDs nor writes the cache.
+    const { value, raw } = prepareProjectBoardDraft(projectPlanImportDraft(draft, file, () => validationId));
+    return {
+      canApply: true,
+      characters: raw.length,
+      baselineOmitted: !!value.edit?.baselineOmitted,
+    };
+  } catch (issue) {
+    return {
+      canApply: false,
+      error: issue instanceof Error ? issue.message : '无法检查草稿容量，原稿和预览已保留。',
+    };
+  }
 }

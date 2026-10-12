@@ -289,6 +289,7 @@ export class Store {
   private requestStreams: RequestStreams;
   private artifactDeliveryReads: ArtifactDeliveryMetadataReads;
   private objectReferences?: ObjectReferenceProjection;
+  private requestReadProjectionUpdate?: ReturnType<DatabaseSync['prepare']>;
   private closeHooks = new Set<() => void>();
   private closed = false;
   constructor(directory = dataDirectory()) {
@@ -946,9 +947,15 @@ export class Store {
     entity: Entity,
   ) {
     const refresh = () => {
-      const updated = this.db
-        .prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`)
-        .run(projection(table, entity), entity.id, entity.revision);
+      // Full server schemas make compiling this guarded request update expensive per legacy row.
+      // SQLite still reevaluates bindings and recompiles the statement after schema changes.
+      const update =
+        table === 'requests'
+          ? (this.requestReadProjectionUpdate ??= this.db.prepare(
+              'UPDATE requests SET data=? WHERE id=? AND revision=? AND content IS NOT NULL',
+            ))
+          : this.db.prepare(`UPDATE ${table} SET data=? WHERE id=? AND revision=? AND content IS NOT NULL`);
+      const updated = update.run(projection(table, entity), entity.id, entity.revision);
       if (table === 'artifacts' && updated.changes)
         this.artifactDeliveryReads.write(entity as import('../../contracts/src/index.js').Artifact);
     };
@@ -1652,6 +1659,7 @@ export class Store {
       }
     }
     this.closeHooks.clear();
+    this.requestReadProjectionUpdate = undefined;
     try {
       this.searchWork.close();
     } finally {

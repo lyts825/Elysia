@@ -1,5 +1,35 @@
 # Elysia 首版执行文档
 
+## 当前迭代：v1.2.0 读取余量与计划替换核对
+
+2026-10-12，cd8e47d / v1.1.0 → v1.2.0，沿用codex/initial-build，开始时工作区干净。用户授权落地上一轮建议：完整用量读取同夹具定位与优化、导入容量预检及完整原稿导出、当前草稿与导入计划的替换影响对照。因包含兼容新功能，目标采用1.2.0；不扩展计划库或自动执行，用量准备作业仅在定位优化后仍接近/超过原15秒期限时按证据决定。主代理负责版本、整合与交付；性能代理负责同夹具完整入口分段和直接瓶颈；计划代理负责无写入预检、原稿出口与对照；独立代理负责冻结1.1基线和最终生产UI验收。
+
+| 里程碑 | 状态 | 验收 |
+| --- | --- | --- |
+| 完整用量首读 | 已完成 | 精确1.1同seed完整HTTP分段，正常轮询、原15秒期限；SQL编译瓶颈已修，生产UI10k5.719s，SHA/revision、坏记录、批回滚和取消保持 |
+| 导入预检与对照 | 已完成 | combined新稿+完整undo容量按实际写入同规则预检，原稿可完整导出；实时替换对照/新编号说明，失败不写入，undo/CAS/重开/迟到/窄屏验收通过 |
+| 1.2.0本地交付 | 已完成 | 最终类型/构建、必要生产UI/双入口兼容、版本/差异/敏感信息核对通过；对应提交由本地v1.2.0标签定位，未发布与验收缺口分列 |
+
+验证仅用隔离profile，不调用模型、凭据或外网；必要脚本、样本、报告、截图和诊断保留在既有忽略目录。保护原1.1提交和用户数据，历史被拒清理路径不重试。
+
+性能定位：精确冻结1.1基线v110-v120-baseline-3df620，先用原preview9 10k × 4 KiB seed跑完整服务入口，真实原15秒客户端超时，在8832/10000条后停止，原正文SHA/revision保持（zgM3oQ）。完整入口与此前独立Store+UsageReads不同，不能用核心6.189s和界面14.578s相减归因。原界面代码同body/binding/20Run及1k+10k+bad129重新生成seed，正常5秒侧栏轮询启用；分段诊断（9fyZqs）完整GET14.065s、warm13.841s，其中10k次请求UPDATE prepare7.416s、UPDATE执行1.784s、COMMIT2.300s、解压0.637s、查询0.096s。路由进入到summary约0.86ms，summary完成到socket约3ms，证据指向逐条SQL编译。为完整诊断仅该客户端用60秒截止，产品及生产验收仍保留15秒；中断留下的Cr3AqC无result，不计验收。
+
+已实现：Store仅为requests的读取投影更新懒复用一条SQL statement，关闭时清引用，原revision/content guard、逐条savepoint、批事务、epoch及正文保持；其余表路径不变。同原UI seed当前完整入口首读4.941s、warm4.760s，prepare仅1次/0.69ms，32条313批保持，正文SHA/revision一致且原15秒成功200（cytoR4）。正常轮询未移除，该样本完成早于下一次5秒轮询；原preview9同seed优化后5.799s成功200，期间5秒sidebar三项请求均正常（ebzzTo）。两组body/revision全保持，暂不新增用量准备API。原15秒超时报告与未完成诊断保留。
+
+前端已实现纯prepareProjectBoardDraft，与实际写入共用结构/容量和可选基线规则；预检读取完整当前草稿，用固定36字符占位ID计算新稿和完整undo，不写cache或分配真实UUID。预览提供当前草稿与导入计划目标/范围/不做事项、全部交付项文字及必需计数对照，不按名称合并；确认绑定edit/file，编辑后失效。可读原稿也能完整TXT导出，超200000字符禁用应用，恢复和保存仍沿用既有CAS/三方合并。
+
+最小直接影响验证：statement边界6组（oe76bp）覆盖prepare一次/逐条绑定守卫、真实触发器DDL自动recompile、新增abort触发器整批回滚及drop后重试、same-revision rawbody修复与close清引用/503/幂等；用量19组（1qDNWU）、缓存4组（quRAxq）、批故障6组（XN1QNk）通过，正文、坏记录、取消及原生外层事务保持。容量/兼容新6组（YRxXjI）覆盖零UUID/无写、全部其他draft字段与完整undo、准确200000边界、可选基线省略、cache写失败、旧稿/三方合并/重开；原计划协议6组（CXShcY）回归通过。初次边界夹具有可选baseline，超1字符依法触发省略；另一次undefined属性被JSON省略导致夹具比较不符，只修ignored夹具且保留失败记录与原断言。
+
+全类型、7份功能源码Prettier、server/Vite生产构建通过。最终主包index-BgoTkZ3z.js433.22kB、ProjectWorkbench-BwUEba9Z.js77.24kB，无新依赖；11份package清单及contract VERSION一致1.2.0，schema6/minimumReader preview.6不变。正式改动敏感模式与差异检查通过；独立Storage只读评审无阻塞。
+
+最终production UI5组通过：复用原1.1界面fixture生成代码及完整服务，正常sidebar5秒轮询、原15秒GET期限，1k0.733s、10k5.719s（原1.1同生成代码UI14.578s），坏gzip仅1项缺口、取消/跨项目迟到及body SHA/revision保持（rpY3UR）。这与同seed完整HTTP的4.941/5.799s计时分别记录，仍不保证所有硬件/规模/压缩类型均不超时。
+
+容量/对照生产UI4组（WxDIWm）：原稿125172字符/30项、合法incoming82855 UTF-8字节/20项，新稿+完整undo超过200000时ack/apply禁用；原稿TXT真实下载字节SHA与cache原文一致，预览/下载无draft或plan写入。删3项后同一预览即时可应用，当前goal对照随编辑更新，已勾选确认实际变为unchecked且apply disabled；20新UUID/27项完整undo只入草稿。新窗口重开保持，真实另连接CAS409保留两稿，恢复不覆盖remote最新计划、Runs数未增；File迟到切项目保持，未知版本/无效UTF-8和取消仍不改稿。root已目视1440完整双列对照和容量拒绝、320堆叠/checkbox可读，无横向溢出。初次TOJMMP仅QA executeJavaScript选择器引号嵌套SyntaxError，只修ignored框架后补容量组，未重复已过用量或改产品，失败证据保留。
+
+最小数据兼容/双入口3组（VOqxX9）通过：精确1.1双入口schema6重开1.2无重复升级备份，body/revision及minimumReader保持；最终compiled服务原生/终端health均1.2.0；compiled CLI双入口backup为app1.2.0/schema6/minreader preview.6，1.1旧reader读取原账本。此前1.1实际immutable desktop启动验收沿用原记录，1.2本轮不宣称重新核验物理前台或正式窗口。相关fixture完整性ok/ok，无模型、外网、凭据或Docker调用，正式profile未碰。
+
+本次正式提交由本地标签v1.2.0定位，未推送、公开发布或部署，正式窗口未重载；1.2实际launcher与物理前台行为未验。验收简表v120-release-qa-summary记录原UI计时HTTP/DOM：1k0.665/0.733s，10k5.658/5.719s，性能组无人工延迟。UI监听61545/61309/56729及相关Node/Electron进程确认0，compat app.close已等待且runner退出0。本轮失用baseline source.tar已精确单文件删除，必要脚本、seed、备份、报告、截图及失败诊断保留在忽略目录，不入Git；历史被拒清理目录不重试。正式差异和相关引用已核对，无失用正式文件或临时依赖。
+
 ## 当前迭代：v1.1.0 旧库读取与项目计划复用
 
 2026-10-12，e6cf100 / v1.0.0-preview.9 → v1.1.0，沿用codex/initial-build，开始时工作区干净。用户要求思考改进并迭代到1.1.0，主线为解决已实测旧账本首读33.9–36.6秒/15秒期限，以及版本化项目计划JSON复用。模板库、依赖图和自动执行不扩展；数据库兼容与原流程复用优先。主代理负责版本/整合，性能代理负责批事务及前后同夹具，计划代理负责导入预览/草稿/导出，独立代理负责生产UI及双入口版本验收。隔离材料，不触及正式profile或新模型/凭据调用，不重试此前被拒清理。

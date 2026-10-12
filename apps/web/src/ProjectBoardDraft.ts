@@ -74,6 +74,7 @@ export type ProjectBoardDraft = z.infer<typeof shape>;
 export type ProjectBoardEdit = NonNullable<ProjectBoardDraft['edit']>;
 export type ProjectPlanSnapshot = z.infer<typeof plan>;
 export type ProjectLaunchContent = z.infer<typeof launchContent>;
+export const PROJECT_BOARD_DRAFT_LIMIT = 200000;
 export const projectBoardKey = (id: string) => `draft:project-board:${id}`;
 export const emptyBoardDraft = (): ProjectBoardDraft => ({
   version: 1,
@@ -87,18 +88,15 @@ export const emptyBoardDraft = (): ProjectBoardDraft => ({
 export function readProjectBoardDraft(raw: unknown): ProjectBoardDraft {
   if (raw === undefined || raw === '') return emptyBoardDraft();
   try {
-    if (typeof raw !== 'string' || raw.length > 200000) throw Error();
+    if (typeof raw !== 'string' || raw.length > PROJECT_BOARD_DRAFT_LIMIT) throw Error();
     return shape.parse(JSON.parse(raw));
   } catch {
     throw Error('项目工作台草稿格式或版本无法读取，原文已保留。请导出原稿后再明确清空。');
   }
 }
-export function writeProjectBoardDraft(
-  cache: WorkbenchCache,
-  projectId: string,
-  update: (draft: ProjectBoardDraft) => ProjectBoardDraft,
-) {
-  let value = update(readProjectBoardDraft(cache.get(projectBoardKey(projectId))));
+/** Prepare without writing so import previews use the exact persistence rules. */
+export function prepareProjectBoardDraft(draft: ProjectBoardDraft) {
+  let value = draft;
   if (!shape.safeParse(value).success)
     throw Error('本次草稿结构无法保存，原稿已保留。请返回项目工作台重新读取。');
   // A valid pre-existing draft must not become uneditable because its snapshot doubles storage.
@@ -115,12 +113,23 @@ export function writeProjectBoardDraft(
   );
   for (const key of baselines) {
     const content = value[key];
-    if (raw.length <= 200000) break;
+    if (raw.length <= PROJECT_BOARD_DRAFT_LIMIT) break;
     if (!content?.baseline) continue;
     value = { ...value, [key]: { ...content, baseline: undefined, baselineOmitted: 'size' } };
     raw = JSON.stringify(value);
   }
-  if (raw.length > 200000) throw Error('项目工作台草稿超过 200000 字符，未覆盖原稿。请缩短本次输入后重试。');
+  if (raw.length > PROJECT_BOARD_DRAFT_LIMIT)
+    throw Error('项目工作台草稿超过 200000 字符，未覆盖原稿。请缩短本次输入后重试。');
+  return { value, raw };
+}
+export function writeProjectBoardDraft(
+  cache: WorkbenchCache,
+  projectId: string,
+  update: (draft: ProjectBoardDraft) => ProjectBoardDraft,
+) {
+  const { value, raw } = prepareProjectBoardDraft(
+    update(readProjectBoardDraft(cache.get(projectBoardKey(projectId)))),
+  );
   cache.set(projectBoardKey(projectId), raw);
   return value;
 }
