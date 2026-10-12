@@ -25,6 +25,7 @@ const launchContent = z.object({
 const shape = z.object({
   version: z.literal(1),
   tab: z.enum(['overview', 'items', 'executions', 'manifests']),
+  usageOpen: z.boolean().optional(),
   selected: z.string(),
   filter: z.enum(['all', 'attention', 'ready']),
   query: z.string(),

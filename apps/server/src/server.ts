@@ -71,6 +71,7 @@ import { RunSourceSelection, RunDeliveryItems } from '../../../packages/contract
 import { attachRunSource, captureRunSource, registerWorkflow } from './workflow.js';
 import { ProjectDeliveryBinding } from '../../../packages/contracts/src/project-delivery.js';
 import { attachProjectDeliveryRun, registerProjectDelivery } from './project-delivery.js';
+import { registerProjectUsage } from './project-usage.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -1606,6 +1607,7 @@ export function createServer(
   );
   if (options.surface !== 'terminal') registerWorkflow(app, store, management.assertMutable);
   if (options.surface !== 'terminal') registerProjectDelivery(app, store, management.assertMutable);
+  if (options.surface !== 'terminal') registerProjectUsage(app, store);
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
       boundedStreams

@@ -19,6 +19,7 @@ import { ProjectRunList } from './ProjectRunList';
 import { ProjectManifests } from './ProjectManifests';
 import { ProjectTodos } from './ProjectTodos';
 import { ProjectLaunchDraft } from './ProjectLaunchDraft';
+import { ProjectUsage } from './ProjectUsage';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-workbench.css';
 
@@ -114,6 +115,7 @@ export function ProjectWorkbench({
   } catch (issue) {
     parseError = issue instanceof Error ? issue.message : '草稿无法读取';
   }
+  const activeTab = draft?.usageOpen ? 'usage' : draft?.tab;
   const change = (update: (value: ProjectBoardDraft) => ProjectBoardDraft) => {
     try {
       writeProjectBoardDraft(cache, project.id, update);
@@ -298,14 +300,21 @@ export function ProjectWorkbench({
                 ['items', '交付清单'],
                 ['executions', '关联与执行'],
                 ['manifests', '汇总交付'],
+                ['usage', '项目用量'],
               ] as const
             ).map(([key, label]) => (
               <button
                 type="button"
                 key={key}
-                aria-current={draft!.tab === key ? 'page' : undefined}
-                className={draft!.tab === key ? 'active' : ''}
-                onClick={() => change((value) => ({ ...value, tab: key, editing: false }))}
+                aria-current={activeTab === key ? 'page' : undefined}
+                className={activeTab === key ? 'active' : ''}
+                onClick={() =>
+                  change((value) => ({
+                    ...value,
+                    ...(key === 'usage' ? { usageOpen: true } : { tab: key, usageOpen: false }),
+                    editing: false,
+                  }))
+                }
               >
                 {label}
               </button>
@@ -336,7 +345,7 @@ export function ProjectWorkbench({
             />
           ) : (
             <>
-              {(draft.tab === 'overview' || draft.tab === 'items') && (
+              {(activeTab === 'overview' || activeTab === 'items') && (
                 <div className="project-actions">
                   <button
                     type="button"
@@ -360,7 +369,7 @@ export function ProjectWorkbench({
                   )}
                 </div>
               )}
-              {draft.tab === 'overview' && (
+              {activeTab === 'overview' && (
                 <>
                   <ProjectTodos
                     board={board}
@@ -418,7 +427,7 @@ export function ProjectWorkbench({
                   </section>
                 </>
               )}
-              {draft.tab === 'items' && (
+              {activeTab === 'items' && (
                 <>
                   <label className="project-filter">
                     交付项范围
@@ -491,7 +500,7 @@ export function ProjectWorkbench({
                   </div>
                 </>
               )}
-              {draft.tab === 'executions' && (
+              {activeTab === 'executions' && (
                 <ProjectRunList
                   projectId={project.id}
                   query={draft.query}
@@ -499,7 +508,7 @@ export function ProjectWorkbench({
                   openRun={(id, review) => void navigate(id, review)}
                 />
               )}
-              {draft.tab === 'manifests' && (
+              {activeTab === 'manifests' && (
                 <ProjectManifests
                   board={board}
                   draft={draft}
@@ -508,6 +517,9 @@ export function ProjectWorkbench({
                   action={action}
                   openRun={(id, review) => void navigate(id, review)}
                 />
+              )}
+              {activeTab === 'usage' && (
+                <ProjectUsage key={project.id} projectId={project.id} openRun={(id) => void navigate(id)} />
               )}
             </>
           )}

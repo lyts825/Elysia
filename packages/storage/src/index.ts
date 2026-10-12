@@ -26,7 +26,10 @@ import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
-import { ArtifactDeliveryMetadataReads, serializeDeliveryArtifactMetadata } from './artifact-delivery-metadata.js';
+import {
+  ArtifactDeliveryMetadataReads,
+  serializeDeliveryArtifactMetadata,
+} from './artifact-delivery-metadata.js';
 export type ConversationMessageLinks = {
   requestId?: string;
   callId?: string;
@@ -59,6 +62,10 @@ export type RequestLedgerRow = Pick<
 > & {
   account?: string;
   priceCurrency?: string;
+  providerKind?: string;
+  authMode?: string;
+  model?: string;
+  providerLabel?: string;
   usage: Pick<
     NonNullable<RequestRecord['usage']>,
     'inputTotal' | 'outputTotal' | 'cost' | 'cacheRead' | 'ttftMs'
@@ -79,6 +86,10 @@ function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
     reservedCost: entity.reservedCost,
     account: entity.providerBinding?.account,
     priceCurrency: entity.providerBinding?.prices?.currency,
+    providerKind: entity.providerBinding?.kind,
+    authMode: entity.providerBinding ? (entity.providerBinding.authMode ?? 'apiKey') : undefined,
+    model: entity.providerBinding?.model,
+    providerLabel: entity.providerBinding?.label,
     usage: entity.usage
       ? {
           inputTotal: entity.usage.inputTotal,
@@ -229,7 +240,7 @@ function projection(table: Table, entity: any) {
             : null,
         }
       : {}),
-    ...(table === 'requests' ? { requestLedgerVersion: 1, requestLedger: ledgerProjection(entity) } : {}),
+    ...(table === 'requests' ? { requestLedgerVersion: 2, requestLedger: ledgerProjection(entity) } : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages'
       ? {

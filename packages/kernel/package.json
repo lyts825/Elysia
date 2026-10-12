@@ -1,6 +1,6 @@
 {
   "name": "@elysia/kernel",
-  "version": "1.0.0-preview.4",
+  "version": "1.0.0-preview.5",
   "private": true,
   "type": "module"
 }
