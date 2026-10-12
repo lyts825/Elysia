@@ -7,6 +7,7 @@ import type {
 import type { WorkbenchCache } from './WorkbenchCache';
 import {
   boardToEdit,
+  itemLaunchContent,
   projectBoardKey,
   readProjectBoardDraft,
   writeProjectBoardDraft,
@@ -16,6 +17,8 @@ import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
 import { ProjectBoardItem, readinessLabels } from './ProjectBoardItem';
 import { ProjectRunList } from './ProjectRunList';
 import { ProjectManifests } from './ProjectManifests';
+import { ProjectTodos } from './ProjectTodos';
+import { ProjectLaunchDraft } from './ProjectLaunchDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-workbench.css';
 
@@ -163,21 +166,11 @@ export function ProjectWorkbench({
     change((value) => ({
       ...value,
       launch: {
+        ...itemLaunchContent(board, item),
+        baseline: itemLaunchContent(board, item),
         itemId: item.id,
         itemRevision: item.itemRevision,
         expectedRevision: board.revision,
-        title: item.title,
-        objective: [
-          item.title,
-          item.description,
-          board.goal && `项目目标：${board.goal}`,
-          board.scope.length && `项目范围：\n${board.scope.join('\n')}`,
-          board.nonGoals.length && `不做事项：\n${board.nonGoals.join('\n')}`,
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-        deliverables: item.deliverables.join('\n'),
-        acceptanceCriteria: item.acceptanceCriteria.join('\n'),
       },
     }));
     if (readProjectBoardDraft(cache.get(projectBoardKey(project.id))).launch?.itemId === item.id) launch();
@@ -254,6 +247,7 @@ export function ProjectWorkbench({
             <p className="field-help">项目已归档，可查看历史与草稿。恢复项目后才能修改交付计划。</p>
           )}
           <div className="project-counts">
+            {!!error && <span role="status">以下为上次读取的统计，当前状态未知</span>}
             <span>
               <b>
                 {board.counts.requiredReady}/{board.counts.required}
@@ -282,51 +276,25 @@ export function ProjectWorkbench({
             </section>
           )}
           {draft.launch && (
-            <section className="project-launch-draft">
-              <strong>待创建：{draft.launch.title}</strong>
-              <p>来源项目标准版本 {draft.launch.itemRevision}，草稿保留了当时的目标和标准。</p>
-              {draft.launch.expectedRevision !== board.revision && (
-                <p className="field-error">项目计划已变化。请核对当前交付项后再继续，旧输入不会自动替换。</p>
-              )}
-              <div className="project-actions">
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy || board.archived || draft.launch.expectedRevision !== board.revision}
-                  onClick={launch}
-                >
-                  继续创建草稿
-                </button>
-                {draft.launch.expectedRevision !== board.revision && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!board.items.some((item) => item.id === draft!.launch!.itemId)}
-                    onClick={() =>
-                      change((value) => ({
-                        ...value,
-                        launch: { ...value.launch!, expectedRevision: board.revision },
-                      }))
-                    }
-                  >
-                    已核对当前计划，保留草稿继续
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="secondary danger"
-                  disabled={busy}
-                  onClick={() => change((value) => ({ ...value, launch: undefined }))}
-                >
-                  移除此创建草稿
-                </button>
-              </div>
-            </section>
+            <ProjectLaunchDraft
+              board={board}
+              draft={draft.launch}
+              busy={busy || !!error}
+              launch={launch}
+              change={(next) =>
+                change((value) => {
+                  if (JSON.stringify(value.launch) !== JSON.stringify(draft!.launch))
+                    throw Error('创建草稿已变化，请重新核对。原输入已保留。');
+                  return { ...value, launch: next };
+                })
+              }
+              remove={() => change((value) => ({ ...value, launch: undefined }))}
+            />
           )}
           <nav className="project-tabs" aria-label="项目工作台页面">
             {(
               [
-                ['overview', '目标与范围'],
+                ['overview', '项目总览'],
                 ['items', '交付清单'],
                 ['executions', '关联与执行'],
                 ['manifests', '汇总交付'],
@@ -346,13 +314,10 @@ export function ProjectWorkbench({
           {draft.editing && draft.edit ? (
             <ProjectBoardEditor
               edit={draft.edit}
-              revision={board.revision}
-              busy={busy || board.archived}
+              board={board}
+              busy={busy || board.archived || !!error}
               change={(edit) => change((value) => ({ ...value, edit }))}
               close={() => change((value) => ({ ...value, editing: false }))}
-              rebase={() =>
-                change((value) => ({ ...value, edit: { ...value.edit!, basedOn: board.revision } }))
-              }
               save={() => {
                 const sent = JSON.stringify(draft!.edit);
                 void action(
@@ -396,48 +361,62 @@ export function ProjectWorkbench({
                 </div>
               )}
               {draft.tab === 'overview' && (
-                <section className="project-overview">
-                  <h2>项目目标</h2>
-                  <p className="project-prose">
-                    {board.goal || '先描述项目希望达成的结果，再定义可验收的交付项。'}
-                  </p>
-                  <div className="project-form-columns">
-                    <div>
-                      <h3>范围</h3>
-                      {board.scope.length ? (
-                        <ul>
-                          {board.scope.map((text, index) => (
-                            <li key={index}>{text}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="field-help">尚未填写范围。</p>
-                      )}
+                <>
+                  <ProjectTodos
+                    board={board}
+                    unavailable={!!error}
+                    selectItem={(selected) =>
+                      change((value) => ({ ...value, tab: 'items', filter: 'all', selected, editing: false }))
+                    }
+                    openRun={(itemId, id, review) => {
+                      change((value) => ({ ...value, selected: itemId }));
+                      void navigate(id, review);
+                    }}
+                    manifests={() => change((value) => ({ ...value, tab: 'manifests' }))}
+                  />
+                  <section className="project-overview">
+                    <h2>项目目标</h2>
+                    <p className="project-prose">
+                      {board.goal || '先描述项目希望达成的结果，再定义可验收的交付项。'}
+                    </p>
+                    <div className="project-form-columns">
+                      <div>
+                        <h3>范围</h3>
+                        {board.scope.length ? (
+                          <ul>
+                            {board.scope.map((text, index) => (
+                              <li key={index}>{text}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="field-help">尚未填写范围。</p>
+                        )}
+                      </div>
+                      <div>
+                        <h3>不做事项</h3>
+                        {board.nonGoals.length ? (
+                          <ul>
+                            {board.nonGoals.map((text, index) => (
+                              <li key={index}>{text}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="field-help">尚未填写不做事项。</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h3>不做事项</h3>
-                      {board.nonGoals.length ? (
-                        <ul>
-                          {board.nonGoals.map((text, index) => (
-                            <li key={index}>{text}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="field-help">尚未填写不做事项。</p>
-                      )}
-                    </div>
-                  </div>
-                  <p className="field-help">
-                    执行完成、人工采纳、原意见复验和项目标准符合性分别确认。只有满足全部条件的候选才能纳入冻结清单。
-                  </p>
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => change((value) => ({ ...value, tab: 'items' }))}
-                  >
-                    查看交付清单
-                  </button>
-                </section>
+                    <p className="field-help">
+                      执行完成、人工采纳、原意见复验和项目标准符合性分别确认。只有满足全部条件的候选才能纳入冻结清单。
+                    </p>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => change((value) => ({ ...value, tab: 'items' }))}
+                    >
+                      查看交付清单
+                    </button>
+                  </section>
+                </>
               )}
               {draft.tab === 'items' && (
                 <>

@@ -49,20 +49,21 @@ export function ProjectItemSetup({
   }
   const [objective, setObjective] = useState(first.current.launch?.objective || '');
   const launch = first.current.launch;
+  const lastSaved = useRef(launch);
+  const saveLaunch = (patch: Partial<NonNullable<ProjectBoardDraft['launch']>>) => {
+    const current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
+    if (!launch || !current || JSON.stringify(current) !== JSON.stringify(lastSaved.current))
+      throw Error('创建来源草稿已变化或移除，请返回项目工作台核对。当前表单仍保留。');
+    const next = { ...current, ...patch };
+    writeProjectBoardDraft(cache, projectId, (value) => ({ ...value, launch: next }));
+    // Compare normalized persisted shapes: adding setupRaw can change object key order.
+    lastSaved.current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
+    return lastSaved.current;
+  };
   const save = (setup: RunSetupDraft): NonNullable<ProjectBoardDraft['launch']> | undefined => {
     try {
       const raw = writeRunSetupDraft(setup);
-      const current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
-      if (
-        !launch ||
-        !current ||
-        current.itemId !== launch.itemId ||
-        current.itemRevision !== launch.itemRevision ||
-        current.expectedRevision !== launch.expectedRevision
-      )
-        throw Error('创建来源草稿已变化，请返回项目工作台核对。当前表单仍保留。');
-      const next = { ...current, objective, setupRaw: raw };
-      writeProjectBoardDraft(cache, projectId, (value) => ({ ...value, launch: next }));
+      const next = saveLaunch({ objective, setupRaw: raw });
       setError('');
       return next;
     } catch (issue) {
@@ -103,6 +104,11 @@ export function ProjectItemSetup({
           <p className="field-help">
             核对目标、交付物、权限与预算后明确创建。允许调整本次执行要求；创建只关联为候选，不代表已符合项目标准。
           </p>
+          {first.current.initial && (
+            <p className="field-help">
+              已恢复上次保存的创建配置。本次交付物和验收标准采用下方表单中的保留值，可继续编辑；不会自动替换为项目标准。
+            </p>
+          )}
           <label>
             本次任务目标
             <textarea
@@ -113,10 +119,7 @@ export function ProjectItemSetup({
                 const value = e.target.value;
                 setObjective(value);
                 try {
-                  writeProjectBoardDraft(cache, projectId, (draft) => ({
-                    ...draft,
-                    launch: { ...draft.launch!, objective: value },
-                  }));
+                  saveLaunch({ objective: value });
                   setError('');
                 } catch (issue) {
                   setError(issue instanceof Error ? issue.message : '目标草稿保存失败');

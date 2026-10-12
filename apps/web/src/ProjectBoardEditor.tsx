@@ -1,6 +1,12 @@
-import { ProjectDeliveryBoardInput } from '../../../packages/contracts/src/project-delivery';
+import { useState } from 'react';
+import {
+  ProjectDeliveryBoardInput,
+  type ProjectDeliveryBoard,
+} from '../../../packages/contracts/src/project-delivery';
 import type { ProjectBoardEdit } from './ProjectBoardDraft';
-import { boardLines } from './ProjectBoardDraft';
+import { boardLines, boardSnapshot } from './ProjectBoardDraft';
+import { mergeProjectPlan, type MergeChoices } from './ProjectDraftMerge';
+import { ProjectDraftComparison } from './ProjectDraftComparison';
 
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
@@ -18,20 +24,30 @@ export function boardEditPayload(edit: ProjectBoardEdit) {
 export function ProjectBoardEditor({
   edit,
   busy,
-  revision,
+  board,
   change,
   save,
   close,
-  rebase,
 }: {
   edit: ProjectBoardEdit;
   busy: boolean;
-  revision: number;
+  board: ProjectDeliveryBoard;
   change: (edit: ProjectBoardEdit) => void;
   save: () => void;
   close: () => void;
-  rebase: () => void;
 }) {
+  const current = boardSnapshot(board);
+  const comparisonKey = JSON.stringify([board.revision, current, edit]);
+  const [selection, setSelection] = useState<{ key: string; choices: MergeChoices }>({
+    key: '',
+    choices: {},
+  });
+  const comparison = mergeProjectPlan(
+    edit,
+    current,
+    selection.key === comparisonKey ? selection.choices : {},
+  );
+  const needsMerge = edit.basedOn !== board.revision || (!edit.baseline && !edit.baselineOmitted);
   const valid = ProjectDeliveryBoardInput.safeParse({
     commandId: '00000000-0000-4000-8000-000000000000',
     ...boardEditPayload(edit),
@@ -47,13 +63,51 @@ export function ProjectBoardEditor({
       <p className="field-help">
         保存只更新项目说明和交付项，不会重写已创建任务。已有关联候选需按变更后的标准重新确认。
       </p>
-      {edit.basedOn !== revision && (
-        <div className="field-error" role="alert">
-          项目已从版本 {edit.basedOn} 更新到 {revision}。输入已保留，请返回查看当前计划，再明确以此草稿替换。
-          <button type="button" className="secondary" onClick={rebase} disabled={busy}>
-            已核对最新计划，保留输入继续
+      {edit.baselineOmitted && (
+        <p className="field-help" role="status">
+          此草稿正文较大，原始基线因保存容量限制未保留；用户输入完整保留。保存仍校验计划版本，若计划变化，所有差异需逐项明确选择。
+        </p>
+      )}
+      {needsMerge && (
+        <section className="project-draft-comparison" aria-label="计划变更对照">
+          <h3>计划变更对照</h3>
+          <p role="status">
+            草稿基于版本 {edit.basedOn}，当前计划版本 {board.revision}
+            。请核对原始、当前和本人内容，再合并到当前版本。
+          </p>
+          {!edit.baseline && (
+            <p className="field-error">
+              旧草稿没有原始基线，无法判断哪些字段被修改。所有不一致内容均需逐项选择，原稿在合并前保留。
+            </p>
+          )}
+          <ProjectDraftComparison
+            differences={comparison.differences}
+            busy={busy}
+            choose={(key, choice) =>
+              setSelection({
+                key: comparisonKey,
+                choices: { ...(selection.key === comparisonKey ? selection.choices : {}), [key]: choice },
+              })
+            }
+          />
+          {comparison.unresolved > 0 && (
+            <p className="field-error">还有 {comparison.unresolved} 项冲突待选择，尚不能保存项目计划。</p>
+          )}
+          {comparison.result.items.length > 40 && (
+            <p className="field-error">合并后超过 40 个交付项，请先在下方移除不再需要的草稿新增项。</p>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => change({ ...comparison.result, basedOn: board.revision, baseline: current })}
+            disabled={busy || comparison.unresolved > 0 || comparison.result.items.length > 40}
+          >
+            合并到当前计划版本
           </button>
-        </div>
+          <p className="field-help">
+            合并只更新此草稿；核对后仍需保存项目计划。若当前计划再次变化，将重新对照。
+          </p>
+        </section>
       )}
       <fieldset disabled={busy}>
         <label>
@@ -206,7 +260,7 @@ export function ProjectBoardEditor({
       <button
         type="button"
         className="primary"
-        disabled={busy || !valid.success || edit.basedOn !== revision}
+        disabled={busy || !valid.success || needsMerge}
         onClick={save}
       >
         {busy ? '正在保存…' : '保存项目计划'}

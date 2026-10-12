@@ -1,0 +1,198 @@
+import { useState } from 'react';
+import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
+import { itemLaunchContent, type ProjectBoardDraft, type ProjectLaunchContent } from './ProjectBoardDraft';
+import { readRunSetupDraft, writeRunSetupDraft, type RunSetupDraft } from './RunSetupDraft';
+import { mergeProjectLaunch, type MergeChoices } from './ProjectDraftMerge';
+import { ProjectDraftComparison } from './ProjectDraftComparison';
+
+type Launch = NonNullable<ProjectBoardDraft['launch']>;
+export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
+  const setup = readRunSetupDraft(launch.setupRaw);
+  return {
+    title: launch.title,
+    objective: launch.objective,
+    deliverables: setup?.deliverables ?? launch.deliverables,
+    acceptanceCriteria: setup?.acceptanceCriteria ?? launch.acceptanceCriteria,
+  };
+}
+export function ProjectLaunchDraft({
+  board,
+  draft,
+  busy,
+  change,
+  launch,
+  remove,
+}: {
+  board: ProjectDeliveryBoard;
+  draft: Launch;
+  busy: boolean;
+  change: (draft: Launch) => void;
+  launch: () => void;
+  remove: () => void;
+}) {
+  const item = board.items.find((entry) => entry.id === draft.itemId);
+  const current = item ? itemLaunchContent(board, item) : undefined;
+  let setup: RunSetupDraft | undefined,
+    mine: ProjectLaunchContent | undefined,
+    parseError = '';
+  try {
+    setup = readRunSetupDraft(draft.setupRaw);
+    mine = effectiveLaunchContent(draft);
+  } catch (issue) {
+    parseError = issue instanceof Error ? issue.message : '创建配置无法读取，原稿已保留。';
+  }
+  const comparisonKey = JSON.stringify([board.revision, current, draft]);
+  const [selection, setSelection] = useState<{ key: string; choices: MergeChoices }>({
+    key: '',
+    choices: {},
+  });
+  const [applyError, setApplyError] = useState('');
+  const comparison =
+    current && mine
+      ? mergeProjectLaunch(
+          draft.baseline,
+          current,
+          mine,
+          selection.key === comparisonKey ? selection.choices : {},
+        )
+      : undefined;
+  const needsMerge =
+    draft.expectedRevision !== board.revision ||
+    draft.itemRevision !== item?.itemRevision ||
+    (!draft.baseline && !draft.baselineOmitted);
+  const retained =
+    current &&
+    mine &&
+    (mine.objective !== current.objective ||
+      mine.deliverables !== current.deliverables ||
+      mine.acceptanceCriteria !== current.acceptanceCriteria);
+  return (
+    <section className="project-launch-draft" aria-label="交付项创建草稿">
+      <strong>待创建：{draft.title}</strong>
+      <p>
+        来源项目标准版本 {draft.itemRevision}，当前标准版本 {item?.itemRevision ?? '已移除'}。
+      </p>
+      {draft.baselineOmitted && (
+        <p className="field-help" role="status">
+          此草稿正文较大，原始基线因保存容量限制未保留；目标、要求和创建配置完整保留。创建仍校验计划版本，若计划变化，所有差异需逐项明确选择。
+        </p>
+      )}
+      {parseError && (
+        <p className="field-error" role="alert">
+          {parseError}
+        </p>
+      )}
+      {applyError && (
+        <p className="field-error" role="alert">
+          {applyError}
+        </p>
+      )}
+      {!item && (
+        <p className="field-error" role="alert">
+          来源交付项已从当前计划移除。创建草稿仍保留，不能继续关联已移除的交付项。
+        </p>
+      )}
+      {needsMerge && comparison && (
+        <section className="project-draft-comparison" aria-label="创建草稿变更对照">
+          <h3>创建草稿变更对照</h3>
+          <p>
+            项目计划从版本 {draft.expectedRevision} 变为 {board.revision}
+            。本人草稿列显示创建表单实际采用的目标、交付物和验收标准。
+          </p>
+          {!draft.baseline && (
+            <p className="field-error">
+              旧创建草稿没有原始基线，所有不一致内容需逐项选择。已保存的配置与用户输入会保留。
+            </p>
+          )}
+          <ProjectDraftComparison
+            differences={comparison.differences}
+            busy={busy}
+            choose={(key, choice) =>
+              setSelection({
+                key: comparisonKey,
+                choices: { ...(selection.key === comparisonKey ? selection.choices : {}), [key]: choice },
+              })
+            }
+          />
+          {comparison.unresolved > 0 && (
+            <p className="field-error">还有 {comparison.unresolved} 项冲突待选择。</p>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || board.archived || comparison.unresolved > 0}
+            onClick={() => {
+              if (!item || !current) return;
+              const next = comparison.result;
+              try {
+                change({
+                  ...draft,
+                  ...next,
+                  expectedRevision: board.revision,
+                  itemRevision: item.itemRevision,
+                  baseline: current,
+                  ...(setup
+                    ? {
+                        setupRaw: writeRunSetupDraft({
+                          ...setup,
+                          deliverables: next.deliverables,
+                          acceptanceCriteria: next.acceptanceCriteria,
+                        }),
+                      }
+                    : {}),
+                });
+                setApplyError('');
+              } catch (issue) {
+                setApplyError(issue instanceof Error ? issue.message : '创建草稿保存失败，原稿已保留。');
+              }
+            }}
+          >
+            应用对照结果到创建草稿
+          </button>
+          <p className="field-help">
+            此操作保留模型、权限和预算等创建配置。创建任务后仍需按当前项目标准复核与确认。
+          </p>
+        </section>
+      )}
+      {retained && mine && (
+        <details className="project-retained-requirements" open>
+          <summary>创建表单仍采用保留或自定义内容</summary>
+          <p className="field-help">
+            以下值与当前项目说明或标准不同；继续创建后可直接编辑，不会自动覆盖用户设置。
+          </p>
+          {mine.objective !== current!.objective && (
+            <div>
+              <strong>本次任务目标</strong>
+              <p className="project-prose">{mine.objective || '（空）'}</p>
+            </div>
+          )}
+          {mine.deliverables !== current!.deliverables && (
+            <div>
+              <strong>本次交付物</strong>
+              <p className="project-prose">{mine.deliverables || '（空）'}</p>
+            </div>
+          )}
+          {mine.acceptanceCriteria !== current!.acceptanceCriteria && (
+            <div>
+              <strong>本次验收标准</strong>
+              <p className="project-prose">{mine.acceptanceCriteria || '（空）'}</p>
+            </div>
+          )}
+        </details>
+      )}
+      <div className="project-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || board.archived || needsMerge || !item || !!parseError}
+          onClick={launch}
+        >
+          继续创建草稿
+        </button>
+        <button type="button" className="secondary danger" disabled={busy} onClick={remove}>
+          移除此创建草稿
+        </button>
+      </div>
+    </section>
+  );
+}

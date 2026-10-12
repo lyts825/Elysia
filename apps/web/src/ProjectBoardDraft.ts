@@ -10,6 +10,18 @@ const item = z.object({
   acceptanceCriteria: z.string(),
   required: z.boolean(),
 });
+const plan = z.object({
+  goal: z.string(),
+  scope: z.string(),
+  nonGoals: z.string(),
+  items: z.array(item).max(40),
+});
+const launchContent = z.object({
+  title: z.string(),
+  objective: z.string(),
+  deliverables: z.string(),
+  acceptanceCriteria: z.string(),
+});
 const shape = z.object({
   version: z.literal(1),
   tab: z.enum(['overview', 'items', 'executions', 'manifests']),
@@ -25,6 +37,8 @@ const shape = z.object({
       scope: z.string(),
       nonGoals: z.string(),
       items: z.array(item).max(40),
+      baseline: plan.optional(),
+      baselineOmitted: z.literal('size').optional(),
     })
     .optional(),
   launch: z
@@ -37,6 +51,8 @@ const shape = z.object({
       deliverables: z.string(),
       acceptanceCriteria: z.string(),
       setupRaw: z.string().optional(),
+      baseline: launchContent.optional(),
+      baselineOmitted: z.literal('size').optional(),
     })
     .optional(),
   manifest: z
@@ -51,6 +67,8 @@ const shape = z.object({
 });
 export type ProjectBoardDraft = z.infer<typeof shape>;
 export type ProjectBoardEdit = NonNullable<ProjectBoardDraft['edit']>;
+export type ProjectPlanSnapshot = z.infer<typeof plan>;
+export type ProjectLaunchContent = z.infer<typeof launchContent>;
 export const projectBoardKey = (id: string) => `draft:project-board:${id}`;
 export const emptyBoardDraft = (): ProjectBoardDraft => ({
   version: 1,
@@ -75,16 +93,33 @@ export function writeProjectBoardDraft(
   projectId: string,
   update: (draft: ProjectBoardDraft) => ProjectBoardDraft,
 ) {
-  const value = update(readProjectBoardDraft(cache.get(projectBoardKey(projectId))));
+  let value = update(readProjectBoardDraft(cache.get(projectBoardKey(projectId))));
   if (!shape.safeParse(value).success)
     throw Error('本次草稿结构无法保存，原稿已保留。请返回项目工作台重新读取。');
-  const raw = JSON.stringify(value);
+  // A valid pre-existing draft must not become uneditable because its snapshot doubles storage.
+  // Only optional baselines may be dropped; a later revision then requires explicit comparison.
+  for (const key of ['edit', 'launch'] as const) {
+    const content = value[key];
+    if (content?.baseline && content.baselineOmitted)
+      value = { ...value, [key]: { ...content, baselineOmitted: undefined } };
+  }
+  let raw = JSON.stringify(value);
+  const baselines = (['edit', 'launch'] as const).toSorted(
+    (a, b) =>
+      (JSON.stringify(value[b]?.baseline)?.length ?? 0) - (JSON.stringify(value[a]?.baseline)?.length ?? 0),
+  );
+  for (const key of baselines) {
+    const content = value[key];
+    if (raw.length <= 200000) break;
+    if (!content?.baseline) continue;
+    value = { ...value, [key]: { ...content, baseline: undefined, baselineOmitted: 'size' } };
+    raw = JSON.stringify(value);
+  }
   if (raw.length > 200000) throw Error('项目工作台草稿超过 200000 字符，未覆盖原稿。请缩短本次输入后重试。');
   cache.set(projectBoardKey(projectId), raw);
   return value;
 }
-export const boardToEdit = (board: ProjectDeliveryBoard): ProjectBoardEdit => ({
-  basedOn: board.revision,
+export const boardSnapshot = (board: ProjectDeliveryBoard): ProjectPlanSnapshot => ({
   goal: board.goal,
   scope: board.scope.join('\n'),
   nonGoals: board.nonGoals.join('\n'),
@@ -96,6 +131,27 @@ export const boardToEdit = (board: ProjectDeliveryBoard): ProjectBoardEdit => ({
     acceptanceCriteria: acceptanceCriteria.join('\n'),
     required,
   })),
+});
+export const boardToEdit = (board: ProjectDeliveryBoard): ProjectBoardEdit => {
+  const baseline = boardSnapshot(board);
+  return { basedOn: board.revision, ...structuredClone(baseline), baseline };
+};
+export const itemLaunchContent = (
+  board: ProjectDeliveryBoard,
+  item: ProjectDeliveryBoard['items'][number],
+): ProjectLaunchContent => ({
+  title: item.title,
+  objective: [
+    item.title,
+    item.description,
+    board.goal && `项目目标：${board.goal}`,
+    board.scope.length && `项目范围：\n${board.scope.join('\n')}`,
+    board.nonGoals.length && `不做事项：\n${board.nonGoals.join('\n')}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n'),
+  deliverables: item.deliverables.join('\n'),
+  acceptanceCriteria: item.acceptanceCriteria.join('\n'),
 });
 export const boardLines = (text: string) =>
   text
