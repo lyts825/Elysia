@@ -195,27 +195,45 @@ export function registerProjectDeliveryWarm(
       const terminal = [...jobs.values()].find((job) => job.view.status !== 'warming');
       if (terminal) jobs.delete(terminal.view.jobId);
     }
-    if (jobs.size >= 64 || [...jobs.values()].filter((job) => job.view.status === 'warming').length >= 2)
+    if (jobs.size >= 64)
       throw new AppError('DELIVERY_WARM_BUSY', '正在准备其他项目读取，请稍后重试', true, null, 429);
-    const { source, total, epochs } = store.tx(() => {
+    const { source, total, epochs, needsWarm, unavailableRuns } = store.tx(() => {
       const source = sourceFor(request.params.id);
+      let total = 0,
+        needsWarm = false,
+        unavailableRuns = 0;
+      for (const runId of source.runs) {
+        const count = countFor(request.params.id, runId);
+        if (count === null) {
+          unavailableRuns++;
+          continue;
+        }
+        total += count;
+        needsWarm ||= !!store.db
+          .prepare('SELECT 1 FROM artifact_delivery_metadata_dirty_v1 WHERE run_id=? LIMIT 1')
+          .get(runId);
+      }
       return {
         source,
-        total: source.runs.reduce((sum, runId) => sum + (countFor(request.params.id, runId) ?? 0), 0),
+        total,
         epochs: source.runs.map(epoch),
+        needsWarm,
+        unavailableRuns,
       };
     });
+    if (needsWarm && [...jobs.values()].filter((job) => job.view.status === 'warming').length >= 2)
+      throw new AppError('DELIVERY_WARM_BUSY', '正在准备其他项目读取，请稍后重试', true, null, 429);
     const job: Job = {
       view: {
         projectId: request.params.id,
         jobId,
-        status: 'warming',
-        scanned: 0,
+        status: needsWarm ? 'warming' : 'completed',
+        scanned: needsWarm ? 0 : total,
         total,
         backfilled: 0,
-        completedRuns: 0,
+        completedRuns: needsWarm ? 0 : source.runs.length,
         totalRuns: source.runs.length,
-        unavailableRuns: 0,
+        unavailableRuns: needsWarm ? 0 : unavailableRuns,
       },
       session,
       source,
@@ -224,7 +242,7 @@ export function registerProjectDeliveryWarm(
       controller: new AbortController(),
     };
     jobs.set(jobId, job);
-    job.work = drain(job);
+    if (needsWarm) job.work = drain(job);
     return reply.status(202).send(structuredClone(job.view));
   });
   app.get<{ Params: { id: string; jobId: string } }>(root + '/:jobId', (request) => {

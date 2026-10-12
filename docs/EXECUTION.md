@@ -1,5 +1,25 @@
 # Elysia 首版执行文档
 
+## 当前迭代：preview.8 工作台后台刷新
+
+2026-10-12，db7e508 / v1.0.0-preview.7 → v1.0.0-preview.8，沿用codex/initial-build，开始时工作区干净。用户授权思考改进并完成一个小版本；本轮聚焦健康项目准备直接完成及后台刷新无干扰，旧库进度/独立取消保留。旧request账本首次规模回填、模板与稳定版验收继续单列，不扩大本轮。主代理负责界面、整合与版本，后端代理负责准备快读，独立代理负责API/生产UI验收。仅使用隔离材料，不触及正式profile或模型/凭据。
+
+| 里程碑 | 状态 | 验收 |
+| --- | --- | --- |
+| 健康项目准备 | 已完成 | 无dirty合法任务时POST即completed，不创建Run子作业；两个慢项目准备不阻断健康项目，异常关联保留缺口 |
+| 后台刷新体验 | 已完成 | 健康项目15秒刷新无进度/按钮闪烁；初次和手动读取可见，出现dirty仍显示真实准备及独立取消 |
+| 本地预览交付 | 已完成 | 必要API/最终生产UI、类型/构建与差异核对通过；版本同步，正式提交及本地标签；测试材料不入Git |
+
+实现仅两份功能源码：项目准备同事务捕获source/epochs，核对本项目native task后检查dirty；无需回填则同步返回completed及完整计数，不创建Run子作业或占慢项目并发槽，仍保留UUID/会话绑定、64条短期回执与取消真值。工作台首次/手动读取显示状态，后续15秒后台刷新只有实际warming才显示进度，取消仍停止本窗口并待显式刷新。
+
+基线4BYvY8：3个健康Run/9产物POST仍warming、3个child；两dirty项目运行时clean返回429。修复o71mGL共6组通过：clean即时completed、0child/0batch；双慢时clean202而第三dirty仍429；绑定、终态取消、3项非法关联缺口、实际回填与版本变化409、70次回执有界淘汰。一次版本竞态夹具在8条单批已完成后才改source，改为128条实际pending后通过，原断言保留。真实全路由source-CYid95：clean70产物回执完成后另一SQLite连接raw改正文，随后board读取补1batch、指纹变化且元数据/原文一致，旧回执不冒充新交付，完整性ok。最终dist核心2组pyTAEf通过；无新增依赖，schema6/minimumReader preview.6不变。
+
+独立生产UI3组通过（project-refresh-production-preview8-summary.json）：旧main BI3QY06L基线6oG5j8，每轮POST+job GET+board GET共3请求、首读+自动两次共6 child，后台进度/按钮闪现；最终main DaSIp4lQ的健康轮询2请求、0job GET/0child、无进度/按钮变化，初次/手动仍可见。真实新增1600产物并使metadata失效后，双窗口显示进度，一窗取消保留原数值及草稿、标明当前状态未知，另一窗完成；GET失败重试、迟到POST跨项目隔离及返回旧项目草稿保持。首轮夹具将取消后的正常未知前缀当作统计变化，改为逐数值/版本span保持并单独要求未知提示，原断言与失败诊断保留；已过clean组xu9fDT不重复，只补两组focus-l5I7a4。root已目视1440正常总览及320回填/草稿页，无横向溢出。为观察进度，隔离夹具对实际批处理额外加80ms；不作为回填性能测量。
+
+全类型、server/Vite生产构建、功能源码格式/差异及11份package清单+contract VERSION一致性通过。主包index-DaSIp4lQ.js432.88kB，ProjectWorkbench-DSL0L-Ub.js63.74kB；正式改动凭据模式扫描无匹配。本次提交由本地标签v1.0.0-preview.8定位，未推送/发布/重载正式窗口，正式profile未变。生产测试模型/外网/credentials/Docker均0，两库完整性ok；Node/Electron正常退出，3个隔离listener确认关闭，相关进程0。必要复现、截图及失败诊断均在忽略目录，不纳入Git。首次QA框架addHook时机错误留下无报告的.local-qa/project-refresh-production-preview8-baseline-iK7w8P（仅两空Store及wal），核实绝对范围后的递归清理被自动审批以blocked by policy拒绝；已保留，不绕过或重试。这一冗余目录清理未完成，不影响正式源码和已通过验收。
+
+下一优先方向：先实测旧request账本1k/10k首次回填与取消延迟，再决定用量首读准备流程。当前每32项yield已存在，但单GET仍受15秒期限，现代账本规模证据不能代替旧库首次回填；本轮不声明该缺口已解决。
+
 ## 当前迭代：v1.0 交付留存与持续使用
 
 2026-10-12，基线7f3eef6 / v1.0.0-preview.5，codex/initial-build，开始时工作区干净。用户授权落地上一轮建议，分为preview.6交付包留存、preview.7用量分页与旧库/删除读取优化。稳定版发布、项目模板与依赖继续单独验收。本轮只用隔离材料验证，不触及正式profile，不重新删除此前被拒的目录。

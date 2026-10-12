@@ -81,14 +81,25 @@ export function ProjectWorkbench({
   useEffect(() => {
     const controller = new AbortController();
     readRequest.current = controller;
-    let pending = false;
+    let pending = false,
+      firstRead = true;
     const read = async () => {
       if (pending || writing.current || controller.signal.aborted) return;
       pending = true;
-      setLoading(true);
-      setProgress(undefined);
+      let visible = firstRead;
+      firstRead = false;
+      if (visible) {
+        setLoading(true);
+        setProgress(undefined);
+      }
       try {
-        await prepareDeliveryRead(api, { kind: 'project', id: project.id }, controller.signal, setProgress);
+        await prepareDeliveryRead(api, { kind: 'project', id: project.id }, controller.signal, (next) => {
+          if (!controller.signal.aborted && (visible || next.status === 'warming')) {
+            visible = true;
+            setLoading(true);
+            setProgress(next);
+          }
+        });
         const result = await api<ProjectDeliveryBoard>(
           `/projects/${project.id}/delivery-board`,
           undefined,
