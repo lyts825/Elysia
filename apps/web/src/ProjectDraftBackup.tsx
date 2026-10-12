@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WorkbenchCache } from './WorkbenchCache';
 import { projectBoardKey } from './ProjectBoardDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -6,7 +6,9 @@ import {
   PROJECT_DRAFT_BACKUP_FILE_LIMIT,
   createProjectDraftBackup,
   decodeProjectDraftBackup,
+  deleteProjectDraftProtection,
   projectDraftProtectionKey,
+  projectDraftProtectionInfo,
   restoreProjectDraftWithProtection,
   readProjectDraftBackup,
   type ProjectDraftBackupBinding,
@@ -14,8 +16,8 @@ import {
 } from './project-draft-backup';
 import './project-draft-backup.css';
 
-function download(raw: string, name: string) {
-  const url = URL.createObjectURL(new Blob([raw], { type: 'application/json;charset=utf-8' }));
+function download(raw: string, name: string, type = 'application/json;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([raw], { type }));
   try {
     const link = document.createElement('a');
     link.href = url;
@@ -48,8 +50,10 @@ export function ProjectDraftBackup({
   const ownerKey = JSON.stringify(binding);
   const [open, setOpen] = useState(false),
     [reading, setReading] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const busy = externalBusy || restoring;
+  const [restorePhase, setRestorePhase] = useState<'idle' | 'waiting' | 'critical'>('idle');
+  const [deleting, setDeleting] = useState(false);
+  const restoring = restorePhase !== 'idle';
+  const busy = externalBusy || restoring || deleting;
   const [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [protectedRaw, setProtectedRaw] = useState<string | null>(null);
@@ -61,10 +65,18 @@ export function ProjectDraftBackup({
   const [acknowledged, setAcknowledged] = useState(false),
     [replace, setReplace] = useState(false);
   const [downloadedProtection, setDownloadedProtection] = useState<string | null>(null);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null),
     generation = useRef(0),
     restoringNow = useRef(false);
+  const deletingNow = useRef(false),
+    restorePhaseNow = useRef<'idle' | 'waiting' | 'critical'>('idle');
   const restoreController = useRef<AbortController | undefined>(undefined);
+  const deleteController = useRef<AbortController | undefined>(undefined);
+  const protectionInfo = useMemo(
+    () => (protectedRaw === null ? undefined : projectDraftProtectionInfo(protectedRaw, binding)),
+    [protectedRaw, ownerKey],
+  );
   const currentRaw = () => {
     const value = cache.get(projectBoardKey(projectId));
     if (value === undefined || value === '') return '';
@@ -81,6 +93,7 @@ export function ProjectDraftBackup({
     setAcknowledged(false);
     setReplace(false);
     setDownloadedProtection(null);
+    setDeleteConfirmed(false);
     try {
       setProtectedRaw(readProtection());
     } catch (issue) {
@@ -98,11 +111,13 @@ export function ProjectDraftBackup({
       setAcknowledged(false);
       setReplace(false);
       setDownloadedProtection(null);
+      setDeleteConfirmed(false);
     };
     window.addEventListener('storage', onStorage);
     return () => {
       generation.current++;
       restoreController.current?.abort();
+      deleteController.current?.abort();
       window.removeEventListener('storage', onStorage);
     };
   }, [ownerKey]);
@@ -110,7 +125,12 @@ export function ProjectDraftBackup({
     setAcknowledged(false);
     setReplace(false);
     setDownloadedProtection(null);
+    setDeleteConfirmed(false);
   }, [raw]);
+  useEffect(() => {
+    setDeleteConfirmed(false);
+    setDownloadedProtection(null);
+  }, [protectedRaw]);
   const prepare = (backup: ProjectDraftBackupPreview) => {
     const protection = readProtection();
     setProtectedRaw(protection);
@@ -119,6 +139,7 @@ export function ProjectDraftBackup({
     setReplace(false);
     setDownloadedProtection(null);
     setNotice('');
+    setDeleteConfirmed(false);
     setError('');
     setOpen(true);
   };
@@ -131,6 +152,7 @@ export function ProjectDraftBackup({
     setPreview(undefined);
     setAcknowledged(false);
     setReplace(false);
+    setDeleteConfirmed(false);
     try {
       if (file.size > PROJECT_DRAFT_BACKUP_FILE_LIMIT) throw Error('备份文件超过 640 KiB，当前原稿未改动。');
       const bytes = await file.arrayBuffer();
@@ -149,8 +171,8 @@ export function ProjectDraftBackup({
   } catch {
     /* The explicit restore handler reports the unreadable current draft. */
   }
-  let differentProtection = !!preview?.protection;
-  if (preview?.protection) {
+  let differentProtection = preview?.protection !== undefined && preview.protection !== null;
+  if (preview && preview.protection !== null) {
     try {
       differentProtection =
         readProjectDraftBackup(preview.protection, binding).file.draftRaw !== preview.currentRaw;
@@ -159,7 +181,8 @@ export function ProjectDraftBackup({
     }
   }
   const protectionReady = !differentProtection || (replace && downloadedProtection === preview?.protection);
-  const backupName = (kind: string) => `elysia-workbench-${kind}-${projectId}-${crypto.randomUUID()}.json`;
+  const backupName = (kind: string, extension = 'json') =>
+    `elysia-workbench-${kind}-${projectId}-${crypto.randomUUID()}.${extension}`;
   const attempt = (action: () => void) => {
     try {
       action();
@@ -176,7 +199,8 @@ export function ProjectDraftBackup({
   const restore = async () => {
     if (!preview || restoringNow.current) return;
     restoringNow.current = true;
-    setRestoring(true);
+    restorePhaseNow.current = 'waiting';
+    setRestorePhase('waiting');
     setError('');
     setNotice('');
     const request = generation.current;
@@ -192,6 +216,10 @@ export function ProjectDraftBackup({
         expectedProtection: preview.protection,
         replace,
         signal: controller.signal,
+        onCritical: () => {
+          restorePhaseNow.current = 'critical';
+          setRestorePhase('critical');
+        },
         readCurrent: currentRaw,
         apply: (value) => cache.set(projectBoardKey(projectId), value),
         assertActive: () => {
@@ -208,6 +236,8 @@ export function ProjectDraftBackup({
       setPreview(undefined);
       setAcknowledged(false);
       setReplace(false);
+      setDeleteConfirmed(false);
+      setDownloadedProtection(null);
       restored();
       setNotice(
         '已替换本机工作台草稿，恢复前原稿已保留；等待工作台按当前缓存版本正常保存，请核对保存状态及旧引用。项目计划尚未保存，未执行任务。',
@@ -219,13 +249,75 @@ export function ProjectDraftBackup({
         } catch {
           /* Keep the last visible copy. */
         }
-        setError(issue instanceof Error ? issue.message : '草稿恢复失败，当前原稿和预览已保留。');
+        if (controller.signal.aborted && restorePhaseNow.current === 'waiting') {
+          setError('');
+          setNotice('已取消本次恢复等待。原稿、预览和恢复前副本保留，可重新尝试。');
+        } else setError(issue instanceof Error ? issue.message : '草稿恢复失败，当前原稿和预览已保留。');
       }
     } finally {
       restoringNow.current = false;
       if (restoreController.current === controller) {
         restoreController.current = undefined;
-        setRestoring(false);
+        restorePhaseNow.current = 'idle';
+        setRestorePhase('idle');
+      }
+    }
+  };
+  const deleteProtection = async () => {
+    if (
+      protectedRaw === null ||
+      deletingNow.current ||
+      !deleteConfirmed ||
+      downloadedProtection !== protectedRaw
+    )
+      return;
+    const expected = protectedRaw,
+      request = generation.current,
+      controller = new AbortController();
+    deletingNow.current = true;
+    deleteController.current = controller;
+    setDeleting(true);
+    setError('');
+    setNotice('');
+    try {
+      await deleteProjectDraftProtection({
+        locks: navigator.locks,
+        storage: localStorage,
+        current: binding,
+        expectedProtection: expected,
+        signal: controller.signal,
+        assertActive: () => {
+          if (
+            controller.signal.aborted ||
+            request !== generation.current ||
+            client.workbenchScope() !== binding.workbenchScope
+          )
+            throw Error('副本管理页面或工作台范围已变化，未删除副本。');
+        },
+      });
+      if (request !== generation.current) return;
+      setProtectedRaw(null);
+      setDownloadedProtection(null);
+      setDeleteConfirmed(false);
+      setAcknowledged(false);
+      setReplace(false);
+      setNotice('已删除当前项目在此浏览器中的恢复前副本。当前草稿、恢复预览和其他副本未改动。');
+    } catch (issue) {
+      if (request === generation.current) {
+        try {
+          setProtectedRaw(readProtection());
+        } catch {
+          /* Keep the last visible copy. */
+        }
+        setDownloadedProtection(null);
+        setDeleteConfirmed(false);
+        setError(issue instanceof Error ? issue.message : '副本删除失败，请重新核对。当前草稿和预览未改动。');
+      }
+    } finally {
+      deletingNow.current = false;
+      if (deleteController.current === controller) {
+        deleteController.current = undefined;
+        setDeleting(false);
       }
     }
   };
@@ -235,7 +327,7 @@ export function ProjectDraftBackup({
         <button
           type="button"
           className="secondary"
-          disabled={restoring}
+          disabled={restoring || deleting}
           onClick={() => {
             if (open) {
               generation.current++;
@@ -245,6 +337,7 @@ export function ProjectDraftBackup({
               setAcknowledged(false);
               setReplace(false);
               setDownloadedProtection(null);
+              setDeleteConfirmed(false);
             }
             setOpen((value) => !value);
           }}
@@ -294,39 +387,102 @@ export function ProjectDraftBackup({
                 if (file) void read(file);
               }}
             />
-            {protectedRaw && (
-              <>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() =>
-                    attempt(() => {
-                      download(protectedRaw, backupName('before-restore'));
-                      setDownloadedProtection(protectedRaw);
-                      setNotice('已发起恢复前副本下载，请确认文件已另存后再允许替换。');
-                    })
-                  }
-                >
-                  另存恢复前副本 JSON
-                </button>
+          </div>
+          {protectedRaw !== null && protectionInfo && (
+            <section className="project-draft-protection" aria-label="当前项目恢复前副本">
+              <h3>当前项目恢复前副本</h3>
+              <p>
+                副本时间：
+                {protectionInfo.createdAt ? (
+                  <time dateTime={protectionInfo.createdAt} title={protectionInfo.createdAt}>
+                    {new Date(protectionInfo.createdAt).toLocaleString('zh-CN')}
+                  </time>
+                ) : (
+                  '未知（副本无法读取）'
+                )}
+              </p>
+              <p>
+                {protectionInfo.readable ? 'JSON' : '原文'} UTF-8 文件大小：
+                {protectionInfo.bytes.toLocaleString('zh-CN')} 字节（
+                {(protectionInfo.bytes / 1024).toFixed(1)} KiB）。这是另存文件的大小，不表示浏览器剩余空间。
+              </p>
+              {!protectionInfo.readable && (
+                <p className="field-help">
+                  此副本格式或绑定无法读取。可先另存完整原文，再明确删除；不会尝试将损坏副本恢复为草稿。
+                </p>
+              )}
+              <div className="project-actions">
                 <button
                   type="button"
                   className="secondary"
                   disabled={busy}
+                  onClick={() =>
+                    attempt(() => {
+                      download(
+                        protectedRaw,
+                        backupName('before-restore', protectionInfo.readable ? 'json' : 'txt'),
+                        protectionInfo.readable
+                          ? 'application/json;charset=utf-8'
+                          : 'text/plain;charset=utf-8',
+                      );
+                      setDownloadedProtection(protectedRaw);
+                      setDeleteConfirmed(false);
+                      setNotice('已发起恢复前副本另存，请确认文件保存完成后再允许替换或删除。');
+                    })
+                  }
+                >
+                  {protectionInfo.readable ? '另存恢复前副本 JSON' : '另存恢复前副本原文'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || !protectionInfo.readable}
                   onClick={() => attempt(() => prepare(readProjectDraftBackup(protectedRaw, binding)))}
                 >
                   预览恢复前副本
                 </button>
-              </>
-            )}
-          </div>
+              </div>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={deleteConfirmed}
+                  disabled={busy || downloadedProtection !== protectedRaw}
+                  onChange={(event) => setDeleteConfirmed(event.target.checked)}
+                />
+                <span>已确认另存文件保存完成，删除此浏览器中当前项目的恢复前副本。</span>
+              </label>
+              <button
+                type="button"
+                className="secondary danger"
+                disabled={busy || !deleteConfirmed || downloadedProtection !== protectedRaw}
+                onClick={() => void deleteProtection()}
+              >
+                明确删除恢复前副本
+              </button>
+            </section>
+          )}
           <p className="field-help">
             恢复前原稿保存在当前浏览器同来源的本地备份中，每个项目保留一份。它不属于服务端或全量备份；跨端口或来源重开时请另存绑定
             JSON，再选择文件恢复。
           </p>
           {!scope && <p className="field-error">工作台数据范围尚未确认，备份和恢复暂不可用。</p>}
           {reading && <p role="status">正在读取工作台备份…</p>}
-          {restoring && <p role="status">正在核对并保留恢复前原稿…</p>}
+          {restorePhase === 'waiting' && (
+            <div className="project-draft-restore-wait" role="status">
+              <p>正在等待恢复操作，尚未开始替换草稿。</p>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  if (restorePhaseNow.current === 'waiting') restoreController.current?.abort();
+                }}
+              >
+                取消本次恢复等待
+              </button>
+            </div>
+          )}
+          {restorePhase === 'critical' && <p role="status">正在核对并恢复草稿，本阶段不支持取消。</p>}
+          {deleting && <p role="status">正在核对并删除恢复前副本…</p>}
           {error && (
             <p className="field-error" role="alert">
               {error}

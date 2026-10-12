@@ -23,50 +23,119 @@ function ArtifactSelection({
   disabled: boolean;
 }) {
   const { api } = useSurfaceClient();
-  const [open, setOpen] = useState(false),
-    [before, setBefore] = useState(''),
-    [trail, setTrail] = useState<string[]>([]),
-    [page, setPage] = useState<SourceOptions>(),
-    [error, setError] = useState(''),
-    [loading, setLoading] = useState(false),
-    [retry, setRetry] = useState(0);
+  type Position = { before: string; trail: string[] };
+  const firstPage = (): Position => ({ before: '', trail: [] });
+  const owner = `${item.current?.runId}:${item.current?.runRevision}`;
+  const [open, setOpen] = useState(false);
+  const [display, setDisplay] = useState<{ owner: string; page: SourceOptions; position: Position }>();
+  const [intent, setIntent] = useState<{ owner: string; position: Position; attempt: number }>();
+  const [read, setRead] = useState<{ status: 'ready' | 'loading' | 'failed' | 'cancelled'; error: string }>({
+    status: 'ready',
+    error: '',
+  });
+  const currentRead = useRef<AbortController | undefined>(undefined);
+  const shown = display?.owner === owner ? display : undefined;
+  const page = shown?.page;
+  const position = shown?.position ?? firstPage();
+  const loading = read.status === 'loading';
+  const error = read.error;
   useEffect(() => {
     if (!open || !item.current) return;
     const controller = new AbortController();
-    setLoading(true);
-    setPage(undefined);
-    setError('');
+    currentRead.current = controller;
+    const target = intent?.owner === owner ? intent.position : firstPage();
+    const active = () => currentRead.current === controller && !controller.signal.aborted;
+    setRead({ status: 'loading', error: '' });
     void api<SourceOptions>(
-      `/runs/${item.current.runId}/handoff` + (before ? '?beforeArtifact=' + encodeURIComponent(before) : ''),
+      `/runs/${item.current.runId}/handoff` +
+        (target.before ? '?beforeArtifact=' + encodeURIComponent(target.before) : ''),
       undefined,
       undefined,
       controller.signal,
     )
       .then((result) => {
-        if (controller.signal.aborted) return;
-        if (result.runId !== item.current?.runId || result.runRevision !== item.current.runRevision)
+        if (!active()) return;
+        if (
+          result.runId !== item.current?.runId ||
+          result.runRevision !== item.current.runRevision ||
+          (result.artifactPage.before ?? '') !== target.before
+        )
           throw Error('候选任务已变化，请先刷新项目工作台。已选元数据仍保留。');
-        setPage(result);
+        setDisplay({ owner, page: result, position: target });
+        setRead({ status: 'ready', error: '' });
       })
       .catch((issue) => {
-        if (!controller.signal.aborted)
-          setError(issue instanceof Error ? issue.message : '产物元数据读取失败');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (active())
+          setRead({ status: 'failed', error: issue instanceof Error ? issue.message : '产物元数据读取失败' });
       });
-    return () => controller.abort();
-  }, [api, item.current?.runId, item.current?.runRevision, open, before, retry]);
+    return () => {
+      controller.abort();
+      if (currentRead.current === controller) currentRead.current = undefined;
+    };
+  }, [api, item.current?.runId, item.current?.runRevision, owner, open, intent]);
+  const request = (target: Position) => {
+    currentRead.current?.abort();
+    setIntent((previous) => ({ owner, position: target, attempt: (previous?.attempt ?? 0) + 1 }));
+  };
+  const cancel = () => {
+    currentRead.current?.abort();
+    currentRead.current = undefined;
+    setRead({ status: 'cancelled', error: '' });
+  };
   return (
     <div className="project-artifact-selection">
-      <button type="button" className="secondary" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => {
+          if (open) {
+            if (loading) cancel();
+            currentRead.current?.abort();
+            currentRead.current = undefined;
+            setOpen(false);
+          } else {
+            request(position);
+            setOpen(true);
+          }
+        }}
+        aria-expanded={open}
+      >
         选择产物元数据 · 已选 {selected.length}/20
       </button>
       {open && (
         <>
           <p className="field-help">只冻结名称、版本、哈希等元数据，不保存文件正文。</p>
-          {loading && <p>正在读取元数据…</p>}
-          {error && <p className="field-error">{error}</p>}
+          {loading && (
+            <div className="project-actions">
+              <p role="status">正在读取元数据…</p>
+              <button type="button" className="secondary" onClick={cancel}>
+                取消本次元数据读取
+              </button>
+            </div>
+          )}
+          {read.status === 'cancelled' && (
+            <p role="status">本次元数据读取已取消。已读页面和元数据选择保留，可明确重试或重读。</p>
+          )}
+          {error && (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
+          )}
+          {(read.status === 'failed' || read.status === 'cancelled') && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => request(intent?.owner === owner ? intent.position : firstPage())}
+            >
+              重试本次元数据读取
+            </button>
+          )}
+          {page && (
+            <p className="field-help" role={read.status !== 'ready' ? 'status' : undefined}>
+              {read.status !== 'ready' && '上次读取：'}产物第 {position.trail.length + 1} 页
+              {read.status !== 'ready' && '，当前元数据尚未重新确认。'}
+            </p>
+          )}
           {page?.artifacts.map((artifact) => (
             <label className="check-row" key={artifact.id}>
               <input
@@ -74,6 +143,7 @@ function ArtifactSelection({
                 checked={selected.includes(artifact.id)}
                 disabled={
                   disabled ||
+                  read.status !== 'ready' ||
                   (!selected.includes(artifact.id) && (!artifact.verified || selected.length >= 20))
                 }
                 onChange={(e) =>
@@ -100,10 +170,9 @@ function ArtifactSelection({
             <button
               type="button"
               className="secondary"
-              disabled={loading || !trail.length}
+              disabled={loading || !position.trail.length}
               onClick={() => {
-                setBefore(trail.at(-1) || '');
-                setTrail(trail.slice(0, -1));
+                request({ before: position.trail.at(-1) || '', trail: position.trail.slice(0, -1) });
               }}
             >
               上一页产物
@@ -113,8 +182,10 @@ function ArtifactSelection({
               className="secondary"
               disabled={loading || !page?.artifactPage.hasMore}
               onClick={() => {
-                setTrail([...trail, before]);
-                setBefore(page?.artifactPage.nextBefore || '');
+                request({
+                  before: page?.artifactPage.nextBefore || '',
+                  trail: [...position.trail, position.before],
+                });
               }}
             >
               下一页产物
@@ -124,9 +195,7 @@ function ArtifactSelection({
               className="secondary"
               disabled={loading}
               onClick={() => {
-                setBefore('');
-                setTrail([]);
-                setRetry((n) => n + 1);
+                request(firstPage());
               }}
             >
               重读元数据
@@ -154,16 +223,24 @@ export function ProjectManifests({
   openRun: (id: string, review?: boolean) => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
-  const [page, setPage] = useState<ProjectDeliveryManifestList>(),
-    [readDetail, setDetail] = useState<ProjectDeliveryManifestView>(),
-    [error, setError] = useState(''),
+  type Position = { before: string; trail: string[] };
+  const firstPage = (): Position => ({ before: '', trail: [] });
+  const [display, setDisplay] = useState<{ page: ProjectDeliveryManifestList; position: Position }>();
+  const [intent, setIntent] = useState<{ projectId: string; position: Position; attempt: number }>();
+  const [listRead, setListRead] = useState<{
+    status: 'ready' | 'loading' | 'failed' | 'cancelled';
+    error: string;
+  }>({ status: 'loading', error: '' });
+  const listRequest = useRef<AbortController | undefined>(undefined);
+  const shown = display?.page.projectId === board.projectId ? display : undefined;
+  const page = shown?.page;
+  const position = shown?.position ?? firstPage();
+  const loading = listRead.status === 'loading';
+  const error = listRead.error;
+  const [readDetail, setDetail] = useState<ProjectDeliveryManifestView>(),
     [detailError, setDetailError] = useState(''),
     [downloadError, setDownloadError] = useState('');
-  const [before, setBefore] = useState(''),
-    [trail, setTrail] = useState<string[]>([]),
-    [retry, setRetry] = useState(0),
-    [detailRetry, setDetailRetry] = useState(0),
-    [loading, setLoading] = useState(false),
+  const [detailRetry, setDetailRetry] = useState(0),
     [detailLoading, setDetailLoading] = useState(false),
     [downloadBusy, setDownloadBusy] = useState(false),
     [archiveRevision, setArchiveRevision] = useState(0);
@@ -184,26 +261,48 @@ export function ProjectManifests({
   };
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    setPage(undefined);
+    listRequest.current = controller;
+    const target = intent?.projectId === board.projectId ? intent.position : firstPage();
+    const active = () => listRequest.current === controller && !controller.signal.aborted;
+    setListRead({ status: 'loading', error: '' });
     void api<ProjectDeliveryManifestList>(
-      base + (before ? '?before=' + encodeURIComponent(before) : ''),
+      base + (target.before ? '?before=' + encodeURIComponent(target.before) : ''),
       undefined,
       undefined,
       controller.signal,
     )
       .then((result) => {
-        if (!controller.signal.aborted && result.projectId === board.projectId) setPage(result);
+        if (!active()) return;
+        if (result.projectId !== board.projectId || (result.page.before ?? '') !== target.before)
+          throw Error('冻结历史不属于当前项目或页面，请重读。');
+        setDisplay({ page: result, position: target });
+        setListRead({ status: 'ready', error: '' });
       })
       .catch((issue) => {
-        if (!controller.signal.aborted) setError(issue instanceof Error ? issue.message : '冻结历史读取失败');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (active())
+          setListRead({
+            status: 'failed',
+            error: issue instanceof Error ? issue.message : '冻结历史读取失败',
+          });
       });
-    return () => controller.abort();
-  }, [api, base, board.projectId, before, retry]);
+    return () => {
+      controller.abort();
+      if (listRequest.current === controller) listRequest.current = undefined;
+    };
+  }, [api, base, board.projectId, intent]);
+  const requestHistory = (target: Position) => {
+    listRequest.current?.abort();
+    setIntent((previous) => ({
+      projectId: board.projectId,
+      position: target,
+      attempt: (previous?.attempt ?? 0) + 1,
+    }));
+  };
+  const cancelHistory = () => {
+    listRequest.current?.abort();
+    listRequest.current = undefined;
+    setListRead({ status: 'cancelled', error: '' });
+  };
   useEffect(() => {
     setDetailError('');
     if (!draft.selectedManifest) {
@@ -441,9 +540,7 @@ export function ProjectManifests({
                   change((value) =>
                     JSON.stringify(value.manifest) === sent ? { ...value, manifest: undefined } : value,
                   );
-                  setBefore('');
-                  setTrail([]);
-                  setRetry((n) => n + 1);
+                  requestHistory(firstPage());
                 }
               });
             }}
@@ -453,8 +550,39 @@ export function ProjectManifests({
         </section>
       )}
       <h3>已冻结清单</h3>
-      {loading && <p>正在读取历史…</p>}
-      {error && <p className="field-error">{error}</p>}
+      {loading && (
+        <div className="project-actions">
+          <p role="status">正在读取历史…</p>
+          <button type="button" className="secondary" onClick={cancelHistory}>
+            取消本次清单历史读取
+          </button>
+        </div>
+      )}
+      {listRead.status === 'cancelled' && (
+        <p role="status">本次冻结历史读取已取消。已读页面和清单选择保留，可明确重试或刷新。</p>
+      )}
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      {(listRead.status === 'failed' || listRead.status === 'cancelled') && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() =>
+            requestHistory(intent?.projectId === board.projectId ? intent.position : firstPage())
+          }
+        >
+          重试本次清单历史读取
+        </button>
+      )}
+      {page && (
+        <p className="field-help" role={listRead.status !== 'ready' ? 'status' : undefined}>
+          {listRead.status !== 'ready' && '上次读取：'}冻结清单第 {position.trail.length + 1} 页
+          {listRead.status !== 'ready' && '，当前历史尚未重新确认。'}
+        </p>
+      )}
       {page?.items.map((item) => (
         <button
           type="button"
@@ -473,10 +601,9 @@ export function ProjectManifests({
         <button
           type="button"
           className="secondary"
-          disabled={loading || !trail.length}
+          disabled={loading || !position.trail.length}
           onClick={() => {
-            setBefore(trail.at(-1) || '');
-            setTrail(trail.slice(0, -1));
+            requestHistory({ before: position.trail.at(-1) || '', trail: position.trail.slice(0, -1) });
           }}
         >
           上一页清单
@@ -486,8 +613,10 @@ export function ProjectManifests({
           className="secondary"
           disabled={loading || !page?.page.hasMore}
           onClick={() => {
-            setTrail([...trail, before]);
-            setBefore(page?.page.nextBefore || '');
+            requestHistory({
+              before: page?.page.nextBefore || '',
+              trail: [...position.trail, position.before],
+            });
           }}
         >
           下一页清单
@@ -497,9 +626,7 @@ export function ProjectManifests({
           className="secondary"
           disabled={loading}
           onClick={() => {
-            setBefore('');
-            setTrail([]);
-            setRetry((n) => n + 1);
+            requestHistory(firstPage());
           }}
         >
           刷新清单历史

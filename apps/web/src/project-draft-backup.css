@@ -19,6 +19,16 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.project-draft-protection {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.project-draft-restore-wait {
+  margin: 12px 0;
+}
 .project-draft-backup pre {
   max-height: 400px;
   overflow: auto;

@@ -66,14 +66,29 @@ export function ProjectDeliveryArchives({
   onOpenManifest?: (archive: Pick<Archive, 'projectId' | 'manifestId' | 'manifestHash'>) => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
-  const [page, setPage] = useState<ProjectDeliveryArchiveList>();
-  const [before, setBefore] = useState(''),
-    [trail, setTrail] = useState<string[]>([]),
-    [retry, setRetry] = useState(0);
-  const [loading, setLoading] = useState(false),
-    [busy, setBusy] = useState(''),
-    [error, setError] = useState(''),
+  type Position = { before: string; trail: string[] };
+  const firstPage = (): Position => ({ before: '', trail: [] });
+  const [display, setDisplay] = useState<{ page: ProjectDeliveryArchiveList; position: Position }>();
+  const [intent, setIntent] = useState<{
+    projectId: string;
+    revision: number;
+    position: Position;
+    attempt: number;
+  }>();
+  const [listRead, setListRead] = useState<{
+    status: 'ready' | 'loading' | 'failed' | 'cancelled';
+    error: string;
+  }>({ status: 'loading', error: '' });
+  const listRequest = useRef<AbortController | undefined>(undefined);
+  const shown = display?.page.projectId === projectId ? display : undefined;
+  const page = shown?.page;
+  const position = shown?.position ?? firstPage();
+  const loading = listRead.status === 'loading';
+  const [busy, setBusy] = useState(''),
+    [operationError, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const error = listRead.error || operationError;
+  const actionsUnavailable = listRead.status !== 'ready' || !!error;
   const [removing, setRemoving] = useState<Archive>();
   const request = useRef<AbortController | null>(null),
     live = useRef(true);
@@ -86,36 +101,58 @@ export function ProjectDeliveryArchives({
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
+    listRequest.current = controller;
+    const target =
+      intent?.projectId === projectId && intent.revision === revision ? intent.position : firstPage();
+    const active = () => listRequest.current === controller && !controller.signal.aborted;
+    setListRead({ status: 'loading', error: '' });
     onSnapshot?.(undefined);
     void api<ProjectDeliveryArchiveList>(
       `/projects/${projectId}/delivery-archives?limit=20` +
-        (before ? '&before=' + encodeURIComponent(before) : ''),
+        (target.before ? '&before=' + encodeURIComponent(target.before) : ''),
       undefined,
       undefined,
       controller.signal,
     )
       .then((value) => {
-        if (controller.signal.aborted) return;
+        if (!active()) return;
         if (
           value.projectId !== projectId ||
           value.items.some((item) => item.projectId !== projectId) ||
-          (value.page.before ?? '') !== before
+          (value.page.before ?? '') !== target.before
         )
           throw Error('已保存文件包不属于当前项目或页面，请重读。');
-        setPage(value);
+        setDisplay({ page: value, position: target });
+        setListRead({ status: 'ready', error: '' });
         onSnapshot?.(value);
       })
       .catch((issue) => {
-        if (!controller.signal.aborted)
-          setError(issue instanceof Error ? issue.message : '已保存文件包读取失败');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (active())
+          setListRead({
+            status: 'failed',
+            error: issue instanceof Error ? issue.message : '已保存文件包读取失败',
+          });
       });
-    return () => controller.abort();
-  }, [api, projectId, before, retry, revision, onSnapshot]);
+    return () => {
+      controller.abort();
+      if (listRequest.current === controller) listRequest.current = undefined;
+    };
+  }, [api, projectId, intent, revision, onSnapshot]);
+  const requestList = (target: Position) => {
+    listRequest.current?.abort();
+    setIntent((previous) => ({
+      projectId,
+      revision,
+      position: target,
+      attempt: (previous?.attempt ?? 0) + 1,
+    }));
+  };
+  const cancelList = () => {
+    listRequest.current?.abort();
+    listRequest.current = undefined;
+    onSnapshot?.(undefined);
+    setListRead({ status: 'cancelled', error: '' });
+  };
   const download = async (archive: Archive) => {
     if (request.current) return;
     const controller = new AbortController();
@@ -164,9 +201,7 @@ export function ProjectDeliveryArchives({
       setRemoving(undefined);
       setNotice('已移除项目中的保存包。冻结清单和你已下载的副本保留。');
       onChanged?.();
-      setBefore('');
-      setTrail([]);
-      setRetry((value) => value + 1);
+      requestList(firstPage());
     } catch (issue) {
       if (live.current) setError(issue instanceof Error ? issue.message : '保存包移除失败，请重读后再确认');
     } finally {
@@ -190,27 +225,61 @@ export function ProjectDeliveryArchives({
           className="secondary"
           disabled={loading || !!busy}
           onClick={() => {
-            setBefore('');
-            setTrail([]);
-            setRetry((value) => value + 1);
+            // Explicitly rechecking the list is the existing recovery path for a failed file action.
+            setError('');
+            requestList(firstPage());
           }}
         >
           重读已保存文件包
         </button>
       </div>
-      {loading && <p role="status">正在读取已保存文件包…</p>}
-      {error && (
+      {loading && (
+        <div className="project-actions">
+          <p role="status">正在读取已保存文件包…</p>
+          <button type="button" className="secondary" onClick={cancelList}>
+            取消本次保存包读取
+          </button>
+        </div>
+      )}
+      {listRead.status === 'cancelled' && (
+        <p role="status">本次保存包读取已取消。已读页面保留，保存包集合尚未重新确认，可明确重试或重读。</p>
+      )}
+      {listRead.error && (
         <p className="field-error" role="alert">
-          {error}
-          {page && ' 下方保留上次读取的列表，请重读后确认。'}
+          {listRead.error}
         </p>
+      )}
+      {operationError && (
+        <p className="field-error" role="alert">
+          {operationError}
+        </p>
+      )}
+      {(listRead.status === 'failed' || listRead.status === 'cancelled') && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={!!busy}
+          onClick={() =>
+            requestList(
+              intent?.projectId === projectId && intent.revision === revision ? intent.position : firstPage(),
+            )
+          }
+        >
+          重试本次保存包读取
+        </button>
       )}
       {notice && <p role="status">{notice}</p>}
       {page && (
         <>
           <p>
-            项目已保存 {page.count} 个文件包 · 共 {sizeLabel(page.totalBytes)}
+            项目已保存 {page.count} 个文件包 · 共 {sizeLabel(page.totalBytes)} · 保存包第{' '}
+            {position.trail.length + 1} 页
           </p>
+          {listRead.status !== 'ready' && (
+            <p className="field-help" role="status">
+              上次读取：仍显示保存包第 {position.trail.length + 1} 页，当前列表和保存包集合尚未重新确认。
+            </p>
+          )}
           {!page.count && <p className="field-help">尚未保存文件包。临时检查和下载不会自动保存到项目。</p>}
           {page.items.map((archive) => (
             <article className="project-delivery-archive" key={archive.manifestId}>
@@ -224,7 +293,7 @@ export function ProjectDeliveryArchives({
                   <button
                     type="button"
                     className="secondary"
-                    disabled={!!busy || loading || !!error}
+                    disabled={!!busy || actionsUnavailable}
                     onClick={() => onOpenManifest(archive)}
                   >
                     查看冻结依据
@@ -233,7 +302,7 @@ export function ProjectDeliveryArchives({
                 <button
                   type="button"
                   className="secondary"
-                  disabled={!!busy || loading || !!error}
+                  disabled={!!busy || actionsUnavailable}
                   onClick={() => void download(archive)}
                 >
                   {busy === archive.manifestId ? '正在处理保存包…' : '下载已保存 ZIP'}
@@ -242,7 +311,7 @@ export function ProjectDeliveryArchives({
                   <button
                     type="button"
                     className="secondary danger"
-                    disabled={!!busy || loading || !!error}
+                    disabled={!!busy || actionsUnavailable}
                     onClick={() => {
                       setRemoving(archive);
                       setNotice('');
@@ -262,10 +331,9 @@ export function ProjectDeliveryArchives({
             <button
               type="button"
               className="secondary"
-              disabled={!!busy || loading || !trail.length}
+              disabled={!!busy || loading || !position.trail.length}
               onClick={() => {
-                setBefore(trail.at(-1) || '');
-                setTrail(trail.slice(0, -1));
+                requestList({ before: position.trail.at(-1) || '', trail: position.trail.slice(0, -1) });
               }}
             >
               上一页保存包
@@ -273,10 +341,12 @@ export function ProjectDeliveryArchives({
             <button
               type="button"
               className="secondary"
-              disabled={!!busy || loading || !!error || !page.page.hasMore}
+              disabled={!!busy || loading || !!operationError || !page.page.hasMore}
               onClick={() => {
-                setTrail([...trail, before]);
-                setBefore(page.page.nextBefore || '');
+                requestList({
+                  before: page.page.nextBefore || '',
+                  trail: [...position.trail, position.before],
+                });
               }}
             >
               下一页保存包

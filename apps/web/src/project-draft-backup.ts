@@ -95,6 +95,14 @@ export function decodeProjectDraftBackup(
 }
 
 type BackupStorage = Pick<Storage, 'getItem' | 'setItem'>;
+export function projectDraftProtectionInfo(raw: string, current: ProjectDraftBackupBinding) {
+  const bytes = new TextEncoder().encode(raw).byteLength;
+  try {
+    return { bytes, createdAt: readProjectDraftBackup(raw, current).file.createdAt, readable: true };
+  } catch {
+    return { bytes, createdAt: null, readable: false };
+  }
+}
 export function projectDraftProtectionKey(current: ProjectDraftBackupBinding): string {
   const owner = requireBinding(current);
   return `elysia.project-draft-restore.v1:${owner.workbenchScope}:${owner.surface}:${encodeURIComponent(owner.projectId)}`;
@@ -116,7 +124,7 @@ export function protectProjectDraftBeforeRestore(
   }
   if (latest !== expectedProtection)
     throw Error('恢复前备份已被另一窗口修改，请重新核对。当前草稿和预览已保留。');
-  if (latest) {
+  if (latest !== null) {
     let same = false;
     try {
       same = readProjectDraftBackup(latest, current).file.draftRaw === currentRaw;
@@ -146,6 +154,7 @@ export async function restoreProjectDraftWithProtection({
   apply,
   assertActive,
   signal,
+  onCritical,
 }: {
   locks: Pick<LockManager, 'request'> | undefined;
   storage: BackupStorage;
@@ -158,10 +167,12 @@ export async function restoreProjectDraftWithProtection({
   apply: (raw: string) => void;
   assertActive: () => void;
   signal?: AbortSignal;
+  onCritical?: () => void;
 }): Promise<string> {
   if (!locks?.request) throw Error('当前浏览器不支持安全的备份恢复锁，未恢复草稿；仍可导出或预览备份。');
   return locks.request(projectDraftProtectionKey(current) + ':restore', { mode: 'exclusive', signal }, () => {
     assertActive();
+    onCritical?.();
     readProjectDraftBackup(JSON.stringify(backup.file), current);
     if (readCurrent() !== expectedCurrent)
       throw Error('当前原稿已变化，请重新核对后恢复。原输入和预览已保留。');
@@ -176,5 +187,55 @@ export async function restoreProjectDraftWithProtection({
     if (readCurrent() !== expectedCurrent) throw Error('当前原稿已变化，未恢复草稿；恢复前备份已保留。');
     apply(backup.file.draftRaw);
     return protectedCopy;
+  });
+}
+export async function deleteProjectDraftProtection({
+  locks,
+  storage,
+  current,
+  expectedProtection,
+  assertActive,
+  signal,
+}: {
+  locks: Pick<LockManager, 'request'> | undefined;
+  storage: Pick<Storage, 'getItem' | 'removeItem'>;
+  current: ProjectDraftBackupBinding;
+  expectedProtection: string;
+  assertActive: () => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  if (!locks?.request) throw Error('当前浏览器不支持安全的副本管理锁，未删除恢复前副本。');
+  const key = projectDraftProtectionKey(current);
+  return locks.request(key + ':restore', { mode: 'exclusive', signal }, () => {
+    assertActive();
+    let latest: string | null;
+    try {
+      latest = storage.getItem(key);
+    } catch {
+      throw Error('无法核对当前浏览器的恢复前副本，未删除。当前草稿和预览保留。');
+    }
+    if (latest !== expectedProtection)
+      throw Error('恢复前副本已变化，请重新另存和确认后再删除。当前草稿和预览保留。');
+    assertActive();
+    try {
+      storage.removeItem(key);
+    } catch {
+      let unchanged = false;
+      try {
+        unchanged = storage.getItem(key) === expectedProtection;
+      } catch {
+        /* Result remains unknown. */
+      }
+      if (unchanged) throw Error('恢复前副本未删除，请检查浏览器存储后重试。当前草稿和预览未改动。');
+      throw Error('删除结果未确认，请保留另存文件并重新核对副本状态。当前草稿和预览未改动。');
+    }
+    let after: string | null;
+    try {
+      after = storage.getItem(key);
+    } catch {
+      throw Error('删除结果未确认，请保留另存文件并重新核对副本状态。当前草稿和预览未改动。');
+    }
+    if (after !== null)
+      throw Error('删除结果未确认，请保留另存文件并重新核对副本状态。当前草稿和预览未改动。');
   });
 }
