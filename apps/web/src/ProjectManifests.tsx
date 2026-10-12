@@ -9,6 +9,7 @@ import type { SourceOptions } from '../../../packages/contracts/src/workflow';
 import type { ProjectBoardDraft } from './ProjectBoardDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectDeliveryBundle } from './ProjectDeliveryBundle';
+import { ProjectDeliveryArchives } from './ProjectDeliveryArchive';
 
 function ArtifactSelection({
   item,
@@ -162,7 +163,8 @@ export function ProjectManifests({
     [retry, setRetry] = useState(0),
     [detailRetry, setDetailRetry] = useState(0),
     [loading, setLoading] = useState(false),
-    [downloadBusy, setDownloadBusy] = useState(false);
+    [downloadBusy, setDownloadBusy] = useState(false),
+    [archiveRevision, setArchiveRevision] = useState(0);
   const base = `/projects/${board.projectId}/delivery-manifests`;
   useEffect(() => {
     const controller = new AbortController();
@@ -274,8 +276,13 @@ export function ProjectManifests({
         </button>
       </div>
       <p className="field-help">
-        清单不包含文件正文。可在清单详情检查所选文件并下载实际文件交付包；源文件缺失或已变化会阻止打包。修改项目说明或删除来源任务不会改写已冻结内容。删除整个项目会删除清单，请先下载需要保留的记录和文件。
+        清单不包含文件正文。可在清单详情检查、临时下载，或显式保存完整文件包到项目；新打包仍需核验当前来源。已保存包独立于来源任务，删除整个项目会同时删除清单和已保存包，请先导出需要保留的记录与文件。
       </p>
+      <ProjectDeliveryArchives
+        projectId={board.projectId}
+        revision={archiveRevision}
+        onChanged={() => setArchiveRevision((value) => value + 1)}
+      />
       {manifest && (
         <section className="project-freeze-form" aria-label="冻结交付确认">
           <label>
@@ -485,6 +492,9 @@ export function ProjectManifests({
               <ProjectDeliveryBundle
                 key={`${detail.manifest.projectId}:${detail.manifest.id}:${detail.manifest.hash}`}
                 manifest={detail.manifest}
+                archived={board.archived}
+                archiveRevision={archiveRevision}
+                onSaved={() => setArchiveRevision((value) => value + 1)}
               />
               {detail.manifest.items.map((entry) => {
                 const availability = detail.availability.find((value) => value.itemId === entry.item.id);

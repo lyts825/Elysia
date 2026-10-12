@@ -26,6 +26,7 @@ import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
+import { publishFileObject } from './file-objects.js';
 import {
   ArtifactDeliveryMetadataReads,
   serializeDeliveryArtifactMetadata,
@@ -44,8 +45,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
-export const STORAGE_SCHEMA_VERSION = 5;
-export const STORAGE_MIN_READER_VERSION = '1.0.0-preview.1';
+export const STORAGE_SCHEMA_VERSION = 6;
+export const STORAGE_MIN_READER_VERSION = '1.0.0-preview.6';
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'id'
@@ -462,6 +463,20 @@ export class Store {
       this.tx(() => {
         initializeExecutionRecovery(this.db);
         this.db.exec('PRAGMA user_version=5;');
+      });
+    if (version < 6)
+      this.tx(() => {
+        this.db
+          .exec(`CREATE TABLE IF NOT EXISTS project_delivery_manifests_v1(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,title TEXT NOT NULL,created_at TEXT NOT NULL,item_count INTEGER NOT NULL,hash TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
+          CREATE INDEX IF NOT EXISTS project_delivery_manifests_project ON project_delivery_manifests_v1(project_id);
+          CREATE TABLE project_delivery_archives_v1(
+            manifest_id TEXT PRIMARY KEY REFERENCES project_delivery_manifests_v1(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            manifest_hash TEXT NOT NULL,object_ref TEXT NOT NULL,object_hash TEXT NOT NULL,
+            size INTEGER NOT NULL CHECK(size >= 22 AND size <= 67108864),
+            file_count INTEGER NOT NULL CHECK(file_count >= 1 AND file_count <= 800),saved_at TEXT NOT NULL);
+          CREATE INDEX project_delivery_archives_project ON project_delivery_archives_v1(project_id);
+          PRAGMA user_version=6;`);
       });
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
@@ -1467,6 +1482,10 @@ export class Store {
       .prepare('SELECT content FROM events UNION ALL SELECT content FROM commands')
       .all() as any[])
       objectRefs(expand(row.content), retained);
+    for (const row of this.db.prepare('SELECT object_ref FROM project_delivery_archives_v1').all() as {
+      object_ref: string;
+    }[])
+      objectRefs(row.object_ref, retained);
     const queue = [...retained];
     for (let i = 0; i < queue.length; i++) {
       const row = this.db.prepare('SELECT content FROM compressed_objects WHERE ref=?').get(queue[i]) as any;
@@ -1506,6 +1525,9 @@ export class Store {
       renameSync(tmp, target);
     }
     return { hash: digest, objectRef: ref };
+  }
+  publishFileObject(source: string, expected: { hash: string; size: number }, signal?: AbortSignal) {
+    return publishFileObject(this.directory, source, expected, signal);
   }
   readObject(ref: string): Buffer {
     if (!legacyObjectPattern.test(ref) && !sqliteObjectPattern.test(ref))

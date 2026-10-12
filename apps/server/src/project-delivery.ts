@@ -31,6 +31,7 @@ import { ensureCurrentReviewSnapshot, savedReviewSnapshot } from './delivery-rev
 import { sourceNoteResolutionsFor } from './source-note-resolutions.js';
 import { projectDeliveryMarkdown } from './project-delivery-export.js';
 import { assertBundleManifest, ProjectDeliveryBundleService } from './project-delivery-bundle.js';
+import { ProjectDeliveryArchiveService, readProjectArchives } from './project-delivery-archive.js';
 
 type StoredItem = z.infer<typeof ProjectDeliveryItemInput> & {
   itemRevision: number;
@@ -419,7 +420,8 @@ export function registerProjectDelivery(
   store: Store,
   guard: (runId: string | null, projectId?: string) => void,
 ) {
-  const bundles = new ProjectDeliveryBundleService(store);
+  const archives = new ProjectDeliveryArchiveService(store, guard);
+  const bundles = new ProjectDeliveryBundleService(store, archives);
   app.addHook('onClose', () => bundles.close());
   store.db
     .exec(`CREATE TABLE IF NOT EXISTS project_delivery_boards_v1(project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,revision INTEGER NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
@@ -784,6 +786,77 @@ export function registerProjectDelivery(
     (request) => {
       z.object({}).strict().parse(request.query);
       return manifestView(store, manifestRow(store, request.params.id, request.params.manifestId));
+    },
+  );
+  app.get<{ Params: { id: string } }>('/api/projects/:id/delivery-archives', (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return readProjectArchives(
+      store,
+      request.params.id,
+      request.query as { limit?: number; before?: string },
+    );
+  });
+  app.get<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/archive',
+    (request, reply) => {
+      const { expectedManifestHash } = z
+        .object({ expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(request.query);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      reply.header('Cache-Control', 'no-store');
+      return archives.read(manifest);
+    },
+  );
+  app.delete<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/archive',
+    (request, reply) => {
+      z.object({}).strict().parse(request.query);
+      const { expectedManifestHash, expectedObjectHash } = z
+        .object({
+          expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+          expectedObjectHash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict()
+        .parse(request.body);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      reply.header('Cache-Control', 'no-store');
+      return archives.remove(manifest, expectedObjectHash);
+    },
+  );
+  app.get<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/archive/file',
+    async (request, reply) => {
+      const { expectedManifestHash, expectedObjectHash } = z
+        .object({
+          expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+          expectedObjectHash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict()
+        .parse(request.query);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      const cancellation = bundleRequestSignal(request, reply);
+      let resource: Awaited<ReturnType<ProjectDeliveryBundleService['body']>> | undefined;
+      try {
+        resource = await bundles.body(
+          (signal) => archives.body(manifest, expectedObjectHash, signal),
+          cancellation.signal,
+        );
+        resource.stream.once('close', cancellation.detach);
+        return reply
+          .type('application/zip')
+          .header('Cache-Control', 'no-store')
+          .header('Content-Disposition', `attachment; filename="project-delivery-${manifest.id}.zip"`)
+          .header('Content-Length', resource.size)
+          .send(resource.stream);
+      } catch (error) {
+        cancellation.detach();
+        await resource?.dispose();
+        throw error;
+      }
     },
   );
   app.get<{ Params: { id: string; manifestId: string } }>(

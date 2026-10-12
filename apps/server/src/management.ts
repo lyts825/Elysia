@@ -11,6 +11,7 @@ import {
 import { Store, id, hash, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
+import { projectDeliveryArchiveSummary } from './project-delivery-archive.js';
 
 const mutation = Command.extend({ expectedRevision: z.number().int().nonnegative() });
 export function registerManagement(
@@ -41,6 +42,17 @@ export function registerManagement(
   };
   const command = <T>(body: any, route: string, work: () => T) =>
     store.command(body.commandId, { route, body }, work);
+  const acknowledgeArchives = (projectId: string, expected?: string) => {
+    const summary = projectDeliveryArchiveSummary(store, projectId);
+    if ((summary.count > 0 || expected !== undefined) && expected !== summary.setHash)
+      throw new AppError(
+        'PROJECT_DELIVERY_ARCHIVES_CHANGED',
+        '项目已保存的交付包尚未确认或已经变化，请查看、导出并重新确认删除',
+        false,
+        { archiveCount: summary.count, totalBytes: summary.totalBytes, setHash: summary.setHash },
+        409,
+      );
+  };
   // Prevent concurrent retries from interrupting/deleting the same running conversation twice.
   const pending = new Map<string, { fingerprint: string; result: Promise<unknown> }>();
   const lifecycle = async (
@@ -166,13 +178,21 @@ export function registerManagement(
     return result;
   });
   app.delete<{ Params: { id: string } }>('/api/projects/:id', (request) => {
-    const body = mutation.parse(request.body);
+    const body = mutation
+      .extend({
+        expectedArchiveSetHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
+      .parse(request.body);
     return lifecycle(
       body,
       request.url,
       (lock) => {
         const project = store.require<Project>('projects', request.params.id);
         revision(body, project);
+        acknowledgeArchives(project.id, body.expectedArchiveSetHash);
         lock('project:' + project.id);
         store.put('projects', { ...project, archived: true });
         const runs = store.all<Run>('runs').filter((r) => r.projectId === project.id);
@@ -183,6 +203,7 @@ export function registerManagement(
         return runs.map((r) => r.id);
       },
       () => {
+        acknowledgeArchives(request.params.id, body.expectedArchiveSetHash);
         const deletedRuns = store.all<Run>('runs').filter((r) => r.projectId === request.params.id);
         for (const run of deletedRuns) {
           closeStreams(run.id);

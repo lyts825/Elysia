@@ -333,6 +333,39 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         scan.state.recordsScanned++;
       }
     }
+    if (
+      database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_delivery_archives_v1'")
+        .get()
+    ) {
+      scan.phase('references', surface, 'project_delivery_archives_v1');
+      for (const row of database
+        .prepare(
+          `SELECT a.object_ref,a.object_hash,a.manifest_hash,a.project_id,m.project_id manifest_project,m.hash frozen_hash
+          FROM project_delivery_archives_v1 a LEFT JOIN project_delivery_manifests_v1 m ON m.id=a.manifest_id`,
+        )
+        .iterate() as Iterable<{
+        object_ref: string;
+        object_hash: string;
+        manifest_hash: string;
+        project_id: string;
+        manifest_project: string;
+        frozen_hash: string;
+      }>) {
+        scan.check();
+        if (
+          typeof row.object_ref !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(row.object_hash) ||
+          row.object_ref.replace(/\\/g, '/') !==
+            `objects/${row.object_hash.slice(0, 2)}/${row.object_hash}` ||
+          row.manifest_hash !== row.frozen_hash ||
+          row.project_id !== row.manifest_project
+        )
+          throw new Error('保存交付包引用无效，不能清理');
+        references(row.object_ref, retained, scan);
+        scan.state.recordsScanned++;
+      }
+    }
     scan.phase('references', surface, 'storage_meta');
     for (const row of database.prepare('SELECT key,value FROM storage_meta').iterate() as Iterable<{
       key: string;

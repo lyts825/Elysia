@@ -6,6 +6,7 @@ import type {
 } from '../../../packages/contracts/src/project-delivery';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
+import { ProjectDeliveryArchive } from './ProjectDeliveryArchive';
 import './project-delivery-bundle.css';
 
 const sizeLabel = (bytes: number | null) =>
@@ -18,7 +19,17 @@ const sizeLabel = (bytes: number | null) =>
         : `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 
 /** Mount one instance per immutable manifest; leaving the selection cancels all work. */
-export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryManifest }) {
+export function ProjectDeliveryBundle({
+  manifest,
+  archived,
+  archiveRevision,
+  onSaved,
+}: {
+  manifest: ProjectDeliveryManifest;
+  archived?: boolean;
+  archiveRevision?: number;
+  onSaved?: () => void;
+}) {
   const { api, apiUrl } = useSurfaceClient();
   const [plan, setPlan] = useState<ProjectDeliveryBundlePlan>();
   const [working, setWorking] = useState<'check' | 'download' | null>(null);
@@ -262,7 +273,7 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
       <h4>实际文件交付包</h4>
       <p className="field-help">
         将清单中已选择的文件正文、冻结清单和校验信息打包为 ZIP，最多 64 MiB。
-        下载时重新核验冻结版本；文件缺失或已变化时不会替换为其他内容。已下载的包可独立保存。
+        下载时重新核验冻结版本；文件缺失或已变化时不会替换为其他内容。临时下载不会自动保存到项目。
       </p>
       <div className="project-actions">
         <button type="button" className="secondary" disabled={!!working} onClick={() => void check()}>
@@ -312,7 +323,9 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
             {progress.bytesTotal !== null ? ` / ${sizeLabel(progress.bytesTotal)}` : ' 已核验'}
           </span>
           {progress.currentFile && <small>当前文件：{progress.currentFile}</small>}
-          <small>准备与发送完成后才发起保存。可取消；刷新后可重新检查并重试。</small>
+          <small>
+            准备与发送完成后才发起本次 ZIP 下载，不会自动保存到项目。可取消；刷新后可重新检查并重试。
+          </small>
         </div>
       )}
       {error && (
@@ -350,6 +363,12 @@ export function ProjectDeliveryBundle({ manifest }: { manifest: ProjectDeliveryM
           </details>
         </div>
       )}
+      <ProjectDeliveryArchive
+        manifest={manifest}
+        archived={archived}
+        revision={archiveRevision}
+        onSaved={onSaved}
+      />
     </section>
   );
 }

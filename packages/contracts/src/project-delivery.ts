@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Status, Evidence } from './index.js';
 import type { DeliveryReviewStatus, SourceArtifact, SourceNoteResolutions } from './workflow.js';
 import type { ExecutionHold, RecordPage } from './run-reads.js';
+import type { ProjectDeliveryArchive } from './project-delivery-archive.js';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const line = z.string().trim().min(1).max(2000);
@@ -211,7 +212,7 @@ export const ProjectDeliveryBundleJobInput = z
     jobId: z.string().uuid(),
     clientId: z.string().uuid().optional(),
     expectedManifestHash: digest,
-    kind: z.enum(['check', 'download']),
+    kind: z.enum(['check', 'download', 'save']),
   })
   .strict();
 export interface ProjectDeliveryBundleJob {
@@ -220,8 +221,8 @@ export interface ProjectDeliveryBundleJob {
   projectId: string;
   manifestId: string;
   manifestHash: string;
-  kind: 'check' | 'download';
-  stage: 'verifying' | 'preparing' | 'ready' | 'sending' | 'completed' | 'cancelled' | 'failed';
+  kind: 'check' | 'download' | 'save';
+  stage: 'verifying' | 'preparing' | 'saving' | 'ready' | 'sending' | 'completed' | 'cancelled' | 'failed';
   filesDone: number;
   filesTotal: number;
   bytesDone: number;
@@ -230,5 +231,6 @@ export interface ProjectDeliveryBundleJob {
   currentFile: string | null;
   expiresAt: string;
   plan?: ProjectDeliveryBundlePlan;
+  archive?: ProjectDeliveryArchive;
   error?: { code: string; message: string };
 }

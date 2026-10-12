@@ -44,3 +44,39 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.project-delivery-archives,
+.project-archive-save {
+  margin: 20px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-delivery-archive,
+.project-archive-confirm {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-archive-confirm {
+  border-color: var(--danger, var(--border));
+}
+.project-archive-delete-notice {
+  min-width: 0;
+}
+.project-archive-delete-notice .project-delivery-archives {
+  max-height: 48vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.project-archive-delete-notice .check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0;
+}
+.project-archive-delete-notice .check-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

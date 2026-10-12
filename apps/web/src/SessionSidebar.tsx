@@ -13,6 +13,7 @@ import type { CacheEntry } from './WorkbenchCache';
 import './sessions.css';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import { captureHistoryAnchor, historyViewportVisible, restoreHistoryAnchor } from './HistoryScroll';
+import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: RunListItem };
 export type SessionTarget = Target;
@@ -89,6 +90,7 @@ export function SessionSidebar({
     null,
   );
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [archiveConsent, setArchiveConsent] = useState<ProjectArchiveDeleteConsent>();
   const dialogRef = useRef<Dialog | null>(null);
   const conflictDrafts = useRef(new Map<string, string>());
   dialogRef.current = dialog;
@@ -186,6 +188,7 @@ export function SessionSidebar({
       conflictDrafts.current.delete(draftKey(dialogRef.current.target, dialogRef.current.action));
     dialogRef.current = null;
     setDialog(null);
+    setArchiveConsent(undefined);
   };
   const changeDialogValue = (source: Dialog, value: string) => {
     if (dialogRef.current !== source) return;
@@ -200,8 +203,11 @@ export function SessionSidebar({
       ? !!dialog.value.trim()
       : dialog.action === 'move'
         ? spaces.some((space) => space.id === dialog.value)
-        : true);
+        : dialog.target.kind !== 'project' ||
+          terminal ||
+          archiveConsent?.projectId === dialog.target.item.id);
   const showDialog = (target: Target, action: Dialog['action']) => {
+    setArchiveConsent(undefined);
     const next: Dialog = {
       target,
       action,
@@ -714,10 +720,15 @@ export function SessionSidebar({
                     ? { [dialog.target.kind === 'project' ? 'name' : 'title']: dialog.value.trim() }
                     : dialog.action === 'move'
                       ? { spaceId: dialog.value }
-                      : {},
+                      : dialog.target.kind === 'project' &&
+                          !terminal &&
+                          archiveConsent?.projectId === dialog.target.item.id
+                        ? { expectedArchiveSetHash: archiveConsent.setHash }
+                        : {},
                   dialog.action === 'delete',
                 ).then((result) => {
                   if (result === false || dialogRef.current !== submitted) return;
+                  if (result === 'conflict' && submitted.action === 'delete') return;
                   const key = draftKey(submitted.target, submitted.action);
                   if (result === 'conflict' && submitted.action !== 'delete')
                     conflictDrafts.current.set(key, submitted.value);
@@ -767,15 +778,25 @@ export function SessionSidebar({
                   </label>
                 )}
                 {dialog.action === 'delete' && (
-                  <p>
-                    {dialog.target.kind === 'project'
-                      ? `此项目及${projectCounts ? `其 ${projectCount(dialog.target.item.id)} 个` : '关联'}对话、消息和产物登记将被永久删除。`
-                      : '此对话、消息、调用和产物登记将被永久删除。'}
-                    无法恢复，原始项目资料目录会保留。
-                    {dialog.target.kind === 'project' &&
-                      localSurface === 'native' &&
-                      '项目交付计划、关联记录和冻结清单也会删除，请先导出需要保留的清单。'}
-                  </p>
+                  <>
+                    <p>
+                      {dialog.target.kind === 'project'
+                        ? `此项目及${projectCounts ? `其 ${projectCount(dialog.target.item.id)} 个` : '关联'}对话、消息和产物登记将被永久删除。`
+                        : '此对话、消息、调用和产物登记将被永久删除。'}
+                      无法恢复，原始项目资料目录会保留。
+                      {dialog.target.kind === 'project' &&
+                        localSurface === 'native' &&
+                        '项目交付计划、冻结清单和已保存文件包也会删除，请先导出需要保留的内容。'}
+                    </p>
+                    {dialog.target.kind === 'project' && !terminal && (
+                      <ProjectArchiveDeleteNotice
+                        key={dialog.target.item.id}
+                        projectId={dialog.target.item.id}
+                        disabled={busy}
+                        onConsent={setArchiveConsent}
+                      />
+                    )}
+                  </>
                 )}
               </div>
               <footer>

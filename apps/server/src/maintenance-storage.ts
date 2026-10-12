@@ -22,6 +22,7 @@ import {
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { backup, DatabaseSync } from 'node:sqlite';
+import { validateDeliveryArchiveObjects } from '../../../packages/storage/src/delivery-archive-integrity.js';
 
 export type Surface = 'native' | 'terminal';
 export type Selection = Surface | 'all';
@@ -49,7 +50,13 @@ export const dataFormat = (version: number): DataFormat => ({
   name: 'elysia-sqlite',
   version,
   minimumReaderVersion:
-    version >= 5 ? STORAGE_MIN_READER_VERSION : version === 4 ? '0.25.0-preview.1' : '0.24.0-preview.1',
+    version >= 6
+      ? STORAGE_MIN_READER_VERSION
+      : version === 5
+        ? '1.0.0-preview.1'
+        : version === 4
+          ? '0.25.0-preview.1'
+          : '0.24.0-preview.1',
 });
 export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   if (!entry.dataFormat) {
@@ -193,6 +200,12 @@ export async function prepareSurface(
     for (const name of ['state.db', 'state.db-wal', 'state.db-shm'])
       rmSync(path.join(target, name), { force: true });
     renameSync(standalone, path.join(target, 'state.db'));
+  }
+  const archiveValidation = new DatabaseSync(path.join(target, 'state.db'), { readOnly: true });
+  try {
+    validateDeliveryArchiveObjects(archiveValidation, target);
+  } finally {
+    archiveValidation.close();
   }
   return { schemaVersion, dataFormat: dataFormat(schemaVersion), includes };
 }

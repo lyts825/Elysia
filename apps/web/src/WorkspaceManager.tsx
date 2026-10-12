@@ -4,6 +4,7 @@ import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
+import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
 
 export function WorkspaceManager({
   spaces,
@@ -53,8 +54,10 @@ export function WorkspaceManager({
     [confirmation, setConfirmation] = useState<{
       title: string;
       description: string;
-      action: () => Promise<void>;
+      projectId?: string;
+      action: (expectedArchiveSetHash?: string) => Promise<void>;
     } | null>(null);
+  const [archiveConsent, setArchiveConsent] = useState<ProjectArchiveDeleteConsent>();
   const actionPending = useRef(false);
   useEffect(() => {
     changeListArchive?.(tab === 'archive');
@@ -71,7 +74,7 @@ export function WorkspaceManager({
       setConfirmation(null);
     } catch (e) {
       if (e instanceof ApiError && e.kind === 'http' && e.status === 409 && e.code === 'REVISION_CONFLICT') {
-        setConfirmation(null);
+        if (!confirmation?.projectId || surface !== 'native') setConfirmation(null);
         const conflict = '记录已更新，本次操作未执行。请核对列表后重新操作。';
         setError(conflict);
         try {
@@ -162,20 +165,27 @@ export function WorkspaceManager({
         <button
           className="quiet-button danger"
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            setArchiveConsent(undefined);
             setConfirmation({
               title: `删除项目「${p.name}」？`,
-              description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。${surface === 'native' ? '项目交付计划、关联记录和冻结清单也会删除，请先导出需要保留的清单。' : ''}原始资料目录 ${p.workspaceRoot} 保留。`,
-              action: async () => {
+              description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。${surface === 'native' ? '项目交付计划、冻结清单和已保存文件包也会删除，请先导出需要保留的内容。' : ''}原始资料目录 ${p.workspaceRoot} 保留。`,
+              projectId: surface === 'native' ? p.id : undefined,
+              action: async (expectedArchiveSetHash) => {
+                if (surface === 'native' && !expectedArchiveSetHash)
+                  throw Error('请先读取已保存文件包，并明确确认需要保留或放弃的内容。');
                 const result = await mutation<{ deletedRunIds: string[] }>(
                   '/projects/' + p.id,
-                  { expectedRevision: p.revision },
+                  {
+                    expectedRevision: p.revision,
+                    ...(expectedArchiveSetHash ? { expectedArchiveSetHash } : {}),
+                  },
                   'DELETE',
                 );
                 await updated({ kind: 'project', id: p.id, runIds: result.deletedRunIds });
               },
-            })
-          }
+            });
+          }}
         >
           删除项目
         </button>
@@ -290,14 +300,32 @@ export function WorkspaceManager({
           <div className="delete-confirmation" role="alert">
             <h3>{confirmation.title}</h3>
             <p>{confirmation.description}</p>
+            {confirmation.projectId && (
+              <ProjectArchiveDeleteNotice
+                key={confirmation.projectId}
+                projectId={confirmation.projectId}
+                disabled={busy}
+                onConsent={setArchiveConsent}
+              />
+            )}
             <div>
               <button className="secondary" disabled={busy} onClick={() => setConfirmation(null)}>
                 保留
               </button>
               <button
                 className="primary danger-confirm"
-                disabled={busy}
-                onClick={() => void perform(confirmation.action)}
+                disabled={
+                  busy || (!!confirmation.projectId && archiveConsent?.projectId !== confirmation.projectId)
+                }
+                onClick={() =>
+                  void perform(() =>
+                    confirmation.action(
+                      confirmation.projectId && archiveConsent?.projectId === confirmation.projectId
+                        ? archiveConsent.setHash
+                        : undefined,
+                    ),
+                  )
+                }
               >
                 {confirmation.title.startsWith('合并') ? '确认合并' : '确认永久删除'}
               </button>
