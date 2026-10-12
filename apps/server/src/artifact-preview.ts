@@ -25,6 +25,10 @@ import {
 
 const corrupt = () => new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
 const cacheLimit = 16;
+function sizeLimit(size: number, maxBytes?: number) {
+  if (maxBytes !== undefined && size > maxBytes)
+    throw new AppError('ARTIFACT_SIZE_LIMIT', '产物大小超过本次读取上限', false, { size, maxBytes }, 413);
+}
 type CompressedRow = { hash: string; raw_size: number; compressed_size: number };
 
 class CompressedSnapshot {
@@ -186,7 +190,7 @@ export class ArtifactPreviewService {
     const changed = this.store.db.prepare('SELECT total_changes() AS changes').get() as { changes: number };
     return `${version.data_version}:${changed.changes}`;
   }
-  private async disk(artifact: Artifact, signal?: AbortSignal) {
+  private async disk(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     invariant(
       /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/.test(artifact.objectRef),
       'INVALID_OBJECT',
@@ -199,6 +203,7 @@ export class ArtifactPreviewService {
       invariant(!(await fs.lstat(candidate)).isSymbolicLink(), 'INVALID_OBJECT', '对象不能是符号链接');
     invariant((await fs.realpath(filename)).startsWith(root + path.sep), 'INVALID_OBJECT', '对象越界');
     const info = await inspectFile(filename, signal);
+    sizeLimit(info.stat.size, maxBytes);
     await this.verify(filename + ':' + info.version + ':' + artifact.hash, async () => {
       const resource = await streamFile(filename, 'application/octet-stream', {
         version: info.version,
@@ -218,7 +223,7 @@ export class ArtifactPreviewService {
     signal?.throwIfAborted();
     return { filename, info };
   }
-  private async compressed(artifact: Artifact, signal?: AbortSignal) {
+  private async compressed(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     const valid = /^sqlite:[a-f0-9]{64}$/.test(artifact.objectRef)
       ? artifact.objectRef.slice(7) === artifact.hash
       : /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/.test(artifact.objectRef) &&
@@ -241,6 +246,7 @@ export class ArtifactPreviewService {
       snapshot.row.compressed_size +
       (before === after ? '' : ':' + randomUUID());
     try {
+      sizeLimit(snapshot.row.raw_size, maxBytes);
       await this.verify(key, async () => {
         const digest = createHash('sha256');
         let size = 0;
@@ -357,7 +363,7 @@ export class ArtifactPreviewService {
   }
   async resource(
     artifact: Artifact,
-    options: { range?: string; signal?: AbortSignal } = {},
+    options: { range?: string; signal?: AbortSignal; maxBytes?: number } = {},
   ): Promise<FileResource> {
     invariant(!this.closed, 'PREVIEW_CLOSED', '预览服务已关闭');
     options = {
@@ -365,14 +371,14 @@ export class ArtifactPreviewService {
       signal: options.signal ? AbortSignal.any([options.signal, this.lifetime.signal]) : this.lifetime.signal,
     };
     if (!this.compressedObject(artifact)) {
-      const { filename, info } = await this.disk(artifact, options.signal);
+      const { filename, info } = await this.disk(artifact, options.signal, options.maxBytes);
       return streamFile(filename, artifact.mediaType, {
         ...options,
         version: info.version,
         verifyHash: artifact.hash,
       });
     }
-    const snapshot = await this.compressed(artifact, options.signal);
+    const snapshot = await this.compressed(artifact, options.signal, options.maxBytes);
     try {
       // Gzip objects are streamed whole; random text access is supplied by /preview.
       const stream = snapshot.raw(options.signal);

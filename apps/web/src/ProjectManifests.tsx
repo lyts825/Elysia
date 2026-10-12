@@ -8,6 +8,7 @@ import type {
 import type { SourceOptions } from '../../../packages/contracts/src/workflow';
 import type { ProjectBoardDraft } from './ProjectBoardDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
+import { ProjectDeliveryBundle } from './ProjectDeliveryBundle';
 
 function ArtifactSelection({
   item,
@@ -273,7 +274,7 @@ export function ProjectManifests({
         </button>
       </div>
       <p className="field-help">
-        清单不包含文件正文。原产物记录状态会单独显示；正文需打开原任务按需读取核验。修改项目说明或删除来源任务不会改写已冻结内容。删除整个项目会删除清单，请先导出需要保留的记录。
+        清单不包含文件正文。可在清单详情检查所选文件并下载实际文件交付包；源文件缺失或已变化会阻止打包。修改项目说明或删除来源任务不会改写已冻结内容。删除整个项目会删除清单，请先下载需要保留的记录和文件。
       </p>
       {manifest && (
         <section className="project-freeze-form" aria-label="冻结交付确认">
@@ -481,6 +482,10 @@ export function ProjectManifests({
                   下载 Markdown
                 </button>
               </div>
+              <ProjectDeliveryBundle
+                key={`${detail.manifest.projectId}:${detail.manifest.id}:${detail.manifest.hash}`}
+                manifest={detail.manifest}
+              />
               {detail.manifest.items.map((entry) => {
                 const availability = detail.availability.find((value) => value.itemId === entry.item.id);
                 return (

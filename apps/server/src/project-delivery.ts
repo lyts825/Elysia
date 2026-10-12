@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   AppError,
@@ -29,6 +29,7 @@ import { deliveryFingerprint } from './delivery-fingerprint.js';
 import { ensureCurrentReviewSnapshot, savedReviewSnapshot } from './delivery-review-history.js';
 import { sourceNoteResolutionsFor } from './source-note-resolutions.js';
 import { projectDeliveryMarkdown } from './project-delivery-export.js';
+import { assertBundleManifest, ProjectDeliveryBundleService } from './project-delivery-bundle.js';
 
 type StoredItem = z.infer<typeof ProjectDeliveryItemInput> & {
   itemRevision: number;
@@ -64,6 +65,23 @@ const commandSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
 });
 const attemptsLimit = 200;
+function bundleRequestSignal(request: FastifyRequest, reply: FastifyReply) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const disconnect = () => {
+    if (!reply.raw.writableEnded) abort();
+  };
+  request.raw.once('aborted', abort);
+  reply.raw.once('close', disconnect);
+  if (request.raw.aborted) abort();
+  return {
+    signal: controller.signal,
+    detach: () => {
+      request.raw.off('aborted', abort);
+      reply.raw.off('close', disconnect);
+    },
+  };
+}
 function conflict(code: string, message: string): never {
   throw new AppError(code, message, false, null, 409);
 }
@@ -385,6 +403,8 @@ export function registerProjectDelivery(
   store: Store,
   guard: (runId: string | null, projectId?: string) => void,
 ) {
+  const bundles = new ProjectDeliveryBundleService(store);
+  app.addHook('onClose', () => bundles.close());
   store.db
     .exec(`CREATE TABLE IF NOT EXISTS project_delivery_boards_v1(project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,revision INTEGER NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
     CREATE TABLE IF NOT EXISTS project_delivery_links_v1(project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,item_id TEXT NOT NULL,run_id TEXT NOT NULL,title TEXT NOT NULL,linked_at TEXT NOT NULL,PRIMARY KEY(project_id,item_id,run_id));
@@ -748,6 +768,51 @@ export function registerProjectDelivery(
     (request) => {
       z.object({}).strict().parse(request.query);
       return manifestView(store, manifestRow(store, request.params.id, request.params.manifestId));
+    },
+  );
+  app.get<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle-plan',
+    async (request, reply) => {
+      const { expectedManifestHash } = z
+        .object({ expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(request.query);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      const cancellation = bundleRequestSignal(request, reply);
+      reply.header('Cache-Control', 'no-store');
+      try {
+        return await bundles.plan(manifest, cancellation.signal);
+      } finally {
+        cancellation.detach();
+      }
+    },
+  );
+  app.get<{ Params: { id: string; manifestId: string } }>(
+    '/api/projects/:id/delivery-manifests/:manifestId/bundle',
+    async (request, reply) => {
+      const { expectedManifestHash } = z
+        .object({ expectedManifestHash: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(request.query);
+      const manifest = manifestRow(store, request.params.id, request.params.manifestId);
+      assertBundleManifest(manifest, expectedManifestHash);
+      const cancellation = bundleRequestSignal(request, reply);
+      let bundle: Awaited<ReturnType<ProjectDeliveryBundleService['bundle']>> | undefined;
+      try {
+        bundle = await bundles.bundle(manifest, cancellation.signal);
+        bundle.stream.once('close', cancellation.detach);
+        return reply
+          .type('application/zip')
+          .header('Cache-Control', 'no-store')
+          .header('Content-Disposition', `attachment; filename="project-delivery-${manifest.id}.zip"`)
+          .header('Content-Length', bundle.size)
+          .send(bundle.stream);
+      } catch (error) {
+        cancellation.detach();
+        await bundle?.dispose();
+        throw error;
+      }
     },
   );
   app.get<{ Params: { id: string; manifestId: string } }>(

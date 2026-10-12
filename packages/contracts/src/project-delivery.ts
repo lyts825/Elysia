@@ -176,3 +176,31 @@ export interface ProjectDeliveryManifestView {
     artifacts: { id: string; state: 'available' | 'missing' | 'changed' | 'unavailable' }[];
   }[];
 }
+
+/** An explicit, byte-verified export preflight. It never changes the frozen manifest. */
+export interface ProjectDeliveryBundlePlan {
+  projectId: string;
+  manifestId: string;
+  manifestHash: string;
+  format: 'zip';
+  fileCount: number;
+  /** Sum of known selected artifact sizes; missing sizes are null in files. */
+  totalBytes: number;
+  /** Exact ZIP size when every selected source was verified; otherwise null. */
+  archiveBytes: number | null;
+  /** Maximum complete ZIP size, including its metadata and index. */
+  maxBytes: number;
+  canDownload: boolean;
+  files: {
+    itemId: string;
+    runId: string;
+    artifactId: string;
+    name: string;
+    path: string;
+    hash: string;
+    size: number | null;
+    state: 'ready' | 'missing' | 'changed' | 'unavailable' | 'too_large';
+    reason?: string;
+  }[];
+  issues: { code: string; message: string }[];
+}

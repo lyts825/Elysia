@@ -1,0 +1,30 @@
+.project-delivery-bundle {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-delivery-bundle h4 {
+  margin: 0 0 8px;
+}
+.project-bundle-files {
+  list-style: none;
+  padding: 0;
+}
+.project-bundle-files li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.project-bundle-files li:last-child {
+  border-bottom: 0;
+}
+.project-bundle-files span,
+.project-bundle-files small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
