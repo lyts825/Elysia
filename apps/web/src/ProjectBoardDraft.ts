@@ -65,6 +65,10 @@ const shape = z.object({
     .optional(),
   confirmNotes: z.record(z.string(), z.string()).optional(),
   selectedManifest: z.string().optional(),
+  selectedManifestHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 export type ProjectBoardDraft = z.infer<typeof shape>;
 export type ProjectBoardEdit = NonNullable<ProjectBoardDraft['edit']>;

@@ -134,6 +134,7 @@
 }
 .project-workbench .check-row input {
   flex: none;
+  width: auto;
   margin-top: 4px;
 }
 .project-workbench .check-row span {

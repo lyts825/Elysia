@@ -56,12 +56,14 @@ export function ProjectDeliveryArchives({
   canRemove = true,
   onChanged,
   onSnapshot,
+  onOpenManifest,
 }: {
   projectId: string;
   revision?: number;
   canRemove?: boolean;
   onChanged?: () => void;
   onSnapshot?: (value: ProjectDeliveryArchiveList | undefined) => void;
+  onOpenManifest?: (archive: Pick<Archive, 'projectId' | 'manifestId' | 'manifestHash'>) => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
   const [page, setPage] = useState<ProjectDeliveryArchiveList>();
@@ -214,10 +216,20 @@ export function ProjectDeliveryArchives({
             <article className="project-delivery-archive" key={archive.manifestId}>
               <strong>{archive.title}</strong>
               <p>
-                已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 ·{' '}
+                已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 · 保存于{' '}
                 {new Date(archive.savedAt).toLocaleString()}
               </p>
               <div className="project-actions">
+                {onOpenManifest && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={!!busy || loading || !!error}
+                    onClick={() => onOpenManifest(archive)}
+                  >
+                    查看冻结依据
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondary"
@@ -519,7 +531,7 @@ export function ProjectDeliveryArchive({
       {archive && (
         <p>
           {(loading || error) && '上次读取：'}
-          已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 ·{' '}
+          已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 · 保存于{' '}
           {new Date(archive.savedAt).toLocaleString()}。可从上方已保存文件包独立下载。
         </p>
       )}

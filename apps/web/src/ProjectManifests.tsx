@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBoard,
   ProjectDeliveryItem,
@@ -155,17 +155,33 @@ export function ProjectManifests({
 }) {
   const { api, apiBytes } = useSurfaceClient();
   const [page, setPage] = useState<ProjectDeliveryManifestList>(),
-    [detail, setDetail] = useState<ProjectDeliveryManifestView>(),
+    [readDetail, setDetail] = useState<ProjectDeliveryManifestView>(),
     [error, setError] = useState(''),
-    [detailError, setDetailError] = useState('');
+    [detailError, setDetailError] = useState(''),
+    [downloadError, setDownloadError] = useState('');
   const [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),
     [retry, setRetry] = useState(0),
     [detailRetry, setDetailRetry] = useState(0),
     [loading, setLoading] = useState(false),
+    [detailLoading, setDetailLoading] = useState(false),
     [downloadBusy, setDownloadBusy] = useState(false),
     [archiveRevision, setArchiveRevision] = useState(0);
   const base = `/projects/${board.projectId}/delivery-manifests`;
+  const detailSection = useRef<HTMLElement | null>(null),
+    scrollToDetail = useRef(false),
+    downloadRequest = useRef<AbortController | null>(null);
+  const detail =
+    readDetail?.manifest.projectId === board.projectId &&
+    readDetail.manifest.id === draft.selectedManifest &&
+    (!draft.selectedManifestHash || readDetail.manifest.hash === draft.selectedManifestHash)
+      ? readDetail
+      : undefined;
+  const selectManifest = (manifestId: string, manifestHash: string) => {
+    scrollToDetail.current = true;
+    change((value) => ({ ...value, selectedManifest: manifestId, selectedManifestHash: manifestHash }));
+    setDetailRetry((value) => value + 1);
+  };
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -189,10 +205,19 @@ export function ProjectManifests({
     return () => controller.abort();
   }, [api, base, board.projectId, before, retry]);
   useEffect(() => {
-    setDetail(undefined);
     setDetailError('');
-    if (!draft.selectedManifest) return;
+    if (!draft.selectedManifest) {
+      setDetail(undefined);
+      setDetailLoading(false);
+      return;
+    }
+    if (scrollToDetail.current) {
+      scrollToDetail.current = false;
+      detailSection.current?.scrollIntoView({ block: 'start' });
+      detailSection.current?.focus({ preventScroll: true });
+    }
     const controller = new AbortController();
+    setDetailLoading(true);
     void api<ProjectDeliveryManifestView>(
       base + '/' + draft.selectedManifest,
       undefined,
@@ -200,19 +225,32 @@ export function ProjectManifests({
       controller.signal,
     )
       .then((result) => {
+        if (controller.signal.aborted) return;
         if (
-          !controller.signal.aborted &&
-          result.manifest.projectId === board.projectId &&
-          result.manifest.id === draft.selectedManifest
+          result.manifest.projectId !== board.projectId ||
+          result.manifest.id !== draft.selectedManifest ||
+          (draft.selectedManifestHash && result.manifest.hash !== draft.selectedManifestHash)
         )
-          setDetail(result);
+          throw Error('冻结清单与所选项目、清单或校验信息不一致，请重读后确认。');
+        setDetail(result);
       })
       .catch((issue) => {
         if (!controller.signal.aborted)
           setDetailError(issue instanceof Error ? issue.message : '冻结清单读取失败');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
-  }, [api, base, board.projectId, draft.selectedManifest, detailRetry]);
+  }, [api, base, board.projectId, draft.selectedManifest, draft.selectedManifestHash, detailRetry]);
+  useEffect(() => {
+    setDownloadBusy(false);
+    setDownloadError('');
+    return () => {
+      downloadRequest.current?.abort();
+      downloadRequest.current = null;
+    };
+  }, [board.projectId, draft.selectedManifest, draft.selectedManifestHash]);
   const manifest = draft.manifest;
   const chosen = board.items.filter((item) => manifest?.selected.includes(item.id));
   const canFreeze =
@@ -229,11 +267,17 @@ export function ProjectManifests({
     ) &&
     board.items.filter((item) => item.required).every((item) => manifest?.selected.includes(item.id));
   const download = async (format: 'json' | 'markdown') => {
-    if (!detail || downloadBusy) return;
+    if (!detail || downloadRequest.current) return;
+    const controller = new AbortController();
+    downloadRequest.current = controller;
     setDownloadBusy(true);
-    setDetailError('');
+    setDownloadError('');
     try {
-      const bytes = await apiBytes(base + '/' + detail.manifest.id + '/export?format=' + format);
+      const bytes = await apiBytes(
+        base + '/' + detail.manifest.id + '/export?format=' + format,
+        controller.signal,
+      );
+      if (controller.signal.aborted || downloadRequest.current !== controller) return;
       const url = URL.createObjectURL(
         new Blob([bytes as BlobPart], {
           type: format === 'json' ? 'application/json' : 'text/markdown;charset=utf-8',
@@ -245,9 +289,13 @@ export function ProjectManifests({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (issue) {
-      setDetailError(issue instanceof Error ? issue.message : '下载失败，请重试');
+      if (!controller.signal.aborted && downloadRequest.current === controller)
+        setDownloadError(issue instanceof Error ? issue.message : '下载失败，请重试');
     } finally {
-      setDownloadBusy(false);
+      if (downloadRequest.current === controller) {
+        downloadRequest.current = null;
+        setDownloadBusy(false);
+      }
     }
   };
   return (
@@ -282,6 +330,10 @@ export function ProjectManifests({
         projectId={board.projectId}
         revision={archiveRevision}
         onChanged={() => setArchiveRevision((value) => value + 1)}
+        onOpenManifest={(archive) => {
+          if (archive.projectId !== board.projectId) return;
+          selectManifest(archive.manifestId, archive.manifestHash);
+        }}
       />
       {manifest && (
         <section className="project-freeze-form" aria-label="冻结交付确认">
@@ -408,7 +460,7 @@ export function ProjectManifests({
           type="button"
           key={item.id}
           className={'project-manifest-link ' + (draft.selectedManifest === item.id ? 'selected' : '')}
-          onClick={() => change((value) => ({ ...value, selectedManifest: item.id }))}
+          onClick={() => selectManifest(item.id, item.hash)}
         >
           <strong>{item.title}</strong>
           <span>
@@ -454,10 +506,22 @@ export function ProjectManifests({
         </button>
       </div>
       {draft.selectedManifest && (
-        <section className="project-manifest-detail" aria-label="冻结清单详情">
+        <section
+          ref={detailSection}
+          tabIndex={-1}
+          className="project-manifest-detail"
+          aria-label="冻结清单详情"
+        >
+          {detailLoading && <p role="status">正在读取冻结依据与当前记录状态…</p>}
           {detailError && (
             <p className="field-error" role="alert">
               {detailError}
+              {detail && ' 下方保留该清单上次读取的冻结依据，原任务与产物的当前状态尚未确认。'}
+            </p>
+          )}
+          {downloadError && (
+            <p className="field-error" role="alert">
+              {downloadError}
             </p>
           )}
           <button type="button" className="secondary" onClick={() => setDetailRetry((n) => n + 1)}>
@@ -516,7 +580,7 @@ export function ProjectManifests({
                     </p>
                     <p className="project-prose">{entry.review.note}</p>
                     <p>
-                      原任务当前：
+                      {detailLoading || detailError ? '上次读取时原任务：' : '原任务当前：'}
                       {
                         {
                           available: '可读取',
@@ -540,7 +604,7 @@ export function ProjectManifests({
                         </strong>
                         <small>{artifact.hash}</small>
                         <p>
-                          原产物记录：
+                          {detailLoading || detailError ? '上次读取时原产物记录：' : '原产物记录：'}
                           {
                             {
                               available: '仍一致',
