@@ -12,6 +12,7 @@ import {
 import { id, now, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryReviewReads } from './delivery-summary.js';
 import { initializeDeliveryReadCache } from './delivery-read-cache.js';
+import { registerDeliveryArtifactWarm, withWarmDeliveryMetadata } from './delivery-artifact-warm.js';
 import {
   appendDeliveryReview,
   captureDeliveryBaseline,
@@ -117,6 +118,7 @@ export function registerDeliveryLifecycle(
 ) {
   initializeDeliveryReviewHistory(store);
   initializeDeliveryReadCache(store);
+  registerDeliveryArtifactWarm(app, store);
   const summaries = deliveryReviewReads(store);
   app.get<{ Params: { id: string } }>('/api/runs/:id/delivery/reviews', (request) => {
     const query = z.object({ before: z.string().uuid().optional() }).strict().parse(request.query);
@@ -124,17 +126,17 @@ export function registerDeliveryLifecycle(
   });
   app.get<{ Params: { id: string; reviewId: string } }>(
     '/api/runs/:id/delivery/reviews/:reviewId',
-    (request) => {
+    (request, reply) => {
       z.object({}).strict().parse(request.query);
       const reviewId = z.string().uuid().parse(request.params.reviewId);
-      return store.tx(() =>
-        deliveryReviewHistoryDetail(store, nativeRun(store, request.params.id), reviewId),
+      return withWarmDeliveryMetadata(store, request.params.id, request, reply, () =>
+        store.tx(() => deliveryReviewHistoryDetail(store, nativeRun(store, request.params.id), reviewId)),
       );
     },
   );
   app.get<{ Params: { id: string; reviewId: string } }>(
     '/api/runs/:id/delivery/reviews/:reviewId/artifact-changes',
-    (request) => {
+    (request, reply) => {
       const params = z.object({ id: z.string().uuid(), reviewId: z.string().uuid() }).parse(request.params);
       const query = z
         .object({
@@ -144,14 +146,16 @@ export function registerDeliveryLifecycle(
         })
         .strict()
         .parse(request.query);
-      return store.tx(() =>
-        deliveryArtifactChanges(
-          store,
-          nativeRun(store, params.id),
-          params.reviewId,
-          query.expectedCurrentFingerprint,
-          query.offset,
-          query.artifactId,
+      return withWarmDeliveryMetadata(store, params.id, request, reply, () =>
+        store.tx(() =>
+          deliveryArtifactChanges(
+            store,
+            nativeRun(store, params.id),
+            params.reviewId,
+            query.expectedCurrentFingerprint,
+            query.offset,
+            query.artifactId,
+          ),
         ),
       );
     },

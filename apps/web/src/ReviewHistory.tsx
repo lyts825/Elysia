@@ -5,6 +5,7 @@ import type {
 } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ReviewRecord } from './ReviewRecord';
+import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 
 export function ReviewHistory({
   runId,
@@ -26,11 +27,13 @@ export function ReviewHistory({
     [opening, setOpening] = useState(''),
     [error, setError] = useState('');
   const detailRequest = useRef<AbortController | null>(null);
+  const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const visiblePage = page?.runId === runId ? page : undefined;
   const visibleDetail = detail?.runId === runId ? detail : undefined;
   useEffect(() => {
     setDetail(undefined);
     setOpening('');
+    setProgress(undefined);
     return () => {
       detailRequest.current?.abort();
       detailRequest.current = null;
@@ -64,9 +67,10 @@ export function ReviewHistory({
     const controller = new AbortController();
     detailRequest.current = controller;
     setOpening(id);
-    setDetail(undefined);
+    setProgress(undefined);
     setError('');
     try {
+      await prepareDeliveryRead(api, { kind: 'run', id: runId }, controller.signal, setProgress);
       const next = await api<DeliveryReviewHistoryDetail>(
         `/runs/${runId}/delivery/reviews/${id}`,
         undefined,
@@ -79,6 +83,7 @@ export function ReviewHistory({
     } finally {
       if (!controller.signal.aborted) {
         setOpening('');
+        setProgress(undefined);
         detailRequest.current = null;
       }
     }
@@ -117,7 +122,22 @@ export function ReviewHistory({
           ))}
           {visiblePage && !visiblePage.items.length && <p className="field-help">暂无已保存复核历史。</p>}
           {loading && <p role="status">正在读取复核历史…</p>}
-          {opening && <p role="status">正在读取所选复核…</p>}
+          {opening && (
+            <DeliveryReadProgress
+              label="所选复核"
+              progress={progress}
+              cancel={() => {
+                detailRequest.current?.abort();
+                detailRequest.current = null;
+                setOpening('');
+                setProgress(undefined);
+                setError('本次复核读取已取消，已读历史内容保留。可再次选择复核记录。');
+              }}
+            />
+          )}
+          {opening && visibleDetail && (
+            <p className="field-help">下方保留上次读取的复核，所选记录尚未完成读取。</p>
+          )}
           {error && (
             <p role="alert" className="field-error">
               {error}

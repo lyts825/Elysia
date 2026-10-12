@@ -27,6 +27,7 @@ import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
 import { publishFileObject } from './file-objects.js';
+import { ObjectReferenceProjection } from './object-reference-projection.js';
 import {
   ArtifactDeliveryMetadataReads,
   serializeDeliveryArtifactMetadata,
@@ -241,7 +242,14 @@ function projection(table: Table, entity: any) {
             : null,
         }
       : {}),
-    ...(table === 'requests' ? { requestLedgerVersion: 2, requestLedger: ledgerProjection(entity) } : {}),
+    ...(table === 'requests'
+      ? {
+          requestLedgerVersion: 2,
+          requestLedger: ledgerProjection(entity),
+          partialStreamRef:
+            typeof entity.manifest?.partialStreamRef === 'string' ? entity.manifest.partialStreamRef : null,
+        }
+      : {}),
     ...(table === 'attempts' ? { taskId: entity.taskId, status: entity.status } : {}),
     ...(table === 'messages'
       ? {
@@ -280,6 +288,9 @@ export class Store {
   private searchWork = new SearchWork();
   private requestStreams: RequestStreams;
   private artifactDeliveryReads: ArtifactDeliveryMetadataReads;
+  private objectReferences?: ObjectReferenceProjection;
+  private closeHooks = new Set<() => void>();
+  private closed = false;
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
     this.directory = realpathSync(directory);
@@ -298,6 +309,19 @@ export class Store {
       );
       this.recovery = new ExecutionRecovery(this);
       this.requestStreams = new RequestStreams(this.db);
+      this.objectReferences = new ObjectReferenceProjection(this.db, tables, expand, objectRefs);
+      // Raw repairs invalidate the derived log pointer without rewriting request/usage projections.
+      this.db.exec(`CREATE TABLE IF NOT EXISTS request_log_pointer_dirty_v1(
+        record_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE);
+        CREATE TRIGGER IF NOT EXISTS request_log_pointer_insert AFTER INSERT ON requests
+        BEGIN INSERT INTO request_log_pointer_dirty_v1 SELECT NEW.id
+          WHERE NOT EXISTS(SELECT 1 FROM request_log_pointer_dirty_v1 WHERE record_id=NEW.id); END;
+        CREATE TRIGGER IF NOT EXISTS request_log_pointer_update AFTER UPDATE ON requests
+        WHEN NEW.content IS NOT OLD.content OR CASE WHEN json_valid(NEW.data) AND json_valid(OLD.data) THEN
+          json_extract(NEW.data,'$.partialStreamRef') IS NOT json_extract(OLD.data,'$.partialStreamRef') OR
+          json_type(NEW.data,'$.partialStreamRef') IS NOT json_type(OLD.data,'$.partialStreamRef') ELSE 1 END
+        BEGIN INSERT INTO request_log_pointer_dirty_v1 SELECT NEW.id
+          WHERE NOT EXISTS(SELECT 1 FROM request_log_pointer_dirty_v1 WHERE record_id=NEW.id); END;`);
       this.historySearchSchema();
       for (const table of ['runs', 'tasks', 'inbox', 'requests', 'tool_operations', 'attempts'])
         this.db.exec(`CREATE INDEX IF NOT EXISTS scheduler_${table}_state ON ${table}(
@@ -544,6 +568,9 @@ export class Store {
   /** Full delivery identity needs all metadata, never all compressed artifact bodies. */
   artifactDeliveryMetadata(runId: string) {
     return this.tx(() => this.artifactDeliveryReads.read(runId));
+  }
+  artifactDeliveryWarmBatch(runId: string, limit = 32) {
+    return this.tx(() => this.artifactDeliveryReads.warmBatch(runId, limit));
   }
   /** Budget and scheduling reads never expand request manifests or stream text. */
   requestLedger(
@@ -1247,13 +1274,16 @@ export class Store {
           `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
         )
         .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
+      this.objectReferences?.write(table, next.id, stored);
+      if (table === 'requests')
+        this.db.prepare('DELETE FROM request_log_pointer_dirty_v1 WHERE record_id=?').run(next.id);
       if (table === 'artifacts') this.artifactDeliveryReads.write(stored);
       if (clearStream) this.requestStreams.clear(entity.id);
       if (table === 'runs' || table === 'messages')
         this.historySearchProjection(table, next as unknown as Run | Message);
       return next;
     };
-    return clearStream || table === 'artifacts' ? this.tx(save) : save();
+    return this.tx(save);
   }
   event(
     runId: string,
@@ -1268,21 +1298,24 @@ export class Store {
     const e = { runId, seq, eventId: id(), type, taskId, attemptId, payload, occurredAt: now() };
     const metrics = type === 'context.updated' ? ContextRuntimeMetrics.safeParse(payload) : undefined;
     const preview = metrics?.success ? stable({ contextPreviewVersion: 1, metrics: metrics.data }) : '{}';
-    this.db
-      .prepare(
-        'INSERT INTO events(run_id,seq,event_id,type,task_id,attempt_id,payload,occurred_at,content) VALUES(?,?,?,?,?,?,?,?,?)',
-      )
-      .run(
-        runId,
-        seq,
-        e.eventId,
-        type,
-        taskId,
-        attemptId,
-        Buffer.byteLength(preview) <= 16384 ? preview : '{}',
-        e.occurredAt,
-        compress(payload),
-      );
+    this.tx(() => {
+      this.db
+        .prepare(
+          'INSERT INTO events(run_id,seq,event_id,type,task_id,attempt_id,payload,occurred_at,content) VALUES(?,?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          runId,
+          seq,
+          e.eventId,
+          type,
+          taskId,
+          attemptId,
+          Buffer.byteLength(preview) <= 16384 ? preview : '{}',
+          e.occurredAt,
+          compress(payload),
+        );
+      this.objectReferences?.write('events', e.eventId, payload);
+    });
     return e;
   }
   events(runId: string, after = 0, filter: { taskId?: string; type?: string; limit?: number } = {}): Event[] {
@@ -1367,6 +1400,7 @@ export class Store {
       this.db
         .prepare('INSERT INTO commands(id,fingerprint,result,content,run_refs) VALUES(?,?,?,?,?)')
         .run(commandId, fingerprint, '{}', compress(result), stable(this.commandRunRefs(payload, result)));
+      this.objectReferences?.write('commands', commandId, result);
       return result;
     });
   }
@@ -1413,11 +1447,29 @@ export class Store {
     const identifiers = new Set<string>([runId]);
     const streams: string[] = [];
     this.tx(() => {
+      // Only selected legacy/invalidated pointers need their authoritative body expanded.
+      for (const row of this.db
+        .prepare(
+          `SELECT content FROM requests WHERE run_id=? AND (json_type(data,'$.partialStreamRef') IS NULL OR
+            EXISTS(SELECT 1 FROM request_log_pointer_dirty_v1 WHERE record_id=requests.id))`,
+        )
+        .iterate(runId) as Iterable<{ content: Uint8Array }>) {
+        const ref = expand(row.content)?.manifest?.partialStreamRef;
+        if (typeof ref === 'string') streams.push(ref);
+      }
       for (const table of tables.filter((t) => !unscopedTables.has(t))) {
-        for (const row of this.all<any>(table, runId)) {
+        for (const row of this.db
+          .prepare(
+            `SELECT id${
+              table === 'requests'
+                ? ",CASE WHEN NOT EXISTS(SELECT 1 FROM request_log_pointer_dirty_v1 WHERE record_id=requests.id) THEN json_extract(data,'$.partialStreamRef') END partialStreamRef"
+                : ''
+            } FROM ${table} WHERE run_id=?`,
+          )
+          .all(runId) as { id: string; partialStreamRef?: unknown }[]) {
           identifiers.add(row.id);
-          if (table === 'requests' && typeof row.manifest?.partialStreamRef === 'string')
-            streams.push(row.manifest.partialStreamRef);
+          if (table === 'requests' && typeof row.partialStreamRef === 'string')
+            streams.push(row.partialStreamRef);
         }
       }
       this.db
@@ -1463,36 +1515,63 @@ export class Store {
     }
   }
   private deleteCommands(identifiers: Set<string>, runId?: string) {
-    for (const row of this.db.prepare('SELECT id,result,content,run_refs FROM commands').all() as any[]) {
+    const candidates = this.objectReferences?.commandCandidates(identifiers, runId);
+    const rows = candidates
+      ? [...candidates].map((key) =>
+          this.db.prepare('SELECT id,result,content,run_refs FROM commands WHERE id=?').get(key),
+        )
+      : this.db.prepare('SELECT id,result,content,run_refs FROM commands').all();
+    for (const row of rows as any[]) {
       const result = row.content ? expand(row.content) : JSON.parse(row.result);
       if ((runId && JSON.parse(row.run_refs).includes(runId)) || references(result, identifiers))
         this.db.prepare('DELETE FROM commands WHERE id=?').run(row.id);
     }
   }
   private collectObjects() {
-    const retained = new Set<string>();
+    const retained = this.objectReferences?.roots() ?? new Set<string>();
     const library = this.db.prepare("SELECT value FROM storage_meta WHERE key='local-agents:v1'").get() as
       | { value: string }
       | undefined;
     if (library) objectRefs(JSON.parse(library.value), retained);
-    for (const table of tables)
-      for (const row of this.db.prepare(`SELECT content FROM ${table}`).all() as any[])
+    if (!this.objectReferences)
+      for (const table of tables)
+        for (const row of this.db.prepare(`SELECT content FROM ${table}`).all() as any[])
+          objectRefs(expand(row.content), retained);
+    if (!this.objectReferences)
+      for (const row of this.db
+        .prepare('SELECT content FROM events UNION ALL SELECT content FROM commands')
+        .all() as any[])
         objectRefs(expand(row.content), retained);
-    for (const row of this.db
-      .prepare('SELECT content FROM events UNION ALL SELECT content FROM commands')
-      .all() as any[])
-      objectRefs(expand(row.content), retained);
     for (const row of this.db.prepare('SELECT object_ref FROM project_delivery_archives_v1').all() as {
       object_ref: string;
     }[])
-      objectRefs(row.object_ref, retained);
+      objectRefs(row.object_ref, retained, 'objectRef');
     const queue = [...retained];
     for (let i = 0; i < queue.length; i++) {
-      const row = this.db.prepare('SELECT content FROM compressed_objects WHERE ref=?').get(queue[i]) as any;
-      if (!row) continue;
+      const row = this.db
+        .prepare('SELECT hash,raw_size,content FROM compressed_objects WHERE ref=?')
+        .get(queue[i]) as any;
+      if (!row) {
+        if (sqliteObjectPattern.test(queue[i]))
+          throw new AppError('OBJECT_NOT_FOUND', '引用对象缺失，已停止回收');
+        continue;
+      }
+      let bytes: Buffer;
+      try {
+        bytes = gunzipSync(row.content);
+      } catch {
+        throw new AppError('OBJECT_CORRUPT', '引用对象正文损坏，已停止回收');
+      }
+      const digest = hash(bytes);
+      if (
+        bytes.length !== row.raw_size ||
+        digest !== row.hash ||
+        digest !== (sqliteObjectPattern.test(queue[i]) ? queue[i].slice(7) : path.basename(queue[i]))
+      )
+        throw new AppError('OBJECT_CORRUPT', '引用对象完整性检查失败，已停止回收');
       let value: unknown;
       try {
-        value = JSON.parse(gunzipSync(row.content).toString('utf8'));
+        value = JSON.parse(bytes.toString('utf8'));
       } catch {
         continue;
       }
@@ -1551,9 +1630,34 @@ export class Store {
     if (hash(data) !== path.basename(ref)) throw new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
     return data;
   }
+  onClose(hook: () => void) {
+    if (this.closed) {
+      hook();
+      return () => {};
+    }
+    this.closeHooks.add(hook);
+    return () => {
+      this.closeHooks.delete(hook);
+    };
+  }
   close() {
-    this.searchWork.close();
-    this.db.close();
+    if (this.closed) return;
+    this.closed = true;
+    let failure: unknown;
+    for (const hook of this.closeHooks) {
+      try {
+        hook();
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    this.closeHooks.clear();
+    try {
+      this.searchWork.close();
+    } finally {
+      this.db.close();
+    }
+    if (failure) throw failure;
   }
 }
 export function acquireLock(directory: string) {

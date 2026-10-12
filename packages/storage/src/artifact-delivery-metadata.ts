@@ -4,6 +4,19 @@ import type { DeliveryArtifactMetadata } from '../../contracts/src/workflow.js';
 import { hash } from './index.js';
 
 export type DeliveryArtifactRead = DeliveryArtifactMetadata & { runId: string };
+export type ArtifactDeliveryWarmBatchResult = {
+  scanned: number;
+  backfilled: number;
+  remaining: number;
+  total: number;
+};
+type MetadataRow = {
+  id: string;
+  run_id: string;
+  metadata_json: string | null;
+  semantic_hash: string | null;
+  expected_hash: string | null;
+};
 
 export function artifactDeliveryMetadata(artifact: DeliveryArtifactMetadata): DeliveryArtifactMetadata {
   return {
@@ -66,6 +79,15 @@ export class ArtifactDeliveryMetadataReads {
     private readBody: (id: string) => Artifact,
     private refresh: (artifact: Artifact) => void,
   ) {
+    const queueExists = !!db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='artifact_delivery_metadata_dirty_v1'",
+      )
+      .get();
+    const dirty = (key: string) => `UPDATE artifact_delivery_metadata_dirty_v1
+        SET run_id=(SELECT run_id FROM artifacts WHERE id=${key}) WHERE id=${key} AND EXISTS(SELECT 1 FROM artifacts WHERE id=${key});
+      INSERT INTO artifact_delivery_metadata_dirty_v1 SELECT id,run_id FROM artifacts WHERE id=${key}
+        AND NOT EXISTS(SELECT 1 FROM artifact_delivery_metadata_dirty_v1 WHERE id=${key});`;
     db.exec(`
       CREATE TABLE IF NOT EXISTS artifact_delivery_metadata_v1(
         id TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
@@ -78,7 +100,32 @@ export class ArtifactDeliveryMetadataReads {
       BEGIN DELETE FROM artifact_delivery_metadata_v1 WHERE id=OLD.id OR id=NEW.id; END;
       CREATE TRIGGER IF NOT EXISTS artifact_delivery_metadata_delete AFTER DELETE ON artifacts
       BEGIN DELETE FROM artifact_delivery_metadata_v1 WHERE id=OLD.id; END;
+      CREATE TABLE IF NOT EXISTS artifact_delivery_metadata_dirty_v1(
+        id TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,run_id TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS artifact_delivery_metadata_dirty_run ON artifact_delivery_metadata_dirty_v1(run_id);
+      DROP TRIGGER IF EXISTS artifact_delivery_dirty_insert;
+      DROP TRIGGER IF EXISTS artifact_delivery_dirty_update;
+      DROP TRIGGER IF EXISTS artifact_delivery_projection_dirty_insert;
+      DROP TRIGGER IF EXISTS artifact_delivery_projection_dirty_update;
+      DROP TRIGGER IF EXISTS artifact_delivery_projection_dirty_delete;
+      CREATE TRIGGER artifact_delivery_dirty_insert AFTER INSERT ON artifacts
+      BEGIN ${dirty('NEW.id')} END;
+      CREATE TRIGGER artifact_delivery_dirty_update AFTER UPDATE ON artifacts
+      BEGIN ${dirty('NEW.id')} END;
+      CREATE TRIGGER IF NOT EXISTS artifact_delivery_dirty_delete AFTER DELETE ON artifacts
+      BEGIN DELETE FROM artifact_delivery_metadata_dirty_v1 WHERE id=OLD.id; END;
+      CREATE TRIGGER artifact_delivery_projection_dirty_insert AFTER INSERT ON artifact_delivery_metadata_v1
+      BEGIN ${dirty('NEW.id')} END;
+      CREATE TRIGGER artifact_delivery_projection_dirty_update AFTER UPDATE ON artifact_delivery_metadata_v1
+      BEGIN ${dirty('NEW.id')} END;
+      CREATE TRIGGER artifact_delivery_projection_dirty_delete AFTER DELETE ON artifact_delivery_metadata_v1
+      BEGIN ${dirty('OLD.id')} END;
     `);
+    if (!queueExists)
+      db.exec(`INSERT OR IGNORE INTO artifact_delivery_metadata_dirty_v1
+      SELECT a.id,a.run_id FROM artifacts a LEFT JOIN artifact_delivery_metadata_v1 p ON p.id=a.id
+      WHERE p.id IS NULL OR p.revision IS NOT a.revision OR p.semantic_hash IS NOT json_extract(a.data,'$.deliverySemanticHash');`);
     this.save = db.prepare(`INSERT INTO artifact_delivery_metadata_v1(id,revision,semantic_hash,metadata_json)
       VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,
         semantic_hash=excluded.semantic_hash,metadata_json=excluded.metadata_json`);
@@ -87,6 +134,8 @@ export class ArtifactDeliveryMetadataReads {
   write(artifact: Artifact) {
     const metadata = serializeDeliveryArtifactMetadata(artifact);
     this.save.run(artifact.id, artifact.revision, hash(metadata), metadata);
+    if (valid(artifact, artifact.id))
+      this.db.prepare('DELETE FROM artifact_delivery_metadata_dirty_v1 WHERE id=?').run(artifact.id);
   }
 
   read(runId: string): DeliveryArtifactRead[] {
@@ -107,27 +156,61 @@ export class ArtifactDeliveryMetadataReads {
       semantic_hash: string | null;
       expected_hash: string | null;
     }[];
-    return rows.map((row) => {
-      let metadata: DeliveryArtifactMetadata | undefined;
-      if (row.metadata_json && hash(row.metadata_json) === row.semantic_hash) {
-        try {
-          const parsed = JSON.parse(row.metadata_json) as DeliveryArtifactMetadata;
-          if (valid(parsed, row.id)) metadata = parsed;
-        } catch {
-          /* Invalid redundant metadata is rebuilt from the authoritative body. */
-        }
+    return rows.map((row) => this.readRow(row));
+  }
+
+  /** Caller holds a short Store transaction. A bad body keeps its queue entry for repair. */
+  warmBatch(runId: string, limit = 32): ArtifactDeliveryWarmBatchResult {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 64)
+      throw new Error('Invalid metadata warm batch limit');
+    const rows = this.db
+      .prepare(
+        `SELECT a.id,a.run_id,p.metadata_json,p.semantic_hash,
+        json_extract(a.data,'$.deliverySemanticHash') expected_hash
+      FROM artifact_delivery_metadata_dirty_v1 d JOIN artifacts a ON a.id=d.id
+      LEFT JOIN artifact_delivery_metadata_v1 p ON p.id=a.id AND p.revision=a.revision
+        AND p.semantic_hash=json_extract(a.data,'$.deliverySemanticHash')
+      WHERE d.run_id=? ORDER BY d.rowid LIMIT ?`,
+      )
+      .all(runId, limit) as MetadataRow[];
+    let backfilled = 0;
+    for (const row of rows) {
+      const result = this.readRow(row);
+      if (!row.metadata_json || serializeDeliveryArtifactMetadata(result) !== row.metadata_json) backfilled++;
+      this.db.prepare('DELETE FROM artifact_delivery_metadata_dirty_v1 WHERE id=?').run(row.id);
+    }
+    return {
+      scanned: rows.length,
+      backfilled,
+      remaining: Number(
+        this.db
+          .prepare('SELECT COUNT(*) n FROM artifact_delivery_metadata_dirty_v1 WHERE run_id=?')
+          .get(runId)!.n,
+      ),
+      total: Number(this.db.prepare('SELECT COUNT(*) n FROM artifacts WHERE run_id=?').get(runId)!.n),
+    };
+  }
+
+  private readRow(row: MetadataRow): DeliveryArtifactRead {
+    let metadata: DeliveryArtifactMetadata | undefined;
+    if (row.metadata_json && hash(row.metadata_json) === row.semantic_hash) {
+      try {
+        const parsed = JSON.parse(row.metadata_json) as DeliveryArtifactMetadata;
+        if (valid(parsed, row.id)) metadata = parsed;
+      } catch {
+        /* Invalid redundant metadata is rebuilt from the authoritative body. */
       }
-      if (!metadata) {
-        const artifact = this.readBody(row.id);
-        metadata = artifactDeliveryMetadata(artifact);
-        if (artifact.runId !== row.run_id || !valid(metadata, row.id))
-          throw new Error('Invalid delivery artifact metadata');
-        // Most legacy rows already have the right semantic hash. Only repair the source
-        // projection when the authoritative body has actually changed or lacks that hash.
-        if (hash(serializeDeliveryArtifactMetadata(metadata)) === row.expected_hash) this.write(artifact);
-        else this.refresh(artifact);
-      }
-      return { ...metadata, runId: row.run_id };
-    });
+    }
+    if (!metadata) {
+      const artifact = this.readBody(row.id);
+      metadata = artifactDeliveryMetadata(artifact);
+      if (artifact.runId !== row.run_id || !valid(metadata, row.id))
+        throw new Error('Invalid delivery artifact metadata');
+      // Most legacy rows already have the right semantic hash. Only repair the source
+      // projection when the authoritative body has actually changed or lacks that hash.
+      if (hash(serializeDeliveryArtifactMetadata(metadata)) === row.expected_hash) this.write(artifact);
+      else this.refresh(artifact);
+    }
+    return { ...metadata, runId: row.run_id };
   }
 }

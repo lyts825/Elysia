@@ -8,15 +8,33 @@
 | --- | --- | --- | --- |
 | M1 / preview.6 / 显式交付保存 | 已完成 | 打包代理后端、界面代理 | 每清单一份64MiB内完整ZIP；状态/大小/移除；删除源Run、重启及对象清理后字节相同；取消/落盘/提交边界不假成功 |
 | M1 / 数据保护与恢复 | 已完成 | 主代理 | schema6/minimum reader preview.6；旧schema备份正确门禁；对象引用保护；备份恢复保存包完整性；项目删除须确认当前存档集合 |
-| M2 / preview.7 / 用量汇总复用 | 进行中 | 性能代理 | 同版本连续5页只聚合一次；有界内存/项目隔离、修复/归属/结算失效、事务回滚不污染缓存 |
-| M2 / 回填与删除性能 | 待开始 | 性能代理回填、主代理删除 | 旧元数据分批进度/取消，完整指纹与正文版本保持；删除按同夹具测基线并优化必要范围，共享/嵌套/存档引用保留 |
-| 分阶段交付 | 待开始 | 主代理整合、独立QA | 必要专项、真实生产UI、格式/类型/构建，分别提交与本地标签；已实现/已验证/已发布区分 |
+| M2 / preview.7 / 用量汇总复用 | 已完成 | 性能代理 | 同版本连续5页只聚合一次；有界内存/项目隔离、修复/归属/结算失效、事务回滚不污染缓存 |
+| M2 / 回填与删除性能 | 已完成 | 性能代理回填、主代理删除、后端代理独立QA | 旧元数据分批进度/取消，完整指纹与正文版本保持；删除按同夹具测基线并优化必要范围，共享/嵌套/存档引用保留 |
+| 分阶段交付 | 已完成 | 主代理整合、独立QA | 必要专项、真实生产UI、格式/类型/构建，分别提交与本地标签；已实现/已验证/已发布区分 |
 
 M1：新增显式保存作业，一份冻结清单保存一份完整核验的ZIP，流式写入原objects内容寻址目录，核对来源版本和SHA后无覆盖发布，落盘后事务保存独立清单绑定记录。提交前取消不写记录，提交后成功凭据不倒退。临时下载不当作保存；重复保存保持原记录。已保存包独立校验下载，源Run/Artifact删除后可读；移除只撤引用。项目列表包含完整集合setHash，两个删除入口先读取保存包并明确确认，后端prepare/finish都核对当前集合，集合变化409保留弹窗。对象目录与父级链接拒绝，64MiB/双槽沿用。
 
 后端保存7组（project-delivery-archive-v100p6-y1qQnE）及原ZIP11组（project-delivery-bundle-v1-Y98POH）通过。发现并修复同hash发布时临时硬链接移除改变ctime导致误报损坏：最终对象核对inode/size/mtime及完整SHA，来源仍严格核对ctime；已有对象不覆盖。升级/CLI备份恢复6组（delivery-archive-upgrade-preview6-UMK89U），并在仅M1的Git树934de8c导出的project-preview6-release-tree-7e4c7b精确源码重跑6组（5JGj1S）通过：真实preview5双入口schema5→6，正文不改，旧备份仍schema5/minreaderpreview.1可读；旧reader拒新库，保存ZIP删源后备份恢复字节一致，坏包/错误清单绑定在安装前拒绝，旧schema5备份仍可恢复迁移。精确对象维护3项（archive-cleanup-preview6-vObtxn）确认保存包、共享与嵌套对象保留，无引用对象按计划清理，损坏存档引用拒清理。
 
 M1精确源码全类型与server/Vite构建通过，主包index-VoekRA8i.js432.77kB，排除并行M2全部warm/cache源码及Store包装。生产UI8组通过（project-archive-production-preview6-summary.json，截图3mK2rn）：真实ZIP CRC/索引/hash、取消/提交竞态、源删除后下载、移除、两删除入口集合变化/读取失败保护、重建窗口及1440/320无横向溢出。管理入口首轮停在既有归档tab，修正测试点击项目tab后只复验第8组，无产品修改；失败记录保留。模型/外网/credentials/Docker均0，4库完整性ok。M1正式提交由本地标签v1.0.0-preview.6定位；未发布或重载正式窗口，正式profile未变。临时源码tar/暂存blob文件已精确清理，必要复现/诊断/证据留忽略目录，不纳入Git。
+
+M2已实现：用量汇总按项目/现有统计版本有界复用，最多4项目、16MiB序列化payload，不声明等于V8/RSS。缓存命中只检查代际并返回克隆的20条任务页，不warm或重扫全项目；事务中不读写缓存，关闭Store清空。旧产物派生metadata脏队列每32–64项短事务回填，原始body/metadata任何变化及派生表增改删都排队，合法回填清队列；坏body保留脏项。Run/项目拥有独立有界warm作业，常用交付、历史详情、差异及项目board先准备再读完整结果；POST快速响应、短progress GET、只取消当前订阅，其他窗口继续。Store关闭先同步abort，服务器关闭再await，不在闭库后继续读取。
+
+读取指标来自本机同类隔离夹具：100个本项目Run＋5000 foreignRuns、10k请求，五页旧124.95/111.81/105.99/104.64/109.43ms且每页聚合10k；新118.72/0.357/0.174/0.141/0.142ms，仅首页聚合，后4页warm/聚合SQL和request正文解码0，缓存45878序列化字节（project-usage-cache-v100p7-after-10000-fcu7Yh）。旧产物10k分批固定32总1587.95ms，自适应32→64总1150.56ms、173批、最大batch14.16ms、事件循环最大24.05ms/p95 13.12ms，7一致性/取消/跨连接/损坏组通过（delivery-warm-v100p7-10000-vWqa7u）；总耗时仍比原同步330.79ms长，收益是进度、可取消及短阻塞。现代10k首读60.06ms/首次diff32.25ms、产物解码0，最终全量指纹/差异仍同步、最大eventloop51.45ms，不宣称全部首读或内存全面下降。M2旧request账本初次规模回填仍无实测，未把产物数据替代它。
+
+删除优化：原始body事务写入派生引用及命令字符串token，原始content增改删触发失效，损坏投影从原文回填。删除Run先按SQL收集ID，命令索引只筛候选，最终仍核对原始result和run_refs。现代引用汇总不展开无关core正文；嵌套压缩对象核对大小、内容hash及寻址标识，无法核验则整个删除回滚，合法非JSON文本保持opaque。精确preview5基线1k/10k无关单元（三表3k/30k、每row8KiB）删小Run76.46/592.22ms、4011/40011解压；新8.87/59.71ms、6次/611B，再删10k第二Run47.41ms/3次/424B；完整性保护补验10k54.73ms/6次，非通用性能保证。7行为组（gc-reference-behavior-v100p7-wZee2P）及1损坏组（gc-reference-corruption-v100p7-moqjHD）通过，覆盖raw同revision、坏投影、rollback、命令token修复、共享/嵌套/真实保存ZIP、重开及旧库240历史首回填每条一次后零展开；损坏/缺失嵌套父对象阻断并保留待删Run、command和child。报告基线BUelF8、新6Pk9xW、补验CxX6vv均在.local-qa。
+
+独立并发回填5组（delivery-warm-independent-v100p7-qOfFB0）通过，覆盖两个项目、共享Run订阅单独取消、70个Run/项目读者、坏/缺失/foreign/非原生任务及Store关闭。首轮发现完成凭据在worker槽位释放前唤醒项目下一项，误报429；修复为先按worker身份释放再通知，旧finally不删除新worker，退役中的work另行等待关闭。最小槽位2组（delivery-warm-slot-regression-v100p7-eSEbeD）复验立即取消重开、旧finally及同步坏body失败，不把活跃槽位超过2。Run自动读取HTTP4组、项目HTTP6组通过。用量18组受影响回归、4缓存边界组及1k/10k规模各5边界通过；两项并发夹具改为在缓存查询前完成外部提交、或先LRU淘汰再触发聚合竞态，保留原断言及失败诊断。
+
+生产UI5组（delivery-progress-production-preview7-summary.json）通过：6402条真实元数据准备16.787秒，各短请求保持原15秒期限；双窗口独立取消，Run/复核详情/差异取消重试保留原备注，迟到POST不覆盖新项目，五页100任务完整且cache gets5/hits4/puts1，保存preview.6完整ZIP一次直接回归。进度2722→2818→2914→3010/6402，1440/320无横向溢出，主代理已目视窄屏进度及M1宽屏保存包页面。首轮SQL计数夹具误将pending-ID查询混作聚合，区分SELECT字段后仅补五页HTTP计数：pending返回0，账本两次SELECT共101条，当前request正文0解码；无产品改动。两库完整性ok，模型/外网/credentials/Docker均0。
+
+删除日志兼容最小1组（delete-run-legacy-stream-v100p7-1hL0LD）通过：现代投影直接取partialStreamRef，缺该字段的旧投影只展开选中请求1次；现代/非法现代/无关请求零展开，正确清理选中日志，其他Run与越界文件原字节保留。两槽2组（compiled-SafFiS）及旧日志1组（compiled-UMJYs3）编译冒烟通过，报告记录SHA256且执行前后未变。
+
+收尾只读复核发现并修复两处集成回归。日志路径在外部正文修复后可能仍旧：独立request_log_pointer_dirty_v1在原始content/投影pointer变化时失效，可信Store.put同事务清除，选中dirty请求读原文；不UPDATE requests.data，避免触发用量派生清掉既有dirty。失败u2bxQV保留，修复源码联合组WNnq3L及最终dist联合组oGABWl通过：同revision content-only、content+data、data-only pointer三种只删新B留旧A/无关C；正常现代0解码，dirty选中各1次；重复raw UPSERT无冲突，账本dirty保留并回填43/66Token、USD4.25。项目board自动warm原本包含不可关联Run，现复用assertRunScope筛本项目native task；其余保留原unknown。真实认证GET专项ALTGLj通过：健康70项回填，foreign/非原生/缺失/坏Run各20dirty不变、无产物展开，4项缺口不阻断健康指纹与热读；缺失Run的dirty children由隔离夹具FK-off故意构造。
+
+以上修复后最终全类型、server/Vite构建、格式与差异检查通过，主包仍index-BI3QY06L.js432.88kB，ProjectWorkbench63.65kB。schema6/minimumReader preview.6不变，11份package清单与contract VERSION为preview.7；没有新增依赖。前端源码/产物未再变化，复用生产UI5组；最后新增联合专项使用最终dist的storage/usage模块，SHA执行前后不变。项目scope最终编译API专项dist-rvkLu8同样通过，四项缺口与健康70项保持，并确认热重读无额外展开。
+
+M1已提交3011ff2 / 本地标签v1.0.0-preview.6，M2正式提交由本地标签v1.0.0-preview.7定位。正式改动凭据模式扫描无匹配，测试材料、截图与构建输出未纳入Git；已精确清理本轮无用tar、暂存blob和三份编译冒烟复制脚本，原复现、失败诊断与有效证据保留于忽略目录。未推送、发布或重载正式窗口，正式profile未变。稳定版全范围验收、物理前台聚焦、真实Docker及其他供应商、旧request账本首次规模回填仍为单列缺口；本轮只完成本表授权范围。
 
 ## 当前迭代：v1.0 性能、打包恢复与项目用量
 

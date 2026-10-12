@@ -21,6 +21,7 @@ import { ProjectTodos } from './ProjectTodos';
 import { ProjectLaunchDraft } from './ProjectLaunchDraft';
 import { ProjectUsage } from './ProjectUsage';
 import { useSurfaceClient } from './SurfaceClientContext';
+import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './project-workbench.css';
 
 export function ProjectWorkbench({
@@ -51,6 +52,8 @@ export function ProjectWorkbench({
     [opening, setOpening] = useState(false);
   const live = useRef(true),
     writing = useRef(false);
+  const readRequest = useRef<AbortController | null>(null);
+  const [progress, setProgress] = useState<DeliveryWarmProgress>();
   useEffect(() => {
     live.current = true;
     return () => {
@@ -77,12 +80,15 @@ export function ProjectWorkbench({
   }, [cache, project.id, retry]);
   useEffect(() => {
     const controller = new AbortController();
+    readRequest.current = controller;
     let pending = false;
     const read = async () => {
-      if (pending || writing.current) return;
+      if (pending || writing.current || controller.signal.aborted) return;
       pending = true;
       setLoading(true);
+      setProgress(undefined);
       try {
+        await prepareDeliveryRead(api, { kind: 'project', id: project.id }, controller.signal, setProgress);
         const result = await api<ProjectDeliveryBoard>(
           `/projects/${project.id}/delivery-board`,
           undefined,
@@ -98,7 +104,10 @@ export function ProjectWorkbench({
           setError(issue instanceof Error ? issue.message : '项目交付计划读取失败');
       } finally {
         pending = false;
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setProgress(undefined);
+        }
       }
     };
     void read();
@@ -220,6 +229,18 @@ export function ProjectWorkbench({
           </button>
         </div>
       </header>
+      {loading && (
+        <DeliveryReadProgress
+          label="项目交付状态"
+          progress={progress}
+          cancel={() => {
+            readRequest.current?.abort();
+            setLoading(false);
+            setProgress(undefined);
+            setError('本次项目读取已取消。已读内容和草稿保留，请刷新项目状态后继续。');
+          }}
+        />
+      )}
       {(error || draftError || parseError) && (
         <div className="field-error" role="alert">
           {error || draftError || parseError}

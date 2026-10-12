@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChangePage,
   DeliveryArtifactMetadata,
@@ -8,6 +8,7 @@ import { ApiError } from './api';
 import { DeliveryChanges } from './DeliveryChanges';
 import { ArtifactRevisionEditor } from './ArtifactRevisionDraft';
 import { deferredPanel } from './DeferredPanel';
+import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -62,19 +63,30 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
     [error, setError] = useState(''),
     [conflict, setConflict] = useState(false);
   const [preview, setPreview] = useState<string>();
+  const [progress, setProgress] = useState<DeliveryWarmProgress>();
+  const readRequest = useRef<AbortController | null>(null);
   useEffect(() => {
-    if (!open || !fingerprint || reading) return;
+    if (!open || !fingerprint || reading) {
+      setLoading(false);
+      setProgress(undefined);
+      return;
+    }
     const controller = new AbortController();
+    readRequest.current = controller;
     setLoading(true);
+    setProgress(undefined);
     setError('');
     setPreview(undefined);
     const query = new URLSearchParams({ expectedCurrentFingerprint: fingerprint, offset: String(offset) });
-    void api<DeliveryArtifactChangePage>(
-      `/runs/${runId}/delivery/reviews/${reviewId}/artifact-changes?${query}`,
-      undefined,
-      undefined,
-      controller.signal,
-    )
+    void prepareDeliveryRead(api, { kind: 'run', id: runId }, controller.signal, setProgress)
+      .then(() =>
+        api<DeliveryArtifactChangePage>(
+          `/runs/${runId}/delivery/reviews/${reviewId}/artifact-changes?${query}`,
+          undefined,
+          undefined,
+          controller.signal,
+        ),
+      )
       .then((next) => {
         if (controller.signal.aborted) return;
         if (
@@ -95,7 +107,10 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
           setConflict(true);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setProgress(undefined);
+        }
       });
     return () => controller.abort();
   }, [api, runId, reviewId, fingerprint, offset, retry, open, reading]);
@@ -111,7 +126,19 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
           {!fingerprint && (
             <p className="field-help">当前交付不可读，暂时无法列出产物变化。原复核内容仍保留。</p>
           )}
-          {(loading || reading) && <p role="status">正在读取产物变化…</p>}
+          {reading && <p role="status">正在重新读取复核…</p>}
+          {loading && (
+            <DeliveryReadProgress
+              label="产物变化"
+              progress={progress}
+              cancel={() => {
+                readRequest.current?.abort();
+                setLoading(false);
+                setProgress(undefined);
+                setError('本次产物变化读取已取消，已读页面保留。可重试这一页。');
+              }}
+            />
+          )}
           {error && (
             <p className="field-error" role="alert">
               {error} {value ? '已读页面保留，尚未合并新的结果。' : ''}

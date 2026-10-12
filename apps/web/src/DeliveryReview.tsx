@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DeliveryReview as Delivery, SourceArtifact } from '../../../packages/contracts/src/workflow';
 import type { Artifact, Operation } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
@@ -11,6 +11,7 @@ import { DeliveryUserReview } from './DeliveryUserReview';
 import { ReviewHistory } from './ReviewHistory';
 import { ArtifactRevisionProvider } from './ArtifactRevisionDraft';
 import { SourceNoteResolutions } from './SourceNoteResolutions';
+import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './workflow.css';
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -45,19 +46,25 @@ export function DeliveryReview({
   updated?: (runRevision: number) => void;
 }) {
   const { api, apiUrl } = useSurfaceClient();
-  const [value, setValue] = useState<Delivery>();
+  const [snapshot, setValue] = useState<Delivery>();
+  const value = snapshot?.runId === runId ? snapshot : undefined;
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [preview, setPreview] = useState<SourceArtifact>();
   const [reading, setReading] = useState(true),
     [reviewBusy, setReviewBusy] = useState(false),
     [readVersion, setReadVersion] = useState(0);
+  const [progress, setProgress] = useState<DeliveryWarmProgress>();
+  const readRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
+    readRequest.current = controller;
     setError('');
     setReading(true);
+    setProgress(undefined);
     setPreview(undefined);
-    void api<Delivery>(`/runs/${runId}/delivery`, undefined, undefined, controller.signal)
+    void prepareDeliveryRead(api, { kind: 'run', id: runId }, controller.signal, setProgress)
+      .then(() => api<Delivery>(`/runs/${runId}/delivery`, undefined, undefined, controller.signal))
       .then((next) => {
         if (!controller.signal.aborted) {
           setValue(next);
@@ -69,7 +76,10 @@ export function DeliveryReview({
           setError(issue instanceof Error ? issue.message : '交付核验读取失败。');
       })
       .finally(() => {
-        if (!controller.signal.aborted) setReading(false);
+        if (!controller.signal.aborted) {
+          setReading(false);
+          setProgress(undefined);
+        }
       });
     return () => controller.abort();
   }, [api, runId, retry]);
@@ -104,7 +114,17 @@ export function DeliveryReview({
             </p>
           )}
           {reading && value && <p role="status">正在重新读取，已读内容与备注保留…</p>}
-          {!value && reading && <p role="status">正在读取交付证据…</p>}
+          {reading && (
+            <DeliveryReadProgress
+              progress={progress}
+              cancel={() => {
+                readRequest.current?.abort();
+                setReading(false);
+                setProgress(undefined);
+                setError('本次交付读取已取消。已读内容与备注保留，可重试读取。');
+              }}
+            />
+          )}
           {!value && !reading && error && (
             <p className="field-help">当前交付暂不可读。已保存的复核历史仍可单独查看，未保存备注保持不变。</p>
           )}
@@ -127,7 +147,7 @@ export function DeliveryReview({
                 activity={setReviewBusy}
                 reload={() => setRetry((v) => v + 1)}
                 saved={(state) => {
-                  setValue((old) => (old ? { ...old, ...state } : old));
+                  setValue((old) => (old?.runId === runId ? { ...old, ...state } : old));
                   updated?.(state.runRevision);
                 }}
               >
@@ -171,7 +191,7 @@ export function DeliveryReview({
                 reload={() => setRetry((v) => v + 1)}
                 activity={setReviewBusy}
                 updated={(revision) => {
-                  setValue((old) => (old ? { ...old, runRevision: revision } : old));
+                  setValue((old) => (old?.runId === runId ? { ...old, runRevision: revision } : old));
                   updated?.(revision);
                 }}
               />

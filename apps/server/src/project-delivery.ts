@@ -32,6 +32,8 @@ import { sourceNoteResolutionsFor } from './source-note-resolutions.js';
 import { projectDeliveryMarkdown } from './project-delivery-export.js';
 import { assertBundleManifest, ProjectDeliveryBundleService } from './project-delivery-bundle.js';
 import { ProjectDeliveryArchiveService, readProjectArchives } from './project-delivery-archive.js';
+import { withWarmDeliveryMetadata } from './delivery-artifact-warm.js';
+import { registerProjectDeliveryWarm } from './project-delivery-warm.js';
 
 type StoredItem = z.infer<typeof ProjectDeliveryItemInput> & {
   itemRevision: number;
@@ -428,9 +430,36 @@ export function registerProjectDelivery(
     CREATE TABLE IF NOT EXISTS project_delivery_links_v1(project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,item_id TEXT NOT NULL,run_id TEXT NOT NULL,title TEXT NOT NULL,linked_at TEXT NOT NULL,PRIMARY KEY(project_id,item_id,run_id));
     CREATE TABLE IF NOT EXISTS project_delivery_manifests_v1(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,title TEXT NOT NULL,created_at TEXT NOT NULL,item_count INTEGER NOT NULL,hash TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
     CREATE INDEX IF NOT EXISTS project_delivery_manifests_project ON project_delivery_manifests_v1(project_id);`);
-  app.get<{ Params: { id: string } }>('/api/projects/:id/delivery-board', (request) => {
+  registerProjectDeliveryWarm(app, store, (projectId) => {
+    const record = boardRecord(store, projectId);
+    return {
+      version: hash(stable({ revision: record.revision, data: record.data })),
+      runs: [
+        ...new Set(record.data.items.map((item) => item.currentRunId).filter((key): key is string => !!key)),
+      ],
+    };
+  });
+  app.get<{ Params: { id: string } }>('/api/projects/:id/delivery-board', (request, reply) => {
     z.object({}).strict().parse(request.query);
-    return projectDeliveryBoard(store, request.params.id);
+    const record = boardRecord(store, request.params.id);
+    const runs = [
+      ...new Set(record.data.items.map((item) => item.currentRunId).filter((key): key is string => !!key)),
+    ].filter((runId) => {
+      try {
+        assertRunScope(store.require<Run>('runs', runId), request.params.id);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    return withWarmDeliveryMetadata(
+      store,
+      runs,
+      request,
+      reply,
+      () => projectDeliveryBoard(store, request.params.id),
+      true,
+    );
   });
   app.put<{ Params: { id: string } }>('/api/projects/:id/delivery-board', (request) => {
     const body = ProjectDeliveryBoardInput.parse(request.body);

@@ -9,6 +9,7 @@ import type {
 } from '../../../packages/contracts/src/project-usage.js';
 import { hash, id, type Store } from '../../../packages/storage/src/index.js';
 import { projectionReads } from '../../../packages/storage/src/projection-reads.js';
+import { ProjectUsageCache, usageSnapshotPage, type UsageSnapshot } from './project-usage-cache.js';
 
 type Ledger = {
   id: string;
@@ -119,6 +120,9 @@ type RunRow = { id: string; position: number; data: string };
 export class ProjectUsageReads {
   private identity = id();
   private projections;
+  private cache = new ProjectUsageCache();
+  private closed = false;
+  private removeCloseHook: () => void;
   constructor(private store: Store) {
     this.projections = projectionReads(store);
     // Same-revision raw repairs must not continue using an old frozen ledger.
@@ -164,7 +168,8 @@ export class ProjectUsageReads {
           operation === 'UPDATE'
             ? `WHEN NEW.run_id IS NOT OLD.run_id OR ${ledgerValue('NEW')} IS NOT ${ledgerValue('OLD')}
           OR (NEW.content IS NOT OLD.content AND (NEW.data IS OLD.data OR NEW.revision IS OLD.revision))
-          OR CASE WHEN json_valid(NEW.data) THEN json_extract(NEW.data,'$.revision') IS NOT NEW.revision ELSE 1 END`
+          OR CASE WHEN json_valid(NEW.data) THEN json_extract(NEW.data,'$.revision') IS NOT NEW.revision
+            OR json_extract(NEW.data,'$.requestLedgerVersion') IS NOT json_extract(OLD.data,'$.requestLedgerVersion') ELSE 1 END`
             : ''
         }
         BEGIN ${aliases.map((alias) => touch(requestProject(alias))).join('\n')} END;
@@ -191,6 +196,16 @@ export class ProjectUsageReads {
           )
           .join('\n')} END;`);
     }
+    this.removeCloseHook = store.onClose(() => this.close());
+  }
+  close() {
+    this.closed = true;
+    this.cache.clear();
+    this.removeCloseHook();
+  }
+  private checkOpen(signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (this.closed) throw new AppError('PROJECT_USAGE_CLOSED', '用量读取服务已关闭', true, null, 503);
   }
   private version(projectId: string) {
     const rows = this.store.db
@@ -203,7 +218,7 @@ export class ProjectUsageReads {
   private async warm(projectId: string, signal?: AbortSignal) {
     let after = 0;
     for (;;) {
-      signal?.throwIfAborted();
+      this.checkOpen(signal);
       const rows = this.store.db
         .prepare(
           `SELECT q.id,q.rowid position FROM requests q JOIN runs r ON r.id=q.run_id
@@ -215,7 +230,7 @@ export class ProjectUsageReads {
         .all(projectId, after) as { id: string; position: number }[];
       if (!rows.length) return;
       for (const row of rows) {
-        signal?.throwIfAborted();
+        this.checkOpen(signal);
         this.projections.read('requests', row.id, true);
         after = row.position;
       }
@@ -227,10 +242,31 @@ export class ProjectUsageReads {
     query: { before?: string; expectedVersion?: string } = {},
     signal?: AbortSignal,
   ): Promise<ProjectUsageSummary> {
+    this.checkOpen(signal);
     this.store.require<Project>('projects', projectId);
+    const transaction = this.store.db.isTransaction;
+    if (!transaction) {
+      const version = this.version(projectId);
+      if (query.expectedVersion && query.expectedVersion !== version)
+        throw new AppError('PROJECT_USAGE_CHANGED', '项目用量已变化，请刷新后重新翻页', false, null, 409);
+      const cached = this.cache.get(projectId, version);
+      if (cached) {
+        const response = usageSnapshotPage(cached, query.before);
+        if (!response)
+          throw new AppError(
+            'PROJECT_USAGE_CURSOR_MISSING',
+            '任务位置已失效，请刷新项目用量',
+            false,
+            null,
+            409,
+          );
+        // A separate SQLite writer can commit between generation lookup and page cloning.
+        if (this.version(projectId) === version) return response;
+      }
+    }
     await this.warm(projectId, signal);
     for (let attempt = 0; attempt < 3; attempt++) {
-      signal?.throwIfAborted();
+      this.checkOpen(signal);
       const version = this.version(projectId);
       if (query.expectedVersion && query.expectedVersion !== version)
         throw new AppError('PROJECT_USAGE_CHANGED', '项目用量已变化，请刷新后重新翻页', false, null, 409);
@@ -266,7 +302,7 @@ export class ProjectUsageReads {
       let after = 0,
         changed = false;
       requestPages: for (;;) {
-        signal?.throwIfAborted();
+        this.checkOpen(signal);
         if (this.version(projectId) !== version) {
           changed = true;
           break;
@@ -348,18 +384,8 @@ export class ProjectUsageReads {
         await this.warm(projectId, signal);
         continue;
       }
-      const before = query.before ? runRows.find((row) => row.id === query.before) : undefined;
-      if (query.before && !before)
-        throw new AppError(
-          'PROJECT_USAGE_CURSOR_MISSING',
-          '任务位置已失效，请刷新项目用量',
-          false,
-          null,
-          409,
-        );
-      const selected = runRows.filter((row) => !before || row.position < before.position).slice(0, 20);
       if (unassignedRunCount) totals.tokenComplete = totals.costComplete = false;
-      return {
+      const summary = {
         projectId,
         generatedAt: new Date().toISOString(),
         version,
@@ -373,15 +399,23 @@ export class ProjectUsageReads {
         connections: [...connections.values()].sort(
           (a, b) => a.label.localeCompare(b.label) || (a.model ?? '').localeCompare(b.model ?? ''),
         ),
-        runs: selected.map((row) => runTotals.get(row.id)!),
-        page: {
-          total: runRows.length,
-          limit: 20,
-          before: query.before ?? null,
-          hasMore: selected.length > 0 && runRows.some((row) => row.position < selected.at(-1)!.position),
-          nextBefore: selected.at(-1)?.id ?? null,
-        },
       };
+      const snapshot: UsageSnapshot = {
+        summary,
+        runs: runRows.map((row) => ({ position: row.position, value: runTotals.get(row.id)! })),
+      };
+      const response = usageSnapshotPage(snapshot, query.before);
+      if (!response)
+        throw new AppError(
+          'PROJECT_USAGE_CURSOR_MISSING',
+          '任务位置已失效，请刷新项目用量',
+          false,
+          null,
+          409,
+        );
+      if (!transaction && !this.store.db.isTransaction && this.version(projectId) === version)
+        this.cache.put(projectId, snapshot);
+      return response;
     }
     throw new AppError('PROJECT_USAGE_CHANGED', '项目用量持续变化，请稍后刷新', true, null, 409);
   }
@@ -404,6 +438,7 @@ function readSignal(request: FastifyRequest, reply: FastifyReply) {
 }
 export function registerProjectUsage(app: FastifyInstance, store: Store) {
   const reads = new ProjectUsageReads(store);
+  app.addHook('onClose', () => reads.close());
   app.get<{ Params: { id: string } }>('/api/projects/:id/usage', async (request, reply) => {
     const query = z
       .object({

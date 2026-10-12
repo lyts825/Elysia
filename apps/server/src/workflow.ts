@@ -37,6 +37,7 @@ import { captureDeliveryBaseline } from './delivery-review-history.js';
 import { captureReviewSource } from './review-source.js';
 import { captureArtifactChanges } from './artifact-change-source.js';
 import { registerSourceNoteResolutions } from './source-note-resolutions.js';
+import { withWarmDeliveryMetadata } from './delivery-artifact-warm.js';
 
 const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
@@ -499,7 +500,7 @@ export function registerWorkflow(
       .parse(request.query);
     return sourceOptions(store, request.params.id, query.beforeMessage, query.beforeArtifact);
   });
-  app.get<{ Params: { id: string } }>('/api/runs/:id/delivery', async (request) => {
+  app.get<{ Params: { id: string } }>('/api/runs/:id/delivery', async (request, reply) => {
     const query = z
       .object({
         beforeArtifact: z.string().uuid().optional(),
@@ -508,13 +509,15 @@ export function registerWorkflow(
       })
       .strict()
       .parse(request.query);
-    return store.tx(() =>
-      deliveryReview(
-        store,
-        request.params.id,
-        query.beforeArtifact,
-        query.criteriaOffset,
-        query.expectedRootRevision,
+    return withWarmDeliveryMetadata(store, request.params.id, request, reply, () =>
+      store.tx(() =>
+        deliveryReview(
+          store,
+          request.params.id,
+          query.beforeArtifact,
+          query.criteriaOffset,
+          query.expectedRootRevision,
+        ),
       ),
     );
   });
