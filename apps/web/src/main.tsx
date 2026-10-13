@@ -119,7 +119,8 @@ const WorkspaceManager = deferredPanel(
   '工作区管理',
 );
 import { SessionSidebar, type SessionTarget, type SessionUpdateResult } from './SessionSidebar';
-import { WorkbenchCache, newDraftKey, runSetupDraftKey, type CacheEntry } from './WorkbenchCache';
+import { WorkbenchCache, newDraftKey, runSetupDraftKey, createWorkbenchSnapshot } from './WorkbenchCache';
+import { WorkbenchPersistence, WorkbenchSaveStatus, workbenchEntryLabel } from './WorkbenchPersistence';
 import { ConversationScroll } from './ConversationScroll';
 import { ConversationHistoryState } from './ConversationHistoryState';
 const ConversationSearch = React.lazy(() =>
@@ -307,11 +308,9 @@ function App({
     [modal, setModalState] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
-  const [cacheState, setCacheState] = useState<{
-    entries: Record<string, CacheEntry>;
-    status: 'loading' | 'saved' | 'saving' | 'error';
-    error: string;
-  }>({ entries: {}, status: 'loading', error: '' });
+  const [cacheState, setCacheState] = useState(createWorkbenchSnapshot);
+  const [cachePanelOpen, setCachePanelOpen] = useState(false);
+  const [cacheFormEpoch, setCacheFormEpoch] = useState(0);
   const cacheStateRef = useRef(cacheState);
   cacheStateRef.current = cacheState;
   const modalCurrent = useRef(modal);
@@ -684,6 +683,10 @@ function App({
         setPendingProjectLeave,
       ),
   );
+  const openPersistence = () => {
+    projectLeaveGuard.cancel();
+    setCachePanelOpen(true);
+  };
   const listRequest = useRef(0);
   const listReads = useRef(new ReadCoordinator());
   const detailReads = useRef(new ReadCoordinator());
@@ -2165,29 +2168,7 @@ function App({
             <Icon name="settings" />
             <span>{terminalSurface ? '终端管理' : '模型与设置'}</span>
           </button>
-          <div
-            className="cache-state"
-            role="status"
-            data-state={cacheState.status}
-            title={cacheState.error || '输入内容按项目和会话自动保存在本机'}
-          >
-            {cacheState.status === 'loading' ? (
-              '正在读取草稿与偏好…'
-            ) : cacheState.status === 'error' ? (
-              <>
-                {cacheState.error.startsWith('读取草稿与偏好失败：')
-                  ? '读取失败 · 本机输入已保留 '
-                  : '保存失败 · 草稿已保留 '}
-                <button onClick={() => void cache.retry()}>
-                  {cacheState.error.startsWith('读取草稿与偏好失败：') ? '重试读取' : '重试保存'}
-                </button>
-              </>
-            ) : cacheState.status === 'saving' ? (
-              '正在保存草稿与偏好…'
-            ) : (
-              '草稿与偏好已保存'
-            )}
-          </div>
+          <WorkbenchSaveStatus snapshot={cacheState} open={openPersistence} />
           <div className="local-indicator">
             <i />
             本机连接<span>v{VERSION}</span>
@@ -3597,7 +3578,7 @@ function App({
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      <Activity mode={pendingProjectLeave ? 'hidden' : 'visible'}>
+      <Activity mode={pendingProjectLeave || cachePanelOpen ? 'hidden' : 'visible'}>
         <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
           {modal === 'delivery' && detail && !terminalSurface && (
             <DeliveryReview
@@ -3803,10 +3784,11 @@ function App({
                 )}
                 {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
                   <RunModal
-                    key={runSetupKey}
+                    key={`${runSetupKey}:${cacheFormEpoch}`}
                     cache={cache}
                     draftKey={runSetupKey}
                     persistence={cacheState}
+                    openPersistence={openPersistence}
                     objective={draft}
                     kind={project ? 'task' : 'chat'}
                     projectName={project?.name}
@@ -4149,6 +4131,17 @@ function App({
           </Presence>
         </ModalErrorContext.Provider>
       </Activity>
+      {cachePanelOpen && (
+        <WorkbenchPersistence
+          cache={cache}
+          snapshot={cacheState}
+          labelFor={(key) => workbenchEntryLabel(key, projects, runs)}
+          onAdoptRemote={(key) => {
+            if (key === runSetupKey) setCacheFormEpoch((value) => value + 1);
+          }}
+          close={() => setCachePanelOpen(false)}
+        />
+      )}
       {pendingProjectLeave && (
         <Modal title="离开未应用的计划预览" close={() => projectLeaveGuard.cancel()}>
           <div className="form-body">

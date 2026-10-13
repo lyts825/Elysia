@@ -10,6 +10,7 @@ import type { ProjectBoardDraft } from './ProjectBoardDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectDeliveryBundle } from './ProjectDeliveryBundle';
 import { ProjectDeliveryArchives } from './ProjectDeliveryArchive';
+import { projectManifestReadiness, type ProjectManifestBlocker } from './project-manifest-readiness';
 
 function ArtifactSelection({
   item,
@@ -212,15 +213,23 @@ export function ProjectManifests({
   draft,
   change,
   busy,
+  unavailable,
   action,
   openRun,
+  onEditPlan,
+  onSelectItem,
+  onRefreshBoard,
 }: {
   board: ProjectDeliveryBoard;
   draft: ProjectBoardDraft;
   change: (update: (draft: ProjectBoardDraft) => ProjectBoardDraft) => void;
   busy: boolean;
+  unavailable: boolean;
   action: (path: string, body: Record<string, unknown>) => Promise<boolean>;
   openRun: (id: string, review?: boolean) => void;
+  onEditPlan: () => void;
+  onSelectItem: (id: string) => void;
+  onRefreshBoard: () => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
   type Position = { before: string; trail: string[] };
@@ -248,6 +257,10 @@ export function ProjectManifests({
   const detailSection = useRef<HTMLElement | null>(null),
     scrollToDetail = useRef(false),
     downloadRequest = useRef<AbortController | null>(null);
+  const manifestTitle = useRef<HTMLInputElement | null>(null),
+    manifestSelection = useRef<HTMLFieldSetElement | null>(null),
+    itemSelections = useRef(new Map<string, HTMLInputElement>()),
+    removedSelections = useRef(new Map<string, HTMLButtonElement>());
   const detail =
     readDetail?.manifest.projectId === board.projectId &&
     readDetail.manifest.id === draft.selectedManifest &&
@@ -352,19 +365,27 @@ export function ProjectManifests({
   }, [board.projectId, draft.selectedManifest, draft.selectedManifestHash]);
   const manifest = draft.manifest;
   const chosen = board.items.filter((item) => manifest?.selected.includes(item.id));
-  const canFreeze =
-    !!manifest?.title.trim() &&
-    chosen.length > 0 &&
-    chosen.length === manifest?.selected.length &&
-    chosen.every(
-      (item) =>
-        item.readiness === 'ready' &&
-        item.current?.fingerprint &&
-        item.current.reviewId &&
-        item.current.runRevision !== null &&
-        item.current.rootRevision !== null,
-    ) &&
-    board.items.filter((item) => item.required).every((item) => manifest?.selected.includes(item.id));
+  const readiness = manifest
+    ? projectManifestReadiness(board, manifest, { busy, unavailable })
+    : { canFreeze: false, blockers: [] };
+  const goToBlocker = (blocker: ProjectManifestBlocker) => {
+    if (blocker.target === 'plan') return onEditPlan();
+    if (blocker.target === 'refresh') return onRefreshBoard();
+    if (blocker.target === 'item' && blocker.itemId) return onSelectItem(blocker.itemId);
+    if ((blocker.target === 'run' || blocker.target === 'review') && blocker.runId)
+      return openRun(blocker.runId, blocker.target === 'review');
+    const target =
+      blocker.target === 'title'
+        ? manifestTitle.current
+        : blocker.target === 'remove' && blocker.itemId
+          ? removedSelections.current.get(blocker.itemId)
+          : blocker.itemId
+            ? itemSelections.current.get(blocker.itemId)
+            : manifestSelection.current?.querySelector<HTMLInputElement>('input') ||
+              manifestSelection.current;
+    target?.scrollIntoView({ block: 'center' });
+    target?.focus({ preventScroll: true });
+  };
   const download = async (format: 'json' | 'markdown') => {
     if (!detail || downloadRequest.current) return;
     const controller = new AbortController();
@@ -407,7 +428,7 @@ export function ProjectManifests({
         <button
           type="button"
           className="primary"
-          disabled={busy || board.archived}
+          disabled={busy || unavailable || board.archived}
           onClick={() =>
             change((value) => ({
               ...value,
@@ -436,9 +457,44 @@ export function ProjectManifests({
       />
       {manifest && (
         <section className="project-freeze-form" aria-label="冻结交付确认">
+          <section className="project-freeze-readiness" aria-label="冻结前核对">
+            <h3>冻结前核对</h3>
+            <p className="field-help">
+              列出当前可确定的阻塞条件；每个纳入项先处理当前首个条件，再重读后核对。产物元数据可不选，提交时仍会核验最新版本与所选元数据。
+            </p>
+            {board.archived && (
+              <p role="status">项目已归档，不能冻结新清单。请在「项目与归档」中恢复项目，再重读项目状态。</p>
+            )}
+            {busy && !unavailable && <p role="status">正在处理项目操作，请等待完成后再核对冻结条件。</p>}
+            {readiness.blockers.length > 0 ? (
+              <>
+                <p role="status">
+                  {unavailable ? '当前冻结条件未知。' : `仍有 ${readiness.blockers.length} 项需要处理。`}
+                </p>
+                <ul className="project-freeze-blockers">
+                  {readiness.blockers.map((blocker) => (
+                    <li className="project-todo-row" key={blocker.id}>
+                      <p>{blocker.reason}</p>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy || (board.archived && blocker.target === 'plan')}
+                        onClick={() => goToBlocker(blocker)}
+                      >
+                        {blocker.action}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              readiness.canFreeze && <p role="status">当前已知条件已满足，可以提交冻结核验。</p>
+            )}
+          </section>
           <label>
             本次交付名称
             <input
+              ref={manifestTitle}
               maxLength={200}
               value={manifest.title}
               onChange={(e) =>
@@ -446,15 +502,19 @@ export function ProjectManifests({
               }
             />
           </label>
-          {manifest.selected
+          {[...new Set(manifest.selected)]
             .filter((id) => !board.items.some((item) => item.id === id))
             .map((id) => (
               <div key={id} className="field-error">
                 原选交付项已不在当前计划中：{id}
                 <button
+                  ref={(node) => {
+                    if (node) removedSelections.current.set(id, node);
+                    else removedSelections.current.delete(id);
+                  }}
                   type="button"
                   className="secondary"
-                  disabled={busy}
+                  disabled={busy || unavailable}
                   onClick={() =>
                     change((value) => ({
                       ...value,
@@ -469,59 +529,65 @@ export function ProjectManifests({
                 </button>
               </div>
             ))}
-          {board.items.map((item) => (
-            <div className="project-freeze-item" key={item.id}>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  disabled={busy}
-                  checked={manifest.selected.includes(item.id)}
-                  onChange={(e) =>
-                    change((value) => ({
-                      ...value,
-                      manifest: {
-                        ...value.manifest!,
-                        selected: e.target.checked
-                          ? [...value.manifest!.selected, item.id]
-                          : value.manifest!.selected.filter((id) => id !== item.id),
-                      },
-                    }))
-                  }
-                />
-                <span>
-                  {item.title} {item.required ? '（必需）' : '（可选）'} ·{' '}
-                  {item.readiness === 'ready' ? '可交付' : '尚未满足交付条件'}
-                </span>
-              </label>
-              {manifest.selected.includes(item.id) && item.current && (
-                <ArtifactSelection
-                  key={`${item.id}:${item.current.runId}`}
-                  item={item}
-                  selected={manifest.artifacts[item.id] || []}
-                  disabled={busy}
-                  change={(ids) =>
-                    change((value) => ({
-                      ...value,
-                      manifest: {
-                        ...value.manifest!,
-                        artifacts: { ...value.manifest!.artifacts, [item.id]: ids },
-                      },
-                    }))
-                  }
-                />
-              )}
-            </div>
-          ))}
-          {!canFreeze && (
-            <p className="field-help">
-              请填写交付名称，选齐必需交付项；每个纳入项须人工采纳、原意见复验通过并确认符合当前项目标准。
-            </p>
-          )}
+          <fieldset ref={manifestSelection} tabIndex={-1} aria-label="纳入本次冻结的交付项">
+            {board.items.map((item) => (
+              <div className="project-freeze-item" key={item.id}>
+                <label className="check-row">
+                  <input
+                    ref={(node) => {
+                      if (node) itemSelections.current.set(item.id, node);
+                      else itemSelections.current.delete(item.id);
+                    }}
+                    type="checkbox"
+                    disabled={busy || unavailable}
+                    checked={manifest.selected.includes(item.id)}
+                    onChange={(e) =>
+                      change((value) => ({
+                        ...value,
+                        manifest: {
+                          ...value.manifest!,
+                          selected: e.target.checked
+                            ? [...value.manifest!.selected, item.id]
+                            : value.manifest!.selected.filter((id) => id !== item.id),
+                        },
+                      }))
+                    }
+                  />
+                  <span>
+                    {item.title} {item.required ? '（必需）' : '（可选）'} ·{' '}
+                    {unavailable
+                      ? '当前交付条件未知'
+                      : item.readiness === 'ready'
+                        ? '可交付'
+                        : '尚未满足交付条件'}
+                  </span>
+                </label>
+                {manifest.selected.includes(item.id) && item.current && (
+                  <ArtifactSelection
+                    key={`${item.id}:${item.current.runId}`}
+                    item={item}
+                    selected={manifest.artifacts[item.id] || []}
+                    disabled={busy || unavailable}
+                    change={(ids) =>
+                      change((value) => ({
+                        ...value,
+                        manifest: {
+                          ...value.manifest!,
+                          artifacts: { ...value.manifest!.artifacts, [item.id]: ids },
+                        },
+                      }))
+                    }
+                  />
+                )}
+              </div>
+            ))}
+          </fieldset>
           <button
             type="button"
             className="primary"
-            disabled={busy || board.archived || !canFreeze}
+            disabled={!readiness.canFreeze}
             onClick={() => {
+              if (!readiness.canFreeze) return;
               const sent = JSON.stringify(manifest);
               void action(base, {
                 title: manifest.title,

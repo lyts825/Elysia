@@ -572,7 +572,11 @@ export function ProjectWorkbench({
                 <>
                   <ProjectTodos
                     board={board}
+                    busy={busy}
                     unavailable={!!readError}
+                    onEditPlan={() =>
+                      change((value) => ({ ...value, editing: true, edit: value.edit || boardToEdit(board) }))
+                    }
                     selectItem={(selected) =>
                       change((value) => ({ ...value, tab: 'items', filter: 'all', selected, editing: false }))
                     }
@@ -712,7 +716,22 @@ export function ProjectWorkbench({
                   board={board}
                   draft={draft}
                   change={change}
-                  busy={busy || !!readError}
+                  busy={busy}
+                  unavailable={!!readError}
+                  onRefreshBoard={() => setRetry((value) => value + 1)}
+                  onEditPlan={() =>
+                    change((value) => ({ ...value, editing: true, edit: value.edit || boardToEdit(board) }))
+                  }
+                  onSelectItem={(selected) =>
+                    change((value) => ({
+                      ...value,
+                      tab: 'items',
+                      filter: 'all',
+                      query: '',
+                      selected,
+                      editing: false,
+                    }))
+                  }
                   action={action}
                   openRun={(id, review) => void navigate(id, review)}
                 />

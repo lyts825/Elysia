@@ -170,6 +170,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.project-freeze-readiness {
+  margin-bottom: 24px;
+}
+.project-freeze-blockers {
+  list-style: none;
+  padding: 0;
+}
+.project-freeze-blockers p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .project-item-layout {
   display: grid;
   grid-template-columns: minmax(180px, 250px) minmax(0, 1fr);

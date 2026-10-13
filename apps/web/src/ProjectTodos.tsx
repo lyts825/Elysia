@@ -99,12 +99,16 @@ export function ProjectTodos({
   selectItem,
   openRun,
   manifests,
+  onEditPlan,
+  busy,
 }: {
   board: ProjectDeliveryBoard;
   unavailable: boolean;
   selectItem: (id: string) => void;
   openRun: (itemId: string, runId: string, review?: boolean) => void;
   manifests: () => void;
+  onEditPlan: () => void;
+  busy: boolean;
 }) {
   const entries = board.items
     .map((item) => ({ item, todo: projectTodo(item) }))
@@ -127,6 +131,17 @@ export function ProjectTodos({
         <p className="field-error" role="status">
           项目状态读取失败；以下为上次读取结果，当前完成情况未知。请刷新项目状态后再确认。
         </p>
+      )}
+      {!unavailable && !board.goal.trim() && (
+        <article className="project-todo-row">
+          <div>
+            <strong>项目目标待填写</strong>
+            <p>冻结交付清单前需要填写并保存项目目标。</p>
+          </div>
+          <button type="button" className="secondary" disabled={busy || board.archived} onClick={onEditPlan}>
+            填写项目目标
+          </button>
+        </article>
       )}
       {entries.map(({ item, todo }) => (
         <article className="project-todo-row" key={item.id}>
@@ -153,10 +168,17 @@ export function ProjectTodos({
         (!board.items.length ? (
           <p>尚未定义交付项。请编辑项目计划，明确交付物和验收标准。</p>
         ) : (
-          !unavailable && (
+          !unavailable &&
+          !!board.goal.trim() && (
             <div>
-              <p>当前交付项均已满足交付条件，可核对并汇总交付清单。</p>
-              <button type="button" className="secondary" onClick={manifests}>
+              <p>
+                {board.archived
+                  ? '项目已归档，可查看已有交付清单。'
+                  : busy
+                    ? '正在处理项目操作，完成后可核对交付清单。'
+                    : '当前交付项均已满足交付条件，可前往核对本次冻结选择。'}
+              </p>
+              <button type="button" className="secondary" disabled={busy} onClick={manifests}>
                 前往汇总交付
               </button>
             </div>

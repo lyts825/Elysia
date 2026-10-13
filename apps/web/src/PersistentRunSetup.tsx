@@ -8,6 +8,7 @@ export function PersistentRunSetup({
   cache,
   draftKey,
   persistence,
+  openPersistence,
   settings,
   submit,
   ...props
@@ -15,6 +16,7 @@ export function PersistentRunSetup({
   cache: WorkbenchCache;
   draftKey: string;
   persistence: { status: string; error: string };
+  openPersistence: () => void;
   settings: () => void;
   submit: (body: Record<string, unknown>, draftSnapshot: string) => void;
 }) {
@@ -40,9 +42,28 @@ export function PersistentRunSetup({
       live = false;
     };
   }, [cache, draftKey, retry]);
+  const snapshot = (draft: RunSetupDraft) => {
+    const raw = writeRunSetupDraft(draft);
+    const current = cache.get(draftKey);
+    const comparable = (value: unknown) => {
+      const parsed = readRunSetupDraft(value);
+      if (!parsed) return;
+      const { maxCost, deliverables, acceptanceCriteria, ...fields } = parsed;
+      return JSON.stringify({
+        ...fields,
+        maxCost: maxCost ?? null,
+        deliverables: deliverables ?? '',
+        acceptanceCriteria: acceptanceCriteria ?? '',
+      });
+    };
+    // Reading normalizes field order and the form fills optional defaults.
+    // Preserve unchanged original bytes, also used to clear after submit.
+    if (typeof current === 'string' && comparable(current) === comparable(raw)) return current;
+    return raw;
+  };
   const save = (draft: RunSetupDraft) => {
     try {
-      cache.set(draftKey, writeRunSetupDraft(draft));
+      cache.set(draftKey, snapshot(draft));
       setWriteError('');
       return true;
     } catch (issue) {
@@ -90,7 +111,7 @@ export function PersistentRunSetup({
       changed={save}
       submit={(body, draft) => {
         try {
-          submit(body, writeRunSetupDraft(draft));
+          submit(body, snapshot(draft));
         } catch (issue) {
           setWriteError(issue instanceof Error ? issue.message : '创建配置无法读取，当前表单仍保留。');
         }
@@ -108,8 +129,8 @@ export function PersistentRunSetup({
           {persistence.status === 'error' && (
             <p className="field-error" role="alert">
               {persistence.error} 当前表单已保留。
-              <button type="button" className="text-button" onClick={() => void cache.retry()}>
-                重试保存当前草稿
+              <button type="button" className="text-button" onClick={openPersistence}>
+                核对草稿保存问题
               </button>
             </p>
           )}
