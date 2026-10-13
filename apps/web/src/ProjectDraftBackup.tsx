@@ -51,7 +51,8 @@ export function ProjectDraftBackup({
   const [open, setOpen] = useState(false),
     [reading, setReading] = useState(false);
   const [restorePhase, setRestorePhase] = useState<'idle' | 'waiting' | 'critical'>('idle');
-  const [deleting, setDeleting] = useState(false);
+  const [deletePhase, setDeletePhase] = useState<'idle' | 'waiting' | 'critical'>('idle');
+  const deleting = deletePhase !== 'idle';
   const restoring = restorePhase !== 'idle';
   const busy = externalBusy || restoring || deleting;
   const [error, setError] = useState(''),
@@ -70,7 +71,8 @@ export function ProjectDraftBackup({
     generation = useRef(0),
     restoringNow = useRef(false);
   const deletingNow = useRef(false),
-    restorePhaseNow = useRef<'idle' | 'waiting' | 'critical'>('idle');
+    restorePhaseNow = useRef<'idle' | 'waiting' | 'critical'>('idle'),
+    deletePhaseNow = useRef<'idle' | 'waiting' | 'critical'>('idle');
   const restoreController = useRef<AbortController | undefined>(undefined);
   const deleteController = useRef<AbortController | undefined>(undefined);
   const protectionInfo = useMemo(
@@ -197,7 +199,7 @@ export function ProjectDraftBackup({
     }
   };
   const restore = async () => {
-    if (!preview || restoringNow.current) return;
+    if (!preview || restoringNow.current || deletingNow.current) return;
     restoringNow.current = true;
     restorePhaseNow.current = 'waiting';
     setRestorePhase('waiting');
@@ -267,6 +269,7 @@ export function ProjectDraftBackup({
     if (
       protectedRaw === null ||
       deletingNow.current ||
+      restoringNow.current ||
       !deleteConfirmed ||
       downloadedProtection !== protectedRaw
     )
@@ -275,8 +278,9 @@ export function ProjectDraftBackup({
       request = generation.current,
       controller = new AbortController();
     deletingNow.current = true;
+    deletePhaseNow.current = 'waiting';
     deleteController.current = controller;
-    setDeleting(true);
+    setDeletePhase('waiting');
     setError('');
     setNotice('');
     try {
@@ -286,6 +290,10 @@ export function ProjectDraftBackup({
         current: binding,
         expectedProtection: expected,
         signal: controller.signal,
+        onCritical: () => {
+          deletePhaseNow.current = 'critical';
+          setDeletePhase('critical');
+        },
         assertActive: () => {
           if (
             controller.signal.aborted ||
@@ -309,15 +317,23 @@ export function ProjectDraftBackup({
         } catch {
           /* Keep the last visible copy. */
         }
-        setDownloadedProtection(null);
-        setDeleteConfirmed(false);
-        setError(issue instanceof Error ? issue.message : '副本删除失败，请重新核对。当前草稿和预览未改动。');
+        if (controller.signal.aborted && deletePhaseNow.current === 'waiting') {
+          setError('');
+          setNotice('已取消本次副本删除等待，未执行本次删除。当前原稿和预览保留，可重新尝试。');
+        } else {
+          setDownloadedProtection(null);
+          setDeleteConfirmed(false);
+          setError(
+            issue instanceof Error ? issue.message : '副本删除失败，请重新核对。当前草稿和预览未改动。',
+          );
+        }
       }
     } finally {
       deletingNow.current = false;
       if (deleteController.current === controller) {
         deleteController.current = undefined;
-        setDeleting(false);
+        deletePhaseNow.current = 'idle';
+        setDeletePhase('idle');
       }
     }
   };
@@ -482,7 +498,21 @@ export function ProjectDraftBackup({
             </div>
           )}
           {restorePhase === 'critical' && <p role="status">正在核对并恢复草稿，本阶段不支持取消。</p>}
-          {deleting && <p role="status">正在核对并删除恢复前副本…</p>}
+          {deletePhase === 'waiting' && (
+            <div className="project-draft-restore-wait" role="status">
+              <p>正在等待副本删除操作，尚未开始删除。</p>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  if (deletePhaseNow.current === 'waiting') deleteController.current?.abort();
+                }}
+              >
+                取消本次副本删除等待
+              </button>
+            </div>
+          )}
+          {deletePhase === 'critical' && <p role="status">正在核对并删除恢复前副本，本阶段不支持取消。</p>}
           {error && (
             <p className="field-error" role="alert">
               {error}

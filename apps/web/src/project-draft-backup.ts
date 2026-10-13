@@ -196,6 +196,7 @@ export async function deleteProjectDraftProtection({
   expectedProtection,
   assertActive,
   signal,
+  onCritical,
 }: {
   locks: Pick<LockManager, 'request'> | undefined;
   storage: Pick<Storage, 'getItem' | 'removeItem'>;
@@ -203,11 +204,13 @@ export async function deleteProjectDraftProtection({
   expectedProtection: string;
   assertActive: () => void;
   signal?: AbortSignal;
+  onCritical?: () => void;
 }): Promise<void> {
   if (!locks?.request) throw Error('当前浏览器不支持安全的副本管理锁，未删除恢复前副本。');
   const key = projectDraftProtectionKey(current);
   return locks.request(key + ':restore', { mode: 'exclusive', signal }, () => {
     assertActive();
+    onCritical?.();
     let latest: string | null;
     try {
       latest = storage.getItem(key);

@@ -14,6 +14,11 @@ import {
 import { SurfaceClientContext, SurfaceRootContext, useSurfaceClient } from './SurfaceClientContext';
 import { SurfaceSwitcher } from './SurfaceSwitcher';
 import { deferredPanel } from './DeferredPanel';
+import {
+  ProjectPlanNavigationGuard,
+  type ProjectPlanNavigationLifecycle,
+  type PendingProjectPlanLeave,
+} from './ProjectPlanNavigation';
 const RunModal = deferredPanel(
   () => import('./PersistentRunSetup').then((m) => m.PersistentRunSetup),
   '任务设置',
@@ -669,6 +674,16 @@ function App({
   const navigationStorageKey = useRef<string | undefined>(undefined);
   const savedNavigation = useRef<NavigationState | undefined>(undefined);
   const navigationInitialized = useRef(false);
+  const workbenchNavigation = useRef<ProjectPlanNavigationLifecycle | null>(null);
+  const [pendingProjectLeave, setPendingProjectLeave] = useState<PendingProjectPlanLeave | null>(null);
+  const [projectLeaveGuard] = useState(
+    () =>
+      new ProjectPlanNavigationGuard(
+        () => ({ ...navigation.current, epoch: navigationEpoch.current }),
+        () => workbenchNavigation.current,
+        setPendingProjectLeave,
+      ),
+  );
   const listRequest = useRef(0);
   const listReads = useRef(new ReadCoordinator());
   const detailReads = useRef(new ReadCoordinator());
@@ -719,7 +734,7 @@ function App({
       return next;
     });
   }, []);
-  const navigate = useCallback(
+  const commitNavigation = useCallback(
     (next: NavigationState, explicit = false) => {
       if (explicit) {
         setNavigationOpen(false);
@@ -758,6 +773,38 @@ function App({
       if (navigationInitialized.current) writeNavigation(navigationStorageKey.current, next);
     },
     [closeArtifact, conversationHistory],
+  );
+  const navigate = useCallback(
+    (
+      next: NavigationState,
+      explicit = false,
+      options: {
+        intent?: number;
+        bypass?: boolean;
+        after?: () => void;
+        label?: string;
+      } = {},
+    ) => {
+      const current = navigation.current;
+      const leaving =
+        current.spaceId !== next.spaceId ||
+        current.projectId !== next.projectId ||
+        current.runId !== next.runId;
+      const commit = () => {
+        commitNavigation(next, explicit);
+        options.after?.();
+      };
+      if (!explicit) {
+        if (leaving) {
+          projectLeaveGuard.begin();
+          workbenchNavigation.current?.discard();
+        }
+        commit();
+        return true;
+      }
+      return projectLeaveGuard.request(commit, { ...options, leaving });
+    },
+    [commitNavigation, projectLeaveGuard],
   );
   const refreshConfiguration = useCallback(
     (force = false) => {
@@ -1459,6 +1506,10 @@ function App({
     setAssignmentReady({});
   }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
+  // Closing or replacing a source dialog retires its unfinished navigation request.
+  React.useLayoutEffect(() => {
+    projectLeaveGuard.begin();
+  }, [modal, projectLeaveGuard]);
   async function act(fn: () => Promise<unknown>) {
     if (actionPending.current) return false;
     actionPending.current = true;
@@ -1477,6 +1528,17 @@ function App({
       setBusy(false);
     }
   }
+  const submitAfterProjectLeave = (label: string, action: (intent: number) => Promise<boolean>) => {
+    const intent = projectLeaveGuard.begin();
+    let result: Promise<boolean> | undefined;
+    projectLeaveGuard.request(
+      () => {
+        result = action(intent);
+      },
+      { intent, label },
+    );
+    return result ?? Promise.resolve(false);
+  };
   const startConversation = () => {
     if (terminalSurface && (!project || !terminalProfile || !projectPreferences)) return;
     if (busy || (!project && (!homeModelValid || !homeContextValid)) || !draft.trim() || project?.archived)
@@ -1522,22 +1584,32 @@ function App({
       if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
     });
   };
-  const selectRun = (run: RunListItem) => {
-    if (cache.get(`unread:run:${run.id}`) === true) cache.set(`unread:run:${run.id}`, false);
-    if (run.projectId && cache.get(`collapsed:project:${run.projectId}`) === true)
-      cache.set(`collapsed:project:${run.projectId}`, false);
-    setPreviewTaskId(run.rootTaskId);
+  const selectRun = (
+    run: RunListItem,
+    options: { intent?: number; bypass?: boolean; after?: () => void } = {},
+  ) => {
     const owner = projects.find((p) => p.id === run.projectId);
-    navigate(
+    return navigate(
       {
         spaceId: owner?.spaceId || navigation.current.spaceId,
         projectId: run.projectId || '',
         runId: run.id,
       },
       true,
+      {
+        ...options,
+        label: `任务「${run.title || '未命名'}」`,
+        after: () => {
+          if (cache.get(`unread:run:${run.id}`) === true) cache.set(`unread:run:${run.id}`, false);
+          if (run.projectId && cache.get(`collapsed:project:${run.projectId}`) === true)
+            cache.set(`collapsed:project:${run.projectId}`, false);
+          setPreviewTaskId(run.rootTaskId);
+          setPreviewOpen(false);
+          setTab(run.kind === 'chat' ? 'agents' : 'tasks');
+          options.after?.();
+        },
+      },
     );
-    setPreviewOpen(false);
-    setTab(run.kind === 'chat' ? 'agents' : 'tasks');
   };
   const openVerification = (operation: Operation, ownerRunId: string, epoch = navigationEpoch.current) => {
     if (operation.name !== 'terminal_agent') {
@@ -1589,44 +1661,55 @@ function App({
     if (!ready || !notificationTarget || notificationTarget.sequence <= notificationSequence.current) return;
     notificationSequence.current = notificationTarget.sequence;
     const controller = new AbortController(),
-      epoch = navigationEpoch.current;
+      epoch = navigationEpoch.current,
+      intent = projectLeaveGuard.begin();
     void api<Run>('/runs/' + notificationTarget.taskId + '/header', undefined, undefined, controller.signal)
       .then((target) => {
-        if (controller.signal.aborted || navigationEpoch.current !== epoch) return;
-        selectRun(target);
-        setModal('');
+        if (
+          controller.signal.aborted ||
+          navigationEpoch.current !== epoch ||
+          !projectLeaveGuard.current(intent)
+        )
+          return;
+        selectRun(target, { intent, after: () => setModal('') });
       })
       .catch((issue) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted && projectLeaveGuard.current(intent))
           setError(issue instanceof Error ? issue.message : '无法打开通知对应的任务。');
       });
     return () => controller.abort();
   }, [ready, notificationTarget?.sequence, api]);
   const openResourceOwner = async (ownerRunId: string, operationId?: string) => {
     if (actionPending.current) return;
-    const epoch = navigationEpoch.current;
+    const epoch = navigationEpoch.current,
+      intent = projectLeaveGuard.begin();
     try {
       const target = await api<Run>('/runs/' + ownerRunId + '/header');
-      if (epoch !== navigationEpoch.current) return;
-      selectRun(target);
-      setTab('artifacts');
-      fullDetailRequested.current = true;
-      void refreshDetail(false, true);
-      setDetailsCollapsed(false);
-      setDetailsDrawerOpen(true);
-      heldNavigation.current = operationId
-        ? { runId: ownerRunId, operationId, epoch: navigationEpoch.current }
-        : undefined;
-      const operation =
-        detail?.run.id === ownerRunId
-          ? detail.operations.find((row) => row.id === operationId && row.status === 'UNCERTAIN')
-          : undefined;
-      if (operation) {
-        heldNavigation.current = undefined;
-        openVerification(operation, ownerRunId);
-      }
+      if (epoch !== navigationEpoch.current || !projectLeaveGuard.current(intent)) return;
+      selectRun(target, {
+        intent,
+        after: () => {
+          setTab('artifacts');
+          fullDetailRequested.current = true;
+          void refreshDetail(false, true);
+          setDetailsCollapsed(false);
+          setDetailsDrawerOpen(true);
+          heldNavigation.current = operationId
+            ? { runId: ownerRunId, operationId, epoch: navigationEpoch.current }
+            : undefined;
+          const operation =
+            detail?.run.id === ownerRunId
+              ? detail.operations.find((row) => row.id === operationId && row.status === 'UNCERTAIN')
+              : undefined;
+          if (operation) {
+            heldNavigation.current = undefined;
+            openVerification(operation, ownerRunId);
+          }
+        },
+      });
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : '无法打开资源所属对话');
+      if (projectLeaveGuard.current(intent))
+        setError(issue instanceof Error ? issue.message : '无法打开资源所属对话');
     }
   };
   useEffect(() => {
@@ -1641,10 +1724,15 @@ function App({
     heldNavigation.current = undefined;
     if (operation?.status === 'UNCERTAIN') openVerification(operation, target.runId, target.epoch);
   }, [detail]);
-  const newRun = () => {
-    navigate({ ...navigation.current, runId: '' }, true);
-    setDetail(null);
-    setPreviewOpen(false);
+  const newRun = (bypass = false) => {
+    navigate({ ...navigation.current, runId: '' }, true, {
+      bypass,
+      label: '新会话',
+      after: () => {
+        setDetail(null);
+        setPreviewOpen(false);
+      },
+    });
   };
   const startFromRun = () => {
     if (!detail) return;
@@ -1710,11 +1798,21 @@ function App({
       }
     });
   };
-  const selectProject = (id: string) => {
+  const selectProject = (id: string, after?: () => void, bypass = false) => {
     const owner = projects.find((p) => p.id === id);
-    navigate({ spaceId: owner?.spaceId || navigation.current.spaceId, projectId: id, runId: '' }, true);
-    setDetail(null);
-    setPreviewOpen(false);
+    return navigate(
+      { spaceId: owner?.spaceId || navigation.current.spaceId, projectId: id, runId: '' },
+      true,
+      {
+        bypass,
+        label: owner ? `项目「${owner.name}」` : '新建独立对话',
+        after: () => {
+          setDetail(null);
+          setPreviewOpen(false);
+          after?.();
+        },
+      },
+    );
   };
   const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string; runIds?: string[] }) => {
     if (deleted) conversationHistory.remove(deleted.kind === 'run' ? [deleted.id] : deleted.runIds || []);
@@ -1722,8 +1820,8 @@ function App({
       (deleted?.kind === 'run' && deleted.id === runId) ||
       (deleted?.kind === 'project' && deleted.id === projectId)
     ) {
-      if (deleted.kind === 'project') selectProject('');
-      else newRun();
+      if (deleted.kind === 'project') selectProject('', undefined, true);
+      else newRun(true);
     } else if (runId) await refreshDetail();
     const refreshed = await refresh();
     if (deleted?.kind === 'run')
@@ -1952,7 +2050,9 @@ function App({
               id={localSurface + '-sidebar-space'}
               value={spaceId}
               onChange={(e) => {
-                navigate({ spaceId: e.target.value, projectId: '', runId: '' }, true);
+                navigate({ spaceId: e.target.value, projectId: '', runId: '' }, true, {
+                  label: '所选项目空间',
+                });
               }}
             >
               {spaces.map((s) => (
@@ -2001,19 +2101,19 @@ function App({
           selectRun={selectRun}
           create={(id, objective) => {
             if (terminalSurface && !id) return;
-            selectProject(id);
-            if (objective !== undefined) cache.set(newDraftKey(id), objective);
-            if (id && !terminalSurface)
-              void cache
-                .ensureKey(projectBoardKey(id))
-                .then(() => {
-                  writeProjectBoardDraft(cache, id, (value) => ({ ...value, freeOpen: true }));
-                })
-                .catch((issue) => setError(issue instanceof Error ? issue.message : '项目草稿无法读取'));
+            selectProject(id, () => {
+              if (objective !== undefined) cache.set(newDraftKey(id), objective);
+              if (id && !terminalSurface)
+                void cache
+                  .ensureKey(projectBoardKey(id))
+                  .then(() => {
+                    writeProjectBoardDraft(cache, id, (value) => ({ ...value, freeOpen: true }));
+                  })
+                  .catch((issue) => setError(issue instanceof Error ? issue.message : '项目草稿无法读取'));
+            });
           }}
           files={(target) => {
-            selectProject(target.id);
-            setModal('project-files');
+            selectProject(target.id, () => setModal('project-files'));
           }}
           manage={(tab) => setModal(tab === 'new-project' ? 'project' : `manage:${tab}`)}
           update={updateSession}
@@ -2205,6 +2305,7 @@ function App({
               key={project.id}
               project={project}
               cache={cache}
+              navigationLifecycle={workbenchNavigation}
               raw={cacheState.entries[projectBoardKey(project.id)]?.value}
               freeComposer={workspaceHome}
               launch={() => setModal('project-item-run')}
@@ -2213,16 +2314,27 @@ function App({
                 setModal('task-center');
               }}
               openRun={async (id, review) => {
-                const epoch = navigationEpoch.current;
-                const target = await api<Run>('/runs/' + id + '/header');
-                if (
-                  epoch !== navigationEpoch.current ||
-                  navigation.current.runId ||
-                  navigation.current.projectId !== project.id
-                )
-                  return;
-                selectRun(target);
-                if (review) setTaskCenterTarget({ id, category: 'review', epoch: navigationEpoch.current });
+                const epoch = navigationEpoch.current,
+                  intent = projectLeaveGuard.begin();
+                try {
+                  const target = await api<Run>('/runs/' + id + '/header');
+                  if (
+                    epoch !== navigationEpoch.current ||
+                    !projectLeaveGuard.current(intent) ||
+                    navigation.current.runId ||
+                    navigation.current.projectId !== project.id
+                  )
+                    return;
+                  selectRun(target, {
+                    intent,
+                    after: () => {
+                      if (review)
+                        setTaskCenterTarget({ id, category: 'review', epoch: navigationEpoch.current });
+                    },
+                  });
+                } catch (issue) {
+                  if (projectLeaveGuard.current(intent)) throw issue;
+                }
               }}
             />
           ) : (
@@ -3485,274 +3597,336 @@ function App({
           <div className="loading">正在读取任务…</div>
         )}
       </main>
-      <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
-        {modal === 'delivery' && detail && !terminalSurface && (
-          <DeliveryReview
-            key={detail.run.id}
-            runId={detail.run.id}
-            reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
-            changeReviewDraft={(raw) => cache.set(`draft:delivery-review:${detail.run.id}`, raw)}
-            handoffDraft={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
-            changeHandoffDraft={(raw) => cache.set(`draft:handoff:${detail.run.id}`, raw)}
-            resolutionDraft={cacheState.entries[`draft:source-resolutions:${detail.run.id}`]?.value}
-            changeResolutionDraft={(raw) => cache.set(`draft:source-resolutions:${detail.run.id}`, raw)}
-            readOnly={archived}
-            updated={(revision) =>
-              setDetail((old) =>
-                old?.run.id === detail.run.id ? { ...old, run: { ...old.run, revision } } : old,
-              )
-            }
-            close={() => setModal('')}
-            revise={!archived && detail.run.status === 'DONE' ? () => setModal('handoff') : undefined}
-            openFile={(taskId, path) => {
-              setModal('');
-              openPreviewFile(taskId, path);
-            }}
-          />
-        )}
-        {modal === 'handoff' && detail && !terminalSurface && (
-          <RunHandoff
-            run={detail.run}
-            projects={projects}
-            providers={providers}
-            modelChoice={homeModel}
-            contextPolicy={homeContext}
-            value={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
-            reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
-            backToReview={
-              detail.run.status === 'DONE' && detail.run.kind === 'task'
-                ? () => setModal('delivery')
-                : undefined
-            }
-            change={(value) => cache.set(`draft:handoff:${detail.run.id}`, value)}
-            close={() => setModal('')}
-            settings={() => setModal('handoff-settings')}
-            busy={busy}
-            submit={(body) =>
-              void act(async () => {
-                const key = `draft:handoff:${detail.run.id}`;
-                const sent = cache.get(key);
-                const run = await mutation<Run>('/runs', body);
-                if (cache.get(key) === sent) cache.set(key, '');
-                selectRun(run);
-                setModal('');
-              })
-            }
-          />
-        )}
-        {modal === 'task-center' && (
-          <React.Suspense
-            fallback={
-              <Modal title="任务中心" close={() => setModal('')}>
-                <p className="field-help">正在载入…</p>
-              </Modal>
-            }
-          >
-            <TaskCenter
-              state={taskCenterState}
-              changeState={setTaskCenterState}
-              projects={projects}
+      <Activity mode={pendingProjectLeave ? 'hidden' : 'visible'}>
+        <ModalErrorContext.Provider value={modal === 'task-center' ? '' : error || readIssue?.message || ''}>
+          {modal === 'delivery' && detail && !terminalSurface && (
+            <DeliveryReview
+              key={detail.run.id}
+              runId={detail.run.id}
+              reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
+              changeReviewDraft={(raw) => cache.set(`draft:delivery-review:${detail.run.id}`, raw)}
+              handoffDraft={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
+              changeHandoffDraft={(raw) => cache.set(`draft:handoff:${detail.run.id}`, raw)}
+              resolutionDraft={cacheState.entries[`draft:source-resolutions:${detail.run.id}`]?.value}
+              changeResolutionDraft={(raw) => cache.set(`draft:source-resolutions:${detail.run.id}`, raw)}
+              readOnly={archived}
+              updated={(revision) =>
+                setDetail((old) =>
+                  old?.run.id === detail.run.id ? { ...old, run: { ...old.run, revision } } : old,
+                )
+              }
               close={() => setModal('')}
-              openRun={async (id, category) => {
-                const epoch = navigationEpoch.current;
-                const target = await api<Run>('/runs/' + id + '/header');
-                if (epoch !== navigationEpoch.current || modalCurrent.current !== 'task-center') return;
-                selectRun(target);
-                setTaskCenterTarget({ id, category, epoch: navigationEpoch.current });
+              revise={!archived && detail.run.status === 'DONE' ? () => setModal('handoff') : undefined}
+              openFile={(taskId, path) => {
                 setModal('');
+                openPreviewFile(taskId, path);
               }}
             />
-          </React.Suspense>
-        )}
-        {modal === 'appearance' && (
-          <React.Suspense
-            fallback={
-              <Modal title="外观与启动" close={() => setModal('')}>
-                <p role="status">正在准备设置…</p>
-              </Modal>
-            }
-          >
-            <StartupSettings close={() => setModal('')} />
-          </React.Suspense>
-        )}
-        {modal === 'local-agents' && <LocalAgentSettings close={() => setModal('')} />}
-        <Presence>
-          {modal ? (
-            <React.Fragment key={modal}>
-              {modal === 'project' && (
-                <ProjectModal
-                  spaces={spaces}
-                  projects={projects}
-                  initialSpaceId={spaceId}
-                  close={() => setModal('')}
-                  busy={busy}
-                  submit={(body) =>
-                    act(async () => {
-                      const p = await mutation<Project>('/projects', body);
-                      navigate({ spaceId: p.spaceId, projectId: p.id, runId: '' }, true);
-                      setModal('');
-                    })
-                  }
-                />
-              )}
-              {modal === 'project-files' && project && (
-                <Modal title={project.name} subtitle={project.workspaceRoot} close={() => setModal('')} wide>
-                  <ProjectFiles projectId={project.id} />
+          )}
+          {modal === 'handoff' && detail && !terminalSurface && (
+            <RunHandoff
+              run={detail.run}
+              projects={projects}
+              providers={providers}
+              modelChoice={homeModel}
+              contextPolicy={homeContext}
+              value={cacheState.entries[`draft:handoff:${detail.run.id}`]?.value}
+              reviewDraft={cacheState.entries[`draft:delivery-review:${detail.run.id}`]?.value}
+              backToReview={
+                detail.run.status === 'DONE' && detail.run.kind === 'task'
+                  ? () => setModal('delivery')
+                  : undefined
+              }
+              change={(value) => cache.set(`draft:handoff:${detail.run.id}`, value)}
+              close={() => setModal('')}
+              settings={() => setModal('handoff-settings')}
+              busy={busy}
+              submit={(body) =>
+                void act(async () => {
+                  const key = `draft:handoff:${detail.run.id}`;
+                  const sent = cache.get(key);
+                  const run = await mutation<Run>('/runs', body);
+                  if (cache.get(key) === sent) cache.set(key, '');
+                  selectRun(run);
+                  setModal('');
+                })
+              }
+            />
+          )}
+          {modal === 'task-center' && (
+            <React.Suspense
+              fallback={
+                <Modal title="任务中心" close={() => setModal('')}>
+                  <p className="field-help">正在载入…</p>
                 </Modal>
-              )}
-              {modal.startsWith('manage:') && (
-                <WorkspaceManager
-                  spaces={spaces}
-                  projects={projects}
-                  runs={runs}
-                  listPage={runListPage}
-                  listTrail={runListPosition.current.trail.length > 0}
-                  listBusy={runListBusy}
-                  listQuery={runListQuery}
-                  changeListQuery={setRunListQuery}
-                  listNavigate={(direction) => void changeRunList(direction)}
-                  projectCounts={projectCounts}
-                  changeListArchive={setRunListArchive}
-                  initial={modal.slice(7)}
-                  close={() => setModal('')}
-                  updated={managed}
-                  selectRun={selectRun}
-                />
-              )}
-              {modal === 'project-item-run' && project && !terminalSurface && (
-                <ProjectItemSetup
-                  key={project.id}
-                  projectId={project.id}
-                  projectName={project.name}
-                  cache={cache}
-                  providers={providers}
-                  modelChoice={homeModel}
-                  contextPolicy={homeContext}
-                  busy={busy}
-                  close={() => setModal('')}
-                  settings={() => setModal('project-item-run-settings')}
-                  submit={(body, sentLaunch) =>
-                    act(async () => {
-                      const created = await mutation<Run>('/runs', {
-                        ...body,
-                        objective: sentLaunch.objective,
-                        kind: 'task',
-                        projectId: project.id,
-                        projectDelivery: {
-                          itemId: sentLaunch.itemId,
-                          expectedRevision: sentLaunch.expectedRevision,
-                        },
-                      });
-                      const current = readProjectBoardDraft(cache.get(projectBoardKey(project.id)));
-                      if (JSON.stringify(current.launch) === JSON.stringify(sentLaunch))
-                        writeProjectBoardDraft(cache, project.id, (value) => ({
-                          ...value,
-                          launch: undefined,
-                        }));
-                      selectRun(created);
-                      setModal('');
-                    })
+              }
+            >
+              <TaskCenter
+                state={taskCenterState}
+                changeState={setTaskCenterState}
+                projects={projects}
+                close={() => setModal('')}
+                openRun={async (id, category) => {
+                  const epoch = navigationEpoch.current,
+                    intent = projectLeaveGuard.begin();
+                  try {
+                    const target = await api<Run>('/runs/' + id + '/header');
+                    if (
+                      epoch !== navigationEpoch.current ||
+                      !projectLeaveGuard.current(intent) ||
+                      modalCurrent.current !== 'task-center'
+                    )
+                      return;
+                    selectRun(target, {
+                      intent,
+                      after: () => {
+                        setTaskCenterTarget({ id, category, epoch: navigationEpoch.current });
+                        setModal('');
+                      },
+                    });
+                  } catch (issue) {
+                    if (projectLeaveGuard.current(intent)) throw issue;
                   }
-                />
-              )}
-              {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
-                <RunModal
-                  key={runSetupKey}
-                  cache={cache}
-                  draftKey={runSetupKey}
-                  persistence={cacheState}
-                  objective={draft}
-                  kind={project ? 'task' : 'chat'}
-                  projectName={project?.name}
-                  projectId={project?.id}
-                  providers={providers}
-                  modelChoice={homeModel}
-                  contextPolicy={homeContext}
-                  terminalTemplate={terminalProfile}
-                  terminalConnections={terminalControl?.connections || []}
-                  close={() => {
-                    setModal('');
-                  }}
-                  busy={busy}
-                  submit={(body, sentSetup) =>
-                    act(async () => {
-                      const sentObjective = draft;
-                      const run = await mutation<Run>('/runs', {
-                        ...body,
-                        objective: draft,
-                        kind: project ? 'task' : 'chat',
-                        projectId: projectId || null,
-                      });
-                      selectRun(run);
-                      if (cache.get(draftKey) === sentObjective) cache.set(draftKey, '');
-                      if (cache.get(runSetupKey) === sentSetup) cache.set(runSetupKey, '');
-                      setModal('');
-                    })
-                  }
-                  settings={() => {
-                    if (actionPending.current) return;
-                    setModal('run-settings');
-                  }}
-                />
-              )}
-              {(modal === 'settings' || modal === 'run-settings') &&
-                terminalSurface &&
-                (terminalSettings ? (
-                  <React.Suspense
-                    fallback={
-                      <Modal title="终端管理" close={() => setModal('')}>
-                        <div className="form-body" role="status">
-                          正在加载终端管理…
-                        </div>
-                      </Modal>
+                }}
+              />
+            </React.Suspense>
+          )}
+          {modal === 'appearance' && (
+            <React.Suspense
+              fallback={
+                <Modal title="外观与启动" close={() => setModal('')}>
+                  <p role="status">正在准备设置…</p>
+                </Modal>
+              }
+            >
+              <StartupSettings close={() => setModal('')} />
+            </React.Suspense>
+          )}
+          {modal === 'local-agents' && <LocalAgentSettings close={() => setModal('')} />}
+          <Presence>
+            {modal ? (
+              <React.Fragment key={modal}>
+                {modal === 'project' && (
+                  <ProjectModal
+                    spaces={spaces}
+                    projects={projects}
+                    initialSpaceId={spaceId}
+                    close={() => setModal('')}
+                    busy={busy}
+                    submit={(body) =>
+                      submitAfterProjectLeave('新建项目', (intent) =>
+                        act(async () => {
+                          const p = await mutation<Project>('/projects', body);
+                          if (!projectLeaveGuard.current(intent)) return;
+                          navigate({ spaceId: p.spaceId, projectId: p.id, runId: '' }, true, {
+                            intent,
+                            bypass: true,
+                            after: () => setModal(''),
+                          });
+                        }),
+                      )
                     }
+                  />
+                )}
+                {modal === 'project-files' && project && (
+                  <Modal
+                    title={project.name}
+                    subtitle={project.workspaceRoot}
+                    close={() => setModal('')}
+                    wide
                   >
-                    <TerminalControlCenter
-                      initial={terminalSettings}
-                      project={project}
-                      close={() => setModal(modal === 'run-settings' ? 'run' : '')}
-                      updated={(settings) => {
-                        setTerminalSettings(settings);
-                        void refresh();
-                      }}
-                      controlUpdated={(overview, preferences) => {
-                        setTerminalControl(overview);
-                        if (preferences && project) {
-                          if (projectPreferences && preferences.revision !== projectPreferences.revision)
-                            cache.set(profileSelectionKey, '');
-                          setTerminalPreferences({ projectId: project.id, value: preferences });
-                        }
-                      }}
-                      activity={(pending) => {
-                        actionPending.current = pending;
-                        setBusy(pending);
-                      }}
-                    />
-                  </React.Suspense>
-                ) : (
-                  <Modal title="终端管理" close={() => setModal('')}>
-                    <div className="form-body" role="status">
-                      {readIssue ? readIssue.message : '正在读取终端模板…'}
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={retrying}
-                        onClick={() => void connect(true)}
-                      >
-                        重试读取
-                      </button>
-                    </div>
+                    <ProjectFiles projectId={project.id} />
                   </Modal>
-                ))}
-              {(modal === 'settings' ||
-                modal === 'run-settings' ||
-                modal === 'handoff-settings' ||
-                modal === 'project-item-run-settings') &&
-                !terminalSurface && (
-                  <React.Suspense
-                    fallback={
-                      <Modal
-                        title="模型与连接"
+                )}
+                {modal.startsWith('manage:') && (
+                  <WorkspaceManager
+                    spaces={spaces}
+                    projects={projects}
+                    runs={runs}
+                    listPage={runListPage}
+                    listTrail={runListPosition.current.trail.length > 0}
+                    listBusy={runListBusy}
+                    listQuery={runListQuery}
+                    changeListQuery={setRunListQuery}
+                    listNavigate={(direction) => void changeRunList(direction)}
+                    projectCounts={projectCounts}
+                    changeListArchive={setRunListArchive}
+                    initial={modal.slice(7)}
+                    close={() => setModal('')}
+                    updated={managed}
+                    selectRun={selectRun}
+                  />
+                )}
+                {modal === 'project-item-run' && project && !terminalSurface && (
+                  <ProjectItemSetup
+                    key={project.id}
+                    projectId={project.id}
+                    projectName={project.name}
+                    cache={cache}
+                    providers={providers}
+                    modelChoice={homeModel}
+                    contextPolicy={homeContext}
+                    busy={busy}
+                    close={() => setModal('')}
+                    settings={() => setModal('project-item-run-settings')}
+                    submit={(body, sentLaunch) =>
+                      submitAfterProjectLeave('从交付项创建任务', (intent) =>
+                        act(async () => {
+                          const created = await mutation<Run>('/runs', {
+                            ...body,
+                            objective: sentLaunch.objective,
+                            kind: 'task',
+                            projectId: project.id,
+                            projectDelivery: {
+                              itemId: sentLaunch.itemId,
+                              expectedRevision: sentLaunch.expectedRevision,
+                            },
+                          });
+                          if (!projectLeaveGuard.current(intent)) return;
+                          selectRun(created, {
+                            intent,
+                            bypass: true,
+                            after: () => {
+                              const current = readProjectBoardDraft(cache.get(projectBoardKey(project.id)));
+                              if (JSON.stringify(current.launch) === JSON.stringify(sentLaunch))
+                                writeProjectBoardDraft(cache, project.id, (value) => ({
+                                  ...value,
+                                  launch: undefined,
+                                }));
+                              setModal('');
+                            },
+                          });
+                        }),
+                      )
+                    }
+                  />
+                )}
+                {modal === 'run' && (!terminalSurface || (project && terminalProfile)) && (
+                  <RunModal
+                    key={runSetupKey}
+                    cache={cache}
+                    draftKey={runSetupKey}
+                    persistence={cacheState}
+                    objective={draft}
+                    kind={project ? 'task' : 'chat'}
+                    projectName={project?.name}
+                    projectId={project?.id}
+                    providers={providers}
+                    modelChoice={homeModel}
+                    contextPolicy={homeContext}
+                    terminalTemplate={terminalProfile}
+                    terminalConnections={terminalControl?.connections || []}
+                    close={() => {
+                      setModal('');
+                    }}
+                    busy={busy}
+                    submit={(body, sentSetup) =>
+                      submitAfterProjectLeave('新建任务', (intent) =>
+                        act(async () => {
+                          const sentObjective = draft;
+                          const run = await mutation<Run>('/runs', {
+                            ...body,
+                            objective: draft,
+                            kind: project ? 'task' : 'chat',
+                            projectId: projectId || null,
+                          });
+                          if (!projectLeaveGuard.current(intent)) return;
+                          selectRun(run, {
+                            intent,
+                            bypass: true,
+                            after: () => {
+                              if (cache.get(draftKey) === sentObjective) cache.set(draftKey, '');
+                              if (cache.get(runSetupKey) === sentSetup) cache.set(runSetupKey, '');
+                              setModal('');
+                            },
+                          });
+                        }),
+                      )
+                    }
+                    settings={() => {
+                      if (actionPending.current) return;
+                      setModal('run-settings');
+                    }}
+                  />
+                )}
+                {(modal === 'settings' || modal === 'run-settings') &&
+                  terminalSurface &&
+                  (terminalSettings ? (
+                    <React.Suspense
+                      fallback={
+                        <Modal title="终端管理" close={() => setModal('')}>
+                          <div className="form-body" role="status">
+                            正在加载终端管理…
+                          </div>
+                        </Modal>
+                      }
+                    >
+                      <TerminalControlCenter
+                        initial={terminalSettings}
+                        project={project}
+                        close={() => setModal(modal === 'run-settings' ? 'run' : '')}
+                        updated={(settings) => {
+                          setTerminalSettings(settings);
+                          void refresh();
+                        }}
+                        controlUpdated={(overview, preferences) => {
+                          setTerminalControl(overview);
+                          if (preferences && project) {
+                            if (projectPreferences && preferences.revision !== projectPreferences.revision)
+                              cache.set(profileSelectionKey, '');
+                            setTerminalPreferences({ projectId: project.id, value: preferences });
+                          }
+                        }}
+                        activity={(pending) => {
+                          actionPending.current = pending;
+                          setBusy(pending);
+                        }}
+                      />
+                    </React.Suspense>
+                  ) : (
+                    <Modal title="终端管理" close={() => setModal('')}>
+                      <div className="form-body" role="status">
+                        {readIssue ? readIssue.message : '正在读取终端模板…'}
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={retrying}
+                          onClick={() => void connect(true)}
+                        >
+                          重试读取
+                        </button>
+                      </div>
+                    </Modal>
+                  ))}
+                {(modal === 'settings' ||
+                  modal === 'run-settings' ||
+                  modal === 'handoff-settings' ||
+                  modal === 'project-item-run-settings') &&
+                  !terminalSurface && (
+                    <React.Suspense
+                      fallback={
+                        <Modal
+                          title="模型与连接"
+                          close={() =>
+                            setModal(
+                              modal === 'run-settings'
+                                ? 'run'
+                                : modal === 'handoff-settings'
+                                  ? 'handoff'
+                                  : modal === 'project-item-run-settings'
+                                    ? 'project-item-run'
+                                    : '',
+                            )
+                          }
+                        >
+                          <div className="form-body" role="status">
+                            正在加载模型设置…
+                          </div>
+                        </Modal>
+                      }
+                    >
+                      <ProviderSettings
+                        providers={providers}
                         close={() =>
                           setModal(
                             modal === 'run-settings'
@@ -3764,236 +3938,235 @@ function App({
                                   : '',
                           )
                         }
-                      >
-                        <div className="form-body" role="status">
-                          正在加载模型设置…
-                        </div>
-                      </Modal>
-                    }
-                  >
-                    <ProviderSettings
-                      providers={providers}
-                      close={() =>
-                        setModal(
-                          modal === 'run-settings'
-                            ? 'run'
-                            : modal === 'handoff-settings'
-                              ? 'handoff'
-                              : modal === 'project-item-run-settings'
-                                ? 'project-item-run'
-                                : '',
-                        )
-                      }
-                      updated={() => refresh(true)}
-                    />
-                  </React.Suspense>
-                )}
-              {modal.startsWith('model:') && detail && switchAgent && switchTask && (
-                <ModelSwitchModal
-                  key={detail.run.id + ':' + switchAgent.id}
-                  providers={providers}
-                  agent={switchAgent}
-                  task={switchTask}
-                  chat={isChat}
-                  busy={busy}
-                  disabledReason={
-                    legacyTerminal
-                      ? '旧终端记录仅供查看。'
-                      : modelSwitchReason(detail, archived, switchTask.id)
-                  }
-                  close={() => setModal('')}
-                  submit={(choice, switchMode) =>
-                    act(async () => {
-                      await mutation('/runs/' + detail.run.id + '/actions', {
-                        ...choice,
-                        action: 'switch_model',
-                        switchMode,
-                        taskId: switchTask.id,
-                        expectedRevision: detail.run.revision,
-                      });
-                      setModal('');
-                    })
-                  }
-                />
-              )}
-              {modal === 'new-context' && (
-                <NewContextWindowModal
-                  key={draftKey}
-                  policy={homeContext}
-                  provider={homeProvider}
-                  busy={busy}
-                  close={() => setModal('')}
-                  submit={(policy) => {
-                    setHomeContexts((old) => ({ ...old, [draftKey]: policy }));
-                    setModal('');
-                  }}
-                />
-              )}
-              {modal.startsWith('context:') && detail && contextAgent && (
-                <ContextWindowModal
-                  key={
-                    detail.run.id +
-                    ':' +
-                    contextAgent.agentId +
-                    ':' +
-                    contextSnapshot!.runRevision +
-                    ':' +
-                    contextAgent.agentRevision
-                  }
-                  projection={contextAgent}
-                  title={
-                    detail.tasks.find((task) => task.id === contextAgent.taskId)?.spec.title || '当前会话'
-                  }
-                  runRevision={contextSnapshot!.runRevision}
-                  busy={busy || contextReading}
-                  close={() => setModal('')}
-                  refresh={() => void openContext(contextAgent.agentId)}
-                  submit={(policy, expectedAgentRevision, expectedRevision) =>
-                    void act(async () => {
-                      await mutation('/runs/' + detail.run.id + '/context', {
-                        agentId: contextAgent.agentId,
-                        expectedAgentRevision,
-                        expectedRevision,
-                        policy,
-                      });
-                      setModal('');
-                    })
-                  }
-                />
-              )}
-              {modal.startsWith('context:') && detail && !contextAgent && (
-                <Modal title="上下文设置" close={() => setModal('')}>
-                  <p className="field-help" role="status">
-                    {contextReading ? '正在读取上下文…' : '上下文暂时不可用。'}
-                  </p>
-                  {!contextReading && (
-                    <button className="secondary" onClick={() => void openContext(modal.slice(8))}>
-                      重试
-                    </button>
+                        updated={() => refresh(true)}
+                      />
+                    </React.Suspense>
                   )}
-                </Modal>
-              )}
-              {modal === 'contract' && detail && (
-                <ContractModal
-                  contract={detail.run.contract}
-                  planMode={detail.run.planMode !== false}
-                  close={() => setModal('')}
-                  busy={busy}
-                  disabled={
-                    runReadOnly ||
-                    ['DONE', 'CANCELLED'].includes(detail.run.status) ||
-                    detail.run.execution?.kind === 'docker-agent'
-                  }
-                  submit={(contract) =>
-                    act(async () => {
-                      await mutation('/runs/' + runId + '/messages', {
-                        expectedRevision: detail.run.revision,
-                        contract,
-                        text:
-                          detail.run.planMode === false
-                            ? '我已修改任务约定，请按更新后的交付和验收项继续。'
-                            : '我已修改任务约定，请根据约定重新提出计划。',
-                      });
+                {modal.startsWith('model:') && detail && switchAgent && switchTask && (
+                  <ModelSwitchModal
+                    key={detail.run.id + ':' + switchAgent.id}
+                    providers={providers}
+                    agent={switchAgent}
+                    task={switchTask}
+                    chat={isChat}
+                    busy={busy}
+                    disabledReason={
+                      legacyTerminal
+                        ? '旧终端记录仅供查看。'
+                        : modelSwitchReason(detail, archived, switchTask.id)
+                    }
+                    close={() => setModal('')}
+                    submit={(choice, switchMode) =>
+                      act(async () => {
+                        await mutation('/runs/' + detail.run.id + '/actions', {
+                          ...choice,
+                          action: 'switch_model',
+                          switchMode,
+                          taskId: switchTask.id,
+                          expectedRevision: detail.run.revision,
+                        });
+                        setModal('');
+                      })
+                    }
+                  />
+                )}
+                {modal === 'new-context' && (
+                  <NewContextWindowModal
+                    key={draftKey}
+                    policy={homeContext}
+                    provider={homeProvider}
+                    busy={busy}
+                    close={() => setModal('')}
+                    submit={(policy) => {
+                      setHomeContexts((old) => ({ ...old, [draftKey]: policy }));
                       setModal('');
-                    })
-                  }
-                />
-              )}
-              {modal === 'limits' && detail && (
-                <Modal
-                  title="运行上限与预算"
-                  subtitle={feedback?.limit?.message || '当前限制状态已更新'}
-                  close={() => setModal('')}
-                  busy={busy}
-                >
-                  <div className="form-body">
-                    <p>{feedback?.limit?.explanation || '请核对当前状态后继续操作。'}</p>
-                    {feedback?.limit && (
-                      <ul className="limit-tasks">
-                        {feedback.limit.tasks.map((task) => (
-                          <li key={task.id}>
-                            <strong>{task.title}</strong>
-                            <span>{task.message}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <dl className="limits-summary">
-                      <div>
-                        <dt>请求次数预算</dt>
-                        <dd>{detail.run.contract.budget.maxRequests}</dd>
-                      </div>
-                      <div>
-                        <dt>Token 预算</dt>
-                        <dd>{detail.run.contract.budget.maxTokens.toLocaleString()}</dd>
-                      </div>
-                      <div>
-                        <dt>费用预算</dt>
-                        <dd>
-                          {detail.run.contract.budget.maxCost === null
-                            ? '未设置金额上限'
-                            : detail.run.contract.budget.maxCost}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>每次尝试最多步骤</dt>
-                        <dd>{detail.run.limits.maxSteps}</dd>
-                      </div>
-                      <div>
-                        <dt>{isChat ? '每轮聊天计时上限' : '累计计时上限'}</dt>
-                        <dd>{detail.run.limits.maxMinutes} 分钟</dd>
-                      </div>
-                    </dl>
-                    <p className="field-help">新任务保留旧记录，并重新确认需求、模型、权限和预算。</p>
-                  </div>
-                  <footer className="modal-footer">
-                    <button className="secondary" disabled={busy} onClick={() => setModal('')}>
-                      返回
-                    </button>
-                    {feedback?.limit?.recheck && !runReadOnly && (
-                      <button
-                        className="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void act(async () => {
-                            await mutation('/runs/' + runId + '/actions', {
-                              action: 'resume',
-                              expectedRevision: detail.run.revision,
-                            });
-                            setModal('');
-                          })
-                        }
-                      >
-                        {isChat && feedback.limit.code === 'TIME_BUDGET' ? '重新计时并恢复' : '检查后恢复'}
+                    }}
+                  />
+                )}
+                {modal.startsWith('context:') && detail && contextAgent && (
+                  <ContextWindowModal
+                    key={
+                      detail.run.id +
+                      ':' +
+                      contextAgent.agentId +
+                      ':' +
+                      contextSnapshot!.runRevision +
+                      ':' +
+                      contextAgent.agentRevision
+                    }
+                    projection={contextAgent}
+                    title={
+                      detail.tasks.find((task) => task.id === contextAgent.taskId)?.spec.title || '当前会话'
+                    }
+                    runRevision={contextSnapshot!.runRevision}
+                    busy={busy || contextReading}
+                    close={() => setModal('')}
+                    refresh={() => void openContext(contextAgent.agentId)}
+                    submit={(policy, expectedAgentRevision, expectedRevision) =>
+                      void act(async () => {
+                        await mutation('/runs/' + detail.run.id + '/context', {
+                          agentId: contextAgent.agentId,
+                          expectedAgentRevision,
+                          expectedRevision,
+                          policy,
+                        });
+                        setModal('');
+                      })
+                    }
+                  />
+                )}
+                {modal.startsWith('context:') && detail && !contextAgent && (
+                  <Modal title="上下文设置" close={() => setModal('')}>
+                    <p className="field-help" role="status">
+                      {contextReading ? '正在读取上下文…' : '上下文暂时不可用。'}
+                    </p>
+                    {!contextReading && (
+                      <button className="secondary" onClick={() => void openContext(modal.slice(8))}>
+                        重试
                       </button>
                     )}
-                    <button className="primary" disabled={busy} onClick={startFromRun}>
-                      {isChat ? '新建独立对话' : '新建任务'}
-                    </button>
-                  </footer>
-                </Modal>
-              )}
-              {modal.startsWith('decision:') && detail && decisionOperation && (
-                <DecisionModal
-                  operation={decisionOperation}
-                  close={() => setModal('')}
-                  busy={busy}
-                  disabledReason={decisionDisabledReason(decisionOperation)}
-                  submit={(body) =>
-                    act(async () => {
-                      await mutation('/runs/' + runId + '/decisions', {
-                        ...body,
-                        expectedRevision: detail.run.revision,
-                      });
-                      setModal('');
-                    })
-                  }
-                />
-              )}
-            </React.Fragment>
-          ) : null}
-        </Presence>
-      </ModalErrorContext.Provider>
+                  </Modal>
+                )}
+                {modal === 'contract' && detail && (
+                  <ContractModal
+                    contract={detail.run.contract}
+                    planMode={detail.run.planMode !== false}
+                    close={() => setModal('')}
+                    busy={busy}
+                    disabled={
+                      runReadOnly ||
+                      ['DONE', 'CANCELLED'].includes(detail.run.status) ||
+                      detail.run.execution?.kind === 'docker-agent'
+                    }
+                    submit={(contract) =>
+                      act(async () => {
+                        await mutation('/runs/' + runId + '/messages', {
+                          expectedRevision: detail.run.revision,
+                          contract,
+                          text:
+                            detail.run.planMode === false
+                              ? '我已修改任务约定，请按更新后的交付和验收项继续。'
+                              : '我已修改任务约定，请根据约定重新提出计划。',
+                        });
+                        setModal('');
+                      })
+                    }
+                  />
+                )}
+                {modal === 'limits' && detail && (
+                  <Modal
+                    title="运行上限与预算"
+                    subtitle={feedback?.limit?.message || '当前限制状态已更新'}
+                    close={() => setModal('')}
+                    busy={busy}
+                  >
+                    <div className="form-body">
+                      <p>{feedback?.limit?.explanation || '请核对当前状态后继续操作。'}</p>
+                      {feedback?.limit && (
+                        <ul className="limit-tasks">
+                          {feedback.limit.tasks.map((task) => (
+                            <li key={task.id}>
+                              <strong>{task.title}</strong>
+                              <span>{task.message}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <dl className="limits-summary">
+                        <div>
+                          <dt>请求次数预算</dt>
+                          <dd>{detail.run.contract.budget.maxRequests}</dd>
+                        </div>
+                        <div>
+                          <dt>Token 预算</dt>
+                          <dd>{detail.run.contract.budget.maxTokens.toLocaleString()}</dd>
+                        </div>
+                        <div>
+                          <dt>费用预算</dt>
+                          <dd>
+                            {detail.run.contract.budget.maxCost === null
+                              ? '未设置金额上限'
+                              : detail.run.contract.budget.maxCost}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>每次尝试最多步骤</dt>
+                          <dd>{detail.run.limits.maxSteps}</dd>
+                        </div>
+                        <div>
+                          <dt>{isChat ? '每轮聊天计时上限' : '累计计时上限'}</dt>
+                          <dd>{detail.run.limits.maxMinutes} 分钟</dd>
+                        </div>
+                      </dl>
+                      <p className="field-help">新任务保留旧记录，并重新确认需求、模型、权限和预算。</p>
+                    </div>
+                    <footer className="modal-footer">
+                      <button className="secondary" disabled={busy} onClick={() => setModal('')}>
+                        返回
+                      </button>
+                      {feedback?.limit?.recheck && !runReadOnly && (
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              await mutation('/runs/' + runId + '/actions', {
+                                action: 'resume',
+                                expectedRevision: detail.run.revision,
+                              });
+                              setModal('');
+                            })
+                          }
+                        >
+                          {isChat && feedback.limit.code === 'TIME_BUDGET' ? '重新计时并恢复' : '检查后恢复'}
+                        </button>
+                      )}
+                      <button className="primary" disabled={busy} onClick={startFromRun}>
+                        {isChat ? '新建独立对话' : '新建任务'}
+                      </button>
+                    </footer>
+                  </Modal>
+                )}
+                {modal.startsWith('decision:') && detail && decisionOperation && (
+                  <DecisionModal
+                    operation={decisionOperation}
+                    close={() => setModal('')}
+                    busy={busy}
+                    disabledReason={decisionDisabledReason(decisionOperation)}
+                    submit={(body) =>
+                      act(async () => {
+                        await mutation('/runs/' + runId + '/decisions', {
+                          ...body,
+                          expectedRevision: detail.run.revision,
+                        });
+                        setModal('');
+                      })
+                    }
+                  />
+                )}
+              </React.Fragment>
+            ) : null}
+          </Presence>
+        </ModalErrorContext.Provider>
+      </Activity>
+      {pendingProjectLeave && (
+        <Modal title="离开未应用的计划预览" close={() => projectLeaveGuard.cancel()}>
+          <div className="form-body">
+            <p>将打开：{pendingProjectLeave.label}。</p>
+            <p>
+              离开会取消正在读取或尚未应用的计划导入预览；当前编辑草稿和导入前原稿仍保留。返回后需重选计划文件。
+            </p>
+            <div className="project-actions">
+              <button type="button" className="secondary" onClick={() => projectLeaveGuard.cancel()}>
+                留在当前工作台
+              </button>
+              <button type="button" className="primary" onClick={() => projectLeaveGuard.confirm()}>
+                确认离开 · 保留编辑草稿
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

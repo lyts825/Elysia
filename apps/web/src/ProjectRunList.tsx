@@ -49,7 +49,7 @@ export function ProjectRunList({
     setLoading(true);
     setError('');
     setPage(undefined);
-    const params = new URLSearchParams({ projectId, filter: 'all', limit: '20', query });
+    const params = new URLSearchParams({ projectId, kind: 'task', filter: 'all', limit: '20', query });
     if (before) params.set('before', before);
     void api<TaskCenterPage>('/task-center?' + params, undefined, undefined, controller.signal)
       .then((result) => {
@@ -95,43 +95,41 @@ export function ProjectRunList({
       {page && (!page.reviewCoverage.complete || page.projectionCoverage?.complete === false) && (
         <p className="field-error">部分记录无法读取，数量与复核状态可能不完整。可在任务中心重试异常记录。</p>
       )}
-      {page?.items
-        .filter((item) => item.kind === 'task')
-        .map((item) => (
-          <article className="project-run-row" key={item.id}>
-            <div>
-              <strong>{item.title}</strong>
-              <p>
-                {executionLabel(item.status)} ·{' '}
-                {item.reviewIssue
-                  ? '复核无法读取'
-                  : item.reviewStatus
-                    ? reviewLabels[item.reviewStatus]
-                    : '尚无交付复核'}
-              </p>
-            </div>
-            <div className="project-actions">
-              <button type="button" className="secondary" onClick={() => openRun(item.id)}>
-                查看任务
+      {page?.items.map((item) => (
+        <article className="project-run-row" key={item.id}>
+          <div>
+            <strong>{item.title}</strong>
+            <p>
+              {executionLabel(item.status)} ·{' '}
+              {item.reviewIssue
+                ? '复核无法读取'
+                : item.reviewStatus
+                  ? reviewLabels[item.reviewStatus]
+                  : '尚无交付复核'}
+            </p>
+          </div>
+          <div className="project-actions">
+            <button type="button" className="secondary" onClick={() => openRun(item.id)}>
+              查看任务
+            </button>
+            {item.reviewStatus && (
+              <button type="button" className="secondary" onClick={() => openRun(item.id, true)}>
+                查看复核
               </button>
-              {item.reviewStatus && (
-                <button type="button" className="secondary" onClick={() => openRun(item.id, true)}>
-                  查看复核
-                </button>
-              )}
-              {choose && (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy || !!item.readIssue}
-                  onClick={() => choose(item.id)}
-                >
-                  关联此次执行
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
+            )}
+            {choose && (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !!item.readIssue}
+                onClick={() => choose(item.id)}
+              >
+                关联此次执行
+              </button>
+            )}
+          </div>
+        </article>
+      ))}
       {page && !page.items.length && <p className="field-help">当前范围没有任务。</p>}
       <div className="project-actions">
         <button

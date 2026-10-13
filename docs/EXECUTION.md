@@ -1,5 +1,34 @@
 # Elysia 首版执行文档
 
+## 当前迭代：v1.5.0 连续操作与导航保护
+
+2026-10-12启动，2026-10-13恢复验收；aea6f04 / v1.4.0 → v1.5.0，沿用codex/initial-build，开始时工作区干净。用户授权落地上一轮四项建议：工作台错误按读取/保存/打开分离、项目任务服务端分页前按kind筛选、主动导航离开临时计划预览确认、副本删除锁等待原地取消。兼容新增能力采用1.5.0；保留未传kind的任务中心原默认、存储schema6/minimumReader preview.6及草稿/备份version1，不扩备份库/模板或执行授权。主代理负责删除等待、版本/文档/整合/提交；导航代理负责工作台错误与应用内离开保护；读取代理负责kind后端/项目列表；独立验收代理负责隔离profile生产UI及最终退出/证据摘要。
+
+| 里程碑 | 状态 | 验收 |
+| --- | --- | --- |
+| 工作台错误与导航 | 已完成 | 助手6组及生产UI11组通过；真实15s轮询/409/404/503、操作清除范围、导航竞态与创建前确认保持 |
+| 项目任务筛选 | 已完成 | 核心HTTP/Store8组与生产UI4组通过，混合/chat-only/20+5分页/搜索及默认任务中心口径保持 |
+| 副本删除等待 | 已完成 | 助手4组及原生WebLocks生产UI4组通过；另补320宽真实滚动取消，原稿/预览/确认及临界守卫保持 |
+| 1.5.0本地交付 | 已完成 | 全类型/7源格式/生产构建、19组生产UI及版本/差异/清理核对通过；对应提交由本地v1.5.0标签定位，未发布 |
+
+仅隔离profile、受控故障和ignored验证材料，不调用模型/外网或正式凭据、不重载正式窗口。不重复无变化的用量性能、完整launcher或旧矩阵；历史被拒清理路径不触碰。
+
+任务筛选：新增可选kind=task/chat，SQL rows/total/search/review范围在分页前统一；未传kind保持原混合及旧游标语义。新kind调用核验游标种类/项目/搜索/状态/复核范围；未知kind、损坏Run的NULL或非法非NULL归属保留coverage缺口，合法foreign UUID排除。项目列表显式请求task，不再事后过滤。8组真实Fastify HTTP/Store验证（task-center-kind-v150-KJxaPl）通过，含25chat+3task、chat-only、20/5任务页、筛选/旧默认/越界/损坏，原正文SHA/revision及schema6保持、DB integrity ok、外部0；实现中缺口边界失败及夹具baseline误假设诊断保留，修复后完整断言通过。
+
+删除等待：与恢复复用原同owner排他锁，新增waiting/critical阶段，获取锁并通过active核验后同步转critical。等待时可abort，取消不清原另存/删除确认或预览；跨窗变化仍按既有storage事件清确认，临界阶段旧按钮再次检查ref而不能取消，成功删除仍读回核验，不补偿盲写。助手4组（delete-wait-v150-MvQs3M）通过，验证取消/释放后0删除及重试、临界时序、owner/stale、缺锁/预取消/删除异常；模拟锁/Storage接口与生产原生锁验证分列。两文件交叉只读评审无阻塞。
+
+工作台已拆read/action/open来源：正常poll仅清read，失败操作绑定method+path，同操作成功或明确核对才清；不同成功操作不清计划保存问题。真正read失败/取消保留旧board未知且阻断写入，打开错误不影响有效统计。导航复用临时计划lifecycle，独立intent代次与owner/project/space/epoch核验，确认前不切selection或触发创建mutation；来源modal由Activity暂停并保留状态，确认层独立操作，取消恢复来源；实际owner删除走旁路，未加beforeunload。助手6组（v150-navigation-helper.json）通过：同页/普通导航、取消/确认一次、慢A快B取消/旧响应、owner/epoch、创建defer及强制删除。
+
+全类型、7份功能源码Prettier及server/Vite生产构建已通过；主包index-PG1uOrPn.js438.31kB、ProjectWorkbench-K6eGqvHo.js100.59kB。11份package和contract VERSION一致1.5.0，无新依赖；2026-10-13核对冻结源码SHA及compiled VERSION一致，未重复未改变的检查。核心/助手18组与生产UI19组分列，320宽删除取消为补充视口验收，不重复计逻辑组。
+
+生产工作台6组与项目任务4组通过：真实计划CAS409后正常15秒轮询保留保存提示及完整草稿；header404只影响打开，board503/取消保留旧统计未知，不自动重读，明确成功读取只清read；不同POST成功不清PUT提示，同PUT成功或明确核对才清。隔离历史25chat+3task仅显示3任务、chat-only为0、25task分页20/5，搜索及原默认混合任务中心保持。结果来自IXjW9u、pQgy4v、02LwTu的完整通过报告，以及BEIkEb失败框架中已通过的不同POST组；该失败在cache debounce落盘前读取基线，仅补两组未完成检查，原诊断保留，未改产品或降低断言。完整通过run双DB integrity ok及原Run正文保持；失败框架未到最终完整性检查，不沿用该结论。
+
+生产导航5组（v150-navigation-qa-production-N1puP7）通过：侧栏项目/Run取消确认、延后原生File读取迟到隔离、普通TaskCenter打开无提示及实际Run跳转确认、关闭重开慢A快B/同帧最新目标、真实新项目取消0 POST而确认仅1 POST。取消保留来源筛选、表单、预览及原稿SHA；确认才丢临时预览及执行创建。未实际创建模型Run，创建延迟副作用由助手覆盖。原Run正文保持、双DB integrity ok；root目视1440/320确认层清晰可操作。早期导航框架误假设TaskCenter默认当前项目，修为实际项目选择；失败中重复通过组不计入最终5组。
+
+生产删除4组（v150-deletewait-production-HqJH1Q）通过：真实第二窗口持有Navigator.locks，原地取消后释放0 removeItem/0保护写/0cache提交，保留完整预览、原稿及下载SHA对应确认，可明确重试；获锁critical时旧DOM取消handler不abort，删除仅1次；跨窗Storage事件更换raw清旧确认并拒删；owner离开终止排队，返回副本及原稿仍在。另以72g0De仅补320宽实际滚动和点击取消，root目视取消入口及预览可读。原框架误认为成功恢复仍保留临时预览，修为按现有关闭规则重新预览，失败诊断保留。双DB integrity ok，模型/外部/凭据/Docker守卫均0。
+
+2026-10-13完成本地验收，最终摘要v150-release-qa-summary.json单列18组核心/助手、19组生产UI及1项视口补验；独立源码评审无阻塞。10个本轮生产QA端口及相关Node/Electron进程已确认退出；必要脚本、样本、截图、下载及原失败诊断保留ignored，无失用正式文件或新增临时依赖，历史被拒清理路径未触碰。21个正式差异及敏感模式核对通过，无测试材料入库。提交由本地标签v1.5.0定位，未推送、公开发布或部署，正式窗口未重载。schema6/minimumReader preview.6、计划/草稿/绑定备份version1及现有限额保持；无变化的用量性能、完整launcher及供应商验收未重跑。
+
 ## 当前迭代：v1.4.0 交付浏览与副本管理
 
 2026-10-12，5110e41 / v1.3.0 → v1.4.0，沿用codex/initial-build，开始时工作区干净。用户授权落地上一轮三项建议：三处交付分页成功后才推进位置、恢复前副本信息与另存确认后清理、原地取消尚未获得恢复锁的等待。副本管理属于兼容新能力，采用1.4.0；不扩展备份历史库、跨来源存储迁移或模板库，不改变服务端/API/schema及已有项目计划授权。主代理负责版本/文档/整合/提交；读取代理负责产物选择、冻结历史及保存包分页；备份代理负责副本查看/删除与等待取消；独立代理负责隔离profile的生产UI和真实Web Locks验收。

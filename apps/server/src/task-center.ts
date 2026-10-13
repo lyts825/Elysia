@@ -309,6 +309,7 @@ export class TaskCenterReads {
     limit: number;
     before?: string;
     projectId?: string;
+    kind?: 'task' | 'chat';
     query?: string;
     reviewFilter?: DeliveryReviewStatus;
     retryReviews?: 'true' | 'false';
@@ -332,28 +333,40 @@ export class TaskCenterReads {
         'archived=0',
         ...(query.filter === 'all' ? [] : ['category=?']),
         ...(query.projectId ? ['project_id=?'] : []),
+        ...(query.kind ? ['kind=?'] : []),
         ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
       ];
       const params = [
         ...(query.filter === 'all' ? [] : [query.filter]),
         ...(query.projectId ? [query.projectId] : []),
+        ...(query.kind ? [query.kind] : []),
         ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
       ];
       // Known scope exclusions remain exact. A broken Run body may also hide its
       // project/title, so those uncertain memberships stay in the coverage warning.
       const unknownRun =
         "EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.table_name='runs' AND p.record_id=task_center_changes_v1.run_id)";
+      const unknownKind = "kind IS NULL OR kind NOT IN ('task','chat')";
+      const unknownProject =
+        "project_id IS NOT NULL AND NOT (typeof(project_id)='text' AND length(project_id)=36 AND substr(project_id,9,1)='-' AND substr(project_id,14,1)='-' AND substr(project_id,19,1)='-' AND substr(project_id,24,1)='-' AND length(replace(project_id,'-',''))=32 AND lower(replace(project_id,'-','')) NOT GLOB '*[^0-9a-f]*')";
+      const uncertainProject = query.kind && query.projectId ? ` OR (${unknownProject})` : '';
       const projectionUnavailable = Number(
         (
           this.store.db
             .prepare(
-              `SELECT COUNT(*) n FROM task_center_changes_v1 WHERE deleted=0 AND archived=0 AND category='unavailable'
-          ${query.projectId ? ` AND (project_id=? OR (project_id IS NULL AND ${unknownRun}))` : ''}
-          ${query.query?.trim() ? ` AND (instr(lower(COALESCE(title,'')),?)>0 OR ${unknownRun})` : ''}`,
+              `SELECT COUNT(*) n FROM task_center_changes_v1 WHERE deleted=0 AND archived=0 AND ${
+                query.kind
+                  ? `(category='unavailable' OR (${unknownKind})${uncertainProject})`
+                  : "category='unavailable'"
+              }
+          ${query.projectId ? ` AND (project_id=? OR (project_id IS NULL AND ${unknownRun})${uncertainProject})` : ''}
+          ${query.query?.trim() ? ` AND (instr(lower(COALESCE(title,'')),?)>0 OR ${unknownRun})` : ''}
+          ${query.kind ? ` AND (kind=? OR ${unknownRun} OR (${unknownKind}))` : ''}`,
             )
             .get(
               ...(query.projectId ? [query.projectId] : []),
               ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
+              ...(query.kind ? [query.kind] : []),
             ) as { n: number }
         ).n,
       );
@@ -372,6 +385,22 @@ export class TaskCenterReads {
         clauses.push('run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)');
         params.push(query.reviewFilter);
       }
+      // New kind-filtered callers must not use another scope's cursor. Legacy callers
+      // retain their original cursor semantics when no kind is supplied.
+      if (
+        query.kind &&
+        query.before &&
+        !this.store.db
+          .prepare(`SELECT 1 FROM task_center_changes_v1 WHERE run_id=? AND ${clauses.join(' AND ')}`)
+          .get(query.before, ...params)
+      )
+        throw new AppError(
+          'RECORD_CURSOR_SCOPE',
+          '任务位置不属于当前筛选范围，请返回最新列表',
+          false,
+          null,
+          409,
+        );
       const total = Number(
         (
           this.store.db
@@ -463,6 +492,7 @@ export function registerTaskCenter(app: FastifyInstance, store: Store) {
           limit: z.coerce.number().int().min(1).max(100).default(40),
           before: z.string().uuid().optional(),
           projectId: z.string().uuid().optional(),
+          kind: z.enum(['task', 'chat']).optional(),
           query: z.string().max(200).optional(),
         })
         .strict()

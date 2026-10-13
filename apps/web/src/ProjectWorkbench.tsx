@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type {
   ProjectDeliveryBoard,
@@ -16,6 +24,7 @@ import {
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
 import { ProjectDraftBackup } from './ProjectDraftBackup';
 import type { PlanImportLifecycle } from './ProjectPlanTransfer';
+import type { ProjectPlanNavigationLifecycle } from './ProjectPlanNavigation';
 import { projectPlanImportDraft, projectPlanImportPreflight } from './project-plan-transfer';
 import { ProjectBoardItem, readinessLabels } from './ProjectBoardItem';
 import { ProjectRunList } from './ProjectRunList';
@@ -35,6 +44,7 @@ export function ProjectWorkbench({
   openRun,
   launch,
   openTaskCenter,
+  navigationLifecycle,
 }: {
   project: Project;
   cache: WorkbenchCache;
@@ -43,10 +53,13 @@ export function ProjectWorkbench({
   openRun: (id: string, review?: boolean) => Promise<void>;
   launch: () => void;
   openTaskCenter: () => void;
+  navigationLifecycle?: RefObject<ProjectPlanNavigationLifecycle | null>;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [board, setBoard] = useState<ProjectDeliveryBoard>(),
-    [error, setError] = useState(''),
+    [readError, setReadError] = useState(''),
+    [actionError, setActionError] = useState(''),
+    [openError, setOpenError] = useState(''),
     [draftError, setDraftError] = useState('');
   const [loaded, setLoaded] = useState(false),
     [loading, setLoading] = useState(false),
@@ -54,10 +67,23 @@ export function ProjectWorkbench({
     [retry, setRetry] = useState(0),
     [opening, setOpening] = useState(false);
   const live = useRef(true),
-    writing = useRef(false);
+    writing = useRef(false),
+    actionIssueSource = useRef<string | null>(null);
   const readRequest = useRef<AbortController | null>(null);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const planLifecycle = useRef<PlanImportLifecycle | null>(null);
+  useImperativeHandle(
+    navigationLifecycle,
+    () => ({
+      projectId: project.id,
+      hasPending: () => planLifecycle.current?.hasPending() ?? false,
+      discard: () => {
+        planLifecycle.current?.discard();
+        setPendingLeave(undefined);
+      },
+    }),
+    [project.id],
+  );
   const [pendingLeave, setPendingLeave] = useState<() => boolean>();
   useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
   const leavePlan = (action: () => boolean) => {
@@ -118,11 +144,11 @@ export function ProjectWorkbench({
         );
         if (!controller.signal.aborted && result.projectId === project.id) {
           setBoard(result);
-          setError('');
+          setReadError('');
         }
       } catch (issue) {
         if (!controller.signal.aborted)
-          setError(issue instanceof Error ? issue.message : '项目交付计划读取失败');
+          setReadError(issue instanceof Error ? issue.message : '项目交付计划读取失败');
       } finally {
         pending = false;
         if (!controller.signal.aborted) {
@@ -157,22 +183,28 @@ export function ProjectWorkbench({
     }
   };
   const action = async (path: string, body: Record<string, unknown>, method = 'POST') => {
-    if (!board || writing.current || board.archived || !live.current) return false;
+    if (!board || readError || writing.current || board.archived || !live.current) return false;
     writing.current = true;
     setBusy(true);
-    setError('');
+    const source = `${method} ${path}`;
     try {
       await mutation(path, { expectedRevision: board.revision, ...body }, method);
       if (!live.current) return false;
+      if (actionIssueSource.current === source) {
+        actionIssueSource.current = null;
+        setActionError('');
+      }
       // Mutations may return different resource types. Always render a fresh board projection.
       setRetry((n) => n + 1);
       return true;
     } catch (issue) {
-      if (live.current)
-        setError(
+      if (live.current) {
+        actionIssueSource.current = source;
+        setActionError(
           (issue instanceof Error ? issue.message : '保存失败') +
             ' 输入和选择已保留，请刷新并核对当前计划后重试。',
         );
+      }
       return false;
     } finally {
       writing.current = false;
@@ -182,19 +214,20 @@ export function ProjectWorkbench({
   const navigate = async (id: string, review?: boolean) => {
     if (opening) return;
     setOpening(true);
-    setError('');
+    setOpenError('');
     try {
       await openRun(id, review);
     } catch (issue) {
-      if (live.current) setError(issue instanceof Error ? issue.message : '任务无法打开');
+      if (live.current) setOpenError(issue instanceof Error ? issue.message : '任务无法打开');
     } finally {
       if (live.current) setOpening(false);
     }
   };
   const prepare = (item: ProjectDeliveryItem) => {
-    if (!board || !draft) return;
+    if (!board || !draft || readError) return;
     if (draft.launch) {
-      setError('已有创建任务草稿，请先继续该草稿，或明确移除后再从此交付项创建。');
+      actionIssueSource.current = null;
+      setActionError('已有创建任务草稿，请先继续该草稿，或明确移除后再从此交付项创建。');
       return;
     }
     change((value) => ({
@@ -284,13 +317,42 @@ export function ProjectWorkbench({
             readRequest.current?.abort();
             setLoading(false);
             setProgress(undefined);
-            setError('本次项目读取已取消。已读内容和草稿保留，请刷新项目状态后继续。');
+            setReadError('本次项目读取已取消。已读内容和草稿保留，请刷新项目状态后继续。');
           }}
         />
       )}
-      {(error || draftError || parseError) && (
+      {readError && (
+        <div className="field-error" role="alert" aria-label="项目交付读取问题">
+          {readError}
+        </div>
+      )}
+      {actionError && (
+        <div className="field-error" role="alert" aria-label="项目交付保存问题">
+          <p>{actionError}</p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              actionIssueSource.current = null;
+              setActionError('');
+            }}
+          >
+            已核对 · 清除保存提示
+          </button>
+        </div>
+      )}
+      {openError && (
+        <div className="field-error" role="alert" aria-label="打开任务问题">
+          <p>{openError}</p>
+          <button type="button" className="secondary" onClick={() => setOpenError('')}>
+            清除打开提示
+          </button>
+        </div>
+      )}
+      {(draftError || parseError) && (
         <div className="field-error" role="alert">
-          {error || draftError || parseError}
+          {draftError || parseError}
           {parseError && (
             <div className="project-actions">
               <button type="button" className="secondary" onClick={exportDraftSafely}>
@@ -317,7 +379,7 @@ export function ProjectWorkbench({
             <p className="field-help">项目已归档，可查看历史与草稿。恢复项目后才能修改交付计划。</p>
           )}
           <div className="project-counts">
-            {!!error && <span role="status">以下为上次读取的统计，当前状态未知</span>}
+            {!!readError && <span role="status">以下为上次读取的统计，当前状态未知</span>}
             <span>
               <b>
                 {board.counts.requiredReady}/{board.counts.required}
@@ -349,7 +411,7 @@ export function ProjectWorkbench({
             <ProjectLaunchDraft
               board={board}
               draft={draft.launch}
-              busy={busy || !!error}
+              busy={busy || !!readError}
               launch={launch}
               change={(next) =>
                 change((value) => {
@@ -426,7 +488,7 @@ export function ProjectWorkbench({
               key={project.id}
               edit={draft.edit}
               board={board}
-              busy={busy || board.archived || !!error}
+              busy={busy || board.archived || !!readError}
               canRestorePlan={!!draft.planImportUndo}
               planLifecycle={planLifecycle}
               exportOriginal={exportDraft}
@@ -485,7 +547,7 @@ export function ProjectWorkbench({
                   <button
                     type="button"
                     className="secondary"
-                    disabled={busy || board.archived}
+                    disabled={busy || board.archived || !!readError}
                     onClick={() =>
                       change((value) => ({ ...value, editing: true, edit: value.edit || boardToEdit(board) }))
                     }
@@ -510,7 +572,7 @@ export function ProjectWorkbench({
                 <>
                   <ProjectTodos
                     board={board}
-                    unavailable={!!error}
+                    unavailable={!!readError}
                     selectItem={(selected) =>
                       change((value) => ({ ...value, tab: 'items', filter: 'all', selected, editing: false }))
                     }
@@ -616,7 +678,7 @@ export function ProjectWorkbench({
                           key={draft.selected}
                           board={board}
                           item={board.items.find((item) => item.id === draft!.selected)!}
-                          busy={busy || opening || !!error}
+                          busy={busy || opening || !!readError}
                           note={draft.confirmNotes?.[draft.selected] || ''}
                           changeNote={(note) =>
                             change((value) => ({
@@ -650,7 +712,7 @@ export function ProjectWorkbench({
                   board={board}
                   draft={draft}
                   change={change}
-                  busy={busy || !!error}
+                  busy={busy || !!readError}
                   action={action}
                   openRun={(id, review) => void navigate(id, review)}
                 />
