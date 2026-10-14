@@ -36,6 +36,8 @@ export function workbenchEntryLabel(
     ['draft:delivery-review:', '交付复核', 'run'],
     ['draft:source-resolutions:', '来源意见复验', 'run'],
     ['draft:terminal-continuation:', '终端续接', 'run'],
+    ['draft:terminal-communication:', '终端协作消息', 'run'],
+    ['draft:terminal-send:', '终端发送确认', 'run'],
     ['draft:terminal-recovery:', '终端恢复', 'run'],
   ];
   for (const [prefix, label, owner] of kinds) {

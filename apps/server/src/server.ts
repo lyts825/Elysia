@@ -33,6 +33,7 @@ import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
+import { registerTerminalCommunication } from './terminal-communication.js';
 import { terminalBinding } from './terminal-binding.js';
 import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src/index.js';
 import { PreviewService } from './preview.js';
@@ -887,6 +888,14 @@ export function createServer(
     );
     return run;
   };
+  if (options.surface !== 'native')
+    registerTerminalCommunication(app, store, kernel, {
+      assertReadable: (runId) => {
+        store.recovery.assertReadable(runId);
+        runReads.assertExecutionReadable(runId);
+      },
+      assertMutable: assertTerminalMutable,
+    });
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/accept', async (request) => {
     const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).parse(request.body);
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
@@ -943,9 +952,11 @@ export function createServer(
     const body = Command.extend({
       expectedRevision: z.number().int().nonnegative(),
       mode: z.enum(['resume', 'new-session']),
-      text: z.string().trim().min(1).max(60000),
+      text: z.string().trim().max(60000),
+      inboxIds: z.array(z.string().uuid()).max(100).default([]),
     })
       .strict()
+      .refine((body) => !!body.text || body.inboxIds.length > 0, '请输入补充需求或选择待处理消息')
       .parse(request.body);
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
       return command(body, request.url, () => {
@@ -955,7 +966,13 @@ export function createServer(
     invariant(options.surface !== 'native', 'TERMINAL_READ_ONLY', '旧终端记录仅供查看，请切换到 Agent 终端');
     revision(body, run);
     invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
-    const commit = await terminal.prepareContinuation(run.id, body.expectedRevision, body.mode, body.text);
+    const commit = await terminal.prepareContinuation(
+      run.id,
+      body.expectedRevision,
+      body.mode,
+      body.text,
+      body.inboxIds,
+    );
     const result = executionCommand(run.id, body, request.url, () => {
       assertTerminalMutable(run.id);
       invariant(!executorHasActive(executor, run.id), 'TERMINAL_ACTIVE', '请等待终端进程结束后继续');
@@ -1308,7 +1325,8 @@ export function createServer(
       }
       return kernel.inbox(run.id, body.text);
     });
-    executor.resume(request.params.id);
+    if (store.require<Run>('runs', request.params.id).execution?.kind !== 'docker-agent')
+      executor.resume(request.params.id);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/runs/:id/plan/accept', async (request) => {

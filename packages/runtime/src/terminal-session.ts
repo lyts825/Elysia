@@ -28,8 +28,13 @@ export const TerminalSessionRecordSchema = z.object({
     .object({
       requestId: z.string().uuid(),
       mode: z.enum(['resume', 'new-session']),
-      text: z.string().trim().min(1).max(60000),
+      text: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1024 * 1024),
       sourceOperationId: z.string().uuid(),
+      inboxIds: z.array(z.string().uuid()).max(100).optional(),
     })
     .optional(),
 });

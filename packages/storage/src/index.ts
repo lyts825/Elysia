@@ -1497,6 +1497,8 @@ export class Store {
         `pinned:run:${runId}`,
         `unread:run:${runId}`,
         `draft:terminal-continuation:${runId}`,
+        `draft:terminal-communication:${runId}`,
+        `draft:terminal-send:${runId}`,
         `draft:handoff:${runId}`,
         `draft:delivery-review:${runId}`,
         `draft:source-resolutions:${runId}`,

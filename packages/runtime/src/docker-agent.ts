@@ -36,6 +36,7 @@ import {
   type TerminalRuntimeSnapshot,
 } from '../../contracts/src/terminal-runtime.js';
 import { terminalConnectionConfiguration } from './terminal-connection.js';
+import { TERMINAL_INBOX_MAX_PENDING, type InboxMessage } from '../../contracts/src/terminal-inbox.js';
 import {
   codexResumeProfile,
   readTerminalSession,
@@ -1495,16 +1496,46 @@ export class DockerAgentService {
     expectedRevision: number,
     mode: TerminalContinuationMode,
     text: string,
+    inboxIds: string[] = [],
   ): Promise<() => Run> {
     invariant(
       ['resume', 'new-session'].includes(mode) &&
         typeof text === 'string' &&
-        text.trim().length > 0 &&
-        text.length <= 60000,
+        text.length <= 60000 &&
+        Array.isArray(inboxIds) &&
+        inboxIds.length <= TERMINAL_INBOX_MAX_PENDING &&
+        inboxIds.every((inboxId) => typeof inboxId === 'string') &&
+        new Set(inboxIds).size === inboxIds.length &&
+        (text.trim().length > 0 || inboxIds.length > 0),
       'TERMINAL_CONTINUATION_INPUT',
-      '请输入后续任务内容，最多 60000 字',
+      '请输入后续任务内容（最多 60000 字）或选择待处理消息（最多 100 条）',
     );
     const state = this.continuationState(runId, expectedRevision);
+    for (const inboxId of inboxIds) {
+      const message = this.store.require<InboxMessage>('inbox', inboxId);
+      invariant(
+        message.runId === runId && message.status === 'PENDING' && message.direction !== 'outgoing',
+        'TERMINAL_INBOX_CHANGED',
+        '所选待处理消息已变化或不属于当前终端，请刷新后重试',
+      );
+    }
+    // Selection is a set; preserve durable arrival order so later corrections remain later.
+    // The client lists newest first and may also collect checkbox clicks in arbitrary order.
+    const selectedIds = new Set(inboxIds);
+    const incoming = this.kernel.pendingTerminalInbox(runId).filter((message) => selectedIds.has(message.id));
+    inboxIds = incoming.map((message) => message.id);
+    const continuationText = [
+      ...incoming.map((message) => this.kernel.terminalInboxText(message)),
+      text.trim(),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    invariant(
+      Buffer.byteLength(continuationText, 'utf8') <= 1024 * 1024,
+      'TERMINAL_INPUT_LIMIT',
+      '续接消息合计超过 1 MiB，请减少所选消息后重试',
+    );
+    const inboxSnapshot = stable(incoming);
     const sessionSnapshot = stable(state.record ?? null);
     if (mode === 'resume') {
       const capability = await this.cliManager.resumeCapability(state.profile, state.imageId);
@@ -1528,6 +1559,12 @@ export class DockerAgentService {
           'TERMINAL_SESSION_CHANGED',
           '续接准备期间终端状态已变化，请刷新后重试',
         );
+        invariant(
+          stable(inboxIds.map((inboxId) => this.store.require<InboxMessage>('inbox', inboxId))) ===
+            inboxSnapshot,
+          'TERMINAL_INBOX_CHANGED',
+          '续接准备期间所选消息已变化，请刷新后重试',
+        );
         if (mode === 'resume') this.sessionHome(current.record!, true);
         const record: TerminalSessionRecord = current.record ?? {
           revision: 0,
@@ -1542,9 +1579,16 @@ export class DockerAgentService {
         writeTerminalSession(this.store, {
           ...record,
           revision: record.revision + 1,
-          pending: { requestId: id(), mode, text: text.trim(), sourceOperationId: current.operation.id },
+          pending: {
+            requestId: id(),
+            mode,
+            text: continuationText,
+            sourceOperationId: current.operation.id,
+            ...(inboxIds.length ? { inboxIds } : {}),
+          },
         });
-        this.kernel.appendMessage(current.task, 'user', text.trim());
+        this.kernel.applyTerminalInbox(current.task, inboxIds);
+        if (text.trim()) this.kernel.appendMessage(current.task, 'user', text.trim());
         this.kernel.updateTask(current.task, 'READY', {
           waitReason: undefined,
           waitingFor: [],
@@ -1554,7 +1598,7 @@ export class DockerAgentService {
         this.kernel.event(
           runId,
           'terminal.continuation_requested',
-          { mode, sourceOperationId: current.operation.id },
+          { mode, sourceOperationId: current.operation.id, inboxIds },
           current.task.id,
         );
         return next;
@@ -1729,6 +1773,7 @@ export class DockerAgentService {
         contractVersion: task.contractVersion,
         containerName: `elysia-agent-${id()}`,
         imageId: check.imageId,
+        ...(pending?.inboxIds?.length ? { inboxIds: pending.inboxIds } : {}),
         ...(pending
           ? {
               continuation: {
@@ -1925,20 +1970,36 @@ export class DockerAgentService {
         signal.throwIfAborted();
         invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
       }
-      const prompt =
-        pending?.mode === 'resume'
-          ? pending.text
-          : `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
-              this.kernel
-                .history(task)
-                .filter((message) => message.role === 'user')
-                .map((message) => message.text),
-            )}\n\n仅在 /workspace 完成本任务，不修改隐藏的 Git 元数据。请提供最终结果摘要；完成状态由 Elysia 用户验收决定。\n`;
-      invariant(
-        Buffer.byteLength(prompt) <= 1024 * 1024,
-        'TERMINAL_INPUT_LIMIT',
-        '终端任务输入超过 1 MiB，请拆分任务后重试',
-      );
+      const prompt = this.store.tx(() => {
+        // Snapshot stdin once. Later arrivals stay PENDING for an explicit continuation.
+        // A continuation consumes only the items selected in its preparation command.
+        if (!pending) {
+          const inboxIds = this.kernel.pendingTerminalInbox(run.id).map((message) => message.id);
+          this.kernel.applyTerminalInbox(task, inboxIds, operation.id);
+          if (inboxIds.length) {
+            operation.args.inboxIds = inboxIds;
+            this.store.put('tool_operations', {
+              ...this.store.require<Operation>('tool_operations', operation.id),
+              args: operation.args,
+            });
+          }
+        }
+        const input =
+          pending?.mode === 'resume'
+            ? pending.text
+            : `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
+                this.kernel
+                  .history(task)
+                  .filter((message) => message.role === 'user')
+                  .map((message) => message.text),
+              )}\n\n仅在 /workspace 完成本任务，不修改隐藏的 Git 元数据。请提供最终结果摘要；完成状态由 Elysia 用户验收决定。\n`;
+        invariant(
+          Buffer.byteLength(input) <= 1024 * 1024,
+          'TERMINAL_INPUT_LIMIT',
+          '终端任务输入超过 1 MiB，请拆分任务后重试',
+        );
+        return input;
+      });
       started = true;
       this.runtimePhase(task, 'running', operation.id);
       const controller = new AbortController();
@@ -2150,6 +2211,11 @@ export class DockerAgentService {
     const run = this.store.require<Run>('runs', runId);
     invariant(run.revision === expectedRevision, 'REVISION_CONFLICT', '对话已更新，请刷新后再验收');
     invariant(
+      this.kernel.pendingTerminalInbox(runId).length === 0,
+      'TERMINAL_INBOX_PENDING',
+      '终端仍有待处理消息，请先选择消息继续执行后再验收',
+    );
+    invariant(
       run.execution?.kind === 'docker-agent' && !run.archived && run.status === 'WAITING',
       'TERMINAL_REVIEW_STATE',
       '当前终端任务不可验收',
@@ -2216,6 +2282,11 @@ export class DockerAgentService {
           currentRun.revision === expectedRevision,
           'REVISION_CONFLICT',
           '对话已更新，请刷新后再验收',
+        );
+        invariant(
+          this.kernel.pendingTerminalInbox(runId).length === 0,
+          'TERMINAL_INBOX_PENDING',
+          '验收准备期间收到新消息，请先处理待收消息后再验收',
         );
         invariant(
           !currentRun.archived &&

@@ -61,6 +61,11 @@ const TerminalContinuation = deferredPanel(
   () => import('./TerminalContinuation').then((m) => m.TerminalContinuation),
   '终端续接',
 );
+const TerminalCommunication = deferredPanel(
+  () => import('./TerminalCommunication').then((m) => m.TerminalCommunication),
+  '终端通信',
+);
+import { readTerminalCommunicationDraft } from '../../../packages/contracts/src/terminal-communication';
 import { readContinuationDraft } from './ContinuationDraft';
 import { RecordHistory } from './RecordHistory';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
@@ -1343,6 +1348,8 @@ function App({
       keys.push(
         `draft:run:${runId}`,
         `draft:terminal-continuation:${runId}`,
+        `draft:terminal-communication:${runId}`,
+        `draft:terminal-send:${runId}`,
         `draft:handoff:${runId}`,
         `draft:delivery-review:${runId}`,
         `draft:source-resolutions:${runId}`,
@@ -1451,6 +1458,10 @@ function App({
         'terminal.failed',
         'terminal.unavailable',
         'terminal.accepted',
+        'inbox.received',
+        'terminal.message_received',
+        'terminal.message_sent',
+        'terminal.inbox_applied',
         'error',
       ];
       for (const event of events)
@@ -1582,9 +1593,25 @@ function App({
     const target = runId;
     const text = reply;
     const revision = detail.run.revision;
+    const terminalInput = detail.run.execution?.kind === 'docker-agent';
     void act(async () => {
-      await mutation('/runs/' + target + '/messages', { expectedRevision: revision, text });
+      const receiptKey = `draft:terminal-send:${target}`;
+      const previous = readTerminalCommunicationDraft(cache.get(receiptKey));
+      const receipt =
+        terminalInput &&
+        previous.text === text &&
+        previous.commandId &&
+        previous.expectedRevision !== undefined
+          ? previous
+          : { targetRunId: target, text, commandId: crypto.randomUUID(), expectedRevision: revision };
+      if (terminalInput) cache.set(receiptKey, JSON.stringify(receipt));
+      await mutation('/runs/' + target + '/messages', {
+        expectedRevision: terminalInput ? receipt.expectedRevision : revision,
+        text,
+        ...(terminalInput ? { commandId: receipt.commandId } : {}),
+      });
       if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
+      if (terminalInput && cache.get(receiptKey) === JSON.stringify(receipt)) cache.set(receiptKey, '');
     });
   };
   const selectRun = (
@@ -2887,6 +2914,14 @@ function App({
                             <TerminalContinuation
                               key={detail.run.id}
                               run={detail.run}
+                              messageRevision={Math.max(
+                                0,
+                                ...detail.events
+                                  .filter((event) =>
+                                    ['inbox.received', 'terminal.inbox_applied'].includes(event.type),
+                                  )
+                                  .map((event) => event.seq),
+                              )}
                               disabled={busy}
                               act={act}
                               draft={readContinuationDraft(
@@ -2901,8 +2936,14 @@ function App({
                               submitted={(sent) => {
                                 const key = `draft:terminal-continuation:${detail.run.id}`;
                                 const current = readContinuationDraft(cache.get(key));
-                                if (current.text === sent.text && current.mode === sent.mode)
-                                  cache.set(key, JSON.stringify({ ...current, text: '' }));
+                                if (
+                                  JSON.stringify(current) ===
+                                  JSON.stringify(readContinuationDraft(JSON.stringify(sent)))
+                                )
+                                  cache.set(
+                                    key,
+                                    JSON.stringify({ mode: current.mode, text: '', inboxIds: [] }),
+                                  );
                               }}
                             />
                           )}
@@ -2933,6 +2974,36 @@ function App({
                         完整记录保存为产物，可在右侧预览。中断时保留工作目录，通过核验入口决定验收或暂停后手动恢复。
                       </p>
                     </div>
+                  )}
+                  {terminalSurface && detail.run.execution?.kind === 'docker-agent' && (
+                    <TerminalCommunication
+                      key={detail.run.id}
+                      run={detail.run}
+                      messageRevision={Math.max(
+                        0,
+                        ...detail.events
+                          .filter((event) =>
+                            ['inbox.received', 'terminal.inbox_applied'].includes(event.type),
+                          )
+                          .map((event) => event.seq),
+                      )}
+                      disabled={busy || runReadOnly}
+                      draft={readTerminalCommunicationDraft(
+                        cacheState.entries[`draft:terminal-communication:${detail.run.id}`]?.value,
+                      )}
+                      changeDraft={(value) =>
+                        cache.set(`draft:terminal-communication:${detail.run.id}`, JSON.stringify(value))
+                      }
+                      submitted={(sent) => {
+                        const key = `draft:terminal-communication:${detail.run.id}`;
+                        if (
+                          JSON.stringify(readTerminalCommunicationDraft(cache.get(key))) ===
+                          JSON.stringify(readTerminalCommunicationDraft(JSON.stringify(sent)))
+                        )
+                          cache.set(key, JSON.stringify({ targetRunId: sent.targetRunId, text: '' }));
+                      }}
+                      onNavigate={(target) => void openResourceOwner(target)}
+                    />
                   )}
                   {detail.terminalRuntime && (
                     <TerminalRuntimePanel
@@ -3060,6 +3131,7 @@ function App({
                     <textarea
                       ref={replyRef}
                       aria-label="回复或补充需求"
+                      maxLength={20000}
                       value={reply}
                       onChange={(e) => cache.set(replyKey, e.target.value)}
                       onKeyDown={(e) => {
@@ -3089,7 +3161,7 @@ function App({
                       (detail.run.authorized || detail.run.plan) && (
                         <p className="field-help" style={{ padding: '0 16px 10px' }}>
                           {detail.run.execution?.kind === 'docker-agent'
-                            ? '终端执行中收到的补充需求会保存到记录。正常结束后可在验收卡片中补充需求并继续；中断须先核验。'
+                            ? '补充需求进入待处理队列。运行中不会打断 CLI；正常结束后在“补充需求并继续”中选择消息。暂停和中断须先恢复或核验。'
                             : detail.run.planMode === false
                               ? '补充消息会在安全边界送入当前任务；权限和累计预算保持。'
                               : '发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。'}
@@ -3139,7 +3211,7 @@ function App({
                                   : isChat
                                     ? 'Ctrl + Enter 发送 · 独立会话自动保存'
                                     : detail.run.execution?.kind === 'docker-agent'
-                                      ? 'Ctrl + Enter 发送 · 补充说明保存到任务记录'
+                                      ? 'Ctrl + Enter 发送 · 消息状态见终端通信'
                                       : 'Ctrl + Enter 发送 · 补充需求在安全边界应用'}
                         </span>
                       </div>

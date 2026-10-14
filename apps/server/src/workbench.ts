@@ -28,7 +28,8 @@ const deliveryReviewDraftKey = /^draft:delivery-review:([^:\s/\\]+)$/;
 const sourceResolutionDraftKey = /^draft:source-resolutions:([^:\s/\\]+)$/;
 const projectSetupDraftKey = /^draft:setup:project:([^:\s/\\]+)$/;
 const projectBoardDraftKey = /^draft:project-board:([^:\s/\\]+)$/;
-const terminalDraftKey = /^draft:terminal-(?:continuation|recovery):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
+const terminalDraftKey =
+  /^draft:terminal-(?:continuation|recovery|communication|send):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
 const keySchema = z
   .string()
   .max(240)
