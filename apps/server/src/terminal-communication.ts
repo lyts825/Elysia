@@ -7,7 +7,10 @@ import {
   type Project,
   type Run,
 } from '../../../packages/contracts/src/index.js';
-import type { InboxMessage } from '../../../packages/contracts/src/terminal-inbox.js';
+import type {
+  InboxMessage,
+  TerminalInboxResolution,
+} from '../../../packages/contracts/src/terminal-inbox.js';
 import type {
   TerminalCommunicationItem,
   TerminalCommunicationPage,
@@ -52,6 +55,146 @@ export class TerminalCommunication {
           .get(runId) as { n: number }
       ).n,
     );
+  }
+
+  private boundReceipt(sent: InboxMessage, received: InboxMessage | undefined) {
+    return !!(
+      received &&
+      sent.direction === 'outgoing' &&
+      sent.targetInboxId === received.id &&
+      sent.target?.runId === received.runId &&
+      (received.direction === undefined || received.direction === 'incoming') &&
+      !received.target &&
+      !received.targetInboxId &&
+      received.source?.runId === sent.runId &&
+      received.runId !== sent.runId &&
+      received.text === sent.text
+    );
+  }
+
+  private item(item: InboxMessage): TerminalCommunicationItem {
+    const outgoing = item.direction === 'outgoing';
+    const other = outgoing ? item.target : item.source;
+    const available = other ? this.store.get<Run>('runs', other.runId) : undefined;
+    const candidate =
+      outgoing && item.targetInboxId ? this.store.get<InboxMessage>('inbox', item.targetInboxId) : undefined;
+    const received = outgoing ? (this.boundReceipt(item, candidate) ? candidate : undefined) : item;
+    return {
+      id: item.id,
+      revision: received?.revision ?? item.revision,
+      direction: outgoing ? 'outgoing' : 'incoming',
+      text: item.text,
+      createdAt: item.createdAt,
+      ...(other ? { peer: { ...other, agent: other.agent ?? '', available: !!available } } : {}),
+      status: !received
+        ? 'unavailable'
+        : received.status === 'PENDING'
+          ? 'queued'
+          : received.status === 'DISMISSED'
+            ? 'dismissed'
+            : 'included',
+      ...(received?.operationId ? { operationId: received.operationId } : {}),
+      ...(received?.resolution ? { resolution: received.resolution } : {}),
+    };
+  }
+
+  /** Resolve identity before authorization; never infer a recipient from caller-supplied IDs. */
+  resolutionContext(runId: string, messageId: string) {
+    const actor = this.run(runId);
+    const message = this.store.require<InboxMessage>('inbox', messageId);
+    invariant(message.runId === actor.id, 'TERMINAL_MESSAGE_SCOPE', '消息不属于当前终端');
+    const outgoing = message.direction === 'outgoing';
+    const received = outgoing
+      ? message.targetInboxId
+        ? this.store.get<InboxMessage>('inbox', message.targetInboxId)
+        : undefined
+      : message;
+    invariant(
+      outgoing
+        ? this.boundReceipt(message, received)
+        : (message.direction === undefined || message.direction === 'incoming') &&
+            !message.target &&
+            !message.targetInboxId,
+      'TERMINAL_MESSAGE_BINDING',
+      '消息收发绑定已变化或接收记录已删除，请刷新后核对',
+    );
+    const recipient = outgoing ? this.run(received!.runId) : actor;
+    const sourceRecord = received!.source ? this.store.get<Run>('runs', received!.source.runId) : undefined;
+    const source = sourceRecord ? this.run(sourceRecord.id) : undefined;
+    invariant(
+      (!source ||
+        (source.id !== recipient.id && source.projectId && source.projectId === recipient.projectId)) &&
+        (!outgoing || source?.id === actor.id),
+      'TERMINAL_PROJECT_MISMATCH',
+      '消息来源与接收终端必须属于同一项目',
+    );
+    return {
+      actor,
+      message,
+      received: received!,
+      recipient,
+      source,
+      kind: outgoing ? ('withdrawn' as const) : ('dismissed' as const),
+      mutableRunIds: outgoing ? [actor.id, recipient.id] : [actor.id],
+    };
+  }
+
+  resolve(runId: string, messageId: string, expectedMessageRevision: number, note: string) {
+    return this.store.tx(() => {
+      const context = this.resolutionContext(runId, messageId);
+      invariant(
+        Number.isSafeInteger(expectedMessageRevision) &&
+          expectedMessageRevision >= 0 &&
+          typeof note === 'string' &&
+          !!note.trim() &&
+          note.trim().length <= 2000,
+        'TERMINAL_MESSAGE_RESOLUTION_INPUT',
+        '请填写不再处理或撤回的理由，最多 2000 字',
+      );
+      for (const id of context.mutableRunIds) {
+        const run = this.run(id);
+        invariant(
+          !run.archived &&
+            (!run.projectId || !this.store.require<Project>('projects', run.projectId).archived),
+          'ARCHIVED',
+          '请先恢复归档的任务或项目',
+        );
+      }
+      if (context.received.revision !== expectedMessageRevision)
+        throw new AppError(
+          'REVISION_CONFLICT',
+          '消息已更新，请刷新后重新核对',
+          false,
+          { currentRevision: context.received.revision },
+          409,
+        );
+      invariant(
+        context.received.status === 'PENDING',
+        'TERMINAL_MESSAGE_RESOLVED',
+        '消息已加入上下文或已处置，不能撤回或重复处置',
+      );
+      const resolution: TerminalInboxResolution = {
+        kind: context.kind,
+        note: note.trim(),
+        at: now(),
+        byRunId: context.actor.id,
+        by: peer(context.actor),
+      };
+      const resolved = this.store.put<InboxMessage>(
+        'inbox',
+        {
+          ...context.received,
+          status: 'DISMISSED',
+          resolution,
+        },
+        expectedMessageRevision,
+      );
+      const payload = { inboxId: resolved.id, revision: resolved.revision, resolution };
+      this.kernel.event(context.recipient.id, 'terminal.message_resolved', payload);
+      if (context.source && !context.source.archived)
+        this.kernel.event(context.source.id, 'terminal.message_resolved', payload);
+      return this.item(context.kind === 'withdrawn' ? context.message : resolved);
+    });
   }
 
   async peers(
@@ -135,28 +278,9 @@ export class TerminalCommunication {
         `SELECT id FROM inbox WHERE run_id=?${filter}${boundary === undefined ? '' : ' AND rowid<?'} ORDER BY rowid DESC LIMIT ?`,
       )
       .all(runId, ...(boundary === undefined ? [] : [boundary]), query.limit + 1) as { id: string }[];
-    const items = rows.slice(0, query.limit).map(({ id }): TerminalCommunicationItem => {
-      const item = this.store.require<InboxMessage>('inbox', id);
-      const outgoing = item.direction === 'outgoing';
-      const other = outgoing ? item.target : item.source;
-      const available = other ? this.store.get<Run>('runs', other.runId) : undefined;
-      const received =
-        outgoing && item.targetInboxId ? this.store.get<InboxMessage>('inbox', item.targetInboxId) : item;
-      return {
-        id: item.id,
-        direction: outgoing ? 'outgoing' : 'incoming',
-        text: item.text,
-        createdAt: item.createdAt,
-        ...(other ? { peer: { ...other, agent: other.agent ?? '', available: !!available } } : {}),
-        status:
-          !received || (outgoing && received.runId !== other?.runId)
-            ? 'unavailable'
-            : received.status === 'PENDING'
-              ? 'queued'
-              : 'included',
-        ...(received?.operationId ? { operationId: received.operationId } : {}),
-      };
-    });
+    const items = rows
+      .slice(0, query.limit)
+      .map(({ id }) => this.item(this.store.require<InboxMessage>('inbox', id)));
     const total = Number(
       (
         this.store.db.prepare(`SELECT COUNT(*) n FROM inbox WHERE run_id=?${filter}`).get(runId) as {
@@ -276,5 +400,34 @@ export function registerTerminalCommunication(
       return service.send(request.params.id, body.targetRunId, body.text, body.expectedRevision);
     });
   });
+  app.post<{ Params: { id: string; messageId: string } }>(
+    '/api/runs/:id/terminal/messages/:messageId/resolve',
+    (request) => {
+      const body = Command.extend({
+        expectedMessageRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        note: z.string().trim().min(1).max(2000),
+      })
+        .strict()
+        .parse(request.body);
+      const fingerprint = { route: request.url, body };
+      if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
+        return store.command(body.commandId, fingerprint, () => {
+          throw new AppError('COMMAND_MISSING', '命令结果不存在');
+        });
+      guard.assertReadable(request.params.id);
+      const context = service.resolutionContext(request.params.id, request.params.messageId);
+      for (const runId of context.mutableRunIds) if (runId !== request.params.id) guard.assertReadable(runId);
+      return store.command(body.commandId, fingerprint, () => {
+        const current = service.resolutionContext(request.params.id, request.params.messageId);
+        for (const runId of current.mutableRunIds) guard.assertMutable(runId);
+        return service.resolve(
+          request.params.id,
+          request.params.messageId,
+          body.expectedMessageRevision,
+          body.note,
+        );
+      });
+    },
+  );
   return service;
 }

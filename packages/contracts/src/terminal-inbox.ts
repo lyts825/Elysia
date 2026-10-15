@@ -6,11 +6,19 @@ export interface TerminalInboxPeer {
   agent?: string;
 }
 
+export interface TerminalInboxResolution {
+  kind: 'dismissed' | 'withdrawn';
+  note: string;
+  at: string;
+  byRunId: string;
+  by: TerminalInboxPeer;
+}
+
 /** APPLIED proves durable context inclusion, never that an external CLI read or acted on it. */
 export interface InboxMessage extends Entity {
   runId: string;
   text: string;
-  status: 'PENDING' | 'APPLIED';
+  status: 'PENDING' | 'APPLIED' | 'DISMISSED';
   createdAt: string;
   appliedAt?: string;
   taskId?: string;
@@ -19,6 +27,7 @@ export interface InboxMessage extends Entity {
   direction?: 'incoming' | 'outgoing';
   target?: TerminalInboxPeer;
   targetInboxId?: string;
+  resolution?: TerminalInboxResolution;
 }
 
 export const TERMINAL_INBOX_MAX_PENDING = 100;

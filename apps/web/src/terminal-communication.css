@@ -86,6 +86,45 @@
 .terminal-communication-notice {
   color: var(--success);
 }
+.terminal-communication-read-state,
+.terminal-resolution-editor {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.terminal-communication-read-state > button {
+  justify-self: start;
+}
+.terminal-resolution-editor {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.terminal-resolution-original,
+.terminal-message-resolution p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 160px;
+  overflow: auto;
+}
+.terminal-resolution-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.terminal-message-resolution {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.terminal-message-resolution time {
+  font-size: 11px;
+}
 .terminal-message-status.queued {
   color: var(--accent);
   background: var(--accent-pale);

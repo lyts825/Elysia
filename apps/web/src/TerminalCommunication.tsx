@@ -5,6 +5,7 @@ import type {
   TerminalCommunicationItem,
   TerminalCommunicationPage,
   TerminalPeerPage,
+  TerminalResolutionDraft,
 } from '../../../packages/contracts/src/terminal-communication';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
@@ -25,6 +26,7 @@ const deliveryLabels: Record<TerminalCommunicationItem['status'], string> = {
   queued: '待下一轮处理',
   included: '已加入终端上下文',
   unavailable: '接收记录已不可用',
+  dismissed: '已不再处理',
 };
 const reasonLabels: Record<string, string> = {
   paused: '已暂停',
@@ -35,19 +37,38 @@ const reasonLabels: Record<string, string> = {
   user: '等待用户输入',
 };
 
-function useCommunicationRead<T>(path: string, revision: number, refresh: number) {
+type PagePosition = { cursors: string[]; query?: string };
+function useCommunicationRead<T>(
+  path: string,
+  scope: string,
+  revision: number,
+  refresh: number,
+  position: PagePosition,
+) {
   const { api } = useSurfaceClient();
-  const [state, setState] = useState<{ path: string; value?: T; loading: boolean; issue: string }>({
+  const { cursors, query } = position;
+  const reader = useRef<AbortController | null>(null);
+  const [state, setState] = useState<{
+    scope: string;
+    path: string;
+    position?: PagePosition;
+    value?: T;
+    loading: boolean;
+    issue: string;
+  }>({
+    scope,
     path,
     loading: true,
     issue: '',
   });
   useEffect(() => {
     const controller = new AbortController();
-    setState((old) => ({ path, value: old.path === path ? old.value : undefined, loading: true, issue: '' }));
+    reader.current = controller;
+    setState((old) => ({ ...(old.scope === scope ? old : {}), scope, path, loading: true, issue: '' }));
     void api<T>(path, undefined, undefined, controller.signal)
       .then((value) => {
-        if (!controller.signal.aborted) setState({ path, value, loading: false, issue: '' });
+        if (!controller.signal.aborted)
+          setState({ scope, path, position: { cursors, query }, value, loading: false, issue: '' });
       })
       .catch((error) => {
         if (!controller.signal.aborted)
@@ -58,8 +79,26 @@ function useCommunicationRead<T>(path: string, revision: number, refresh: number
           }));
       });
     return () => controller.abort();
-  }, [api, path, revision, refresh]);
-  return state.path === path ? state : { path, loading: true, issue: '', value: undefined };
+  }, [api, path, scope, revision, refresh, cursors, query]);
+  const visible =
+    state.scope === scope
+      ? state
+      : {
+          scope,
+          path,
+          loading: true,
+          issue: '',
+          value: undefined,
+          position: undefined,
+        };
+  return {
+    ...visible,
+    loading: state.path !== path || visible.loading,
+    cancel: () => {
+      reader.current?.abort();
+      setState((old) => ({ ...old, loading: false, issue: '读取已取消。' }));
+    },
+  };
 }
 
 export function TerminalCommunication({
@@ -70,6 +109,9 @@ export function TerminalCommunication({
   submitted,
   onNavigate,
   messageRevision = 0,
+  resolutionDraft,
+  changeResolutionDraft,
+  resolutionSubmitted,
 }: {
   run: Run;
   disabled: boolean;
@@ -78,6 +120,9 @@ export function TerminalCommunication({
   submitted: (draft: TerminalCommunicationDraft) => void;
   onNavigate: (runId: string) => void;
   messageRevision?: number;
+  resolutionDraft: TerminalResolutionDraft | null;
+  changeResolutionDraft: (draft: TerminalResolutionDraft | null) => void;
+  resolutionSubmitted: (draft: TerminalResolutionDraft) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [open, setOpen] = useState(true);
@@ -96,6 +141,12 @@ export function TerminalCommunication({
   const [sending, setSending] = useState(false);
   const [sendIssue, setSendIssue] = useState('');
   const [notice, setNotice] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolutionIssue, setResolutionIssue] = useState('');
+  const [resolutionRejected, setResolutionRejected] = useState(false);
+  const resolutionLock = useRef(false);
+  const resolutionEditor = useRef<HTMLTextAreaElement>(null);
+  const currentResolutionDraft = useRef(resolutionDraft);
   const textArea = useRef<HTMLTextAreaElement>(null);
   const sendLock = useRef(false);
   const currentRun = useRef(run.id);
@@ -103,18 +154,23 @@ export function TerminalCommunication({
   const mounted = useRef(true);
   currentRun.current = run.id;
   currentDraft.current = draft;
+  currentResolutionDraft.current = resolutionDraft;
   const base = `/runs/${encodeURIComponent(run.id)}/terminal`;
   const peerBefore = peerCursors.at(-1);
   const messageBefore = messageCursors.at(-1);
   const peers = useCommunicationRead<TerminalPeerPage>(
     `${base}/peers?limit=20&query=${encodeURIComponent(search)}${peerBefore ? `&before=${encodeURIComponent(peerBefore)}` : ''}`,
+    base,
     run.revision,
     refresh,
+    { cursors: peerCursors, query: search },
   );
   const messages = useCommunicationRead<TerminalCommunicationPage>(
     `${base}/messages?limit=20${messageBefore ? `&before=${encodeURIComponent(messageBefore)}` : ''}`,
+    base,
     run.revision + messageRevision,
     refresh,
+    { cursors: messageCursors },
   );
   useEffect(() => {
     mounted.current = true;
@@ -129,7 +185,12 @@ export function TerminalCommunication({
     setMessageCursors([]);
     setSendIssue('');
     setNotice('');
+    setResolutionIssue('');
+    setResolutionRejected(false);
   }, [run.id]);
+  useEffect(() => {
+    resolutionEditor.current?.focus();
+  }, [resolutionDraft?.item.id]);
   useEffect(() => {
     if (!open) return;
     const timer = setInterval(() => {
@@ -241,6 +302,71 @@ export function TerminalCommunication({
       if (mounted.current) setSending(false);
     }
   };
+  const beginResolution = (item: TerminalCommunicationItem) => {
+    if (disabled || resolutionLock.current || item.status !== 'queued') return;
+    if (
+      resolutionDraft &&
+      resolutionDraft.item.id !== item.id &&
+      (resolutionDraft.note.trim() || resolutionDraft.commandId)
+    ) {
+      setResolutionIssue('已有待确认的处置草稿，请先完成或明确关闭当前草稿，再选择其他消息。');
+      resolutionEditor.current?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (resolutionDraft?.item.id === item.id) {
+      resolutionEditor.current?.focus();
+      return;
+    }
+    changeResolutionDraft({ item, note: '' });
+    setResolutionIssue('');
+    setResolutionRejected(false);
+    resolutionEditor.current?.focus();
+  };
+  const resolveMessage = async () => {
+    if (disabled || resolutionLock.current || !resolutionDraft?.note.trim() || resolutionRejected) return;
+    const sent = { ...resolutionDraft, commandId: resolutionDraft.commandId || crypto.randomUUID() };
+    const source = run.id;
+    if (!resolutionDraft.commandId) {
+      currentResolutionDraft.current = sent;
+      changeResolutionDraft(sent);
+    }
+    resolutionLock.current = true;
+    setResolving(true);
+    setResolutionIssue('');
+    try {
+      await mutation(`${base}/messages/${encodeURIComponent(sent.item.id)}/resolve`, {
+        commandId: sent.commandId,
+        expectedMessageRevision: sent.item.revision,
+        note: sent.note.trim(),
+      });
+      resolutionSubmitted(sent);
+      if (mounted.current && currentRun.current === source) {
+        setNotice('消息处置记录已确认，原文和理由已保留。');
+        setRefresh((value) => value + 1);
+      }
+    } catch (error) {
+      if (
+        mounted.current &&
+        currentRun.current === source &&
+        currentResolutionDraft.current?.commandId === sent.commandId
+      ) {
+        const rejected =
+          error instanceof ApiError &&
+          error.kind === 'http' &&
+          (error.status || 0) >= 400 &&
+          (error.status || 0) < 500;
+        setResolutionRejected(rejected);
+        setResolutionIssue(
+          `${error instanceof Error ? error.message : '无法确认处置结果。'} ${rejected ? '请重新核对消息，当前原文和理由已保留。' : '原请求和理由已保留，重试将核对同一次处置。'}`,
+        );
+      }
+    } finally {
+      resolutionLock.current = false;
+      if (mounted.current && currentRun.current === source) setResolving(false);
+    }
+  };
+  const visibleMessageCursors = messages.position?.cursors || [];
+  const visiblePeerCursors = peers.position?.cursors || [];
 
   return (
     <details
@@ -266,15 +392,25 @@ export function TerminalCommunication({
             刷新通信
           </button>
         </div>
-        {messages.issue && (
-          <p className="inline-warning" role="alert">
-            {messages.issue} 请点击“刷新通信”重试。
-          </p>
-        )}
-        {messages.loading && !messages.value && (
-          <p className="field-help" role="status">
-            正在读取消息…
-          </p>
+        {(messages.loading || messages.issue) && (
+          <div className="terminal-communication-read-state">
+            <p
+              className={messages.issue ? 'inline-warning' : 'field-help'}
+              role={messages.issue ? 'alert' : 'status'}
+            >
+              {messages.issue || `正在读取第 ${messageCursors.length + 1} 页消息…`}
+              {messages.value && ' 当前保留上次成功读取的消息。'}
+            </p>
+            {messages.loading ? (
+              <button type="button" className="text-button" onClick={messages.cancel}>
+                取消读取消息
+              </button>
+            ) : (
+              <button type="button" className="text-button" onClick={() => setRefresh((value) => value + 1)}>
+                重试第 {messageCursors.length + 1} 页消息
+              </button>
+            )}
+          </div>
         )}
         {messages.value && !messages.value.items.length && <p className="field-help">当前没有往来消息。</p>}
         {!!messages.value?.items.length && (
@@ -304,8 +440,18 @@ export function TerminalCommunication({
                 <p className="terminal-message-text">{message.text}</p>
                 <div className="terminal-message-footer">
                   <span className={`terminal-message-status ${message.status}`}>
-                    {deliveryLabels[message.status]}
+                    {message.resolution?.kind === 'withdrawn' ? '已撤回' : deliveryLabels[message.status]}
                   </span>
+                  {message.status === 'queued' && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={disabled || resolving}
+                      onClick={() => beginResolution(message)}
+                    >
+                      {message.direction === 'incoming' ? '不再处理' : '撤回'}
+                    </button>
+                  )}
                   {message.direction === 'incoming' && message.peer?.available && (
                     <button
                       type="button"
@@ -320,18 +466,33 @@ export function TerminalCommunication({
                     </button>
                   )}
                 </div>
+                {message.resolution && (
+                  <div className="terminal-message-resolution">
+                    <p>理由：{message.resolution.note}</p>
+                    <time dateTime={message.resolution.at}>
+                      {new Date(message.resolution.at).toLocaleString('zh-CN', { hour12: false })}
+                    </time>
+                  </div>
+                )}
               </li>
             ))}
           </ol>
         )}
         <div className="terminal-communication-pages">
-          <span>{messages.value ? `共 ${messages.value.page.total} 条` : ''}</span>
-          {!!messageCursors.length && (
+          <span>
+            {messages.value
+              ? `第 ${visibleMessageCursors.length + 1} 页 · 共 ${messages.value.page.total} 条`
+              : ''}
+          </span>
+          {!!visibleMessageCursors.length && (
             <button
               type="button"
               className="text-button"
               disabled={messages.loading}
-              onClick={() => setMessageCursors((value) => value.slice(0, -1))}
+              onClick={() => {
+                setMessageCursors(visibleMessageCursors.slice(0, -1));
+                setRefresh((value) => value + 1);
+              }}
             >
               更新消息
             </button>
@@ -343,16 +504,109 @@ export function TerminalCommunication({
               disabled={messages.loading}
               onClick={() => {
                 const next = messages.value?.page.nextBefore;
-                if (next) setMessageCursors((value) => [...value, next]);
+                if (next) {
+                  setMessageCursors([...visibleMessageCursors, next]);
+                  setRefresh((value) => value + 1);
+                }
               }}
             >
               更早消息
+            </button>
+          )}
+          {(messageCursors.length > 0 || visibleMessageCursors.length > 0) && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setMessageCursors([]);
+                setRefresh((value) => value + 1);
+              }}
+            >
+              返回最新消息
             </button>
           )}
         </div>
         <p className="field-help">
           “已加入终端上下文”只表示内容已保存到任务上下文，不代表 CLI 已读或工作已完成。
         </p>
+
+        {resolutionDraft && (
+          <section className="terminal-resolution-editor" aria-label="消息处置草稿">
+            <h4>{resolutionDraft.item.direction === 'incoming' ? '不再处理这条消息' : '撤回这条消息'}</h4>
+            <p className="terminal-resolution-original">{resolutionDraft.item.text}</p>
+            <label>
+              处置理由
+              <textarea
+                ref={resolutionEditor}
+                rows={3}
+                maxLength={2000}
+                value={resolutionDraft.note}
+                disabled={disabled || resolving || !!resolutionDraft.commandId}
+                onChange={(event) => {
+                  const next = { item: resolutionDraft.item, note: event.target.value };
+                  currentResolutionDraft.current = next;
+                  changeResolutionDraft(next);
+                  setResolutionIssue('');
+                }}
+                placeholder="说明为什么这条消息不再需要处理…"
+              />
+            </label>
+            <p className="field-help">
+              确认后保留消息原文和处置理由，从待处理队列移除；此操作不会启动或恢复任务。
+            </p>
+            {resolutionDraft.commandId && !resolving && (
+              <p className="field-help">已有提交记录，重试将使用原文版本和原理由核对同一次处置。</p>
+            )}
+            {resolutionIssue && (
+              <p className="inline-warning" role="alert">
+                {resolutionIssue}
+              </p>
+            )}
+            <div className="terminal-resolution-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled || resolving || resolutionRejected || !resolutionDraft.note.trim()}
+                onClick={() => void resolveMessage()}
+              >
+                {resolving
+                  ? '正在确认…'
+                  : resolutionDraft.commandId
+                    ? '重试核对处置'
+                    : resolutionDraft.item.direction === 'incoming'
+                      ? '确认不再处理'
+                      : '确认撤回'}
+              </button>
+              {resolutionRejected && (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setMessageCursors([]);
+                    setRefresh((value) => value + 1);
+                    setResolutionIssue('请核对最新消息。如仍需处置，请关闭当前草稿后重新选择待处理记录。');
+                  }}
+                >
+                  重新核对消息
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-button"
+                disabled={resolving}
+                onClick={() => {
+                  currentResolutionDraft.current = null;
+                  changeResolutionDraft(null);
+                  setResolutionIssue('');
+                  setResolutionRejected(false);
+                }}
+              >
+                关闭此处置草稿
+              </button>
+            </div>
+            {resolutionDraft.commandId && <p className="field-help">关闭草稿不会撤销已提交的请求。</p>}
+          </section>
+        )}
 
         <div className="terminal-communication-compose">
           <h4>发送协作消息</h4>
@@ -378,18 +632,35 @@ export function TerminalCommunication({
               搜索
             </button>
           </form>
-          {peers.issue && (
-            <p className="inline-warning" role="alert">
-              {peers.issue} 请点击“刷新通信”重试。
-            </p>
-          )}
-          {peers.loading && !peers.value && (
-            <p className="field-help" role="status">
-              正在读取同项目终端…
-            </p>
+          {(peers.loading || peers.issue) && (
+            <div className="terminal-communication-read-state">
+              <p
+                className={peers.issue ? 'inline-warning' : 'field-help'}
+                role={peers.issue ? 'alert' : 'status'}
+              >
+                {peers.issue ||
+                  `正在读取${search ? `“${search}”的` : ''}第 ${peerCursors.length + 1} 页终端…`}
+                {peers.value && ' 当前保留上次成功读取的终端。'}
+              </p>
+              {peers.loading ? (
+                <button type="button" className="text-button" onClick={peers.cancel}>
+                  取消读取终端
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setRefresh((value) => value + 1)}
+                >
+                  重试第 {peerCursors.length + 1} 页终端
+                </button>
+              )}
+            </div>
           )}
           {peers.value && !peers.value.items.length && (
-            <p className="field-help">{search ? '没有匹配的同项目终端。' : '当前项目还没有其他终端。'}</p>
+            <p className="field-help">
+              {peers.position?.query ? '没有匹配的同项目终端。' : '当前项目还没有其他终端。'}
+            </p>
           )}
           {!!peers.value?.items.length && (
             <div className="terminal-peer-list" role="group" aria-label="接收终端列表">
@@ -421,13 +692,20 @@ export function TerminalCommunication({
             </div>
           )}
           <div className="terminal-communication-pages">
-            <span>{peers.value ? `共 ${peers.value.page.total} 个终端` : ''}</span>
-            {!!peerCursors.length && (
+            <span>
+              {peers.value
+                ? `第 ${visiblePeerCursors.length + 1} 页 · 共 ${peers.value.page.total} 个终端`
+                : ''}
+            </span>
+            {!!visiblePeerCursors.length && (
               <button
                 type="button"
                 className="text-button"
                 disabled={peers.loading}
-                onClick={() => setPeerCursors((value) => value.slice(0, -1))}
+                onClick={() => {
+                  setPeerCursors(visiblePeerCursors.slice(0, -1));
+                  setRefresh((value) => value + 1);
+                }}
               >
                 上一页终端
               </button>
@@ -439,10 +717,27 @@ export function TerminalCommunication({
                 disabled={peers.loading}
                 onClick={() => {
                   const next = peers.value?.page.nextBefore;
-                  if (next) setPeerCursors((value) => [...value, next]);
+                  if (next) {
+                    setPeerCursors([...visiblePeerCursors, next]);
+                    setRefresh((value) => value + 1);
+                  }
                 }}
               >
                 下一页终端
+              </button>
+            )}
+            {(peerCursors.length > 0 || visiblePeerCursors.length > 0 || search) && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setPeerCursors([]);
+                  setSearch('');
+                  setQuery('');
+                  setRefresh((value) => value + 1);
+                }}
+              >
+                返回终端首页
               </button>
             )}
           </div>

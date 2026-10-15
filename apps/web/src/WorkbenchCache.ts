@@ -56,7 +56,9 @@ const validKey = (key: string) =>
     /^draft:(?:handoff|delivery-review|source-resolutions):[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
     /^settings:selected-terminal-profile:[^:\s/\\]+$/.test(key) ||
-    /^draft:terminal-(continuation|recovery|communication|send):[^:\s/\\]+(?::[a-f0-9-]{36})?$/.test(key));
+    /^draft:terminal-(continuation|recovery|communication|send|resolution):[^:\s/\\]+(?::[a-f0-9-]{36})?$/.test(
+      key,
+    ));
 const validEntry = (entry: unknown): entry is CacheEntry => {
   if (!entry || typeof entry !== 'object') return false;
   const value = entry as CacheEntry;
@@ -426,7 +428,9 @@ export class WorkbenchCache {
       if (board) return !projectIds.has(board[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);
       const terminalDraft =
-        /^draft:terminal-(?:continuation|recovery|communication|send):([^:]+)(?::[^:]+)?$/.exec(key);
+        /^draft:terminal-(?:continuation|recovery|communication|send|resolution):([^:]+)(?::[^:]+)?$/.exec(
+          key,
+        );
       const handoffDraft = /^draft:(?:handoff|delivery-review|source-resolutions):([^:]+)$/.exec(key);
       if (handoffDraft) return runsComplete && !runIds.has(handoffDraft[1]);
       if (terminalDraft) return runsComplete && !runIds.has(terminalDraft[1]);

@@ -65,7 +65,10 @@ const TerminalCommunication = deferredPanel(
   () => import('./TerminalCommunication').then((m) => m.TerminalCommunication),
   '终端通信',
 );
-import { readTerminalCommunicationDraft } from '../../../packages/contracts/src/terminal-communication';
+import {
+  readTerminalCommunicationDraft,
+  readTerminalResolutionDraft,
+} from '../../../packages/contracts/src/terminal-communication';
 import { readContinuationDraft } from './ContinuationDraft';
 import { RecordHistory } from './RecordHistory';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
@@ -1349,6 +1352,7 @@ function App({
         `draft:run:${runId}`,
         `draft:terminal-continuation:${runId}`,
         `draft:terminal-communication:${runId}`,
+        `draft:terminal-resolution:${runId}`,
         `draft:terminal-send:${runId}`,
         `draft:handoff:${runId}`,
         `draft:delivery-review:${runId}`,
@@ -1461,6 +1465,7 @@ function App({
         'inbox.received',
         'terminal.message_received',
         'terminal.message_sent',
+        'terminal.message_resolved',
         'terminal.inbox_applied',
         'error',
       ];
@@ -1867,6 +1872,9 @@ function App({
               `pinned:run:${deleted.id}`,
               `unread:run:${deleted.id}`,
               `draft:terminal-continuation:${deleted.id}`,
+              `draft:terminal-communication:${deleted.id}`,
+              `draft:terminal-send:${deleted.id}`,
+              `draft:terminal-resolution:${deleted.id}`,
               `draft:handoff:${deleted.id}`,
               `draft:delivery-review:${deleted.id}`,
               `draft:source-resolutions:${deleted.id}`,
@@ -1885,7 +1893,7 @@ function App({
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
           const match =
-            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review|source-resolutions):|draft:terminal-(?:continuation|recovery):)([^:]+)(?::[^:]+)?$/.exec(
+            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review|source-resolutions):|draft:terminal-(?:continuation|recovery|communication|send|resolution):)([^:]+)(?::[^:]+)?$/.exec(
               key,
             );
           return !!match && children.has(match[1]);
@@ -2918,7 +2926,11 @@ function App({
                                 0,
                                 ...detail.events
                                   .filter((event) =>
-                                    ['inbox.received', 'terminal.inbox_applied'].includes(event.type),
+                                    [
+                                      'inbox.received',
+                                      'terminal.inbox_applied',
+                                      'terminal.message_resolved',
+                                    ].includes(event.type),
                                   )
                                   .map((event) => event.seq),
                               )}
@@ -2983,7 +2995,11 @@ function App({
                         0,
                         ...detail.events
                           .filter((event) =>
-                            ['inbox.received', 'terminal.inbox_applied'].includes(event.type),
+                            [
+                              'inbox.received',
+                              'terminal.inbox_applied',
+                              'terminal.message_resolved',
+                            ].includes(event.type),
                           )
                           .map((event) => event.seq),
                       )}
@@ -2994,6 +3010,23 @@ function App({
                       changeDraft={(value) =>
                         cache.set(`draft:terminal-communication:${detail.run.id}`, JSON.stringify(value))
                       }
+                      resolutionDraft={readTerminalResolutionDraft(
+                        cacheState.entries[`draft:terminal-resolution:${detail.run.id}`]?.value,
+                      )}
+                      changeResolutionDraft={(value) =>
+                        cache.set(
+                          `draft:terminal-resolution:${detail.run.id}`,
+                          value ? JSON.stringify(value) : '',
+                        )
+                      }
+                      resolutionSubmitted={(sent) => {
+                        const key = `draft:terminal-resolution:${detail.run.id}`;
+                        if (
+                          JSON.stringify(readTerminalResolutionDraft(cache.get(key))) ===
+                          JSON.stringify(readTerminalResolutionDraft(JSON.stringify(sent)))
+                        )
+                          cache.set(key, '');
+                      }}
                       submitted={(sent) => {
                         const key = `draft:terminal-communication:${detail.run.id}`;
                         if (
