@@ -3,7 +3,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { AppError } from '../../contracts/src/index.js';
 import { Store } from '../../storage/src/index.js';
-import { importedLibrary, localItem, localItemText } from './local-library.js';
+import { capabilitySnapshot, scopedLocalItems, localItem, localItemText } from './local-library.js';
+import type { CapabilityScope } from '../../contracts/src/project-intelligence.js';
 import { parseDocument } from 'yaml';
 import { builtinResourcePath } from './resources.js';
 
@@ -122,16 +123,19 @@ function readSkill(id: string, metadataOnly = false): LoadedSkill {
   };
 }
 
-export function listSkills(store?: Store): SkillSummary[] {
-  const builtin = skillIds.map((id) => {
-    const { name, description } = readSkill(id, true);
-    return { id, name, description };
-  });
+export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary[] {
+  const snapshot = capabilitySnapshot(scope);
+  const builtin = snapshot
+    ? snapshot.builtinSkills.map(({ id, name, description }) => ({ id, name, description }))
+    : skillIds.map((id) => {
+        const { name, description } = readSkill(id, true);
+        return { id, name, description };
+      });
   return [
     ...builtin,
     ...(store
-      ? importedLibrary(store)
-          .items.filter((item) => item.kind === 'skill' && item.enabled && item.modelInvocable !== false)
+      ? scopedLocalItems(store, scope)
+          .filter((item) => item.kind === 'skill' && item.enabled && item.modelInvocable !== false)
           .map((item) => ({
             id: item.id,
             name: item.name,
@@ -143,10 +147,10 @@ export function listSkills(store?: Store): SkillSummary[] {
   ];
 }
 
-export function loadSkill(id: string, store?: Store): LoadedSkill {
+export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): LoadedSkill {
   if (id.startsWith('local:')) {
     if (!store) throw new AppError('SKILL_NOT_FOUND', `未注册的技能：${id}`);
-    const item = localItem(store, id, 'skill');
+    const item = localItem(store, id, 'skill', false, scope);
     if (item.modelInvocable === false) throw new AppError('SKILL_NOT_INVOCABLE', '来源技能禁止由模型调用');
     const source = localItemText(store, item),
       metadata = parseSkillMetadata(source, id);
@@ -158,6 +162,13 @@ export function loadSkill(id: string, store?: Store): LoadedSkill {
       source: item.sourceKind,
       resourcePaths: item.resourcePaths,
     };
+  }
+  const snapshot = capabilitySnapshot(scope);
+  if (snapshot) {
+    const skill = snapshot.builtinSkills.find((entry) => entry.id === id);
+    if (!skill)
+      throw new AppError('SKILL_NOT_FOUND', '此技能不在任务创建时冻结的能力范围内', false, null, 404);
+    return structuredClone(skill);
   }
   return readSkill(id);
 }

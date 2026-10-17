@@ -1,0 +1,73 @@
+.task-working-state {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+  font-size: 13px;
+}
+.task-working-state .field-help {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.task-working-state .workflow-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+.task-working-state button {
+  max-width: 100%;
+  white-space: normal;
+}
+.task-working-state details {
+  margin: 10px 0;
+}
+.task-working-state summary {
+  cursor: pointer;
+}
+.task-working-state pre,
+.working-state-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 250px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.working-state-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.working-state-editor textarea {
+  width: 100%;
+  min-width: 0;
+}
+.working-state-confirm {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.working-state-confirm input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  padding: 0;
+  margin-top: 3px;
+}
+.working-state-pending {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.task-working-state .field-error {
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}

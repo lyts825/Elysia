@@ -4,6 +4,8 @@ import { minimumContextWindowTokens } from '../../../packages/contracts/src/inde
 import { ContextPolicyEditor, validContextPolicy } from './ContextPolicyEditor';
 import { Modal } from './Modal';
 import { contextPolicyLabel, contextWindowSizeLabel } from './ContextLabel';
+import { TaskWorkingState } from './TaskWorkingState';
+import type { WorkbenchCache } from './WorkbenchCache';
 import './context-window.css';
 
 export { contextPolicyLabel } from './ContextLabel';
@@ -178,6 +180,8 @@ export function ContextOverview({
 
 export function ContextWindowModal({
   projection,
+  runId,
+  cache,
   title,
   runRevision,
   busy,
@@ -186,6 +190,8 @@ export function ContextWindowModal({
   refresh,
 }: {
   projection: ContextProjection;
+  runId: string;
+  cache: WorkbenchCache;
   title: string;
   runRevision: number;
   busy: boolean;
@@ -233,6 +239,7 @@ export function ContextWindowModal({
               会话已更新，请重新打开窗口设置后修改。
             </p>
           )}
+          <TaskWorkingState runId={runId} taskId={projection.taskId} cache={cache} />
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" disabled={busy} onClick={close}>

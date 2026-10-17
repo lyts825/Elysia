@@ -28,6 +28,8 @@ export function workbenchEntryLabel(
   runs: { id: string; title: string }[],
 ) {
   const kinds = [
+    ['draft:project-intelligence:', '项目能力与记忆', 'project'],
+    ['draft:working-state:', '长任务工作状态', 'run'],
     ['draft:project-board:', '项目交付工作台', 'project'],
     ['draft:setup:project:', '项目任务创建配置', 'project'],
     ['draft:project:', '项目输入', 'project'],

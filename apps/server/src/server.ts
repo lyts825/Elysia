@@ -66,6 +66,9 @@ import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-r
 import { registerTaskCenter } from './task-center.js';
 import { registerContextPreview } from './context-preview.js';
 import { registerLocalAgentRoutes } from './local-agents.js';
+import { registerModelRouting } from './model-routing.js';
+import { registerProjectIntelligenceRoutes } from './project-intelligence.js';
+import { registerTaskWorkingStateRoutes } from './task-working-state.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 import { RunSourceSelection, RunDeliveryItems } from '../../../packages/contracts/src/workflow.js';
@@ -1624,6 +1627,12 @@ export function createServer(
     (projectId) => terminalControl?.removeProjectPreferences(projectId),
   );
   if (options.surface !== 'terminal') registerWorkflow(app, store, management.assertMutable);
+  if (options.surface !== 'terminal') registerModelRouting(app, store, management.assertMutable);
+  if (options.surface !== 'terminal') registerProjectIntelligenceRoutes(app, store, management.assertMutable);
+  if (options.surface !== 'terminal')
+    registerTaskWorkingStateRoutes(app, store, kernel, management.assertMutable, (runId) =>
+      runReads.assertExecutionReadable(runId),
+    );
   if (options.surface !== 'terminal') registerProjectDelivery(app, store, management.assertMutable);
   if (options.surface !== 'terminal') registerProjectUsage(app, store);
   executor.onDelta = (runId, taskId, text, requestId, offset) => {

@@ -6,12 +6,19 @@ import type {
   LocalMcpConfig,
 } from '../../contracts/src/local-integrations.js';
 import { Store, hash, stable } from '../../storage/src/index.js';
+import {
+  PROJECT_INTELLIGENCE_LIMITS,
+  type CapabilityScope,
+  type ProjectCapabilitySnapshot,
+} from '../../contracts/src/project-intelligence.js';
 
 export const LOCAL_LIBRARY_KEY = 'local-agents:v1';
 export interface LocalStoredItem extends LocalAgentItem {
   configOverridden?: boolean;
   contentRef?: string;
   resourceRefs?: { path: string; objectRef: string; hash: string; bytes: number }[];
+  frozenContent?: string;
+  frozenResources?: { path: string; text: string; hash: string; bytes: number }[];
 }
 export interface LocalLibrary {
   version: 1;
@@ -50,12 +57,53 @@ export function publicLocalItem(item: LocalStoredItem): LocalAgentItem {
     contentRef: _contentRef,
     resourceRefs: _resourceRefs,
     configOverridden: _configOverridden,
+    frozenContent: _frozenContent,
+    frozenResources: _frozenResources,
     ...safe
   } = item;
   return safe;
 }
-export function localItem(store: Store, id: string, kind?: LocalAgentItem['kind'], allowDisabled = false) {
-  const item = importedLibrary(store).items.find(
+export function capabilitySnapshot(scope?: CapabilityScope): ProjectCapabilitySnapshot | undefined {
+  const snapshot = scope?.capabilities;
+  if (snapshot == null) return undefined;
+  const { hash: capturedHash, ...captured } = snapshot;
+  if (
+    snapshot.version !== 1 ||
+    !scope?.projectId ||
+    snapshot.projectId !== scope.projectId ||
+    !Array.isArray(snapshot.builtinSkills) ||
+    !Array.isArray(snapshot.localItems) ||
+    Buffer.byteLength(stable(snapshot)) > PROJECT_INTELLIGENCE_LIMITS.snapshotBytes ||
+    hash(stable(captured)) !== capturedHash
+  )
+    throw new AppError('CAPABILITY_SCOPE', '任务能力快照无效或不属于当前项目', false, null, 409);
+  return snapshot;
+}
+export function scopedLocalItems(store: Store, scope?: CapabilityScope): LocalStoredItem[] {
+  const current = importedLibrary(store).items;
+  const snapshot = capabilitySnapshot(scope);
+  if (!snapshot) return current;
+  return snapshot.localItems.flatMap(({ content, resources, ...captured }) => {
+    const live = current.find((item) => item.id === captured.id && item.kind === captured.kind);
+    if (!live?.enabled || !captured.enabled) return [];
+    return [
+      {
+        ...captured,
+        ...(live.modelInvocable === false ? { modelInvocable: false } : {}),
+        frozenContent: content,
+        frozenResources: resources,
+      },
+    ];
+  });
+}
+export function localItem(
+  store: Store,
+  id: string,
+  kind?: LocalAgentItem['kind'],
+  allowDisabled = false,
+  scope?: CapabilityScope,
+) {
+  const item = scopedLocalItems(store, scope).find(
     (value) => value.id === id && (!kind || value.kind === kind),
   );
   if (!item || (!allowDisabled && !item.enabled))
@@ -63,15 +111,23 @@ export function localItem(store: Store, id: string, kind?: LocalAgentItem['kind'
   return item;
 }
 export function localItemText(store: Store, item: LocalStoredItem) {
+  if (item.frozenContent !== undefined) {
+    if (
+      Buffer.byteLength(item.frozenContent) > 512 * 1024 ||
+      hash(Buffer.from(item.frozenContent)) !== item.contentHash
+    )
+      throw new AppError('LOCAL_CONTENT_CHANGED', '冻结的同步项正文哈希不一致', false, null, 409);
+    return item.frozenContent;
+  }
   if (!item.contentRef) throw new AppError('LOCAL_CONTENT_MISSING', '同步项正文不存在', false, null, 404);
   const bytes = store.readObject(item.contentRef);
   if (bytes.length > 512 * 1024 || hash(bytes) !== item.contentHash)
     throw new AppError('LOCAL_CONTENT_CHANGED', '同步项正文哈希不一致，请重新同步', false, null, 409);
   return bytes.toString('utf8');
 }
-export function listLocalMemories(store: Store) {
-  return importedLibrary(store)
-    .items.filter((item) => item.kind === 'memory' && item.enabled)
+export function listLocalMemories(store: Store, scope?: CapabilityScope) {
+  return scopedLocalItems(store, scope)
+    .filter((item) => item.kind === 'memory' && item.enabled)
     .map(publicLocalItem);
 }
 export function pageLocalText(
@@ -115,8 +171,9 @@ export function readLocalMemory(
   store: Store,
   id: string,
   options: { offset?: number; limit?: number; query?: string } = {},
+  scope?: CapabilityScope,
 ) {
-  const item = localItem(store, id, 'memory');
+  const item = localItem(store, id, 'memory', false, scope);
   return pageLocalText(item, localItemText(store, item), options);
 }
 export function loadLocalSkillFile(
@@ -124,8 +181,9 @@ export function loadLocalSkillFile(
   id: string,
   resourcePath: string,
   options: { offset?: number; limit?: number } = {},
+  scope?: CapabilityScope,
 ) {
-  const item = localItem(store, id, 'skill');
+  const item = localItem(store, id, 'skill', false, scope);
   if (item.modelInvocable === false) throw new AppError('SKILL_NOT_INVOCABLE', '来源技能禁止由模型调用');
   const normalized = resourcePath.replace(/\\/g, '/');
   if (
@@ -137,6 +195,17 @@ export function loadLocalSkillFile(
     throw new AppError('SKILL_RESOURCE_PATH', '技能资源路径无效');
   if (normalized === 'SKILL.md')
     return pageLocalText(item, localItemText(store, item), { ...options, path: normalized });
+  if (item.frozenResources) {
+    const resource = item.frozenResources.find((entry) => entry.path === normalized);
+    if (!resource)
+      throw new AppError('SKILL_RESOURCE_NOT_FOUND', '此资源未在任务创建时冻结', false, null, 404);
+    if (
+      Buffer.byteLength(resource.text) !== resource.bytes ||
+      hash(Buffer.from(resource.text)) !== resource.hash
+    )
+      throw new AppError('LOCAL_CONTENT_CHANGED', '冻结的技能资源哈希不一致', false, null, 409);
+    return pageLocalText({ id, contentHash: resource.hash }, resource.text, { ...options, path: normalized });
+  }
   const ref = item.resourceRefs?.find((resource) => resource.path === normalized);
   if (!ref) throw new AppError('SKILL_RESOURCE_NOT_FOUND', '此资源未作为文本同步', false, null, 404);
   const bytes = store.readObject(ref.objectRef);
@@ -147,8 +216,8 @@ export function loadLocalSkillFile(
     path: normalized,
   });
 }
-export function readLocalMcpConfig(store: Store, id: string): LocalMcpConfig {
-  const item = localItem(store, id, 'mcp');
+export function readLocalMcpConfig(store: Store, id: string, scope?: CapabilityScope): LocalMcpConfig {
+  const item = localItem(store, id, 'mcp', false, scope);
   if (!item.config) throw new AppError('MCP_CONFIG_MISSING', 'MCP 配置不存在');
   return structuredClone(item.config);
 }

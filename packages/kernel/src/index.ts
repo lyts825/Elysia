@@ -29,6 +29,9 @@ import {
   type ContextSnapshot,
 } from '../../contracts/src/index.js';
 import { Store, id, now, stable } from '../../storage/src/index.js';
+import { freezeRoleRouting, routeTask } from './model-routing.js';
+import { ROLE_ROUTING_PROVIDER, type RoleRoutingDecision } from '../../contracts/src/model-routing.js';
+import { freezeProjectCapabilities } from '../../context/src/project-intelligence.js';
 import {
   TERMINAL_INBOX_MAX_BYTES,
   TERMINAL_INBOX_MAX_PENDING,
@@ -362,6 +365,8 @@ export class Kernel {
         kind,
         planMode: kind === 'task' && planMode,
         execution,
+        ...(!terminal && project ? { modelRouting: freezeRoleRouting(this.store, project.id) } : {}),
+        ...(!terminal && project ? { capabilities: freezeProjectCapabilities(this.store, project.id) } : {}),
         title: objective.slice(0, 60),
         archived: false,
         objective,
@@ -510,6 +515,14 @@ export class Kernel {
       invariant(task.phase === 'planning', 'PHASE_DENIED', '计划只能在需求检查点提出');
       const contract = Contract.parse(rawContract),
         plan = Plan.parse(rawPlan);
+      const planRouting: Record<string, RoleRoutingDecision> = Object.create(null);
+      plan.tasks = plan.tasks.map((spec) => {
+        const routed = routeTask(this.store, run, spec);
+        if (routed.decision) planRouting[spec.key] = routed.decision;
+        if (routed.decision)
+          this.event(run.id, 'model.routed', { key: spec.key, ...routed.decision }, task.id);
+        return TaskSpec.parse(routed.raw);
+      });
       invariant(
         contract.version === run.contract.version &&
           plan.contractVersion === contract.version &&
@@ -554,6 +567,7 @@ export class Kernel {
       const next = this.updateRun(run, {
         contract,
         plan,
+        planRouting,
         authorized: false,
         status: 'WAITING',
         reason: 'plan',
@@ -577,7 +591,13 @@ export class Kernel {
       '子任务预算不得扩大祖先预算',
     );
   }
-  spawn(parent: Task, raw: unknown, bindingOverride?: ProviderConfig, contextPolicyOverride?: ContextPolicy) {
+  spawn(
+    parent: Task,
+    raw: unknown,
+    bindingOverride?: ProviderConfig,
+    contextPolicyOverride?: ContextPolicy,
+    routingDecisionOverride?: RoleRoutingDecision,
+  ) {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
       const run = this.store.require<Run>('runs', parent.runId);
@@ -598,13 +618,15 @@ export class Kernel {
         'AGENT_LIMIT',
         '代理数量达到上限',
       );
-      const spec = TaskSpec.parse(raw);
+      const routed = routeTask(this.store, run, raw);
+      const routingDecision = routed.decision ?? routingDecisionOverride;
+      const spec = TaskSpec.parse(routed.raw);
       invariant(
         !this.store.all<Task>('tasks', run.id).some((t) => t.spec.key === spec.key),
         'TASK_KEY_EXISTS',
         '任务 key 已存在',
       );
-      const binding = this.binding(spec.providerId, bindingOverride);
+      const binding = this.binding(spec.providerId, bindingOverride ?? routed.binding);
       const contextPolicy = this.childContextPolicy(
         parent,
         binding,
@@ -652,6 +674,7 @@ export class Kernel {
         revision: 0,
         runId: run.id,
         parentAgentId: parent.agentId,
+        ...(routingDecision ? { routingDecision } : {}),
         taskId,
         providerId: spec.providerId,
         providerBinding: binding,
@@ -665,6 +688,7 @@ export class Kernel {
       for (const dep of deps) this.store.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dep);
       this.checkGraph(this.graph(run.id));
       this.event(run.id, 'task.updated', child, taskId);
+      if (routingDecision) this.event(run.id, 'model.routed', routingDecision, taskId);
       return { taskId, agentId, key: spec.key };
     });
   }
@@ -690,6 +714,8 @@ export class Kernel {
       const keys = new Set(run.plan!.tasks.map((task) => task.key));
       const rootTask = this.store.require<Task>('tasks', run.rootTaskId);
       const contextPolicies = new Map<string, ContextPolicy>();
+      const resolvedBindings = new Map(bindings);
+      const planRouting: Record<string, RoleRoutingDecision> = Object.create(null);
       const choices = new Map<string, PlanModelAssignment>();
       for (const choice of assignments) {
         invariant(keys.has(choice.key), 'PLAN_MODEL_SCOPE', '模型分配必须对应当前计划的一级子任务');
@@ -700,8 +726,19 @@ export class Kernel {
         invariant(keys.has(key), 'PLAN_MODEL_SCOPE', '模型配置不属于当前计划');
       const tasks = run.plan!.tasks.map((spec) => {
         const choice = choices.get(spec.key);
+        if (!choice && run.planRouting && Object.hasOwn(run.planRouting, spec.key)) {
+          const routed = routeTask(this.store, run, {
+            ...spec,
+            providerId: ROLE_ROUTING_PROVIDER,
+            model: undefined,
+            reasoningEffort: undefined,
+          });
+          invariant(routed.binding && routed.decision, 'ROUTING_UNASSIGNED', '计划角色模型未冻结');
+          resolvedBindings.set(spec.key, routed.binding);
+          planRouting[spec.key] = routed.decision;
+        }
         const providerId = choice?.providerId ?? spec.providerId;
-        const binding = this.binding(providerId, bindings.get(spec.key));
+        const binding = this.binding(providerId, resolvedBindings.get(spec.key));
         const requestedModel = choice ? choice.model : spec.model;
         const requestedEffort = choice ? choice.reasoningEffort : spec.reasoningEffort;
         invariant(
@@ -722,6 +759,7 @@ export class Kernel {
       });
       run = this.updateRun(run, {
         plan: { ...run.plan!, tasks },
+        planRouting,
         authorized: true,
         acceptedPlanVersion: version,
         status: 'READY',
@@ -748,8 +786,9 @@ export class Kernel {
         const child = this.spawn(
           root,
           { ...spec, dependsOn: spec.dependsOn.map((key) => created.get(key)) },
-          bindings.get(spec.key),
+          resolvedBindings.get(spec.key),
           contextPolicies.get(spec.key),
+          planRouting[spec.key],
         );
         created.set(spec.key, child.taskId);
       }

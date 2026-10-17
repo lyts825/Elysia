@@ -46,8 +46,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
-export const STORAGE_SCHEMA_VERSION = 6;
-export const STORAGE_MIN_READER_VERSION = '1.0.0-preview.6';
+export const STORAGE_SCHEMA_VERSION = 7;
+export const STORAGE_MIN_READER_VERSION = '1.9.0';
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'id'
@@ -503,6 +503,9 @@ export class Store {
           CREATE INDEX project_delivery_archives_project ON project_delivery_archives_v1(project_id);
           PRAGMA user_version=6;`);
       });
+    // v7 makes project capability restrictions and approved context checkpoints mandatory.
+    // Older clients must not open this store and silently ignore these execution boundaries.
+    if (version < 7) this.tx(() => this.db.exec('PRAGMA user_version=7;'));
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
     const pending = this.db
@@ -1440,9 +1443,19 @@ export class Store {
     this.tx(() => {
       this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(key);
       if (table === 'projects') {
-        for (const draftKey of [`draft:setup:project:${key}`, `draft:project-board:${key}`])
+        for (const draftKey of [
+          `draft:setup:project:${key}`,
+          `draft:project-board:${key}`,
+          `draft:project-intelligence:${key}`,
+        ])
           for (const prefix of ['workbench:v1:', 'workbench-index:v1:'])
             this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + draftKey);
+        for (const prefix of [
+          'project-intelligence:v1:',
+          'project-memories:v1:',
+          'project-model-routing:v1:',
+        ])
+          this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + key);
       }
       this.deleteCommands(new Set([key]));
       this.collectObjects();
@@ -1491,6 +1504,7 @@ export class Store {
       for (const key of identifiers) {
         this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`terminal-session:${key}`);
         this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`terminal-runtime:${key}`);
+        this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`task-working-state:v1:${runId}:${key}`);
       }
       const runCacheKeys = new Set([
         `draft:run:${runId}`,
@@ -1508,8 +1522,14 @@ export class Store {
         .prepare("SELECT key FROM storage_meta WHERE key LIKE 'workbench:v1:%'")
         .all() as { key: string }[]) {
         const cacheKey = row.key.slice('workbench:v1:'.length);
-        if (runCacheKeys.has(cacheKey) || cacheKey.startsWith(`draft:terminal-recovery:${runId}:`))
+        if (
+          runCacheKeys.has(cacheKey) ||
+          cacheKey.startsWith(`draft:terminal-recovery:${runId}:`) ||
+          cacheKey.startsWith(`draft:working-state:${runId}:`)
+        ) {
           this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(row.key);
+          this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(`workbench-index:v1:${cacheKey}`);
+        }
       }
       this.db.prepare('DELETE FROM runs WHERE id=?').run(runId);
       this.collectObjects();

@@ -36,8 +36,10 @@ export function PlanAlignmentPanel({
   const ended = ['DONE', 'CANCELLED'].includes(run.status);
   const pending = run.reason === 'plan' && !ended && run.acceptedPlanVersion !== plan.version;
   const parent = detail.agents.find((agent) => agent.taskId === run.rootTaskId);
+  const pendingChoice = (task: TaskSpec) =>
+    Object.hasOwn(assignments, task.key) ? assignments[task.key] : proposedChoice(task);
   const pendingPolicy = (task: TaskSpec): ContextPolicy => {
-    const choice = assignments[task.key] || proposedChoice(task);
+    const choice = pendingChoice(task);
     if (choice.contextPolicy) return choice.contextPolicy;
     const provider = providers.find((item) => item.id === choice.providerId);
     const inherited = Math.min(
@@ -50,7 +52,7 @@ export function PlanAlignmentPanel({
     };
   };
   const invalidContext = plan.tasks.some((task) => {
-    const choice = assignments[task.key] || proposedChoice(task);
+    const choice = pendingChoice(task);
     const provider = providers.find((item) => item.id === choice.providerId);
     return !validContextPolicy(
       pendingPolicy(task),
@@ -109,8 +111,11 @@ export function PlanAlignmentPanel({
             : undefined;
         const agent = detail.agents.find((item) => item.id === currentTask?.agentId);
         const binding = agent?.providerBinding;
+        const routing = Object.hasOwn(run.planRouting ?? {}, task.key)
+          ? run.planRouting![task.key]
+          : undefined;
         const choice = pending
-          ? assignments[task.key] || proposedChoice(task)
+          ? pendingChoice(task)
           : binding
             ? { providerId: binding.id, model: binding.model, reasoningEffort: binding.reasoningEffort }
             : task;
@@ -136,6 +141,12 @@ export function PlanAlignmentPanel({
                       .join('、')
                   : ''}
               </small>
+              {routing && (
+                <p className="field-help">
+                  创建时项目角色模型 · 策略版本 {routing.policyRevision}
+                  {pending && Object.hasOwn(assignments, task.key) ? ' · 已手动调整' : ''}
+                </p>
+              )}
               <details className="plan-task-evidence">
                 <summary>交付与验收</summary>
                 <p>交付：{task.deliverables.join('；')}</p>
@@ -146,12 +157,12 @@ export function PlanAlignmentPanel({
                   <ModelPicker
                     providers={providers}
                     label={`一级子代理 ${index + 1} · ${task.title}`}
-                    value={assignments[task.key] || proposedChoice(task)}
+                    value={pendingChoice(task)}
                     disabled={busy || archived}
                     change={(choice) =>
                       changeAssignment(task.key, {
                         ...proposedChoice(task),
-                        ...assignments[task.key],
+                        ...pendingChoice(task),
                         ...choice,
                       })
                     }
@@ -164,7 +175,7 @@ export function PlanAlignmentPanel({
                       change={(contextPolicy) =>
                         changeAssignment(task.key, {
                           ...proposedChoice(task),
-                          ...assignments[task.key],
+                          ...pendingChoice(task),
                           contextPolicy,
                         })
                       }
@@ -197,7 +208,12 @@ export function PlanAlignmentPanel({
           <button
             className="primary"
             disabled={
-              busy || archived || invalidContext || plan.tasks.some((task) => !assignmentReady[task.key])
+              busy ||
+              archived ||
+              invalidContext ||
+              plan.tasks.some(
+                (task) => !Object.hasOwn(assignmentReady, task.key) || !assignmentReady[task.key],
+              )
             }
             onClick={accept}
           >

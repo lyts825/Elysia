@@ -32,6 +32,7 @@ import { ProjectManifests } from './ProjectManifests';
 import { ProjectTodos } from './ProjectTodos';
 import { ProjectLaunchDraft } from './ProjectLaunchDraft';
 import { ProjectUsage } from './ProjectUsage';
+import { ProjectIntelligence } from './ProjectIntelligence';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './project-workbench.css';
@@ -85,6 +86,8 @@ export function ProjectWorkbench({
     [project.id],
   );
   const [pendingLeave, setPendingLeave] = useState<() => boolean>();
+  const [intelligenceOpen, setIntelligenceOpen] = useState(false);
+  useLayoutEffect(() => setIntelligenceOpen(false), [project.id]);
   useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
   const leavePlan = (action: () => boolean) => {
     if (planLifecycle.current?.hasPending()) setPendingLeave(() => action);
@@ -291,11 +294,27 @@ export function ProjectWorkbench({
           <button type="button" className="secondary" onClick={openTaskCenter}>
             任务中心
           </button>
+          <button
+            type="button"
+            className="secondary"
+            aria-expanded={intelligenceOpen}
+            onClick={() => setIntelligenceOpen((value) => !value)}
+          >
+            {intelligenceOpen ? '收起能力与记忆' : '项目能力与记忆'}
+          </button>
           <button type="button" className="secondary" disabled={!loaded} onClick={exportDraftSafely}>
             导出工作台原稿 TXT
           </button>
         </div>
       </header>
+      {intelligenceOpen && (
+        <ProjectIntelligence
+          key={`intelligence:${project.id}`}
+          projectId={project.id}
+          cache={cache}
+          archived={project.archived}
+        />
+      )}
       {loaded && (
         <ProjectDraftBackup
           key={project.id}

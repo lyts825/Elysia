@@ -1878,7 +1878,9 @@ function App({
               `draft:handoff:${deleted.id}`,
               `draft:delivery-review:${deleted.id}`,
               `draft:source-resolutions:${deleted.id}`,
-            ].includes(key) || key.startsWith(`draft:terminal-recovery:${deleted.id}:`),
+            ].includes(key) ||
+            key.startsWith(`draft:terminal-recovery:${deleted.id}:`) ||
+            key.startsWith(`draft:working-state:${deleted.id}:`),
         ),
       );
     if (deleted?.kind === 'project') {
@@ -1889,11 +1891,12 @@ function App({
         newDraftKey(deleted.id),
         runSetupDraftKey(deleted.id),
         projectBoardKey(deleted.id),
+        `draft:project-intelligence:${deleted.id}`,
         `collapsed:project:${deleted.id}`,
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
           const match =
-            /^(?:(?:draft|pinned|unread):run:|draft:(?:handoff|delivery-review|source-resolutions):|draft:terminal-(?:continuation|recovery|communication|send|resolution):)([^:]+)(?::[^:]+)?$/.exec(
+            /^(?:(?:draft|pinned|unread):run:|draft:(?:working-state|handoff|delivery-review|source-resolutions):|draft:terminal-(?:continuation|recovery|communication|send|resolution):)([^:]+)(?::[^:]+)?$/.exec(
               key,
             );
           return !!match && children.has(match[1]);
@@ -2871,10 +2874,18 @@ function App({
                           mutation('/runs/' + runId + '/plan/accept', {
                             expectedRevision: detail.run.revision,
                             version: detail.run.plan!.version,
-                            assignments: detail.run.plan!.tasks.map((task) => ({
-                              key: task.key,
-                              ...(assignments[task.key] || proposedChoice(task)),
-                            })),
+                            assignments: detail.run
+                              .plan!.tasks.filter(
+                                (task) =>
+                                  !Object.hasOwn(detail.run.planRouting ?? {}, task.key) ||
+                                  Object.hasOwn(assignments, task.key),
+                              )
+                              .map((task) => ({
+                                key: task.key,
+                                ...(Object.hasOwn(assignments, task.key)
+                                  ? assignments[task.key]
+                                  : proposedChoice(task)),
+                              })),
                           }),
                         )
                       }
@@ -4082,6 +4093,8 @@ function App({
                       contextAgent.agentRevision
                     }
                     projection={contextAgent}
+                    runId={detail.run.id}
+                    cache={cache}
                     title={
                       detail.tasks.find((task) => task.id === contextAgent.taskId)?.spec.title || '当前会话'
                     }

@@ -2,9 +2,11 @@ import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
 import { terminalResourcePresets } from './terminal-runtime.js';
 import type { NativeProjectDefaults, RunSourceSnapshot, DeliveryUserReview } from './workflow.js';
+import type { RoleRoutingSnapshot, RoleRoutingDecision } from './model-routing.js';
+import type { ProjectCapabilitySnapshot } from './project-intelligence.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.8.0';
+export const VERSION = '1.9.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -325,6 +327,11 @@ export const ExecutionBinding = z.discriminatedUnion('kind', [
 ]);
 export type ExecutionBinding = z.infer<typeof ExecutionBinding>;
 export interface Run extends Entity {
+  /** Role choices captured at creation; never changes the coordinator's explicit choice. */
+  modelRouting?: RoleRoutingSnapshot;
+  /** Kernel-generated provenance for routed plan entries, never taken from model input. */
+  planRouting?: Record<string, RoleRoutingDecision>;
+  capabilities?: ProjectCapabilitySnapshot;
   projectId: string | null;
   kind: 'task' | 'chat';
   title: string;
@@ -387,6 +394,7 @@ export interface Task extends Entity {
   result?: unknown;
 }
 export interface Agent extends Entity {
+  routingDecision?: RoleRoutingDecision;
   runId: string;
   parentAgentId: string | null;
   taskId: string;
