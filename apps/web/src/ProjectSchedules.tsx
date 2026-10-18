@@ -94,7 +94,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     [notice, setNotice] = useState('');
   const [reviewed, setReviewed] = useState(false),
     [automatic, setAutomatic] = useState(false),
-    [deleteId, setDeleteId] = useState(''),
+    [deleteTarget, setDeleteTarget] = useState<{ id: string; revision: number }>(),
     [resetConfirmed, setResetConfirmed] = useState(false);
   const live = useRef(true),
     writing = useRef(false),
@@ -137,6 +137,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
   const locked = busy || !!pending || archived || !draft;
   const selected = list?.schedules.find((item) => item.id === fields?.scheduleId);
   const shown = preview ?? selected;
+  useEffect(() => setDeleteTarget(undefined), [selected?.id, selected?.revision]);
   function change(update: (value: Draft) => Draft) {
     try {
       const next = draftShape.parse(update(parseDraft(cache.get(key))));
@@ -156,6 +157,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     if (change((value) => ({ ...value, fields: { ...value.fields, ...values } }))) {
       setReviewed(false);
       setAutomatic(false);
+      setDeleteTarget(undefined);
       setNotice('');
       if (values.sourceRunId !== undefined) {
         previewReader.current?.abort();
@@ -175,6 +177,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setReadError('');
     setReviewed(false);
     setAutomatic(false);
+    setDeleteTarget(undefined);
     try {
       const result = await api<ProjectScheduleList>(base, undefined, undefined, controller.signal);
       if (result.projectId !== projectId || result.schedules.some((item) => item.projectId !== projectId))
@@ -202,6 +205,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setPreviewError('');
     setReviewed(false);
     setAutomatic(false);
+    setDeleteTarget(undefined);
     try {
       const result = await api<ProjectSchedulePreview>(
         `${base}/preview?sourceRunId=${encodeURIComponent(fields.sourceRunId)}`,
@@ -232,7 +236,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setPreviewError('');
     setReviewed(false);
     setAutomatic(false);
-    setDeleteId('');
+    setDeleteTarget(undefined);
     setNotice('');
   }
   function settings() {
@@ -259,6 +263,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setBusy(true);
     setActionError('');
     setNotice('');
+    setDeleteTarget(undefined);
     listReader.current?.abort();
     setReading(false);
     setCurrent(false);
@@ -286,7 +291,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       }
       change((value) => {
         if (value.pending?.body.commandId !== request.body.commandId) return value;
-        const replaceFields = request.kind === 'create' || value.fields.scheduleId === request.id;
+        const replaceFields =
+          request.kind === 'create' ||
+          (value.fields.scheduleId === request.id &&
+            (request.body.action === 'refresh' || request.body.action === 'delete'));
         return {
           ...value,
           pending: undefined,
@@ -297,7 +305,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       });
       setReviewed(false);
       setAutomatic(false);
-      setDeleteId('');
+      setDeleteTarget(undefined);
       setPreviewCurrent(false);
       setPreview(undefined);
       setPreviewError('');
@@ -372,7 +380,8 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       (!reviewed || !unchanged || (record.settings.mode === 'execute' && !automatic))
     )
       return;
-    if (action === 'delete' && deleteId !== record.id) return;
+    if (action === 'delete' && (deleteTarget?.id !== record.id || deleteTarget.revision !== record.revision))
+      return;
     void send({
       kind: 'update',
       id: record.id,
@@ -469,7 +478,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
               checked={resetConfirmed}
               onChange={(e) => setResetConfirmed(e.target.checked)}
             />
-            我已保留原稿，清空不可读的本地草稿
+            <span>我已保留原稿，清空不可读的本地草稿</span>
           </label>
           <button
             className="secondary"
@@ -698,7 +707,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                     setAutomatic(false);
                   }}
                 />
-                我已核对以上模板、权限、预算、次数和截止时间
+                <span>我已核对以上模板、权限、预算、次数和截止时间</span>
               </label>
               {selected?.settings.mode === 'execute' && unchanged && (
                 <label className="schedule-check">
@@ -708,7 +717,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                     checked={automatic}
                     onChange={(e) => setAutomatic(e.target.checked)}
                   />
-                  允许到期后自动执行，可能使用上述写入、命令和网络权限并产生模型费用
+                  <span>允许到期后自动执行，可能使用上述写入、命令和网络权限并产生模型费用</span>
                 </label>
               )}
             </div>
@@ -740,15 +749,24 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
               <label className="schedule-check">
                 <input
                   type="checkbox"
-                  disabled={locked}
-                  checked={deleteId === selected.id}
-                  onChange={(e) => setDeleteId(e.target.checked ? selected.id : '')}
+                  disabled={locked || !current || previewing}
+                  checked={deleteTarget?.id === selected.id && deleteTarget.revision === selected.revision}
+                  onChange={(e) =>
+                    setDeleteTarget(
+                      e.target.checked ? { id: selected.id, revision: selected.revision } : undefined,
+                    )
+                  }
                 />
-                确认删除这条定时任务；已创建的任务仍保留
+                <span>确认删除这条定时任务；已创建的任务仍保留</span>
               </label>
               <button
                 className="text-button"
-                disabled={locked || !current || deleteId !== selected.id}
+                disabled={
+                  locked ||
+                  !current ||
+                  deleteTarget?.id !== selected.id ||
+                  deleteTarget.revision !== selected.revision
+                }
                 onClick={() => act(selected, 'delete')}
               >
                 删除定时任务

@@ -288,6 +288,7 @@ export interface SchedulerHooks {
 /** Owns only bounded task creation. Existing Kernel/executor own permissions, budgets and execution. */
 export class ProjectScheduler {
   private timer?: NodeJS.Timeout;
+  private running = false;
   constructor(
     private store: Store,
     private kernel: Kernel,
@@ -393,48 +394,60 @@ export class ProjectScheduler {
     };
   }
   create(projectId: string, body: ProjectScheduleCreate, at = Date.now()) {
-    return this.store.command(body.commandId, { route: `/projects/${projectId}/schedules`, body }, () => {
-      const preview = this.preview(projectId, body.sourceRunId);
-      conflict(body.expectedSourceRevision, preview.template.sourceRevision);
-      invariant(
-        body.captureHash === preview.captureHash,
-        'SCHEDULE_CAPTURE_CHANGED',
-        '模板或项目配置已变化，请重新预览后保存',
-      );
-      validateSettings(body.settings, at);
-      const schedules = readSchedules(this.store, projectId);
-      invariant(
-        schedules.length < PROJECT_SCHEDULE_LIMITS.perProject,
-        'SCHEDULE_LIMIT',
-        '每个项目最多保留 20 条定时任务',
-      );
-      const count = scheduleProjects(this.store).reduce(
-        (sum, project) => sum + readSchedules(this.store, project).length,
-        0,
-      );
-      invariant(count < PROJECT_SCHEDULE_LIMITS.total, 'SCHEDULE_LIMIT', '本机最多保留 100 条定时任务');
-      const record: ProjectSchedule = {
-        ...preview,
-        version: 1,
-        id: id(),
-        revision: 1,
-        settings: body.settings,
-        status: 'draft',
-        createdCount: 0,
-        skippedCount: 0,
-        nextDueAt: null,
-        lastRunId: null,
-        lastDueAt: null,
-        reason: '等待核对并显式启用',
-        createdAt: iso(at),
-        updatedAt: iso(at),
-      };
-      writeSchedules(this.store, projectId, [...schedules, record]);
-      return record;
-    });
+    const result = this.store.command(
+      body.commandId,
+      { route: `/projects/${projectId}/schedules`, body },
+      () => {
+        const preview = this.preview(projectId, body.sourceRunId);
+        conflict(body.expectedSourceRevision, preview.template.sourceRevision);
+        invariant(
+          body.captureHash === preview.captureHash,
+          'SCHEDULE_CAPTURE_CHANGED',
+          '模板或项目配置已变化，请重新预览后保存',
+        );
+        validateSettings(body.settings, at);
+        const schedules = readSchedules(this.store, projectId);
+        invariant(
+          schedules.length < PROJECT_SCHEDULE_LIMITS.perProject,
+          'SCHEDULE_LIMIT',
+          '每个项目最多保留 20 条定时任务',
+        );
+        const count = scheduleProjects(this.store).reduce((sum, project) => {
+          try {
+            return sum + readSchedules(this.store, project).length;
+          } catch {
+            // An unreadable project cannot execute. Reserve its maximum possible
+            // capacity so healthy projects can continue without weakening the cap.
+            this.reportError(project);
+            return sum + PROJECT_SCHEDULE_LIMITS.perProject;
+          }
+        }, 0);
+        invariant(count < PROJECT_SCHEDULE_LIMITS.total, 'SCHEDULE_LIMIT', '本机最多保留 100 条定时任务');
+        const record: ProjectSchedule = {
+          ...preview,
+          version: 1,
+          id: id(),
+          revision: 1,
+          settings: body.settings,
+          status: 'draft',
+          createdCount: 0,
+          skippedCount: 0,
+          nextDueAt: null,
+          lastRunId: null,
+          lastDueAt: null,
+          reason: '等待核对并显式启用',
+          createdAt: iso(at),
+          updatedAt: iso(at),
+        };
+        writeSchedules(this.store, projectId, [...schedules, record]);
+        return record;
+      },
+    );
+    this.arm();
+    return result;
   }
   update(projectId: string, scheduleId: string, body: ProjectScheduleUpdate, at = Date.now()) {
-    return this.store.command(
+    const result = this.store.command(
       body.commandId,
       { route: `/projects/${projectId}/schedules/${scheduleId}`, body },
       () => {
@@ -517,6 +530,8 @@ export class ProjectScheduler {
         return next;
       },
     );
+    this.arm();
+    return result;
   }
   private assertEnvironment(schedule: ProjectSchedule, project: Project) {
     const source = this.store.get<Run>('runs', schedule.template.sourceRunId);
@@ -599,24 +614,53 @@ export class ProjectScheduler {
     }
   }
   start() {
-    if (this.timer) return;
+    if (this.running) return;
+    this.running = true;
     this.recover();
-    this.timer = setInterval(() => {
-      try {
-        this.tick();
-      } catch {
-        this.reportError();
-      }
-    }, 1000);
+    this.arm();
+  }
+  private arm(minimumDelay = 0) {
+    if (!this.running) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+    const at = Date.now();
+    // This is only a wake-up hint. tick() always reads fresh records before it
+    // considers dispatch, including changes committed through another connection.
+    let wakeAt = at + 30000;
+    for (const { schedules } of this.inventory())
+      for (const record of schedules)
+        if (record.status === 'enabled')
+          wakeAt = Math.min(wakeAt, Date.parse(record.nextDueAt!), Date.parse(record.settings.until));
+    // A diagnostic callback can stop the scheduler while inventory is read.
+    if (!this.running) return;
+    this.timer = setTimeout(
+      () => {
+        this.timer = undefined;
+        if (!this.running) return;
+        let failed = false;
+        try {
+          this.tick();
+        } catch {
+          failed = true;
+          this.reportError();
+        } finally {
+          // A persistent write failure must not turn an overdue record into a busy loop.
+          this.arm(failed ? 1000 : 0);
+        }
+      },
+      Math.max(minimumDelay, wakeAt - Date.now(), 0),
+    );
   }
   stop() {
-    if (this.timer) clearInterval(this.timer);
+    this.running = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
   tick(at = Date.now()) {
     for (const { projectId, schedules } of this.inventory()) {
       for (const record of schedules) {
         if (record.status !== 'enabled') continue;
+        if (Date.parse(record.nextDueAt!) > at && Date.parse(record.settings.until) > at) continue;
         let createdRun: Run | undefined;
         this.store.tx(() => {
           const latest = readSchedules(this.store, projectId),

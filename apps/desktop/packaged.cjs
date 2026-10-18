@@ -1,8 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createHash } = require('node:crypto');
-
-const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const { sha256File } = require('./file-hash.cjs');
 const relativeFile = (directory, relative) => {
   if (
     typeof relative !== 'string' ||
@@ -46,6 +44,7 @@ function verifyDistribution(appRoot, full = false) {
     'resources/app/apps/desktop/main.cjs',
     'resources/app/apps/desktop/preload.cjs',
     'resources/app/apps/desktop/packaged.cjs',
+    'resources/app/apps/desktop/file-hash.cjs',
     'resources/app/server/apps/server/src/index.js',
     'resources/app/server/packages/contracts/src/index.js',
     'resources/app/web/index.html',
@@ -80,7 +79,7 @@ function verifyDistribution(appRoot, full = false) {
     )
       throw new Error('分发包缺少可核验条目：' + relative);
     const filename = relativeFile(directory, relative);
-    if (fs.statSync(filename).size !== entry.bytes || digest(filename) !== entry.sha256)
+    if (fs.statSync(filename).size !== entry.bytes || sha256File(filename) !== entry.sha256)
       throw new Error('分发包文件校验失败：' + relative);
   }
   const appPackage = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));

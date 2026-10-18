@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import {
   existsSync,
   readFileSync,
   readdirSync,
   lstatSync,
   realpathSync,
+  statSync,
   mkdirSync,
   copyFileSync,
   writeFileSync,
@@ -19,7 +20,7 @@ import { buildLaunch } from './launch-build.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(import.meta.url);
-const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const { sha256File } = require('../apps/desktop/file-hash.cjs');
 const json = (filename) => JSON.parse(readFileSync(filename, 'utf8'));
 const args = process.argv.slice(2);
 let output = path.join(root, '.elysia-runtime/releases'),
@@ -225,7 +226,7 @@ try {
         : {}),
       licenses: licenses.map((filename) => ({
         path: relative(path.join(target, filename)),
-        sha256: sha(readFileSync(path.join(target, filename))),
+        sha256: sha256File(path.join(target, filename)),
       })),
     });
     const local = new Map(inherited);
@@ -242,7 +243,7 @@ try {
       version: process.version,
       source: nodeLicenseSource,
       license: 'resources/app/runtime/LICENSE-Node.txt',
-      sha256: sha(readFileSync(nodeLicense)),
+      sha256: sha256File(nodeLicense),
     },
     electron: {
       version: electronPackage.version,
@@ -267,8 +268,7 @@ try {
   if (compiledVersion?.[1] !== appPackage.version) throw new Error('编译版本与根清单不一致');
   const files = {};
   walk(stage, (filename) => {
-    const bytes = readFileSync(filename);
-    files[relative(filename)] = { bytes: bytes.length, sha256: sha(bytes) };
+    files[relative(filename)] = { bytes: statSync(filename).size, sha256: sha256File(filename) };
   });
   const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true });
   const status = spawnSync('git', ['status', '--porcelain'], {
@@ -288,7 +288,7 @@ try {
     createdAt: new Date().toISOString(),
     sourceCommit: commit.status === 0 ? commit.stdout.trim() : null,
     sourceTreeDirty: status.status === 0 ? Boolean(status.stdout.trim()) : null,
-    lockHash: sha(readFileSync(path.join(root, 'pnpm-lock.yaml'))),
+    lockHash: sha256File(path.join(root, 'pnpm-lock.yaml')),
     buildDigest: path.basename(build.directory),
     dependencies: copied,
     files,
@@ -298,7 +298,7 @@ try {
   renameSync(stage, destination);
   if (archive) {
     command('tar.exe', ['-a', '-cf', zip, '-C', output, name]);
-    writeFileSync(zip + '.sha256', `${sha(readFileSync(zip))}  ${path.basename(zip)}\n`);
+    writeFileSync(zip + '.sha256', `${sha256File(zip)}  ${path.basename(zip)}\n`);
   }
   console.log(
     JSON.stringify({

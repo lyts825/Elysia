@@ -45,6 +45,11 @@
   justify-content: space-between;
   gap: 10px;
 }
+.schedule-list strong,
+.schedule-actions button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .schedule-editor {
   border-top: 1px solid var(--line);
   padding-top: 18px;
@@ -72,12 +77,18 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
-.project-schedules .schedule-check {
+.project-schedules label.schedule-check {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 8px;
   margin: 12px 0;
   line-height: 1.6;
+}
+.project-schedules .schedule-check span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 .project-schedules .schedule-check input {
   width: 16px;
