@@ -89,6 +89,7 @@ const internalFields = new Set([
   'attemptId',
   'operationId',
   'toolCallId',
+  'assistantMessageId',
   'artifactId',
   'snapshotId',
   'snapshotIds',

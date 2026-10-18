@@ -24,7 +24,12 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   if (code === 'TOOL_ARGUMENTS')
     return advice(
       'arguments',
-      `对照 ${tool} 的当前参数 schema 和错误信息修正参数，以新的调用 ID 再调用。JSON 必须完整；不要为可自行修正的参数向用户索要确认。`,
+      `对照 ${tool} 的当前参数 schema 和错误信息修正参数，在下一步用完整 JSON 重新调用；不要改写同一条已记录调用的参数，也不要为可自行修正的参数向用户索要确认。`,
+    );
+  if (code === 'TOOL_CALL_CONFLICT')
+    return advice(
+      'arguments',
+      '同一条已记录的工具调用不能改名或改参数。先核对其真实结果，需要修正时在下一次模型响应中发起完整调用；不能把旧结果当作新动作的完成证据。',
     );
   if (['FILE_CONFLICT', 'PATCH_AMBIGUOUS'].includes(code))
     return advice(

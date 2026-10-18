@@ -12,6 +12,7 @@ import {
   CONTEXT_MAX_WINDOW_TOKENS,
   CONTEXT_TOKEN_UNIT,
   invariant,
+  toolCallsClosed,
   type Run,
   type Task,
   type Agent,
@@ -121,10 +122,7 @@ export class Kernel {
       return '该代理仍在执行，请等待当前请求和操作结束';
     if (requests.some((r) => r.status === 'UNKNOWN') || operations.some((o) => o.status === 'UNCERTAIN'))
       return '请先核验该代理的请求用量或操作结果';
-    const history = this.history(task);
-    const resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
-    if (history.some((m) => m.calls?.some((call) => !resolved.has(call.id))))
-      return '该代理的工具结果尚未完整返回，请先完成或核验当前操作';
+    if (!toolCallsClosed(this.history(task))) return '该代理的工具结果尚未完整返回，请先完成或核验当前操作';
     return null;
   }
   contextSnapshot(runId: string): ContextSnapshot {
@@ -906,6 +904,13 @@ export class Kernel {
           'WAIT_SCOPE',
           '等待对象越界或为自身',
         );
+      if (reason === 'children')
+        invariant(
+          new Set(ids).size === ids.length &&
+            ids.every((key) => this.store.require<Task>('tasks', key).parentTaskId === task.id),
+          'WAIT_SCOPE',
+          '只能等待实际直属子任务，且不能重复指定',
+        );
       this.checkGraph(this.graph(task.runId, { id: task.id, deps: ids }));
       if (reason === 'children') {
         const children = ids.map((key) => this.store.require<Task>('tasks', key));
@@ -1056,10 +1061,9 @@ export class Kernel {
       'MODEL_SWITCH_VERIFICATION',
       '请先核验该代理的请求用量或操作结果，再切换模型',
     );
-    const history = this.history(task),
-      resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
+    const history = this.history(task);
     invariant(
-      !history.some((m) => m.calls?.some((c) => !resolved.has(c.id))),
+      toolCallsClosed(history),
       'MODEL_SWITCH_PAIR',
       '该代理的工具结果尚未完整返回，请先完成或核验当前操作',
     );
@@ -1494,14 +1498,7 @@ export class Kernel {
             .some((operation) => ['INTENT', 'UNCERTAIN'].includes(operation.status)))
       )
         return;
-      if (
-        tasks.some((t) => {
-          const history = this.history(t);
-          const resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
-          return history.some((m) => m.calls?.some((c) => !resolved.has(c.id)));
-        })
-      )
-        return;
+      if (tasks.some((t) => !toolCallsClosed(this.history(t)))) return;
       invariant(
         run.status !== 'CANCELLED' && (run.kind === 'chat' || run.status !== 'DONE'),
         'INVALID_STATE',

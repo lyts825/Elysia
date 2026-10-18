@@ -41,7 +41,7 @@ export function workbenchEntryLabel(
     ['draft:terminal-continuation:', '终端续接', 'run'],
     ['draft:terminal-communication:', '终端协作消息', 'run'],
     ['draft:terminal-resolution:', '终端消息处置', 'run'],
-    ['draft:terminal-send:', '终端发送确认', 'run'],
+    ['draft:terminal-send:', '消息发送确认', 'run'],
     ['draft:terminal-recovery:', '终端恢复', 'run'],
   ];
   for (const [prefix, label, owner] of kinds) {

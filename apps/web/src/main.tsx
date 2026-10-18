@@ -70,6 +70,13 @@ import {
   readTerminalResolutionDraft,
 } from '../../../packages/contracts/src/terminal-communication';
 import { readContinuationDraft } from './ContinuationDraft';
+import {
+  inspectReplyReceipt,
+  matchesReplyReceipt,
+  readReplyReceipt,
+  replyReceiptPayload,
+  type ReplyReceipt,
+} from './ReplyReceipt';
 import { RecordHistory } from './RecordHistory';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
 import type {
@@ -155,7 +162,7 @@ import { RunStream } from './RunStream';
 import { ReadCoordinator } from './ReadCoordinator';
 import { bindReadingCheckpointScope } from './ReadingCheckpoint';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
-import { conversationIndex } from './ConversationIndex';
+import { conversationCallKey, conversationIndex } from './ConversationIndex';
 import {
   initialNavigation,
   navigationKey,
@@ -409,12 +416,7 @@ function App({
   const visibleMessages = useMemo(
     () =>
       conversationMessages(detail?.messages || []).filter(
-        (message) =>
-          message.role !== 'tool' ||
-          messageIndex.responses.get(message.callId || '')?.id !== message.id ||
-          !detail?.messages.some(
-            (owner) => owner.role !== 'tool' && owner.calls?.some((call) => call.id === message.callId),
-          ),
+        (message) => message.role !== 'tool' || !messageIndex.boundResponses.has(message.id),
       ),
     [detail?.messages, messageIndex],
   );
@@ -738,13 +740,33 @@ function App({
     typeof cacheState.entries[replyKey]?.value === 'string'
       ? (cacheState.entries[replyKey].value as string)
       : '';
-  // A replan choice belongs to this run in this surface, and requires a fresh
-  // choice after reopening the app. Reply text keeps its existing durable draft.
+  // Fresh replan choices belong to this run and surface. Only a matching unknown
+  // send receipt may restore one after reopening, to retry that exact command.
   const [replyIntents, setReplyIntents] = useState<Map<string, { value: 'continue' | 'replan' }>>(
     () => new Map(),
   );
   const replyIntentKey = `${localSurface}:${runId}`;
-  const replyIntent = replyIntents.get(replyIntentKey)?.value || 'continue';
+  const replyChanges = useRef(new Map<string, number>());
+  const receiptChanges = useRef(new Map<string, number>());
+  const [replyReceiptStatus, setReplyReceiptStatus] = useState(new Map<string, string>());
+  const replyReceiptKey = `draft:terminal-send:${runId}`;
+  const replyReceiptRead = !terminalSurface
+    ? inspectReplyReceipt(cacheState.entries[replyReceiptKey]?.value, runId)
+    : { status: 'empty' as const };
+  const cachedReplyReceipt = replyReceiptRead.status === 'ready' ? replyReceiptRead.receipt : null;
+  const pendingReplyReceipt =
+    cachedReplyReceipt?.targetRunId === runId &&
+    !cachedReplyReceipt.outcome &&
+    cachedReplyReceipt.text === reply &&
+    (receiptChanges.current.get(cachedReplyReceipt.commandId) ?? 0) ===
+      (replyChanges.current.get(replyIntentKey) ?? 0)
+      ? cachedReplyReceipt
+      : null;
+  // Restoring an unknown send restores its original intent only for the same
+  // command. A fresh draft still defaults to continue.
+  const replyIntent = replyIntents.get(replyIntentKey)?.value ?? pendingReplyReceipt?.intent ?? 'continue';
+  const markReplyChanged = () =>
+    replyChanges.current.set(replyIntentKey, (replyChanges.current.get(replyIntentKey) ?? 0) + 1);
   const canChooseReplyIntent =
     !terminalSurface &&
     detail?.run.kind === 'task' &&
@@ -1640,9 +1662,75 @@ function App({
     const terminalInput = detail.run.execution?.kind === 'docker-agent';
     const intentKey = replyIntentKey;
     const selectedIntent = replyIntents.get(intentKey);
-    const intent = canChooseReplyIntent ? replyIntent : undefined;
+    const intent = pendingReplyReceipt?.intent ?? (canChooseReplyIntent ? replyIntent : undefined);
+    const change = replyChanges.current.get(intentKey) ?? 0;
     void act(async () => {
       const receiptKey = `draft:terminal-send:${target}`;
+      if (!terminalInput) {
+        // Read before replacing a durable receipt, including a late first load.
+        await cache.ensureKey(receiptKey);
+        const previousRead = inspectReplyReceipt(cache.get(receiptKey), target);
+        if (previousRead.status === 'unreadable') throw new Error(previousRead.message);
+        const previous = previousRead.status === 'ready' ? previousRead.receipt : null;
+        // A first read may finish after send was clicked. The render-time default
+        // must not replace the intent of an untouched, unresolved stored request.
+        const requestedIntent =
+          !selectedIntent && change === 0 && previous?.text === text && !previous.outcome
+            ? previous.intent
+            : intent;
+        const receipt: ReplyReceipt =
+          matchesReplyReceipt(previous, target, text, requestedIntent) &&
+          (receiptChanges.current.get(previous.commandId) ?? 0) === change
+            ? previous
+            : {
+                version: 1,
+                targetRunId: target,
+                text,
+                ...(requestedIntent === undefined ? {} : { intent: requestedIntent }),
+                commandId: crypto.randomUUID(),
+                expectedRevision: revision,
+              };
+        const savedReceipt = JSON.stringify(receipt);
+        receiptChanges.current.set(receipt.commandId, change);
+        cache.set(receiptKey, savedReceipt);
+        try {
+          await mutation('/runs/' + target + '/messages', replyReceiptPayload(receipt));
+        } catch (error) {
+          // This CAS rejection proves the command did not commit. Refreshing can
+          // create a new request; transport/5xx failures retain the exact payload.
+          if (
+            error instanceof ApiError &&
+            error.kind === 'http' &&
+            typeof error.status === 'number' &&
+            error.status >= 400 &&
+            error.status < 500 &&
+            error.code === 'REVISION_CONFLICT' &&
+            cache.get(receiptKey) === savedReceipt
+          ) {
+            cache.set(receiptKey, '');
+            if ((replyChanges.current.get(intentKey) ?? 0) === change && receipt.intent)
+              setReplyIntents((current) =>
+                current.get(intentKey) === selectedIntent
+                  ? new Map(current).set(intentKey, { value: receipt.intent! })
+                  : current,
+              );
+          }
+          throw error;
+        }
+        if (cache.get(receiptKey) === savedReceipt) {
+          cache.set(receiptKey, '');
+          if ((replyChanges.current.get(intentKey) ?? 0) === change) {
+            if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
+            setReplyIntents((current) => {
+              if (current.get(intentKey) !== selectedIntent) return current;
+              const next = new Map(current);
+              next.delete(intentKey);
+              return next;
+            });
+          }
+        }
+        return;
+      }
       const previous = readTerminalCommunicationDraft(cache.get(receiptKey));
       const receipt =
         terminalInput &&
@@ -1669,6 +1757,47 @@ function App({
           next.delete(intentKey);
           return next;
         });
+    });
+  };
+  const reconcileReply = () => {
+    if (busy || !cachedReplyReceipt || cachedReplyReceipt.outcome || cachedReplyReceipt.targetRunId !== runId)
+      return;
+    const receipt = cachedReplyReceipt;
+    const key = replyReceiptKey;
+    const statusKey = replyIntentKey;
+    void act(async () => {
+      await cache.ensureKey(key);
+      const raw = cache.get(key);
+      if (JSON.stringify(readReplyReceipt(raw)) !== JSON.stringify(receipt))
+        throw new Error('发送回执已变化，请核对当前记录后重试。');
+      try {
+        await mutation('/runs/' + receipt.targetRunId + '/messages', replyReceiptPayload(receipt));
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.kind === 'http' &&
+          typeof error.status === 'number' &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          ['INVALID_STATE', 'REVISION_CONFLICT', 'ARCHIVED'].includes(error.code || '') &&
+          cache.get(key) === raw
+        ) {
+          cache.set(key, JSON.stringify({ ...receipt, outcome: 'not-sent' }));
+          const draftKey = `draft:run:${receipt.targetRunId}`;
+          if (!cache.get(draftKey)) cache.set(draftKey, receipt.text);
+          setReplyReceiptStatus((current) =>
+            new Map(current).set(statusKey, '上次补充未提交，原文已保留，当前草稿未替换。'),
+          );
+          return;
+        }
+        throw error;
+      }
+      if (cache.get(key) === raw) {
+        cache.set(key, '');
+        setReplyReceiptStatus((current) =>
+          new Map(current).set(statusKey, '上次发送已确认，未重复提交；当前草稿保留。'),
+        );
+      }
     });
   };
   const selectRun = (
@@ -2836,9 +2965,12 @@ function App({
                             <ToolActivity
                               key={c.id}
                               call={c}
-                              operation={messageIndex.operations.get(c.id)}
-                              toolResponse={messageIndex.responses.get(c.id)}
-                              focused={initialHistoryAnchor?.id === messageIndex.responses.get(c.id)?.id}
+                              operation={messageIndex.operations.get(conversationCallKey(m.id, c.id))}
+                              toolResponse={messageIndex.responses.get(conversationCallKey(m.id, c.id))}
+                              focused={
+                                initialHistoryAnchor?.id ===
+                                messageIndex.responses.get(conversationCallKey(m.id, c.id))?.id
+                              }
                               taskStatus={task?.status}
                             />
                           ))}
@@ -3241,7 +3373,10 @@ function App({
                       aria-label="回复或补充需求"
                       maxLength={20000}
                       value={reply}
-                      onChange={(e) => cache.set(replyKey, e.target.value)}
+                      onChange={(e) => {
+                        markReplyChanged();
+                        cache.set(replyKey, e.target.value);
+                      }}
                       onKeyDown={(e) => {
                         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing) {
                           e.preventDefault();
@@ -3274,6 +3409,7 @@ function App({
                               aria-describedby={`reply-intent-help-${localSurface}`}
                               value={replyIntent}
                               onChange={(e) => {
+                                markReplyChanged();
                                 const value = e.target.value === 'replan' ? 'replan' : 'continue';
                                 setReplyIntents((current) => new Map(current).set(replyIntentKey, { value }));
                               }}
@@ -3302,6 +3438,13 @@ function App({
                             : '补充消息会在安全边界送入当前任务；权限和累计预算保持。'}
                         </p>
                       )}
+                    {pendingReplyReceipt && (
+                      <p className="field-help" role="status" style={{ padding: '0 16px 10px' }}>
+                        {busy
+                          ? '正在核对本次发送结果…'
+                          : `上次${pendingReplyReceipt.intent === 'replan' ? '重新规划' : '补充'}发送结果待核对；重试沿用原请求，修改正文或处理方式将发送新请求。`}
+                      </p>
+                    )}
                     <div>
                       <div className="reply-model-controls">
                         <ComposerModelControl
@@ -3365,6 +3508,40 @@ function App({
                     </div>
                   </form>
                 )}
+                {!terminalSurface &&
+                  (archived || ['DONE', 'CANCELLED'].includes(detail.run.status)) &&
+                  ((cachedReplyReceipt?.targetRunId === runId && cachedReplyReceipt) ||
+                    replyReceiptRead.status === 'unreadable' ||
+                    replyReceiptStatus.get(replyIntentKey)) && (
+                    <div className="system-note" style={{ margin: '8px 16px', alignItems: 'start' }}>
+                      <Icon name="history" size={14} />
+                      <div>
+                        <p role="status">
+                          {replyReceiptRead.status === 'unreadable'
+                            ? replyReceiptRead.message
+                            : cachedReplyReceipt?.outcome === 'not-sent'
+                              ? '上次补充未提交，原文已保留，当前草稿未替换。'
+                              : replyReceiptStatus.get(replyIntentKey) ||
+                                '上次发送结果待核对。仅重试原命令以读取结果，不创建新的补充请求。'}
+                        </p>
+                        {cachedReplyReceipt?.targetRunId === runId && (
+                          <>
+                            <details>
+                              <summary>查看发送原文</summary>
+                              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                                {cachedReplyReceipt.text}
+                              </pre>
+                            </details>
+                            {!cachedReplyReceipt.outcome && (
+                              <button type="button" disabled={busy} onClick={reconcileReply}>
+                                {busy ? '正在核对…' : '核对上次发送结果'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
               </section>
               <Presence>
                 {previewOpen && (

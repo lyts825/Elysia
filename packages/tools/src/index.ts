@@ -12,6 +12,7 @@ import {
   Evidence,
   effectiveContextWindowTokens,
   invariant,
+  inspectToolCalls,
   type Agent,
   type Task,
   type Run,
@@ -21,6 +22,7 @@ import {
   type Artifact,
   type Snapshot,
   type ToolCall,
+  type Message,
 } from '../../contracts/src/index.js';
 import { Store, id, hash, stable, now } from '../../storage/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
@@ -779,7 +781,91 @@ export class ToolGateway {
       return next;
     });
   }
-  async call(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal): Promise<unknown> {
+  private uncertainCall(task: Task, message: string): never {
+    this.kernel.wait(this.store.require<Task>('tasks', task.id), 'verification');
+    throw new AppError('OPERATION_UNCERTAIN', message);
+  }
+  private callSource(task: Task, call: ToolCall, assistantMessageId?: string) {
+    const sequence = inspectToolCalls(this.kernel.history(task));
+    if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
+    const pending = sequence.pending.filter((item) => item.call.id === call.id);
+    const candidates = assistantMessageId
+      ? sequence.occurrences.filter(
+          (item) => item.message.id === assistantMessageId && item.call.id === call.id,
+        )
+      : pending.length
+        ? pending
+        : sequence.occurrences.filter((item) => item.call.id === call.id);
+    invariant(candidates.length === 1, 'TOOL_CALL_CONFLICT', '工具调用必须唯一对应已记录的模型响应');
+    const source = candidates[0];
+    invariant(
+      source.call.name === call.name && source.call.arguments === call.arguments,
+      'TOOL_CALL_CONFLICT',
+      '不能更改同一条已记录工具调用的名称或参数',
+    );
+    return source.message.id;
+  }
+  private previousCall(task: Task, call: ToolCall, assistantMessageId: string) {
+    const operations = this.store
+      .all<Operation>('tool_operations', task.runId)
+      .filter((operation) => operation.taskId === task.id && operation.toolCallId === call.id);
+    const current = operations.filter((operation) => operation.assistantMessageId === assistantMessageId);
+    const legacy = operations.filter((operation) => !operation.assistantMessageId);
+    if (legacy.length) {
+      // Legacy operations have no response identity. A paired operation receipt or a
+      // unique original request/attempt proves ownership; raw provider IDs alone do not.
+      const sessionId = this.store.require<Agent>('agents', task.agentId).sessionId;
+      const requests = new Map(
+        this.store
+          .requestLedger({ runId: task.runId, taskId: task.id })
+          .map((request) => [request.id, request]),
+      );
+      const sessions = new Map<string, Message[]>();
+      for (const message of this.store.all<Message>('messages', task.runId)) {
+        const messages = sessions.get(message.sessionId) ?? [];
+        messages.push(message);
+        sessions.set(message.sessionId, messages);
+      }
+      const occurrences = [...sessions.values()].flatMap((messages) => {
+        if (
+          messages[0].sessionId !== sessionId &&
+          !messages.some((message) => message.requestId && requests.has(message.requestId))
+        )
+          return [];
+        const sequence = inspectToolCalls(messages.sort((a, b) => a.ordinal - b.ordinal));
+        if (sequence.error && messages.some((message) => message.calls?.some((item) => item.id === call.id)))
+          this.uncertainCall(task, '旧工具调用记录无法唯一配对，请核验操作结果');
+        return sequence.occurrences.filter((item) => item.call.id === call.id);
+      });
+      for (const operation of legacy) {
+        const receipts = occurrences.filter((item) => {
+          try {
+            return item.result && JSON.parse(item.result.text)?.operationId === operation.id;
+          } catch {
+            return false;
+          }
+        });
+        const candidates = receipts.length
+          ? receipts
+          : occurrences.filter((item) => {
+              const request = item.message.requestId ? requests.get(item.message.requestId) : undefined;
+              return request?.attemptId === operation.attemptId && request.taskId === task.id;
+            });
+        if (candidates.length !== 1)
+          this.uncertainCall(task, '旧工具调用身份不明确，请核验已有操作，不能自动重跑');
+        if (candidates[0].message.id === assistantMessageId) current.push(operation);
+      }
+    }
+    if (current.length > 1) this.uncertainCall(task, '同一工具调用存在多条操作记录，请核验结果');
+    return current[0];
+  }
+  async call(
+    task: Task,
+    attempt: Attempt,
+    call: ToolCall,
+    signal: AbortSignal,
+    assistantMessageId?: string,
+  ): Promise<unknown> {
     task = this.store.require<Task>('tasks', task.id);
     const name = call.name as ToolName;
     // Load outside SQLite transactions; re-read state after the asynchronous boundary.
@@ -799,12 +885,33 @@ export class ToolGateway {
     } catch (e) {
       throw new AppError('TOOL_ARGUMENTS', '工具参数无效：' + (e instanceof Error ? e.message : String(e)));
     }
-    const previous = this.store
-      .all<Operation>('tool_operations', task.runId)
-      .find((o) => o.attemptId === attempt.id && o.toolCallId === call.id);
-    if (previous?.status === 'DONE' || previous?.status === 'FAILED')
-      return { operationId: previous.id, result: previous.result };
-    if (previous) throw new AppError('OPERATION_UNCERTAIN', '副作用结果待核验，请在决定面板处理');
+    invariant(
+      attempt.runId === task.runId && attempt.taskId === task.id,
+      'TASK_SCOPE',
+      '执行尝试不属于当前任务',
+    );
+    assistantMessageId = this.callSource(task, call, assistantMessageId);
+    let previous = this.previousCall(task, call, assistantMessageId);
+    if (previous) {
+      if (!['DONE', 'FAILED'].includes(previous.status))
+        this.uncertainCall(task, '副作用结果待核验，请在决定面板处理');
+      invariant(
+        previous.name === name && stable(previous.args) === stable(args),
+        'TOOL_CALL_CONFLICT',
+        '已记录调用与工具或参数不一致',
+      );
+      if (!previous.assistantMessageId)
+        previous = this.store.put('tool_operations', { ...previous, assistantMessageId });
+      if (previous.status === 'DONE') return { operationId: previous.id, result: previous.result };
+      if (previous.status === 'FAILED') {
+        const failure = previous.result as { error?: string; code?: string; retryable?: boolean } | undefined;
+        throw new AppError(
+          failure?.code ?? 'TOOL_ERROR',
+          failure?.error ?? previous.error ?? '工具执行失败',
+          failure?.retryable === true,
+        );
+      }
+    }
     invariant(task.status === 'RUNNING', 'TASK_STOPPED', '任务已停止，不能开始新工具操作');
     const operation: Operation = {
       id: id(),
@@ -813,6 +920,7 @@ export class ToolGateway {
       taskId: task.id,
       attemptId: attempt.id,
       toolCallId: call.id,
+      assistantMessageId,
       name,
       args,
       status: 'INTENT',
@@ -880,9 +988,10 @@ export class ToolGateway {
         else if (name === 'join_tasks') {
           const children = args.taskIds.map((key: string) => this.store.require<Task>('tasks', key));
           invariant(
-            children.every((t: Task) => t.runId === task.runId),
+            new Set(args.taskIds).size === args.taskIds.length &&
+              children.every((t: Task) => t.runId === task.runId && t.parentTaskId === task.id),
             'TASK_SCOPE',
-            '任务越界',
+            '只能等待实际直属子任务，且不能重复指定',
           );
           result = children.every((t: Task) => ['DONE', 'FAILED', 'CANCELLED'].includes(t.status))
             ? children.map((t: Task) => ({ id: t.id, status: t.status, result: t.result }))
@@ -1191,7 +1300,11 @@ export class ToolGateway {
         this.store.put('tool_operations', {
           ...op,
           status: uncertainty ? 'UNCERTAIN' : 'FAILED',
-          result: { error: e.message, code: e instanceof AppError ? e.code : 'TOOL_FAILED' },
+          result: {
+            error: e.message,
+            code: e instanceof AppError ? e.code : 'TOOL_ERROR',
+            retryable: e instanceof AppError ? e.retryable : false,
+          },
           error: e.message,
         });
         this.kernel.event(

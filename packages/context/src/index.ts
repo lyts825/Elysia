@@ -5,6 +5,7 @@ import {
   ContextRuntimeMetrics,
   CONTEXT_SAFETY_TOKENS,
   effectiveContextWindowTokens,
+  inspectToolCalls,
   type Task,
   type Run,
   type Agent,
@@ -40,20 +41,9 @@ export interface CompiledContext {
   estimatedTokens: number;
 }
 export function validatePairs(messages: Message[]) {
-  const waiting = new Set<string>();
-  for (const m of messages) {
-    if (m.role !== 'tool' && waiting.size)
-      throw new AppError('TOOL_PAIR_INCOMPLETE', '工具调用尚未配对，不能编译下一次请求');
-    for (const call of m.calls ?? []) {
-      if (waiting.has(call.id)) throw new AppError('TOOL_PAIR_DUPLICATE', '工具调用 ID 重复');
-      waiting.add(call.id);
-    }
-    if (m.role === 'tool') {
-      if (!m.callId || !waiting.delete(m.callId))
-        throw new AppError('TOOL_PAIR_INVALID', '工具结果没有对应调用');
-    }
-  }
-  if (waiting.size) throw new AppError('TOOL_PAIR_INCOMPLETE', '工具调用结果缺失');
+  const sequence = inspectToolCalls(messages);
+  if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
+  if (sequence.pending.length) throw new AppError('TOOL_PAIR_INCOMPLETE', '工具调用结果缺失');
 }
 type LocalCatalogueEntry = {
   id: string;
@@ -470,7 +460,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     estimatedTokens,
     manifest: {
       compilerVersion: '4',
-      promptVersion: '5',
+      promptVersion: '6',
       harness: {
         version: harness.version,
         mode: harness.mode,

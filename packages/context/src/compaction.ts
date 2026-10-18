@@ -3,7 +3,7 @@ import type { ApprovedTaskWorkingState } from '../../contracts/src/working-state
 import { stable } from '../../storage/src/index.js';
 import { validateTaskWorkingState, workingStateMemory, type WorkingStateContext } from './working-state.js';
 
-export const COMPACTION_ALGORITHM = 'tiered-recoverable-v1';
+export const COMPACTION_ALGORITHM = 'tiered-recoverable-v2';
 export const COMPACTION_TRIGGER = 0.75;
 export const COMPACTION_TARGET = 0.6;
 
@@ -74,6 +74,7 @@ type MemoryRecord = {
   index: number;
   role: Message['role'];
   messageId: string;
+  purpose?: Message['purpose'];
   callId?: string;
   calls?: { id: string; name: string }[];
   callCount?: number;
@@ -82,6 +83,11 @@ type MemoryRecord = {
 };
 
 const MAX_MEMORY_RECORDS = 24;
+
+// Runtime reminders travel as user-role transport messages, but are not human requirements.
+// Keep model handoffs intact: they may contain prior user corrections from another session.
+const isUserRequirement = (message: Message) =>
+  message.role === 'user' && message.purpose !== 'runtime_notice';
 
 /** User requirements stay verbatim unless a human-approved checkpoint explicitly covers the prefix. */
 function memory(
@@ -95,10 +101,10 @@ function memory(
   const records: MemoryRecord[] = [];
   let historicalRecordCount = 0;
   // Metadata must not grow with every completed tool call. Full records remain addressable by index.
-  for (const message of messages) if (message.role !== 'user') historicalRecordCount++;
+  for (const message of messages) if (!isUserRequirement(message)) historicalRecordCount++;
   let recordOrdinal = 0;
   messages.forEach((message, index) => {
-    if (message.role === 'user') {
+    if (isUserRequirement(message)) {
       if (approvedState) return;
       const previous = seen.get(message.text);
       if (previous === undefined) {
@@ -117,6 +123,7 @@ function memory(
         index,
         role: message.role,
         messageId: message.id,
+        ...(message.purpose ? { purpose: message.purpose } : {}),
         ...(message.callId ? { callId: message.callId } : {}),
         ...(message.calls?.length
           ? {

@@ -1,6 +1,7 @@
 import {
   AppError,
   ContextRuntimeMetrics,
+  inspectToolCalls,
   type Agent,
   type Task,
   type Run,
@@ -347,14 +348,20 @@ export class NativeExecutor implements ExecutorAdapter {
       this.ticking = false;
     }
   }
-  async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal) {
+  async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
     while (this.toolActive >= limit) {
       await delay(20, signal);
     }
     this.toolActive++;
     try {
-      return await this.gateway.call(this.kernel.store.require('tasks', task.id), attempt, call, signal);
+      return await this.gateway.call(
+        this.kernel.store.require('tasks', task.id),
+        attempt,
+        call,
+        signal,
+        assistantMessageId,
+      );
     } catch (e) {
       if (signal.aborted || this.kernel.store.require<Task>('tasks', task.id).waitReason === 'verification')
         throw e;
@@ -377,12 +384,31 @@ export class NativeExecutor implements ExecutorAdapter {
       this.toolActive--;
     }
   }
-  async executeCalls(task: Task, attempt: Attempt, calls: ToolCall[], signal: AbortSignal) {
+  async executeCalls(
+    task: Task,
+    attempt: Attempt,
+    calls: ToolCall[],
+    signal: AbortSignal,
+    assistantMessageId?: string,
+  ) {
+    const sequence = inspectToolCalls(this.kernel.history(task));
+    if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
+    if (!assistantMessageId) {
+      const owners = new Set(
+        sequence.pending
+          .filter((item) => calls.some((call) => call.id === item.call.id))
+          .map((item) => item.message.id),
+      );
+      if (owners.size === 1) assistantMessageId = [...owners][0];
+    }
     const outcomes: { call: ToolCall; result: unknown }[] = [];
     const orchestration = new Set([
       'write',
       'apply_patch',
       'materialize_artifact',
+      'exec',
+      'artifact',
+      'mcp_call',
       'clarify',
       'propose_plan',
       'spawn_task',
@@ -393,14 +419,16 @@ export class NativeExecutor implements ExecutorAdapter {
     ]);
     if (calls.some((c) => orchestration.has(c.name))) {
       for (const call of calls) {
-        const result = await this.tool(task, attempt, call, signal);
+        const result = await this.tool(task, attempt, call, signal, assistantMessageId);
         this.kernel.store.tx(() =>
           this.kernel.appendMessage(task, 'tool', stable(result), { callId: call.id }),
         );
         outcomes.push({ call, result });
       }
     } else {
-      const results = await Promise.allSettled(calls.map((call) => this.tool(task, attempt, call, signal)));
+      const results = await Promise.allSettled(
+        calls.map((call) => this.tool(task, attempt, call, signal, assistantMessageId)),
+      );
       for (let i = 0; i < calls.length; i++) {
         const r = results[i];
         if (r.status === 'fulfilled') {
@@ -411,10 +439,14 @@ export class NativeExecutor implements ExecutorAdapter {
         } else throw r.reason;
       }
     }
-    this.observeToolFailures(task, outcomes);
+    this.observeToolFailures(task, outcomes, assistantMessageId);
     this.kernel.checkpoint(attempt.id);
   }
-  private observeToolFailures(task: Task, outcomes: { call: ToolCall; result: unknown }[]) {
+  private observeToolFailures(
+    task: Task,
+    outcomes: { call: ToolCall; result: unknown }[],
+    assistantMessageId?: string,
+  ) {
     // Only known, non-transient validation/authorization failures count. Polls, provider
     // limits, unknown side effects and generic I/O errors must keep their own recovery rules.
     const deterministic = new Set([
@@ -513,14 +545,15 @@ export class NativeExecutor implements ExecutorAdapter {
         }
         const fingerprint = hash(stable({ tool: call.name, args, code }));
         const prior = state.failures.find((failure) => failure.fingerprint === fingerprint);
-        if (prior?.lastCallId === call.id) continue;
+        const invocation = assistantMessageId ? assistantMessageId + ':' + call.id : call.id;
+        if (prior?.lastCallId === invocation) continue;
         state.failures = state.failures.filter((failure) => failure.fingerprint !== fingerprint);
         state.failures.push({
           fingerprint,
           tool: call.name,
           code,
           count: (prior?.count ?? 0) + 1,
-          lastCallId: call.id,
+          lastCallId: invocation,
         });
         state.failures = state.failures.slice(-8);
       }
@@ -546,10 +579,16 @@ export class NativeExecutor implements ExecutorAdapter {
     });
   }
   async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
-    const history = this.kernel.history(task),
-      resolved = new Set(history.filter((m) => m.role === 'tool').map((m) => m.callId));
-    const calls = history.flatMap((m) => m.calls ?? []).filter((c) => !resolved.has(c.id));
-    if (calls.length) await this.executeCalls(task, attempt, calls, signal);
+    const sequence = inspectToolCalls(this.kernel.history(task));
+    if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
+    if (sequence.pending.length)
+      await this.executeCalls(
+        task,
+        attempt,
+        sequence.pending.map((item) => item.call),
+        signal,
+        sequence.pending[0].message.id,
+      );
   }
   private publishContext(task: Task, attempt: Attempt, metrics: ContextRuntimeMetrics, recordId?: string) {
     const current = { ...metrics, updatedAt: new Date().toISOString() };
@@ -786,7 +825,7 @@ export class NativeExecutor implements ExecutorAdapter {
     }
     if (!complete) return;
     const completed = complete;
-    store.tx(() => {
+    const assistantMessage = store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
       metrics = this.publishContext(
         task,
@@ -801,7 +840,7 @@ export class NativeExecutor implements ExecutorAdapter {
         },
         successfulRequestId!,
       );
-      this.kernel.appendMessage(task, 'assistant', completed.text, {
+      const message = this.kernel.appendMessage(task, 'assistant', completed.text, {
         requestId: successfulRequestId!,
         calls: completed.calls,
         native: completed.native,
@@ -820,9 +859,11 @@ export class NativeExecutor implements ExecutorAdapter {
         ...record,
         manifest: { ...record.manifest, partialStreamRef: null, partialText: null },
       });
+      return message;
     });
     signal.throwIfAborted();
-    if (completed.calls.length) await this.executeCalls(task, attempt, completed.calls, signal);
+    if (completed.calls.length)
+      await this.executeCalls(task, attempt, completed.calls, signal, assistantMessage.id);
     else if (store.require<Run>('runs', task.runId).kind === 'chat') {
       store.tx(() => {
         this.kernel.wait(store.require<Task>('tasks', task.id), 'user');

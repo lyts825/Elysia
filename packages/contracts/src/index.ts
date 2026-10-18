@@ -6,10 +6,11 @@ import type { RoleRoutingSnapshot, RoleRoutingDecision } from './model-routing.j
 import type { ProjectCapabilitySnapshot } from './project-intelligence.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.12.0';
+export const VERSION = '1.12.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
+export * from './tool-calls.js';
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -126,7 +127,7 @@ export const ContextRuntimeMetrics = z.object({
   observedOutputTokens: z.number().nonnegative().nullable(),
   compression: z.object({
     status: z.enum(['idle', 'completed', 'blocked']),
-    algorithm: z.literal('tiered-recoverable-v1'),
+    algorithm: z.enum(['tiered-recoverable-v1', 'tiered-recoverable-v2']),
     beforeTokens: z.number().int().nonnegative(),
     afterTokens: z.number().int().nonnegative(),
     summarizedMessages: z.number().int().nonnegative(),
@@ -516,6 +517,8 @@ export interface Operation extends Entity {
   taskId: string;
   attemptId: string;
   toolCallId: string;
+  /** Durable assistant response owning this invocation; provider IDs remain unchanged. */
+  assistantMessageId?: string;
   name: string;
   args: Record<string, unknown>;
   status: 'INTENT' | 'DONE' | 'FAILED' | 'UNCERTAIN';
