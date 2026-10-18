@@ -16,6 +16,8 @@ import type {
   RunDetailCoverage,
 } from '../../../packages/contracts/src/run-reads.js';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
+import { readCurrentQuestions } from '../../../packages/storage/src/current-questions.js';
+import { readDetailEvents } from '../../../packages/storage/src/detail-events.js';
 import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
 import {
   projectionIssue,
@@ -98,6 +100,20 @@ export class RunReads {
   }
   tasks(runId: string) {
     return this.projections.collection<Task>('tasks', runId);
+  }
+  eventPreview(runId: string) {
+    return readDetailEvents(this.store, runId);
+  }
+  currentQuestions(run: Run, tasks: readonly Task[]) {
+    const unavailable = this.store.db
+      .prepare("SELECT record_id FROM projection_read_issues_v1 WHERE table_name='tasks' AND run_id=?")
+      .all(run.id) as { record_id: string }[];
+    return readCurrentQuestions(
+      this.store,
+      run,
+      tasks,
+      unavailable.map((row) => row.record_id),
+    );
   }
   executionRecords(runId: string) {
     return {

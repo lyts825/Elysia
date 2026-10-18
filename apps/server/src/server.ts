@@ -1258,6 +1258,7 @@ export function createServer(
           ? '旧版终端任务保留为只读历史，请在 Agent 终端入口创建独立任务'
           : null,
       tasks: records.tasks,
+      currentQuestions: runReads.currentQuestions(run, records.tasks),
       agents: store.all<Agent>('agents', run.id),
       contexts,
       ...history,
@@ -1272,14 +1273,7 @@ export function createServer(
           }),
       readCoverage: runReads.readCoverage(run.id),
       detailCoverage: runReads.detailCoverage(run.id, scope),
-      events: store.events(
-        run.id,
-        Math.max(
-          0,
-          Number((store.db.prepare('SELECT MAX(seq) n FROM events WHERE run_id=?').get(run.id) as any).n) -
-            100,
-        ),
-      ),
+      ...runReads.eventPreview(run.id),
       edges: store.db
         .prepare(
           'SELECT task_id taskId,dependency_id dependencyId FROM task_edges WHERE task_id IN (SELECT id FROM tasks WHERE run_id=?)',

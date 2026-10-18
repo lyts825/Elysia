@@ -1,4 +1,8 @@
-import type { RunDetailCoverage, ExecutionHold } from '../../../packages/contracts/src/run-reads';
+import type {
+  RunDetailCoverage,
+  ExecutionHold,
+  EventPreviewCoverage,
+} from '../../../packages/contracts/src/run-reads';
 
 export type DetailReadState = {
   readOnly?: boolean;
@@ -6,6 +10,7 @@ export type DetailReadState = {
   localExecutionStopped?: boolean;
   executionHold?: ExecutionHold | null;
   detailCoverage?: RunDetailCoverage;
+  eventPreviewCoverage?: EventPreviewCoverage;
 };
 
 export function detailReadReason(detail?: DetailReadState | null): string {

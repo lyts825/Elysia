@@ -14,6 +14,19 @@ export type RunDetailCoverage = {
   requests: DetailCollectionCoverage;
   operations: DetailCollectionCoverage;
 };
+export type CurrentQuestion = {
+  eventId: string;
+  taskId: string;
+  title: string;
+  questions: string[];
+  seq: number;
+};
+export type RunCurrentQuestions = {
+  items: CurrentQuestion[];
+  coverage: ProjectionReadCoverage & { limited: boolean };
+  unavailableTaskIds: string[];
+};
+export type EventPreviewCoverage = ProjectionReadCoverage & { limited: boolean };
 export type RunStopCurrentResult = {
   runId: string;
   interrupted: boolean;

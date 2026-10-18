@@ -202,10 +202,16 @@ import { validContextPolicy } from './ContextPolicyEditor';
 const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
 const TaskRecovery = deferredPanel(() => import('./TaskRecovery').then((m) => m.TaskRecovery), '分支恢复');
 import { agentOrder } from './agentOrder';
-import { archiveFeedback, currentQuestions, getRunFeedback, rateWaitText } from './RunFeedback';
+import {
+  archiveFeedback,
+  currentQuestions,
+  currentQuestionsReadNotice,
+  getRunFeedback,
+  rateWaitText,
+} from './RunFeedback';
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 import { DetailReadNotice } from './DetailReadNotice';
-import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
+import type { RunCurrentQuestions, RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
 import { MotionContent, MotionTabs, Presence, usePositionMotion } from './Motion';
 import { useDrawerFocus, useViewportMatch } from './ResponsiveLayout';
 type Detail = DetailReadState & {
@@ -225,6 +231,7 @@ type Detail = DetailReadState & {
   requests: RequestRecord[];
   operations: Operation[];
   events: any[];
+  currentQuestions?: RunCurrentQuestions;
   edges: { taskId: string; dependencyId: string }[];
   contexts: ContextProjection[];
   usageSummary?: RunUsageSummary;
@@ -571,7 +578,9 @@ function App({
   const feedback = detail
     ? getRunFeedback(detail, archived, hasRateWait ? feedbackTime : Date.now())
     : undefined;
-  const questions = detail ? currentQuestions(detail) : [];
+  const questions = detail && !terminalSurface && !legacyTerminal ? currentQuestions(detail) : [];
+  const questionNotice =
+    detail && !terminalSurface && !legacyTerminal ? currentQuestionsReadNotice(detail) : '';
   const resumeTask = detail?.tasks.find((task) => task.id === feedback?.resumeTaskId);
   const taskDetailRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingTaskFocus = useRef<string | undefined>(undefined);
@@ -1239,7 +1248,7 @@ function App({
               if (old?.run.id !== wanted) return result;
               const messages = append ? earlierMessages(result.messages, old.messages) : result.messages;
               const events = [
-                ...new Map([...result.events, ...old.events].map((event) => [event.seq, event])).values(),
+                ...new Map([...old.events, ...result.events].map((event) => [event.seq, event])).values(),
               ]
                 .sort((a, b) => a.seq - b.seq)
                 .slice(-100);
@@ -1294,13 +1303,13 @@ function App({
       if (activeRunId.current === wanted) setSummaryLoading(false);
     }
   }
-  async function retryDetailRecords() {
+  async function retryDetailRecords(forceSummary = true) {
     const wanted = activeRunId.current;
     if (!wanted || detailRetryRun.current) return;
     detailRetryRun.current = wanted;
     setRetryingDetailRun(wanted);
     try {
-      await refreshDetail(false, true, true);
+      await refreshDetail(false, forceSummary, true);
     } finally {
       detailRetryRun.current = '';
       setRetryingDetailRun('');
@@ -1842,6 +1851,16 @@ function App({
       } else replyRef.current?.focus();
     });
   };
+  const focusQuestions = (ownerRunId = runId, epoch = navigationEpoch.current) => {
+    setPreviewOpen(false);
+    requestAnimationFrame(() => {
+      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch) return;
+      if (questionRef.current) {
+        questionRef.current.scrollIntoView({ block: 'start' });
+        questionRef.current.focus({ preventScroll: true });
+      } else replyRef.current?.focus();
+    });
+  };
   useEffect(() => {
     const target = taskCenterTarget;
     if (!target || !detail || detail.run.id !== target.id) return;
@@ -1864,13 +1883,7 @@ function App({
       if (operation) openVerification(operation, target.id, target.epoch);
       else replyRef.current?.focus();
     } else if (target.category === 'waiting') {
-      requestAnimationFrame(() => {
-        if (activeRunId.current !== target.id) return;
-        if (questionRef.current) {
-          questionRef.current.scrollIntoView({ block: 'start' });
-          questionRef.current.focus({ preventScroll: true });
-        } else replyRef.current?.focus();
-      });
+      focusQuestions(target.id, target.epoch);
     }
   }, [detail, taskCenterTarget]);
   useEffect(() => {
@@ -1973,13 +1986,7 @@ function App({
         replyRef.current?.focus();
         break;
       case 'questions':
-        setPreviewOpen(false);
-        requestAnimationFrame(() => {
-          if (questionRef.current) {
-            questionRef.current.scrollIntoView({ block: 'start' });
-            questionRef.current.focus({ preventScroll: true });
-          } else replyRef.current?.focus();
-        });
+        focusQuestions();
         break;
       case 'archive':
         setModal('manage:archive');
@@ -2709,6 +2716,7 @@ function App({
               detail={detail}
               busy={busy || retryingDetailRun === detail.run.id}
               retry={() => void retryDetailRecords()}
+              retryPreview={() => void retryDetailRecords(false)}
               finished={['DONE', 'CANCELLED'].includes(detail.run.status)}
               clearHold={
                 !archived &&
@@ -3027,12 +3035,29 @@ function App({
                         </div>
                       </div>
                     ))}
+                  {questionNotice && (
+                    <div className="question-card" ref={questionRef} tabIndex={-1}>
+                      <p role="status">{questionNotice}</p>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={retryingDetailRun === runId}
+                        onClick={() => void retryDetailRecords(false)}
+                      >
+                        {retryingDetailRun === runId
+                          ? '正在核对问题…'
+                          : detail.currentQuestions?.coverage.limited
+                            ? '重新核对问题'
+                            : '重试读取问题'}
+                      </button>
+                    </div>
+                  )}
                   {questions.map((question, index) => (
                     <div
                       className="question-card"
                       key={question.eventId}
                       id={`${localSurface}-question-${question.taskId}`}
-                      ref={index === 0 ? questionRef : undefined}
+                      ref={!questionNotice && index === 0 ? questionRef : undefined}
                       tabIndex={-1}
                     >
                       <span className="eyebrow">需要你的输入 · {question.title}</span>

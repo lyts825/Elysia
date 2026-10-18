@@ -1,4 +1,5 @@
 import type { Event, Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
+import type { CurrentQuestion, RunCurrentQuestions } from '../../../packages/contracts/src/run-reads';
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 
 type FeedbackDetail = DetailReadState & {
@@ -7,6 +8,7 @@ type FeedbackDetail = DetailReadState & {
   operations: Operation[];
   requests?: RequestRecord[];
   events: Event[];
+  currentQuestions?: RunCurrentQuestions;
   edges?: { taskId: string; dependencyId: string }[];
 };
 export type RunFeedback = {
@@ -27,10 +29,36 @@ export type RunFeedback = {
 const limitCodes =
   /^(?:TIME_BUDGET|STEP_LIMIT|REQUEST_BUDGET|TOKEN_BUDGET|COST_BUDGET|CONTEXT_LIMIT|ACCOUNT_TOKEN_LIMIT)$/;
 
-export function currentQuestions(detail: Pick<FeedbackDetail, 'tasks' | 'events'>) {
-  const questions: { eventId: string; taskId: string; title: string; questions: string[]; seq: number }[] =
-    [];
-  for (const task of detail.tasks.filter((item) => item.status === 'WAITING' && item.waitReason === 'user')) {
+type QuestionDetail = Pick<FeedbackDetail, 'tasks' | 'events' | 'currentQuestions'> & { run?: Run };
+const questionsInactive = (detail: Pick<QuestionDetail, 'run'>) =>
+  !!detail.run &&
+  (['DONE', 'CANCELLED'].includes(detail.run.status) || detail.run.execution?.kind === 'docker-agent');
+
+export function currentQuestionsReadNotice(detail: Pick<QuestionDetail, 'run' | 'currentQuestions'>) {
+  if (questionsInactive(detail) || detail.currentQuestions?.coverage.complete !== false) return '';
+  return detail.currentQuestions.coverage.limited
+    ? '部分待答问题超出单次核对范围，暂无法完整确认；已有输入和任务状态保持。'
+    : '部分待答问题记录暂时无法读取，可重试读取；已有输入和任务状态保持。';
+}
+
+export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
+  if (questionsInactive(detail)) return [];
+  const waiting = detail.tasks.filter(
+    (item) =>
+      item.status === 'WAITING' &&
+      item.waitReason === 'user' &&
+      (!detail.run || item.runId === detail.run.id),
+  );
+  // An explicit empty projection closes older questions. Only older servers
+  // without this field use the recent-event compatibility path.
+  if (detail.currentQuestions !== undefined) {
+    const taskIds = new Set(waiting.map((task) => task.id));
+    return [...detail.currentQuestions.items]
+      .filter((question) => taskIds.has(question.taskId))
+      .sort((a, b) => a.seq - b.seq);
+  }
+  const questions: CurrentQuestion[] = [];
+  for (const task of waiting) {
     for (let index = detail.events.length - 1; index >= 0; index--) {
       const event = detail.events[index];
       const payload = event.payload as {
@@ -287,7 +315,7 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     return {
       text: `${active ? '部分代理等待回答' : '等待你的回答'}${rootPaused ? '；总代理已暂停' : ''}`,
       displayStatus: active ? undefined : 'WAITING',
-      action: currentQuestions(detail).length ? 'questions' : 'reply',
+      action: currentQuestions(detail).length || currentQuestionsReadNotice(detail) ? 'questions' : 'reply',
       control: active ? control : undefined,
       resumeTaskId: rootPaused ? root.id : undefined,
     };

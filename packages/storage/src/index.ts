@@ -1373,13 +1373,25 @@ export class Store {
           if (Buffer.byteLength(row.payload) > 48 * 1024)
             throw Object.assign(new Error('Large notification'), { code: 'ERR_BUFFER_TOO_LARGE' });
           payload = JSON.parse(row.payload);
-          if (payload && typeof payload === 'object' && 'externalPayloadRef' in payload)
-            throw Object.assign(new Error('Legacy external notification'), { code: 'ERR_BUFFER_TOO_LARGE' });
         }
+        if (payload && typeof payload === 'object' && 'externalPayloadRef' in payload)
+          throw Object.assign(new Error('Legacy external notification'), { code: 'EVENT_EXTERNAL_BODY' });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ERR_BUFFER_TOO_LARGE') throw error;
+        // A corrupt notification asks clients to reread projections. Its body must not
+        // terminate its timer; database, argument and unrelated programming errors still surface.
+        if (
+          !(error instanceof SyntaxError) &&
+          ![
+            'ERR_BUFFER_TOO_LARGE',
+            'EVENT_EXTERNAL_BODY',
+            'Z_DATA_ERROR',
+            'Z_BUF_ERROR',
+            'Z_NEED_DICT',
+          ].includes((error as NodeJS.ErrnoException).code ?? '')
+        )
+          throw error;
         type = 'run.updated';
-        payload = { detailsOmitted: true, eventType: row.type };
+        payload = { detailsOmitted: true, readUnavailable: true, eventType: row.type };
       }
       return {
         runId: row.run_id,
