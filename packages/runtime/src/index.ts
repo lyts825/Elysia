@@ -29,6 +29,7 @@ import type {
 } from '../../contracts/src/terminal-runtime.js';
 import type { TerminalResourcePool } from './terminal-resources.js';
 import type { RunStopCurrentResult } from '../../contracts/src/run-reads.js';
+import { toolRecovery } from './tool-recovery.js';
 export interface ExecutorAdapter {
   capabilities: { recursive: boolean; recoverable: boolean };
   start(): void;
@@ -357,10 +358,20 @@ export class NativeExecutor implements ExecutorAdapter {
     } catch (e) {
       if (signal.aborted || this.kernel.store.require<Task>('tasks', task.id).waitReason === 'verification')
         throw e;
+      let toolNames: string[] = [];
+      try {
+        toolNames = this.gateway
+          .definitions(this.kernel.store.require<Task>('tasks', task.id))
+          .map((definition) => definition.name);
+      } catch {
+        // A revoked authorization must not be treated as a stale list of usable tools.
+      }
+      const code = e instanceof AppError ? e.code : 'TOOL_ERROR';
       return {
         error: e instanceof Error ? e.message : String(e),
-        code: e instanceof AppError ? e.code : 'TOOL_ERROR',
+        code,
         retryable: e instanceof AppError ? e.retryable : false,
+        recovery: toolRecovery(code, call.name, toolNames),
       };
     } finally {
       this.toolActive--;
@@ -520,7 +531,7 @@ export class NativeExecutor implements ExecutorAdapter {
         this.kernel.appendMessage(
           task,
           'user',
-          `运行提醒：${repeated.tool} 已连续产生相同确定性错误 ${repeated.code}，相关状态没有进展。请修正参数或权限；继续相同错误将暂停该分支。已有任务：` +
+          `运行提醒：${repeated.tool} 已连续产生相同确定性错误 ${repeated.code}，相关状态没有进展。请按工具结果的 recovery 修正参数或改用已授权能力；不要重复同一调用，继续相同错误将暂停该分支。已有任务：` +
             stable(
               store
                 .all<Task>('tasks', task.runId)
@@ -827,7 +838,7 @@ export class NativeExecutor implements ExecutorAdapter {
         'user',
         store.require<Task>('tasks', task.id).phase === 'planning'
           ? '请使用 planning 阶段的工具：关键需求缺口用 clarify，需求明确后用 propose_plan。普通文本不改变完成状态。'
-          : '请在已授权范围执行；有关键需求缺口可用 clarify，完成后提供产物证据并 submit_result。普通文本不改变完成状态。',
+          : '当前已授权任务应继续执行：自行选择下一项可用工具，常规实现、修复和验证无需再确认；只有影响目标、授权或验收且无法自行查明的缺口才用 clarify。完成后提供真实产物证据并 submit_result；普通文本不改变完成状态。',
         { purpose: 'runtime_notice' },
       );
     }

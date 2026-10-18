@@ -18,6 +18,8 @@ export interface TerminalInboxResolution {
 export interface InboxMessage extends Entity {
   runId: string;
   text: string;
+  /** Native task feedback; absent legacy records retain their original replanning behavior. */
+  intent?: 'continue' | 'replan';
   status: 'PENDING' | 'APPLIED' | 'DISMISSED';
   createdAt: string;
   appliedAt?: string;

@@ -1085,7 +1085,7 @@ export function createServer(
       const contract = Contract.parse({
         objective: body.objective,
         scope: [body.objective],
-        nonGoals: ['发布、push、修改主目录', '未经授权的访问'],
+        nonGoals: ['未经用户明确授权的发布、push或对外发送', '任务授权目录之外的写入', '未经授权的访问'],
         inputs: body.inputs,
         deliverables:
           body.deliverables ?? (body.kind === 'chat' ? ['聊天回复'] : ['可检查的文件、差异或报告']),
@@ -1293,14 +1293,19 @@ export function createServer(
         commandId: z.string().uuid(),
         expectedRevision: z.number().int(),
         text: z.string().min(1).max(20000),
+        intent: z.enum(['continue', 'replan']).optional(),
         contract: Contract.optional(),
       })
       .parse(request.body);
     const result = executionCommand(request.params.id, body, request.url, () => {
       const run = store.require<Run>('runs', request.params.id);
+      const intent =
+        body.contract && run.kind === 'task' && run.planMode !== false
+          ? 'replan'
+          : (body.intent ?? 'continue');
       // Plain messages append to the inbox and cannot overwrite a run; streaming status
       // revisions may advance while the user is typing. Contract edits remain optimistic.
-      if (body.contract) revision(body, run);
+      if (body.contract || intent === 'replan') revision(body, run);
       else
         invariant(
           body.expectedRevision >= 0 && body.expectedRevision <= run.revision,
@@ -1329,7 +1334,7 @@ export function createServer(
         );
         kernel.updateRun(run, { contract: body.contract });
       }
-      return kernel.inbox(run.id, body.text);
+      return kernel.inbox(run.id, body.text, { intent });
     });
     if (store.require<Run>('runs', request.params.id).execution?.kind !== 'docker-agent')
       executor.resume(request.params.id);

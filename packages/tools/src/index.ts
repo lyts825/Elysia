@@ -195,7 +195,8 @@ const descriptions: Record<CoreToolName, string> = {
   diff: '登记本任务 Git diff 含未跟踪文件。',
   integrate_worktrees:
     '把已完成子任务的独立 worktree 变更集成到自己的 worktree，返回差异；冲突时保留待解决工作区。',
-  clarify: '一次汇总关键问题并等待用户。',
+  clarify:
+    '暂停当前任务并集中询问影响目标、授权或验收且无法从已有资料解决的关键问题。已授权步骤、实现方法、可逆修复和必要验证由你自行决定，不重复征求确认。',
   spawn_task: '创建有界子任务，返回任务和 Agent ID。',
   allocate_context:
     '在直属子代理安全检查点为托管窗口分配大小。taskId和expectedRevision取当前children；窗口不得超过子模型上限，手动窗口只能由用户修改。',

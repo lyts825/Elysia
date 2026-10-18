@@ -393,6 +393,11 @@ export class NativeProvider implements ProviderAdapter {
           for (const c of choice.delta?.tool_calls ?? []) {
             if (!Number.isInteger(c.index) || c.index < 0 || (c.type && c.type !== 'function'))
               throw new ProviderError('INVALID_TOOL_CALLS', '模型返回了无效的工具调用片段', 502);
+            if (
+              (c.function?.name !== undefined && typeof c.function.name !== 'string') ||
+              (c.function?.arguments !== undefined && typeof c.function.arguments !== 'string')
+            )
+              throw new ProviderError('INVALID_TOOL_CALLS', '工具调用名称或参数片段类型无效', 400);
             const old = calls.get(c.index) ?? { id: '', name: '', arguments: '' };
             if (c.id) old.id = c.id;
             if (c.function?.name) old.name += c.function.name;
@@ -441,15 +446,16 @@ export class NativeProvider implements ProviderAdapter {
         throw new Error('Invalid tool identity');
       for (const call of toolCalls) {
         if (typeof call.arguments !== 'string') throw new Error('Invalid tool arguments');
-        JSON.parse(call.arguments);
       }
     } catch {
-      const error = new ProviderError('INVALID_TOOL_CALLS', '工具调用 ID、名称或 JSON 参数无效', 400);
+      const error = new ProviderError('INVALID_TOOL_CALLS', '工具调用 ID、名称或参数类型无效', 400);
       error.retryable = false;
       error.responseStarted = true;
       error.usage = failureUsage(p.kind, rawUsage, p, ttft);
       throw error;
     }
+    // A complete call with a valid identity can repair its argument syntax through
+    // the gateway's TOOL_ARGUMENTS result, before any tool operation is recorded.
     yield {
       type: 'completed',
       text,

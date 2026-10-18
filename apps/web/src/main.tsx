@@ -738,6 +738,19 @@ function App({
     typeof cacheState.entries[replyKey]?.value === 'string'
       ? (cacheState.entries[replyKey].value as string)
       : '';
+  // A replan choice belongs to this run in this surface, and requires a fresh
+  // choice after reopening the app. Reply text keeps its existing durable draft.
+  const [replyIntents, setReplyIntents] = useState<Map<string, { value: 'continue' | 'replan' }>>(
+    () => new Map(),
+  );
+  const replyIntentKey = `${localSurface}:${runId}`;
+  const replyIntent = replyIntents.get(replyIntentKey)?.value || 'continue';
+  const canChooseReplyIntent =
+    !terminalSurface &&
+    detail?.run.kind === 'task' &&
+    detail.run.execution?.kind !== 'docker-agent' &&
+    detail.run.planMode !== false &&
+    !!(detail.run.plan || detail.run.authorized);
   useEffect(() => {
     const flush = () => void cache.flush();
     const hidden = () => {
@@ -1612,12 +1625,22 @@ function App({
     });
   };
   const sendReply = () => {
-    if (!detail || busy || runReadOnly || !reply.trim() || ['DONE', 'CANCELLED'].includes(detail.run.status))
+    if (
+      !detail ||
+      detail.run.id !== runId ||
+      busy ||
+      runReadOnly ||
+      !reply.trim() ||
+      ['DONE', 'CANCELLED'].includes(detail.run.status)
+    )
       return;
     const target = runId;
     const text = reply;
     const revision = detail.run.revision;
     const terminalInput = detail.run.execution?.kind === 'docker-agent';
+    const intentKey = replyIntentKey;
+    const selectedIntent = replyIntents.get(intentKey);
+    const intent = canChooseReplyIntent ? replyIntent : undefined;
     void act(async () => {
       const receiptKey = `draft:terminal-send:${target}`;
       const previous = readTerminalCommunicationDraft(cache.get(receiptKey));
@@ -1632,10 +1655,20 @@ function App({
       await mutation('/runs/' + target + '/messages', {
         expectedRevision: terminalInput ? receipt.expectedRevision : revision,
         text,
+        ...(intent ? { intent } : {}),
         ...(terminalInput ? { commandId: receipt.commandId } : {}),
       });
       if (cache.get(`draft:run:${target}`) === text) cache.set(`draft:run:${target}`, '');
       if (terminalInput && cache.get(receiptKey) === JSON.stringify(receipt)) cache.set(receiptKey, '');
+      if (intent)
+        setReplyIntents((current) => {
+          // A late success may clear only its own unchanged choice, never a
+          // newer selection or another run's draft.
+          if (current.get(intentKey) !== selectedIntent) return current;
+          const next = new Map(current);
+          next.delete(intentKey);
+          return next;
+        });
     });
   };
   const selectRun = (
@@ -3230,16 +3263,43 @@ function App({
                         archived || legacyTerminal || ['DONE', 'CANCELLED'].includes(detail.run.status)
                       }
                     />
+                    {canChooseReplyIntent &&
+                      !runReadOnly &&
+                      !['DONE', 'CANCELLED'].includes(detail.run.status) && (
+                        <div className="reply-intent">
+                          <label>
+                            本次补充
+                            <select
+                              aria-label="补充处理方式"
+                              aria-describedby={`reply-intent-help-${localSurface}`}
+                              value={replyIntent}
+                              onChange={(e) => {
+                                const value = e.target.value === 'replan' ? 'replan' : 'continue';
+                                setReplyIntents((current) => new Map(current).set(replyIntentKey, { value }));
+                              }}
+                            >
+                              <option value="continue">按原约定继续</option>
+                              <option value="replan">重新规划</option>
+                            </select>
+                          </label>
+                          <p className="field-help" id={`reply-intent-help-${localSurface}`}>
+                            {replyIntent === 'replan'
+                              ? '发送后旧计划将失效，未完成子任务会取消；重新规划后需再次接受计划。'
+                              : detail.run.authorized
+                                ? '在原约定内补充，不重复确认计划；保留授权、子任务和累计预算。暂停或待核验的任务仍需在对应入口处理。'
+                                : '补充说明后继续核对约定与计划，执行前仍需接受计划；权限和累计预算不变。'}
+                          </p>
+                        </div>
+                      )}
                     {!isChat &&
+                      !canChooseReplyIntent &&
                       !runReadOnly &&
                       !['DONE', 'CANCELLED'].includes(detail.run.status) &&
                       (detail.run.authorized || detail.run.plan) && (
                         <p className="field-help" style={{ padding: '0 16px 10px' }}>
                           {detail.run.execution?.kind === 'docker-agent'
                             ? '补充需求进入待处理队列。运行中不会打断 CLI；正常结束后在“补充需求并继续”中选择消息。暂停和中断须先恢复或核验。'
-                            : detail.run.planMode === false
-                              ? '补充消息会在安全边界送入当前任务；权限和累计预算保持。'
-                              : '发送后旧计划将失效，未完成子任务会取消；总代理重新规划后需再次确认。'}
+                            : '补充消息会在安全边界送入当前任务；权限和累计预算保持。'}
                         </p>
                       )}
                     <div>

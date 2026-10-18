@@ -1189,6 +1189,28 @@ a {
   color: var(--muted);
   cursor: default;
 }
+.reply-box > .reply-intent {
+  display: grid;
+  gap: 6px;
+  padding: 2px 16px 10px;
+}
+.reply-intent > label {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.reply-intent select {
+  width: auto;
+  max-width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.reply-intent .field-help {
+  margin: 0;
+}
 .send-button {
   border: 0;
   color: #fff;

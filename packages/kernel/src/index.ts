@@ -1361,7 +1361,11 @@ export class Kernel {
       return this.store.require<Run>('runs', runId);
     });
   }
-  inbox(runId: string, text: string, options: { source?: TerminalInboxPeer } = {}) {
+  inbox(
+    runId: string,
+    text: string,
+    options: { source?: TerminalInboxPeer; intent?: 'continue' | 'replan' } = {},
+  ) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', runId);
       invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
@@ -1371,6 +1375,17 @@ export class Kernel {
         '运行已结束',
       );
       invariant(typeof text === 'string' && !!text.trim(), 'INBOX_EMPTY', '消息内容不能为空');
+      invariant(
+        options.intent === undefined || options.intent === 'continue' || options.intent === 'replan',
+        'INBOX_INTENT',
+        '消息处理方式无效',
+      );
+      const nativeTask = run.kind === 'task' && run.execution?.kind !== 'docker-agent';
+      invariant(
+        options.intent !== 'replan' || (nativeTask && run.planMode !== false),
+        'REPLAN_DENIED',
+        '只有开启计划模式的原生任务可以重新规划',
+      );
       if (run.execution?.kind === 'docker-agent') {
         const pending = this.pendingTerminalInbox(runId);
         invariant(
@@ -1387,6 +1402,7 @@ export class Kernel {
         revision: 0,
         runId,
         text,
+        ...(nativeTask ? { intent: options.intent ?? 'continue' } : {}),
         status: 'PENDING',
         createdAt: now(),
         ...(options.source ? { source: options.source, direction: 'incoming' as const } : {}),
@@ -1459,6 +1475,25 @@ export class Kernel {
       const tasks = this.store
         .all<Task>('tasks', runId)
         .filter((t) => !['DONE', 'CANCELLED'].includes(t.status));
+      // The runtime checks the same safe boundary before calling this method. Keep
+      // it here as well so direct callers cannot apply feedback during uncertain work.
+      if (
+        run.kind === 'task' &&
+        (this.store.getExecutionHold(runId) ||
+          (run.projectId && this.store.require<Project>('projects', run.projectId).archived) ||
+          tasks.some(
+            (task) =>
+              ['RUNNING', 'VERIFYING'].includes(task.status) ||
+              (task.status === 'WAITING' && task.waitReason === 'verification'),
+          ) ||
+          this.store
+            .stateCandidates<RequestRecord>('requests', ['RESERVED', 'UNKNOWN'], { runId })
+            .some((request) => ['RESERVED', 'UNKNOWN'].includes(request.status)) ||
+          this.store
+            .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId })
+            .some((operation) => ['INTENT', 'UNCERTAIN'].includes(operation.status)))
+      )
+        return;
       if (
         tasks.some((t) => {
           const history = this.history(t);
@@ -1484,6 +1519,18 @@ export class Kernel {
         this.updateRun(run, { status: 'READY', reason: undefined, startedAt: Date.now() });
         return;
       }
+      const replan = run.planMode !== false && incoming.some((message) => message.intent !== 'continue');
+      const continuing =
+        run.planMode === false ||
+        (!replan && run.authorized && run.plan && run.acceptedPlanVersion === run.plan.version);
+      // Feedback must not double as resume. Retain it until the explicit pause,
+      // limit or failure is resolved, so a queued answer can still wake its question.
+      if (
+        !replan &&
+        !['READY', 'RUNNING'].includes(run.status) &&
+        !(run.status === 'WAITING' && (run.reason === 'user' || (!run.authorized && run.reason === 'plan')))
+      )
+        return;
       for (const m of incoming) {
         for (const t of this.store
           .all<Task>('tasks', runId)
@@ -1492,16 +1539,18 @@ export class Kernel {
         this.store.put('inbox', { ...m, status: 'APPLIED' });
       }
       const root = this.store.require<Task>('tasks', run.rootTaskId);
-      if (run.planMode === false) {
+      if (continuing) {
         // Feedback stays within the original authorization. Preserve child work and
         // cumulative limits; only a pending user question is answered by this inbox.
-        const spec = {
-          ...root.spec,
-          objective: run.contract.objective,
-          deliverables: run.contract.deliverables,
-          acceptanceCriteria: run.contract.acceptanceCriteria,
-        };
-        if (stable(spec) !== stable(root.spec)) this.updateTask(root, root.status, { spec });
+        if (run.planMode === false) {
+          const spec = {
+            ...root.spec,
+            objective: run.contract.objective,
+            deliverables: run.contract.deliverables,
+            acceptanceCriteria: run.contract.acceptanceCriteria,
+          };
+          if (stable(spec) !== stable(root.spec)) this.updateTask(root, root.status, { spec });
+        }
         const answered = this.descendants(root).filter(
           (task) => task.status === 'WAITING' && task.waitReason === 'user',
         );

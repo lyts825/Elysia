@@ -378,14 +378,9 @@ export class CodexSubscription {
         .parse(JSON.parse(text));
       for (const call of parsed.calls) {
         invariant(request.toolNames.includes(call.name), 'CODEX_TOOL', '模型返回了未声明的工具');
-        invariant(
-          JSON.parse(call.arguments) &&
-            typeof JSON.parse(call.arguments) === 'object' &&
-            !Array.isArray(JSON.parse(call.arguments)),
-          'CODEX_TOOL',
-          '工具参数必须是 JSON 对象',
-        );
       }
+      // The outer response and tool identity must be valid. Argument syntax and
+      // schema errors belong to ToolGateway, so the next step can correct them.
       const raw = usage
         ? {
             input_tokens: usage.inputTokens,

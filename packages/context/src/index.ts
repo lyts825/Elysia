@@ -22,6 +22,7 @@ import { compactHistory, COMPACTION_ALGORITHM } from './compaction.js';
 import { scopedLocalItems, listLocalMemories } from './local-library.js';
 import { listProjectMemories } from './project-intelligence.js';
 import { readTaskWorkingState } from './working-state.js';
+import { AUTONOMOUS_EXECUTION_GUIDANCE, nativeHarnessPolicy } from './harness.js';
 export { compactHistory, headTail, COMPACTION_ALGORITHM } from './compaction.js';
 export { listSkills, loadSkill, SKILL_CATALOG_VERSION } from './skills.js';
 export type { SkillSummary, LoadedSkill } from './skills.js';
@@ -104,6 +105,11 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
       .replace(/\r\n/g, '\n')
       .trim();
   const tools = [...definitions].sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  const harness = nativeHarnessPolicy(
+    run,
+    task,
+    tools.map((tool) => tool.name),
+  );
   const snapshots = store
     .all<Snapshot>('snapshots', run.id)
     .filter((s) => run.plan?.snapshotIds.includes(s.id) || s.taskId === task.id)
@@ -219,6 +225,10 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     p1 +
     '\n\n当前代理的执行身份与义务：\n' +
     executionAssignment +
+    '\n\n当前执行策略（由 Harness 按实际授权、阶段和工具生成）：\n' +
+    stable(harness) +
+    '\n\n授权内自主执行：\n' +
+    AUTONOMOUS_EXECUTION_GUIDANCE +
     '\n\n已确认约束与带来源资料：\n' +
     p2;
   const taskText = stable({
@@ -226,12 +236,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     contract: run.contract,
     plan: run.plan,
     planMode: run.planMode !== false,
-    authorizationMode:
-      run.kind === 'chat'
-        ? '独立聊天，不提供项目执行权限'
-        : run.planMode === false
-          ? '用户创建任务时已授权合同中的范围；直接执行，不能扩大权限、范围或累计预算'
-          : '先提出计划，用户接受当前计划后才能执行',
+    authorizationMode: harness.authorization,
     task: task.spec,
     modelRouting: run.modelRouting?.policy.enabled
       ? {
@@ -453,7 +458,9 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   const segmentHashes = {
     P0: hash(p0 + stable(tools)),
     P1: hash(p0 + stable(tools) + p1),
-    P2: hash(p0 + stable(tools) + p1 + executionAssignment + p2),
+    P2: hash(
+      p0 + stable(tools) + p1 + executionAssignment + stable(harness) + AUTONOMOUS_EXECUTION_GUIDANCE + p2,
+    ),
   };
   return {
     system,
@@ -462,8 +469,14 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
     history,
     estimatedTokens,
     manifest: {
-      compilerVersion: '3',
-      promptVersion: '4',
+      compilerVersion: '4',
+      promptVersion: '5',
+      harness: {
+        version: harness.version,
+        mode: harness.mode,
+        policyHash: hash(stable(harness) + AUTONOMOUS_EXECUTION_GUIDANCE),
+        availableTools: harness.availableTools,
+      },
       skillCatalogVersion: SKILL_CATALOG_VERSION,
       skillCatalogHash: hash(stable(skillCatalog)),
       loadedSkillHashes: loadedSkills.map(({ id, version, hash }) => ({ id, version, hash })),

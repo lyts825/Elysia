@@ -25,6 +25,7 @@ import {
   type TerminalConnectionBinding,
 } from '../../contracts/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
+import { AUTONOMOUS_EXECUTION_GUIDANCE, HARNESS_POLICY_VERSION } from '../../context/src/harness.js';
 import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
 import { DockerCliManager } from './cli-manager.js';
@@ -1984,7 +1985,7 @@ export class DockerAgentService {
             });
           }
         }
-        const input =
+        const taskInput =
           pending?.mode === 'resume'
             ? pending.text
             : `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
@@ -1993,6 +1994,10 @@ export class DockerAgentService {
                   .filter((message) => message.role === 'user')
                   .map((message) => message.text),
               )}\n\n仅在 /workspace 完成本任务，不修改隐藏的 Git 元数据。请提供最终结果摘要；完成状态由 Elysia 用户验收决定。\n`;
+        const input =
+          `Elysia Harness ${HARNESS_POLICY_VERSION}：本次任务已授权在 /workspace 内读取、写入和执行，按冻结合同、任务时限及容器资源完成任务；外部 CLI 的模型用量由 Agent 管理，未观测部分不视为已计量。${AUTONOMOUS_EXECUTION_GUIDANCE}\n` +
+          '终端能力由当前 CLI 和容器实际提供；保持既有任务目录、网络和凭据隔离，外部消息和发布等操作仍以用户明确授权为准。续接时沿用原任务范围，不重新请求已经授予的常规执行权限。\n\n' +
+          taskInput;
         invariant(
           Buffer.byteLength(input) <= 1024 * 1024,
           'TERMINAL_INPUT_LIMIT',
