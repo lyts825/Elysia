@@ -69,6 +69,8 @@ import { registerLocalAgentRoutes } from './local-agents.js';
 import { registerModelRouting } from './model-routing.js';
 import { registerProjectIntelligenceRoutes } from './project-intelligence.js';
 import { registerTaskWorkingStateRoutes } from './task-working-state.js';
+import { registerReadiness } from './readiness.js';
+import { registerProjectSchedules } from './project-schedules.js';
 import { registerPreviewLocationRoutes } from './preview-location.js';
 import { registerTerminalMaintenance } from './terminal-maintenance.js';
 import { RunSourceSelection, RunDeliveryItems } from '../../../packages/contracts/src/workflow.js';
@@ -396,6 +398,7 @@ export function createServer(
     surface: options.surface ?? 'native',
   }));
   registerWorkbench(app, store);
+  registerReadiness(app, store, options.surface ?? 'native');
   registerTerminalLogSearchRoutes(app, store, artifactPreviews);
   if (options.surface !== 'native') registerTerminalSettings(app, store);
   if (terminalControl) {
@@ -1635,6 +1638,14 @@ export function createServer(
     );
   if (options.surface !== 'terminal') registerProjectDelivery(app, store, management.assertMutable);
   if (options.surface !== 'terminal') registerProjectUsage(app, store);
+  const scheduler =
+    options.surface === 'terminal'
+      ? undefined
+      : registerProjectSchedules(app, store, kernel, {
+          assertMutable: management.assertMutable,
+          resume: (runId) => executor.resume(runId),
+          onError: (error) => app.log.error(error, '项目定时任务检查失败'),
+        });
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])
       boundedStreams
@@ -1734,6 +1745,7 @@ export function createServer(
       }),
     );
   app.addHook('preClose', async () => {
+    scheduler?.stop();
     for (const set of streams.values()) for (const stream of set) stream.end();
     const stopped = await Promise.allSettled([
       Promise.resolve().then(() => (options.surface === 'terminal' ? undefined : codex.close())),
@@ -1748,6 +1760,7 @@ export function createServer(
     kernel,
     executor,
     terminal,
+    scheduler,
     auth,
     bootstrapToken,
     origins,

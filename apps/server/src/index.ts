@@ -72,6 +72,7 @@ try {
   }
   server.executor.start();
   terminalServer.executor.start();
+  server.scheduler?.start();
   const bootstrapUrl = `${origin}/#bootstrap=${server.bootstrapToken}`;
   if (process.send)
     process.send({ type: 'ready', origin, port, preferredPort, bootstrapUrl, version: VERSION });

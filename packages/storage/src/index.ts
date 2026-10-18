@@ -46,8 +46,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
-export const STORAGE_SCHEMA_VERSION = 7;
-export const STORAGE_MIN_READER_VERSION = '1.9.0';
+export const STORAGE_SCHEMA_VERSION = 8;
+export const STORAGE_MIN_READER_VERSION = '1.10.0';
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'id'
@@ -506,6 +506,8 @@ export class Store {
     // v7 makes project capability restrictions and approved context checkpoints mandatory.
     // Older clients must not open this store and silently ignore these execution boundaries.
     if (version < 7) this.tx(() => this.db.exec('PRAGMA user_version=7;'));
+    // Scheduled execution must not be reopened by clients that ignore its frozen configuration.
+    if (version < 8) this.tx(() => this.db.exec('PRAGMA user_version=8;'));
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
     const pending = this.db
@@ -1447,6 +1449,7 @@ export class Store {
           `draft:setup:project:${key}`,
           `draft:project-board:${key}`,
           `draft:project-intelligence:${key}`,
+          `draft:project-schedules:${key}`,
         ])
           for (const prefix of ['workbench:v1:', 'workbench-index:v1:'])
             this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + draftKey);
@@ -1454,6 +1457,7 @@ export class Store {
           'project-intelligence:v1:',
           'project-memories:v1:',
           'project-model-routing:v1:',
+          'project-schedules:v1:',
         ])
           this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(prefix + key);
       }

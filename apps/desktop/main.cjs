@@ -9,6 +9,8 @@ const { createStartupDiagnostics } = require('./startup-diagnostics.cjs');
 const { waitForLaunchBuild } = require('./launch-handshake.cjs');
 const { createBuildLease } = require('../../scripts/launch-cache.cjs');
 const root = path.resolve(__dirname, '../..');
+const packaged = app.isPackaged;
+const hiddenLaunch = process.env.ELYSIA_DESKTOP_HIDDEN === '1';
 const iconPath = path.join(
   root,
   'assets',
@@ -29,7 +31,9 @@ let window,
   buildLease,
   quitting = false,
   ready = false;
-const logFile = path.join(root, '.elysia-runtime', 'desktop.log');
+const logFile = packaged
+  ? path.join(data, 'logs', 'desktop.log')
+  : path.join(root, '.elysia-runtime', 'desktop.log');
 mkdirSync(path.dirname(logFile), { recursive: true });
 const log = (text) => appendFileSync(logFile, new Date().toISOString() + ' ' + text + '\n');
 async function shutdown() {
@@ -56,11 +60,13 @@ if (!app.requestSingleInstanceLock()) {
   if (process.send) process.send({ type: 'desktop-focused' }, () => app.quit());
   else app.quit();
 } else {
-  const launchBuild = waitForLaunchBuild(process, process.env.ELYSIA_LAUNCH_HANDSHAKE === '1');
+  const launchBuild = packaged
+    ? Promise.resolve().then(() => require('./packaged.cjs').packagedBuild(root))
+    : waitForLaunchBuild(process, process.env.ELYSIA_LAUNCH_HANDSHAKE === '1');
   // Attach immediately: a launcher failure may arrive before Electron's ready event.
   launchBuild.catch(() => {});
   app.on('second-instance', () => {
-    if (window) {
+    if (window && !hiddenLaunch) {
       if (window.isMinimized()) window.restore();
       window.show();
       window.focus();
@@ -77,7 +83,7 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       const prepared = await launchBuild;
-      if (prepared) buildLease = createBuildLease(prepared.build.directory);
+      if (prepared && !packaged) buildLease = createBuildLease(prepared.build.directory);
       let launchMarks = prepared?.marks;
       if (!prepared) {
         try {
@@ -115,7 +121,9 @@ if (!app.requestSingleInstanceLock()) {
           appId: 'local.elysia.desktop',
           appIconPath: iconPath,
           appIconIndex: 0,
-          relaunchCommand: `"${path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe')}" "${path.join(root, 'Start-Elysia.vbs')}"`,
+          relaunchCommand: packaged
+            ? `"${process.execPath}"`
+            : `"${path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe')}" "${path.join(root, 'Start-Elysia.vbs')}"`,
           relaunchDisplayName: 'Elysia',
         });
       }
@@ -142,11 +150,25 @@ if (!app.requestSingleInstanceLock()) {
         }
       });
       await window.loadFile(path.join(__dirname, 'starting.html'));
-      window.show();
-      diagnostics.mark('window-visible');
-      const dev = process.env.ELYSIA_DEV === '1';
+      if (!hiddenLaunch) window.show();
+      diagnostics.mark('window-visible', hiddenLaunch ? 'skipped' : 'ok');
+      const dev = !packaged && process.env.ELYSIA_DEV === '1';
+      const backendEnvironment = {
+        ...process.env,
+        ELYSIA_DATA_DIR: data,
+        ELYSIA_DESKTOP: '1',
+        ...(prepared
+          ? { ELYSIA_WEB_ROOT: prepared.build.web, ELYSIA_RESOURCE_ROOT: prepared.build.resources }
+          : {}),
+      };
+      if (packaged) {
+        backendEnvironment.ELYSIA_DEV = '0';
+        delete backendEnvironment.NODE_OPTIONS;
+        delete backendEnvironment.NODE_PATH;
+        delete backendEnvironment.ELECTRON_RUN_AS_NODE;
+      }
       backend = spawn(
-        process.env.ELYSIA_NODE_BINARY || 'node',
+        packaged ? prepared.build.node : process.env.ELYSIA_NODE_BINARY || 'node',
         dev
           ? ['--import', 'tsx', 'apps/server/src/index.ts']
           : [prepared?.build.server || 'apps/server/dist/apps/server/src/index.js'],
@@ -154,14 +176,7 @@ if (!app.requestSingleInstanceLock()) {
           cwd: root,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-          env: {
-            ...process.env,
-            ELYSIA_DATA_DIR: data,
-            ELYSIA_DESKTOP: '1',
-            ...(prepared
-              ? { ELYSIA_WEB_ROOT: prepared.build.web, ELYSIA_RESOURCE_ROOT: prepared.build.resources }
-              : {}),
-          },
+          env: backendEnvironment,
         },
       );
       if (backend.pid) buildLease?.backend(backend.pid);
@@ -173,7 +188,7 @@ if (!app.requestSingleInstanceLock()) {
         if (process.send) process.send({ type: 'desktop-error', message });
         dialog.showErrorBox(
           'Elysia 启动失败',
-          message + '\n\n如果已有命令行服务，请先执行 pnpm stop，再重新打开。日志：' + logFile,
+          message + '\n\n请先安全关闭其他 Elysia 服务，再重新打开。日志：' + logFile,
         );
         void shutdown();
       };
@@ -199,6 +214,8 @@ if (!app.requestSingleInstanceLock()) {
         }
         if (message.type === 'startup-error') return fail(message.message);
         if (message.type !== 'ready') return;
+        if (packaged && message.version !== prepared.manifest.version)
+          return fail('分发包与本机服务版本不一致');
         diagnostics.mark('backend-ready');
         try {
           const origin = new URL(message.origin).origin;
@@ -208,8 +225,10 @@ if (!app.requestSingleInstanceLock()) {
           diagnostics.mark('web-loaded');
           ready = true;
           window.setTitle(`Elysia · ${message.version}`);
-          window.show();
-          window.focus();
+          if (!hiddenLaunch) {
+            window.show();
+            window.focus();
+          }
           if (process.send) process.send({ type: 'desktop-ready', port: message.port });
         } catch (error) {
           fail(error.message);

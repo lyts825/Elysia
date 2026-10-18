@@ -1,0 +1,123 @@
+.project-schedules {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px;
+  margin: 16px 0;
+  background: var(--panel);
+  min-width: 0;
+}
+.project-schedules header,
+.schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.project-schedules header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.project-schedules h2,
+.project-schedules h3,
+.project-schedules h4 {
+  margin: 0 0 10px;
+}
+.project-schedules p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.schedule-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.schedule-list article,
+.schedule-template,
+.schedule-notice {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.schedule-list article > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+.schedule-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.schedule-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.schedule-editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.schedule-editor input,
+.schedule-editor select {
+  min-width: 0;
+  width: 100%;
+}
+.schedule-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.project-schedules .schedule-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0;
+  line-height: 1.6;
+}
+.project-schedules .schedule-check input {
+  width: 16px;
+  flex: 0 0 16px;
+  margin-top: 5px;
+}
+.schedule-template {
+  margin: 14px 0;
+}
+.schedule-template pre {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.schedule-template summary {
+  cursor: pointer;
+}
+.schedule-objective {
+  white-space: pre-wrap;
+}
+.schedule-delete {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+@media (max-width: 720px) {
+  .project-schedules {
+    padding: 14px;
+  }
+  .schedule-fields {
+    grid-template-columns: 1fr;
+  }
+  .schedule-actions {
+    align-items: stretch;
+  }
+  .schedule-actions button {
+    white-space: normal;
+    max-width: 100%;
+  }
+}

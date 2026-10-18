@@ -54,6 +54,7 @@ const validKey = (key: string) =>
     /^draft:setup:project:[^:\s/\\]+$/.test(key) ||
     /^draft:project-board:[^:\s/\\]+$/.test(key) ||
     /^draft:project-intelligence:[^:\s/\\]+$/.test(key) ||
+    /^draft:project-schedules:[^:\s/\\]+$/.test(key) ||
     /^draft:working-state:[^:\s/\\]+:[a-f0-9-]{36}$/.test(key) ||
     /^draft:(?:handoff|delivery-review|source-resolutions):[^:\s/\\]+$/.test(key) ||
     /^(draft:(project|run)|collapsed:project|pinned:run|unread:run):[^:\s/\\]+$/.test(key) ||
@@ -430,6 +431,8 @@ export class WorkbenchCache {
       if (board) return !projectIds.has(board[1]);
       const intelligence = /^draft:project-intelligence:(.+)$/.exec(key);
       if (intelligence) return !projectIds.has(intelligence[1]);
+      const schedules = /^draft:project-schedules:(.+)$/.exec(key);
+      if (schedules) return !projectIds.has(schedules[1]);
       const workingState = /^draft:working-state:([^:]+):[^:]+$/.exec(key);
       if (workingState) return runsComplete && !runIds.has(workingState[1]);
       const run = /^(?:draft|pinned|unread):run:(.+)$/.exec(key);

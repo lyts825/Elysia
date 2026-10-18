@@ -29,6 +29,7 @@ const sourceResolutionDraftKey = /^draft:source-resolutions:([^:\s/\\]+)$/;
 const projectSetupDraftKey = /^draft:setup:project:([^:\s/\\]+)$/;
 const projectBoardDraftKey = /^draft:project-board:([^:\s/\\]+)$/;
 const projectIntelligenceDraftKey = /^draft:project-intelligence:([^:\s/\\]+)$/;
+const projectSchedulesDraftKey = /^draft:project-schedules:([^:\s/\\]+)$/;
 const workingStateDraftKey = /^draft:working-state:([^:\s/\\]+):[a-f0-9-]{36}$/;
 const terminalDraftKey =
   /^draft:terminal-(?:continuation|recovery|communication|send|resolution):([^:\s/\\]+)(?::[a-f0-9-]{36})?$/;
@@ -46,6 +47,7 @@ const keySchema = z
       projectSetupDraftKey.test(key) ||
       projectBoardDraftKey.test(key) ||
       projectIntelligenceDraftKey.test(key) ||
+      projectSchedulesDraftKey.test(key) ||
       workingStateDraftKey.test(key) ||
       terminalDraftKey.test(key),
     '工作台缓存键无效',
@@ -68,6 +70,8 @@ type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
+  const schedules = projectSchedulesDraftKey.exec(key);
+  if (schedules) return { table: 'projects', id: schedules[1] };
   const workingState = workingStateDraftKey.exec(key);
   if (workingState) return { table: 'runs', id: workingState[1] };
   const intelligence = projectIntelligenceDraftKey.exec(key);

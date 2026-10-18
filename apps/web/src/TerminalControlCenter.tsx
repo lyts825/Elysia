@@ -127,6 +127,7 @@ const appProfile = (settings: SurfaceTerminalSettings, appId: TerminalAppId) =>
 
 export function TerminalControlCenter({
   initial,
+  initialTab = 'apps',
   project,
   close,
   updated,
@@ -134,6 +135,7 @@ export function TerminalControlCenter({
   controlUpdated,
 }: {
   initial: SurfaceTerminalSettings;
+  initialTab?: 'apps' | 'connections' | 'project' | 'templates';
   project?: Project;
   close: () => void;
   updated: (settings: SurfaceTerminalSettings) => void;
@@ -141,7 +143,9 @@ export function TerminalControlCenter({
   controlUpdated: (overview: TerminalControlOverview, preferences?: TerminalProjectPreferences) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
-  const [tab, setTab] = useState<'apps' | 'connections' | 'project' | 'templates' | 'maintenance'>('apps');
+  const [tab, setTab] = useState<'apps' | 'connections' | 'project' | 'templates' | 'maintenance'>(
+    initialTab,
+  );
   const [overview, setOverview] = useState<TerminalControlOverview | null>(null);
   const [settings, setSettings] = useState(initial);
   const [preferences, setPreferences] = useState<TerminalProjectPreferences | null>(null);

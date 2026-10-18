@@ -29,6 +29,7 @@ export function workbenchEntryLabel(
 ) {
   const kinds = [
     ['draft:project-intelligence:', '项目能力与记忆', 'project'],
+    ['draft:project-schedules:', '项目定时任务', 'project'],
     ['draft:working-state:', '长任务工作状态', 'run'],
     ['draft:project-board:', '项目交付工作台', 'project'],
     ['draft:setup:project:', '项目任务创建配置', 'project'],

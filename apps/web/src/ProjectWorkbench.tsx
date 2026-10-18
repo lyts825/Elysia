@@ -33,6 +33,7 @@ import { ProjectTodos } from './ProjectTodos';
 import { ProjectLaunchDraft } from './ProjectLaunchDraft';
 import { ProjectUsage } from './ProjectUsage';
 import { ProjectIntelligence } from './ProjectIntelligence';
+import { ProjectSchedules } from './ProjectSchedules';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './project-workbench.css';
@@ -87,6 +88,8 @@ export function ProjectWorkbench({
   );
   const [pendingLeave, setPendingLeave] = useState<() => boolean>();
   const [intelligenceOpen, setIntelligenceOpen] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  useLayoutEffect(() => setSchedulesOpen(false), [project.id]);
   useLayoutEffect(() => setIntelligenceOpen(false), [project.id]);
   useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
   const leavePlan = (action: () => boolean) => {
@@ -305,6 +308,14 @@ export function ProjectWorkbench({
           <button type="button" className="secondary" disabled={!loaded} onClick={exportDraftSafely}>
             导出工作台原稿 TXT
           </button>
+          <button
+            type="button"
+            className="secondary"
+            aria-expanded={schedulesOpen}
+            onClick={() => setSchedulesOpen((value) => !value)}
+          >
+            {schedulesOpen ? '收起定时任务' : '项目定时任务'}
+          </button>
         </div>
       </header>
       {intelligenceOpen && (
@@ -313,6 +324,15 @@ export function ProjectWorkbench({
           projectId={project.id}
           cache={cache}
           archived={project.archived}
+        />
+      )}
+      {schedulesOpen && (
+        <ProjectSchedules
+          key={`schedules:${project.id}`}
+          projectId={project.id}
+          cache={cache}
+          archived={project.archived}
+          openRun={navigate}
         />
       )}
       {loaded && (

@@ -1,6 +1,6 @@
 {
   "name": "elysia",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -25,7 +25,8 @@
     "cache:preview": "node scripts/launch-cache.mjs preview",
     "stop": "tsx apps/server/src/maintenance.ts stop",
     "verify:local": "node scripts/verify-local.mjs",
-    "assets:build": "node scripts/build-brand-assets.mjs"
+    "assets:build": "node scripts/build-brand-assets.mjs",
+    "package:windows": "node scripts/package-windows.mjs"
   },
   "dependencies": {
     "@fastify/static": "10.1.5",

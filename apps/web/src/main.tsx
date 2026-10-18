@@ -186,6 +186,10 @@ const NewContextWindowModal = deferredPanel(
   () => import('./ContextWindow').then((m) => m.NewContextWindowModal),
   '上下文设置',
 );
+const ReadinessPanel = deferredPanel(
+  () => import('./ReadinessPanel').then((m) => m.ReadinessPanel),
+  '首次使用检查',
+);
 import { contextPolicyLabel } from './ContextLabel';
 import { validContextPolicy } from './ContextPolicyEditor';
 const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
@@ -303,6 +307,9 @@ function App({
     [runs, setRuns] = useState<RunListItem[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
     [terminalSettings, setTerminalSettings] = useState<SurfaceTerminalSettings | null>(null),
+    [terminalSettingsTab, setTerminalSettingsTab] = useState<
+      'apps' | 'connections' | 'project' | 'templates'
+    >('apps'),
     [terminalControl, setTerminalControl] = useState<TerminalControlOverview | null>(null),
     [terminalPreferences, setTerminalPreferences] = useState<{
       projectId: string;
@@ -1892,6 +1899,7 @@ function App({
         runSetupDraftKey(deleted.id),
         projectBoardKey(deleted.id),
         `draft:project-intelligence:${deleted.id}`,
+        `draft:project-schedules:${deleted.id}`,
         `collapsed:project:${deleted.id}`,
         `settings:selected-terminal-profile:${deleted.id}`,
         ...Object.keys(cacheStateRef.current.entries).filter((key) => {
@@ -2207,6 +2215,17 @@ function App({
             <span>{terminalSurface ? '终端管理' : '模型与设置'}</span>
           </button>
           <WorkbenchSaveStatus snapshot={cacheState} open={openPersistence} />
+          <button
+            type="button"
+            className="nav-item"
+            disabled={!ready}
+            aria-haspopup="dialog"
+            aria-expanded={modal === 'readiness'}
+            onClick={() => setModal('readiness')}
+          >
+            <Icon name="check" />
+            <span>首次使用检查</span>
+          </button>
           <div className="local-indicator">
             <i />
             本机连接<span>v{VERSION}</span>
@@ -3803,6 +3822,32 @@ function App({
           <Presence>
             {modal ? (
               <React.Fragment key={modal}>
+                {modal === 'readiness' && (
+                  <ReadinessPanel
+                    projectId={project?.id}
+                    close={() => setModal('')}
+                    repair={(action) => {
+                      if (action.kind === 'models') setModal('settings');
+                      else if (action.kind === 'new-project') setModal('project');
+                      else if (action.kind === 'projects')
+                        setModal(
+                          projects.find((value) => value.id === action.targetId)?.archived
+                            ? 'manage:archive'
+                            : 'manage:projects',
+                        );
+                      else {
+                        const targets = {
+                          'terminal-apps': 'apps',
+                          'terminal-connections': 'connections',
+                          'terminal-project': 'project',
+                          'terminal-templates': 'templates',
+                        } as const;
+                        setTerminalSettingsTab(targets[action.kind]);
+                        setModal('settings');
+                      }
+                    }}
+                  />
+                )}
                 {modal === 'project' && (
                   <ProjectModal
                     spaces={spaces}
@@ -3961,6 +4006,7 @@ function App({
                     >
                       <TerminalControlCenter
                         initial={terminalSettings}
+                        initialTab={terminalSettingsTab}
                         project={project}
                         close={() => setModal(modal === 'run-settings' ? 'run' : '')}
                         updated={(settings) => {
