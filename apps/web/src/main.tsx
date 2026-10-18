@@ -307,9 +307,6 @@ function App({
     [runs, setRuns] = useState<RunListItem[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
     [terminalSettings, setTerminalSettings] = useState<SurfaceTerminalSettings | null>(null),
-    [terminalSettingsTab, setTerminalSettingsTab] = useState<
-      'apps' | 'connections' | 'project' | 'templates'
-    >('apps'),
     [terminalControl, setTerminalControl] = useState<TerminalControlOverview | null>(null),
     [terminalPreferences, setTerminalPreferences] = useState<{
       projectId: string;
@@ -324,6 +321,14 @@ function App({
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
   const [cacheState, setCacheState] = useState(createWorkbenchSnapshot);
+  const [settingsTarget, setSettingsTarget] = useState<{
+    providerId?: string;
+    connectionId?: string;
+    profileId?: string;
+    terminalTab?: 'apps' | 'connections' | 'project' | 'templates';
+  }>();
+  const [settingsEpoch, setSettingsEpoch] = useState(0);
+  const settingsIntent = useRef<string | undefined>(undefined);
   const [cachePanelOpen, setCachePanelOpen] = useState(false);
   const [cacheFormEpoch, setCacheFormEpoch] = useState(0);
   const cacheStateRef = useRef(cacheState);
@@ -656,9 +661,16 @@ function App({
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
-  const setModal = (value: string) => {
+  const setModal = (value: string, target?: typeof settingsTarget) => {
     setNavigationOpen(false);
     setDetailsDrawerOpen(false);
+    const settings = ['settings', 'run-settings', 'handoff-settings', 'project-item-run-settings'].includes(
+      value,
+    );
+    // A fresh opening must not reuse settings still mounted for the exit animation.
+    if (settings && settingsIntent.current !== value) setSettingsEpoch((epoch) => epoch + 1);
+    settingsIntent.current = settings ? value : undefined;
+    setSettingsTarget(target);
     setModalState(value);
   };
   const sidebarRef = useRef<HTMLElement>(null);
@@ -3827,7 +3839,7 @@ function App({
                     projectId={project?.id}
                     close={() => setModal('')}
                     repair={(action) => {
-                      if (action.kind === 'models') setModal('settings');
+                      if (action.kind === 'models') setModal('settings', { providerId: action.targetId });
                       else if (action.kind === 'new-project') setModal('project');
                       else if (action.kind === 'projects')
                         setModal(
@@ -3842,8 +3854,13 @@ function App({
                           'terminal-project': 'project',
                           'terminal-templates': 'templates',
                         } as const;
-                        setTerminalSettingsTab(targets[action.kind]);
-                        setModal('settings');
+                        setModal('settings', {
+                          terminalTab: targets[action.kind],
+                          ...(action.kind === 'terminal-connections'
+                            ? { connectionId: action.targetId }
+                            : {}),
+                          ...(action.kind === 'terminal-templates' ? { profileId: action.targetId } : {}),
+                        });
                       }
                     }}
                   />
@@ -4005,8 +4022,11 @@ function App({
                       }
                     >
                       <TerminalControlCenter
+                        key={`terminal-settings:${settingsEpoch}`}
                         initial={terminalSettings}
-                        initialTab={terminalSettingsTab}
+                        initialTab={settingsTarget?.terminalTab ?? 'apps'}
+                        initialConnectionId={settingsTarget?.connectionId}
+                        initialProfileId={settingsTarget?.profileId}
                         project={project}
                         close={() => setModal(modal === 'run-settings' ? 'run' : '')}
                         updated={(settings) => {
@@ -4070,7 +4090,9 @@ function App({
                       }
                     >
                       <ProviderSettings
+                        key={`provider-settings:${settingsEpoch}`}
                         providers={providers}
+                        initialProviderId={settingsTarget?.providerId}
                         close={() =>
                           setModal(
                             modal === 'run-settings'

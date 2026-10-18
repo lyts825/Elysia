@@ -76,6 +76,49 @@ export interface ProjectScheduleList {
   sourcesLimited: boolean;
   limits: typeof PROJECT_SCHEDULE_LIMITS;
 }
+export interface ProjectScheduleHistoryItem {
+  /** Exact dispatch key, or a bounded opaque identity when the stored key is corrupt. */
+  dispatchId: string;
+  dueAt: string | null;
+  /** Current lightweight run state; missing or unverified associations never expose a run identifier. */
+  run: {
+    id: string;
+    revision: number;
+    title: string;
+    status: Status;
+    reason?: string;
+    archived: boolean;
+    createdAt: string;
+  } | null;
+  issue: {
+    code:
+      | 'invalid_dispatch'
+      | 'invalid_references'
+      | 'missing_run'
+      | 'project_mismatch'
+      | 'unavailable_run'
+      | 'duplicate_run';
+    message: string;
+  } | null;
+}
+export interface ProjectScheduleHistory {
+  projectId: string;
+  scheduleId: string;
+  scheduleRevision: number;
+  createdCount: number;
+  items: ProjectScheduleHistoryItem[];
+  page: { limit: 20; before: string | null; nextBefore: string | null; hasMore: boolean };
+  coverage: {
+    complete: boolean;
+    /** More than the supported 100 dispatch records exist; counts cover only the bounded read. */
+    scanLimited: boolean;
+    retainedDispatches: number;
+    traceableRuns: number;
+    missingDispatches: number;
+    unavailableEntries: number;
+    message: string;
+  };
+}
 const captureHash = z.string().regex(/^[a-f0-9]{64}$/);
 export const ProjectScheduleCreate = z
   .object({

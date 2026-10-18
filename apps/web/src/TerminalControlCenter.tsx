@@ -128,6 +128,8 @@ const appProfile = (settings: SurfaceTerminalSettings, appId: TerminalAppId) =>
 export function TerminalControlCenter({
   initial,
   initialTab = 'apps',
+  initialConnectionId,
+  initialProfileId,
   project,
   close,
   updated,
@@ -136,6 +138,8 @@ export function TerminalControlCenter({
 }: {
   initial: SurfaceTerminalSettings;
   initialTab?: 'apps' | 'connections' | 'project' | 'templates';
+  initialConnectionId?: string;
+  initialProfileId?: string;
   project?: Project;
   close: () => void;
   updated: (settings: SurfaceTerminalSettings) => void;
@@ -144,8 +148,16 @@ export function TerminalControlCenter({
 }) {
   const { api, mutation } = useSurfaceClient();
   const [tab, setTab] = useState<'apps' | 'connections' | 'project' | 'templates' | 'maintenance'>(
-    initialTab,
+    initialConnectionId ? 'connections' : initialProfileId ? 'templates' : initialTab,
   );
+  const [initialFocus, setInitialFocus] = useState(() =>
+    initialConnectionId
+      ? { kind: 'connection' as const, id: initialConnectionId }
+      : initialProfileId
+        ? { kind: 'template' as const, id: initialProfileId }
+        : undefined,
+  );
+  const [settingsRead, setSettingsRead] = useState(false);
   const [overview, setOverview] = useState<TerminalControlOverview | null>(null);
   const [settings, setSettings] = useState(initial);
   const [preferences, setPreferences] = useState<TerminalProjectPreferences | null>(null);
@@ -240,8 +252,10 @@ export function TerminalControlCenter({
         setOverview(control);
         controlUpdated(control, latestData.current.preferences ?? undefined);
       } else if (region === 'installations') setJobs(value as TerminalCliInstallationJob[]);
-      else if (region === 'settings') savedSettings(value as SurfaceTerminalSettings);
-      else if (region === 'capabilities') setCapabilities(value as TerminalCliCapability[]);
+      else if (region === 'settings') {
+        savedSettings(value as SurfaceTerminalSettings);
+        setSettingsRead(true);
+      } else if (region === 'capabilities') setCapabilities(value as TerminalCliCapability[]);
       else {
         const prefs = value as TerminalProjectPreferences | null;
         latestData.current.preferences = prefs;
@@ -357,6 +371,7 @@ export function TerminalControlCenter({
   }
   function selectConnection(next: ConnectionDraft) {
     if (busy) return;
+    setInitialFocus(undefined);
     if (next.id === draft?.id) return;
     if (connectionDirty) setPending({ kind: 'connection', next });
     else replaceConnection(next);
@@ -367,6 +382,7 @@ export function TerminalControlCenter({
     else close();
   }
   function selectTab(next: typeof tab) {
+    setInitialFocus(undefined);
     if (next === 'templates') setTemplateVisited(true);
     setTab(next);
     setError('');
@@ -434,6 +450,18 @@ export function TerminalControlCenter({
     if (selectedConnection && !connectionDirty && draft?.revision !== selectedConnection.revision)
       replaceConnection(connectionDraft(selectedConnection));
   }, [selectedConnection, connectionDirty, draft?.revision]);
+  useEffect(() => {
+    if (
+      initialFocus?.kind !== 'connection' ||
+      busy ||
+      !reads.control.loaded ||
+      reads.control.loading ||
+      reads.control.error
+    )
+      return;
+    const target = overview?.connections.find((connection) => connection.id === initialFocus.id);
+    if (target) selectConnection(connectionDraft(target));
+  }, [initialFocus, overview, reads.control, busy]);
   const draftBody = draft
     ? {
         expectedRevision: draft.revision,
@@ -541,6 +569,20 @@ export function TerminalControlCenter({
           </button>
         </div>
       )}
+      {initialFocus?.kind === 'connection' &&
+        reads.control.loaded &&
+        !reads.control.loading &&
+        !reads.control.error &&
+        !overview?.connections.some((connection) => connection.id === initialFocus.id) && (
+          <div className="terminal-control-read-error" role="status" aria-label="终端连接定位提示">
+            <p className="inline-warning">
+              当前列表中未找到检查项对应的 API 连接，可能已删除。可重新读取连接记录，或手动选择其他连接。
+            </p>
+            <button className="secondary" disabled={busy} onClick={() => void readRegion('control')}>
+              重新读取连接记录
+            </button>
+          </div>
+        )}
       <div
         id={panelId}
         role="tabpanel"
@@ -972,6 +1014,7 @@ export function TerminalControlCenter({
                   type="button"
                   key={connection.id}
                   aria-current={draft?.id === connection.id ? 'true' : undefined}
+                  data-connection-id={connection.id}
                   disabled={busy}
                   onClick={() => {
                     selectConnection(connectionDraft(connection));
@@ -1352,51 +1395,64 @@ export function TerminalControlCenter({
         ) : tab === 'maintenance' ? (
           <TerminalDataMaintenance disabled={busy} perform={perform} />
         ) : null}
-        {(templateVisited || tab === 'templates') && (
-          <Activity mode={tab === 'templates' ? 'visible' : 'hidden'}>
-            <TerminalSettings
-              initial={settings}
-              embedded
-              close={() => {
-                if (repairTarget?.target.kind === 'template') {
-                  setTab(repairTarget.origin);
-                  setRepairTarget(null);
-                } else setTab('apps');
-              }}
-              dirtyChanged={setTemplateDirty}
-              focusProfileId={
-                repairTarget?.target.kind === 'template' ? repairTarget.target.profileId : undefined
-              }
-              focusRequest={repairTarget?.request}
-              connectionOptions={
-                overview
-                  ? Object.fromEntries(
-                      overview.catalog.map((app) => [
-                        app.id,
-                        overview.connections.filter((connection) =>
-                          app.protocols.includes(connection.protocol),
-                        ),
-                      ]),
-                    )
-                  : undefined
-              }
-              updated={async (next) => {
-                savedSettings(next);
-                try {
-                  await load();
-                } catch (issue) {
-                  setError(message(issue));
-                }
-                setNotice('模板已保存。');
-                finishRepair('template');
-              }}
-              activity={(value) => {
-                setBusy(value);
-                activity(value);
-              }}
-            />
-          </Activity>
+        {initialFocus?.kind === 'template' && !settingsRead && tab === 'templates' && (
+          <p role="status">正在等待读取检查项对应的模板；读取失败或取消后可重试。</p>
         )}
+        {(templateVisited || tab === 'templates') &&
+          !(initialFocus?.kind === 'template' && !settingsRead) && (
+            <Activity mode={tab === 'templates' ? 'visible' : 'hidden'}>
+              <TerminalSettings
+                initial={settings}
+                embedded
+                close={() => {
+                  if (repairTarget?.target.kind === 'template') {
+                    setTab(repairTarget.origin);
+                    setRepairTarget(null);
+                  } else setTab('apps');
+                }}
+                dirtyChanged={setTemplateDirty}
+                focusProfileId={
+                  repairTarget?.target.kind === 'template'
+                    ? repairTarget.target.profileId
+                    : initialFocus?.kind === 'template'
+                      ? initialFocus.id
+                      : undefined
+                }
+                focusRequest={repairTarget?.request}
+                focusHandled={() => {
+                  if (initialFocus?.kind === 'template') setInitialFocus(undefined);
+                }}
+                reload={() => void readRegion('settings')}
+                reloading={reads.settings.loading}
+                connectionOptions={
+                  overview
+                    ? Object.fromEntries(
+                        overview.catalog.map((app) => [
+                          app.id,
+                          overview.connections.filter((connection) =>
+                            app.protocols.includes(connection.protocol),
+                          ),
+                        ]),
+                      )
+                    : undefined
+                }
+                updated={async (next) => {
+                  savedSettings(next);
+                  try {
+                    await load();
+                  } catch (issue) {
+                    setError(message(issue));
+                  }
+                  setNotice('模板已保存。');
+                  finishRepair('template');
+                }}
+                activity={(value) => {
+                  setBusy(value);
+                  activity(value);
+                }}
+              />
+            </Activity>
+          )}
       </div>
       {tab !== 'templates' && (
         <footer className="modal-footer">

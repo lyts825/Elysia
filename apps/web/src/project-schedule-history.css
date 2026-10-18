@@ -1,0 +1,38 @@
+.schedule-history {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  min-width: 0;
+}
+.schedule-history > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.schedule-history h3 {
+  margin: 0 0 8px;
+}
+.schedule-history p,
+.schedule-history strong {
+  overflow-wrap: anywhere;
+}
+.schedule-history-items {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+  display: grid;
+  gap: 12px;
+}
+.schedule-history-items li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 0;
+  background: var(--surface);
+}
+.schedule-history-items button {
+  max-width: 100%;
+  white-space: normal;
+}

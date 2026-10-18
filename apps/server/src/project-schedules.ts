@@ -6,6 +6,7 @@ import {
   Contract,
   Limits,
   ProviderConfig,
+  Status,
   invariant,
   type Agent,
   type Project,
@@ -20,6 +21,8 @@ import {
   type ProjectScheduleList,
   type ProjectSchedulePreview,
   type ProjectScheduleTemplate,
+  type ProjectScheduleHistory,
+  type ProjectScheduleHistoryItem,
 } from '../../../packages/contracts/src/project-schedules.js';
 import {
   freezeProjectCapabilities,
@@ -84,6 +87,20 @@ const recordSchema = z
 const metadataSchema = z
   .object({ version: z.literal(1), schedules: z.array(recordSchema).max(PROJECT_SCHEDULE_LIMITS.perProject) })
   .strict();
+const historyRunSchema = z.object({
+  id: z.string().uuid(),
+  revision: z.number().int().positive(),
+  projectId: z.string().uuid(),
+  rootTaskId: z.string().uuid(),
+  kind: z.literal('task'),
+  title: z.string().max(240),
+  status: Status,
+  reason: z.string().max(1000).optional(),
+  archived: z.boolean(),
+  createdAt: date,
+  execution: z.object({ kind: z.literal('native') }).optional(),
+});
+const historyReferences = z.tuple([z.string().uuid()]);
 const iso = (time: number) => new Date(time).toISOString();
 const captureHash = (template: ProjectScheduleTemplate) => hash(stable(template));
 function conflict(expected: number, current: number) {
@@ -391,6 +408,168 @@ export class ProjectScheduler {
       sources: rows.slice(0, PROJECT_SCHEDULE_LIMITS.sourcePage),
       sourcesLimited: rows.length > PROJECT_SCHEDULE_LIMITS.sourcePage,
       limits: PROJECT_SCHEDULE_LIMITS,
+    };
+  }
+  history(projectId: string, scheduleId: string, before?: string): ProjectScheduleHistory {
+    this.store.require<Project>('projects', projectId);
+    const schedule = readSchedules(this.store, projectId).find((record) => record.id === scheduleId);
+    invariant(schedule, 'SCHEDULE_MISSING', '定时任务已不存在或不属于当前项目');
+    const lower = `schedule:${scheduleId}:`,
+      upper = `schedule:${scheduleId};`;
+    const dueAtFromKey = (key: string) => {
+      const value = key.slice(lower.length);
+      try {
+        if (value.length === 24 && new Date(value).toISOString() === value) return value;
+      } catch {
+        /* Corrupt slot identities remain visible as gaps. */
+      }
+      return null;
+    };
+    const cursorDigest =
+      before?.startsWith(lower) && /^~[a-f0-9]{64}$/.test(before.slice(lower.length))
+        ? before.slice(lower.length + 1)
+        : null;
+    invariant(
+      before === undefined ||
+        (before.startsWith(lower) &&
+          before.length <= 160 &&
+          (dueAtFromKey(before) !== null || cursorDigest !== null)),
+      'SCHEDULE_HISTORY_CURSOR',
+      '历史位置不属于当前定时任务，请返回最新记录',
+    );
+    // A schedule can create at most 100 runs. Read only this bounded primary-key
+    // range so coverage includes missing entries on other pages without inflating
+    // command bodies or inspecting unrelated commands. A deleted valid slot cursor
+    // remains usable; corrupt keys get an opaque identity that cannot grow the URL.
+    const rows = this.store.db
+      .prepare(
+        `SELECT id,CASE WHEN length(CAST(run_refs AS BLOB))<=4096 THEN run_refs END run_refs
+         FROM commands WHERE id>=? AND id<? ORDER BY id DESC LIMIT ?`,
+      )
+      .all(lower, upper, PROJECT_SCHEDULE_LIMITS.maximumRuns + 1) as {
+      id: string;
+      run_refs: string | null;
+    }[];
+    const issuesAvailable = !!this.store.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='projection_read_issues_v1'")
+      .get();
+    const issues = (code: NonNullable<ProjectScheduleHistoryItem['issue']>['code'], message: string) => ({
+      code,
+      message,
+    });
+    const scanLimited = rows.length > PROJECT_SCHEDULE_LIMITS.maximumRuns;
+    const decoded = rows.slice(0, PROJECT_SCHEDULE_LIMITS.maximumRuns).map((row) => {
+      const dueAt = dueAtFromKey(row.id);
+      let runId: string | undefined;
+      try {
+        runId = historyReferences.parse(JSON.parse(row.run_refs ?? 'null'))[0];
+      } catch {
+        /* Ambiguous references must not be guessed. */
+      }
+      return { row, dueAt, runId };
+    });
+    const corruptCursorIndex =
+      cursorDigest === null ? -1 : decoded.findIndex(({ row }) => hash(row.id) === cursorDigest);
+    invariant(
+      cursorDigest === null || corruptCursorIndex >= 0,
+      'SCHEDULE_HISTORY_CURSOR',
+      '此历史位置已不可用，请返回最新记录',
+    );
+    const references = new Map<string, number>();
+    for (const entry of decoded)
+      if (entry.runId && entry.dueAt) references.set(entry.runId, (references.get(entry.runId) ?? 0) + 1);
+    const entries: ProjectScheduleHistoryItem[] = decoded.map(({ row, dueAt, runId }) => {
+      const item: ProjectScheduleHistoryItem = {
+        dispatchId: dueAt ? row.id : lower + '~' + hash(row.id),
+        dueAt,
+        run: null,
+        issue: null,
+      };
+      if (!dueAt)
+        return { ...item, issue: issues('invalid_dispatch', '调度时段标识无法核验，此条历史不可追溯。') };
+      if (!runId)
+        return {
+          ...item,
+          issue: issues('invalid_references', '任务引用缺失、损坏或不唯一，未推测对应任务。'),
+        };
+      if (references.get(runId)! > 1)
+        return { ...item, issue: issues('duplicate_run', '多条调度记录指向同一任务，归属无法核验。') };
+      const runRow = this.store.db
+        .prepare(
+          'SELECT revision,CASE WHEN length(CAST(data AS BLOB))<=65536 THEN data END data FROM runs WHERE id=?',
+        )
+        .get(runId) as { revision: number; data: string | null } | undefined;
+      if (!runRow)
+        return { ...item, issue: issues('missing_run', '对应任务已不存在，保留此条调度记录作为缺口。') };
+      try {
+        if (
+          issuesAvailable &&
+          this.store.db
+            .prepare("SELECT 1 FROM projection_read_issues_v1 WHERE table_name='runs' AND record_id=?")
+            .get(runId)
+        )
+          throw Error('unavailable');
+        const raw = JSON.parse(runRow.data ?? 'null');
+        const run = historyRunSchema.parse(raw?.readModel);
+        if (raw.readModelVersion !== 1 || run.id !== runId || run.revision !== runRow.revision)
+          throw Error('unavailable');
+        if (run.projectId !== projectId)
+          return { ...item, issue: issues('project_mismatch', '任务引用不属于当前项目，未展示其内容。') };
+        item.run = {
+          id: run.id,
+          revision: run.revision,
+          title: run.title,
+          status: run.status,
+          ...(run.reason === undefined ? {} : { reason: run.reason }),
+          archived: run.archived,
+          createdAt: run.createdAt,
+        };
+        return item;
+      } catch {
+        return {
+          ...item,
+          issue: issues('unavailable_run', '任务当前状态无法读取，请在任务列表核对；未使用旧状态替代。'),
+        };
+      }
+    });
+    const candidates =
+      before === undefined
+        ? entries
+        : cursorDigest !== null
+          ? entries.slice(corruptCursorIndex + 1)
+          : entries.filter((_entry, index) => decoded[index].row.id < before);
+    const items = candidates.slice(0, 20),
+      hasMore = candidates.length > 20;
+    const missingDispatches = Math.max(schedule.createdCount - entries.length, 0);
+    const unavailableEntries = entries.filter((entry) => entry.issue !== null).length;
+    const complete = !scanLimited && schedule.createdCount === entries.length && unavailableEntries === 0;
+    return {
+      projectId,
+      scheduleId,
+      scheduleRevision: schedule.revision,
+      createdCount: schedule.createdCount,
+      items,
+      page: {
+        limit: 20,
+        before: before ?? null,
+        nextBefore: hasMore ? items.at(-1)!.dispatchId : null,
+        hasMore,
+      },
+      coverage: {
+        complete,
+        scanLimited,
+        retainedDispatches: entries.length,
+        traceableRuns: entries.filter((entry) => entry.run !== null).length,
+        missingDispatches,
+        unavailableEntries,
+        message:
+          (scanLimited
+            ? '历史不完整：记录数量异常，超过 100 条读取上限，仅展示界内记录。'
+            : complete
+              ? '保留的创建记录均可追溯。'
+              : '历史不完整：部分创建记录已删除、缺失或无法核验。') +
+          '记录仅表示任务已创建，不代表模型已执行或用户已验收；跳过时段不包含在内。',
+      },
     };
   }
   create(projectId: string, body: ProjectScheduleCreate, at = Date.now()) {
@@ -769,6 +948,20 @@ export function registerProjectSchedules(
     const query = z.object({ sourceRunId: z.string().uuid() }).strict().parse(request.query);
     return scheduler.preview(projectId(request.params), query.sourceRunId);
   });
+  app.get<{ Params: { id: string; scheduleId: string } }>(
+    '/api/projects/:id/schedules/:scheduleId/history',
+    (request) => {
+      const query = z
+        .object({ before: z.string().min(1).max(160).optional() })
+        .strict()
+        .parse(request.query);
+      return scheduler.history(
+        projectId(request.params),
+        z.string().uuid().parse(request.params.scheduleId),
+        query.before,
+      );
+    },
+  );
   app.post<{ Params: { id: string } }>('/api/projects/:id/schedules', (request) =>
     scheduler.create(projectId(request.params), ProjectScheduleCreate.parse(request.body)),
   );

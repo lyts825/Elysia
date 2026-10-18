@@ -68,17 +68,22 @@ const editable = (p?: Provider) =>
   );
 export function ProviderSettings({
   providers,
+  initialProviderId,
   close,
   updated,
 }: {
   providers: Provider[];
+  initialProviderId?: string;
   close: () => void;
   updated: () => Promise<unknown>;
 }) {
   const { api, mutation } = useSurfaceClient();
   const [config, setConfig] = useState<Provider | undefined>(
-    providers.find((p) => p.authMode === 'codex') || providers[0],
+    initialProviderId
+      ? providers.find((p) => p.id === initialProviderId && !p.archived)
+      : providers.find((p) => p.authMode === 'codex') || providers[0],
   );
+  const [requestedProviderId, setRequestedProviderId] = useState(initialProviderId);
   const [adding, setAdding] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -94,13 +99,13 @@ export function ProviderSettings({
   const [confirmClose, setConfirmClose] = useState(false);
   const actionPending = useRef(false);
   useEffect(() => {
-    if (!config && providers.length) {
+    if (!requestedProviderId && !adding && !config && providers.length) {
       const initial = providers.find((p) => p.authMode === 'codex') || providers[0];
       setConfig(initial);
       setKeyMode(credentialMode(initial));
       setSavedKeyMode(credentialMode(initial));
     }
-  }, [providers, config]);
+  }, [providers, config, requestedProviderId, adding]);
   const subscription = !!config && ['codex', 'chatgpt'].includes(config.authMode || '');
   const saved = providers.find((p) => p.id === config?.id),
     dirty =
@@ -136,9 +141,13 @@ export function ProviderSettings({
   ) || ['low', 'high', 'max'];
   const unsupportedApiModel =
     !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
-  const change = (patch: Partial<Provider>) => setConfig((p) => p && { ...p, ...patch });
+  const change = (patch: Partial<Provider>) => {
+    setRequestedProviderId(undefined);
+    setConfig((p) => p && { ...p, ...patch });
+  };
   const choose = (next: Provider, force = false, completedAction = false) => {
     if (actionPending.current && !completedAction) return;
+    setRequestedProviderId(undefined);
     if (dirty && !force) {
       setPendingChoice(next);
       return;
@@ -156,6 +165,13 @@ export function ProviderSettings({
     setPendingChoice(undefined);
     setAdvanced('');
   };
+  useEffect(() => {
+    if (!requestedProviderId || busy) return;
+    const target = providers.find((provider) => provider.id === requestedProviderId && !provider.archived);
+    if (!target) return;
+    if (config?.id === target.id) setRequestedProviderId(undefined);
+    else choose(target);
+  }, [requestedProviderId, providers, busy]);
   const perform = async (fn: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -232,11 +248,37 @@ export function ProviderSettings({
           </button>
         </div>
       )}
+      {requestedProviderId &&
+        !providers.some((provider) => provider.id === requestedProviderId && !provider.archived) && (
+          <div className="dialog-notice" role="status" aria-label="模型配置定位提示">
+            <span>
+              当前列表中未找到检查项对应的模型配置，可能已删除或归档。可重新读取，或手动选择其他配置。
+            </span>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  await updated();
+                })
+              }
+            >
+              重新读取配置列表
+            </button>
+          </div>
+        )}
       <div className="provider-workspace">
         <nav className="provider-list" aria-label="提供商配置">
           <div className="section-heading">
             <strong>提供商</strong>
-            <button className="text-button" disabled={busy} onClick={() => setAdding(!adding)}>
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => {
+                setRequestedProviderId(undefined);
+                setAdding(!adding);
+              }}
+            >
               ＋ 新增
             </button>
           </div>
@@ -244,6 +286,7 @@ export function ProviderSettings({
             <button
               className={'provider-card ' + (config?.id === p.id ? 'selected' : '')}
               aria-pressed={config?.id === p.id}
+              data-provider-id={p.id}
               key={p.id}
               disabled={busy}
               onClick={() => choose(p)}

@@ -6,7 +6,7 @@ import type { RoleRoutingSnapshot, RoleRoutingDecision } from './model-routing.j
 import type { ProjectCapabilitySnapshot } from './project-intelligence.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.10.1';
+export const VERSION = '1.11.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';

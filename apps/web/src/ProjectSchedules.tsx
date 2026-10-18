@@ -11,6 +11,7 @@ import {
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
 import type { WorkbenchCache } from './WorkbenchCache';
+import { ProjectScheduleHistory } from './ProjectScheduleHistory';
 import './project-schedules.css';
 
 const fieldsShape = z
@@ -79,6 +80,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     key = `draft:project-schedules:${projectId}`;
   const [list, setList] = useState<ProjectScheduleList>();
   const [preview, setPreview] = useState<ProjectSchedulePreview>();
+  const [historyId, setHistoryId] = useState('');
   const [loaded, setLoaded] = useState(false),
     [retryDraft, setRetryDraft] = useState(0),
     [, render] = useState(0);
@@ -544,7 +546,24 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                   打开最近任务
                 </button>
               )}
+              <button
+                type="button"
+                className="text-button"
+                aria-expanded={historyId === record.id}
+                onClick={() => setHistoryId((currentId) => (currentId === record.id ? '' : record.id))}
+              >
+                查看创建历史
+              </button>
             </div>
+            {historyId === record.id && (
+              <ProjectScheduleHistory
+                projectId={projectId}
+                scheduleId={record.id}
+                name={record.settings.name}
+                close={() => setHistoryId('')}
+                openRun={openRun}
+              />
+            )}
           </article>
         ))}
       </div>
