@@ -1,3 +1,38 @@
+.tool-process {
+  min-width: 0;
+  margin-top: 14px;
+}
+.tool-process-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  color: var(--secondary);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.tool-process-heading small {
+  color: var(--muted);
+  font-size: 0.79rem;
+  font-weight: 400;
+}
+.tool-process .tool-process-calls {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tool-process-calls > li {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.tool-process-calls .tool-activity {
+  margin-top: 0;
+}
 .tool-activity {
   margin-top: 8px;
   border: 1px solid var(--border);
@@ -13,6 +48,7 @@
   padding: 10px;
   list-style: none;
   cursor: pointer;
+  min-height: 44px;
 }
 .tool-activity > summary::-webkit-details-marker {
   display: none;
@@ -39,14 +75,30 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 8px;
-  font-size: 12px;
+  font-size: 0.86rem;
   font-weight: 600;
+}
+.tool-activity-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.5;
+}
+.tool-activity-kind > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--secondary);
+  font-size: inherit;
 }
 .tool-activity-overview {
   display: flex;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.55;
 }
 .tool-activity-overview > code {
@@ -72,12 +124,9 @@
   gap: 4px;
   margin-top: 1px;
   flex: none;
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.5;
   color: var(--muted);
-}
-.tool-activity.running .tool-activity-status {
-  color: var(--accent-strong);
 }
 .tool-activity.done .tool-activity-status {
   color: var(--success);
@@ -101,11 +150,12 @@
   -webkit-line-clamp: 1;
   overflow: hidden;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.55;
 }
 .tool-activity-chevron {
   transform: rotate(90deg);
+  transition: transform 120ms ease;
 }
 .tool-activity[open] > summary .tool-activity-chevron {
   transform: rotate(-90deg);
@@ -117,10 +167,11 @@
 }
 .tool-activity-body section {
   margin-top: 12px;
+  min-width: 0;
 }
 .tool-activity-body h4 {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: 0.79rem;
   color: var(--muted);
   font-weight: 600;
 }
@@ -135,7 +186,7 @@
   gap: 8px;
 }
 .tool-activity-body dt {
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.7;
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -151,7 +202,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: Consolas, monospace;
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.7;
   color: var(--secondary);
   tab-size: 2;
@@ -159,44 +210,80 @@
 .tool-activity-error pre {
   color: var(--danger);
 }
-.tool-activity-body > .tool-activity-preview {
-  margin-top: 10px;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  max-height: 5.1em;
-  overflow: hidden;
-}
-.tool-activity-details {
+.tool-activity-output {
   margin-top: 10px;
 }
-.tool-activity-details > summary {
-  width: fit-content;
-  max-width: 100%;
-  cursor: pointer;
+.tool-activity-output h5 {
+  margin: 0 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.79rem;
+  font-weight: 500;
   line-height: 1.7;
 }
-.tool-activity-details > summary:focus-visible {
+.tool-activity-body dt code,
+.tool-activity-output h5 code {
+  font-size: inherit;
+  font-weight: 400;
+}
+.tool-activity-read-error {
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 0.79rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.tool-activity .tool-activity-read-error p {
+  margin: 0 0 4px;
+}
+.tool-activity-read-error button {
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: inherit;
+}
+.tool-activity-read-error button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
 }
 .message-body .tool-activity-note,
 .tool-activity .tool-activity-note {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.79rem;
   line-height: 1.7;
 }
 @media (max-width: 700px) {
   .tool-activity > summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 6px;
     padding: 9px;
+  }
+  .tool-activity-status {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .tool-activity-chevron {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .tool-activity-overview {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tool-activity-overview > code {
+    max-width: 100%;
   }
   .tool-activity-body dl > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-activity-chevron {
+    transition: none;
   }
 }

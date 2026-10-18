@@ -1,5 +1,28 @@
 # Elysia 首版执行文档
 
+## 当前迭代：v1.14.0 工具调用与操作过程
+
+2026-10-18，ea53761 / v1.13.0 → v1.14.0，沿用codex/initial-build，开始时工作区干净。用户要求明确工具调用和操作过程。主代理负责会话分组、版本与整合，界面代理负责工具卡片和必要组件验收，审查代理复核真实状态及调用归属，验收代理负责关联回归和实际生产界面。沿用apple-design的层次、即时反馈和用户控制原则，复用已有调用与操作记录，不增加执行能力、供应商参数、依赖或数据格式。
+
+| 优先级 / 阶段 | 负责人 | 状态 | 验收标准 |
+| --- | --- | --- | --- |
+| P1 工具身份与过程分区 | 主代理 / 界面代理 | 已完成 | 显式原始工具名、动作目标和本轮调用项；按请求顺序编号，不假造实际执行顺序 |
+| P1 状态与一次展开详情 | 界面 / 审查代理 | 已完成 | 等待结果、已返回、失败和待核验可区分；原始参数/业务结果不静默删字段；折叠不读详情 |
+| P1 归属与读取验证 | 验收代理 | 已完成 | 同callId跨轮、跨session及孤立返回保持；详情迟到/身份错误不串卡，失败可重试，390px可读 |
+| 源码整合与验收 | 主代理 | 已完成 | 类型、格式、差异及559模块构建通过，11份包版本统一1.14.0，最终生产界面6组通过 |
+
+已确认缺口：工具原始名称没有独立标示，输入和结果需连续两次展开；INTENT曾直接称执行中、缺记录且任务结束曾断言未执行；完整详情递归过滤id/code等真实业务字段。Operation与Message没有执行时间字段，本轮不从最近事件或当前时间推测耗时。调用项只来自当前assistant消息的calls，继续使用assistantMessageId+callId归属及已配对返回，不把全部operations候选当作可见步骤。
+
+实现：原始工具名、中文动作、目标及调用状态独立可见，单次展开直接核对输入、结果和错误；exec的stdout/stderr分别显示并保留其余原始结果字段，非零退出与超时仍按真实结果报错。INTENT只说明已登记/等待结果，终止后没有结果只说明结果未记录；没有操作或返回时不再断言未执行。UNCERTAIN优先保留待核验，MCP已知嵌套isError:true明确失败；只有clarify/propose_plan/join_tasks的控制回执被解释为当时已登记等待，普通业务waiting字段不作此推断。非对象或坏JSON参数保留原请求串。详情按需核对run、operation、toolCall、name、已知assistant owner及revision，取消/迟到/错归属不覆盖当前卡片；503保留摘要并允许重试，不新增执行请求。
+
+组件tool-activity-v1140-wLqyuu通过7组：键盘单层展开且默认零GET、同版本缓存，503及6类身份/revision错误后显式重试，折叠取消与跨run/call/revision迟到隔离，真实状态及控制等待正反例，MCP嵌套错误及UNCERTAIN优先，exec原始输出/退出码/超时和所有JSON坏参数，focused历史定位与独立滚动，390px/2倍字号/减少动态。主线程已目检窄屏截图。原conversation-occurrences-v1121-HXfwrz关联5组继续通过，含同ID跨轮、交错session、旧回执证据、分页孤立返回及重复ID/跨run负例。首次夹具对JSON转义换行的错误断言保留r8ViT9诊断，修正后通过，不计作源码失败或通过。测试材料沿用既有忽略目录，隐藏组件Electron已退出，真实模型/凭据/外网调用为0。
+
+生产tool-process-production-v1140-xR5Ugs通过6组，使用实际dist、HTTP、SQLite和隐藏Electron：8次真实Gateway及1个本地Node命令验证写入/读取/非零退出，单次键盘展开看到完整参数与分开的stdout/stderr；同call_0跨轮及交错session不串结果，业务id/revision/error键保持，澄清等待与明确合成的UNKNOWN/INTENT/UNCERTAIN不误报完成。单项详情503保卡并可重试，分页孤立返回可独立回读并在读入早页后正确配对；390px和双surface相同operation id隔离通过。首轮5M7ZAw复现main中无定位目标、无toolResponse时undefined===undefined被当focused，导致默认自动展开和两次详情GET；已加明确anchor存在条件，最终dist复验折叠零GET通过。该真实失败及resize关闭菜单的夹具诊断均保留。主线程已目检实际生产截图；真实模型/外网/真实凭据/Docker均0，2次loopback模型目录与2次合成token读取单列记录；双库integrity_check=ok/ok、foreign_key_check为空，服务、Store、Electron及本地工具进程均已退出。
+
+交付：17份本轮正式代码、配置和简短记录纳入Git；版本1.14.0，schema8/minimumReader1.10.0保持，无新增依赖。源码验收后从干净提交离线生成`.elysia-runtime/releases/Elysia-1.14.0-win-x64.zip`及SHA-256，清单、ZIP流式逐项哈希、真实隐藏程序启停及双库完整性由windows-portable-final-v1140本机报告记录；本地v1.14.0标签在分发验收后建立，不代表已推送或公开发布。正式应用保持现状，真实供应商与MCP服务本轮未调用；exec展示已返回的输出，本轮未新增命令实时输出流。没有新增失用正式文件或临时依赖；便携包、必要验证及失败诊断保留既有忽略目录，测试材料不入Git。
+
+已复现、留待后续的读取优化：RunReads.conversation仍按原始toolCallId选择关联候选；同一run内200条不同assistantMessageId的call_0历史操作，当前页仅1次调用时仍返回并读取200条操作正文（正确owner只有1条）。本轮展示保持正确归属，不修改该查询；后续应按assistant occurrence筛选并兼容旧记录，保留INTENT/UNCERTAIN可见性。
+
 ## 当前迭代：v1.13.0 思考记录展示与恢复
 
 2026-10-18，3157b6f / v1.12.2 → v1.13.0，沿用codex/initial-build，开始时工作区干净。用户要求优化思维链展示。本轮展示供应商已明确返回的DeepSeek reasoning_content及已有历史记录；主代理负责主会话接线、请求归属与阅读缓存、版本及整合交付，后端代理负责流式和分页读取，界面代理负责可访问的折叠阅读组件，验收代理负责独立模型协议与生产UI验证。采用apple-design技能的层次、即时反馈和用户控制原则，不修改OpenAI/Codex请求参数，不从opaque native数据构造思考，不改模型回放原文。

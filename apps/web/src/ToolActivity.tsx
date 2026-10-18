@@ -31,11 +31,19 @@ const toolNames: Record<string, string> = {
   clarify: '提出问题',
   propose_plan: '提出计划',
   spawn_task: '创建子任务',
+  allocate_context: '分配上下文',
   join_tasks: '等待子任务',
   submit_result: '提交验收结果',
 };
 const fieldNames: Record<string, string> = {
-  id: '技能',
+  id: '标识',
+  serverId: 'MCP 服务',
+  artifactId: '产物标识',
+  taskId: '任务标识',
+  taskIds: '任务标识',
+  expectedHash: '预期文件哈希',
+  expectedRevision: '预期版本',
+  windowTokens: '上下文额度',
   path: '路径',
   program: '程序',
   args: '程序参数',
@@ -80,55 +88,15 @@ const fieldNames: Record<string, string> = {
   version: '版本',
   limitation: '核验范围',
 };
-const internalFields = new Set([
-  'id',
-  'runId',
-  'taskId',
-  'taskIds',
-  'agentId',
-  'attemptId',
-  'operationId',
-  'toolCallId',
-  'assistantMessageId',
-  'artifactId',
-  'snapshotId',
-  'snapshotIds',
-  'sessionId',
-  'eventId',
-  'commandId',
-  'revision',
-  'objectRef',
-  'contentRef',
-  'providerNativeRef',
-  'checkpointRef',
-  'coordinatorAgentId',
-  'rootTaskId',
-  'parentTaskId',
-  'parentAgentId',
-  'lease',
-  'expectedHash',
-  'trust',
-  'code',
-]);
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
-function readable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(readable);
-  const object = record(value);
-  if (!object) return value;
-  return Object.fromEntries(
-    Object.entries(object)
-      .filter(([key]) => !internalFields.has(key))
-      .map(([key, item]) => [fieldNames[key] || key, readable(item)]),
-  );
-}
 function format(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined) return '暂无结果';
-  return JSON.stringify(readable(value), null, 2) ?? '';
+  return JSON.stringify(value, null, 2) ?? '';
 }
 function command(args: Record<string, unknown>): string {
   const program = typeof args.program === 'string' ? args.program : '';
@@ -148,6 +116,12 @@ function size(bytes: unknown): string {
 function resultSummary(name: string, outcome: unknown): string {
   const result = record(outcome);
   if (!result) return '已返回结果';
+  if (registeredWait(name, result))
+    return result.reason === 'children'
+      ? '当时已登记等待子任务'
+      : result.reason === 'user'
+        ? '当时已登记等待回答'
+        : '当时已登记等待';
   const suffix = result?.truncated === true ? '（结果已截断）' : '';
   if (name === 'list' && Array.isArray(result?.entries))
     return Number(result.entriesTotal ?? result.entries.length)
@@ -176,28 +150,31 @@ function resultSummary(name: string, outcome: unknown): string {
   };
   return summaries[name] || '已返回结果';
 }
-function resultPreview(name: string, outcome: unknown): string {
-  const result = record(outcome);
-  if (name === 'list' && Array.isArray(result?.entries)) {
-    const entries = result.entries;
-    const names = entries.slice(0, 5).flatMap((entry) => {
-      const item = record(entry);
-      return typeof item?.name === 'string' ? [item.name + (item.directory === true ? '/' : '')] : [];
-    });
-    if (entries.length > 5) names.push(`…另有 ${entries.length - 5} 项`);
-    return names.join('\n');
-  }
-  const text =
-    name === 'exec'
-      ? result?.stdout
-      : name === 'read' || name === 'read_artifact' || name === 'fetch_url'
-        ? result?.content
-        : typeof outcome === 'string'
-          ? outcome
-          : '';
-  if (typeof text !== 'string' || !text.trim()) return '';
-  const preview = text.trim().split(/\r?\n/).slice(0, 3).join('\n').slice(0, 240);
-  return preview + (text.trim().length > preview.length ? '\n…' : '');
+function registeredWait(name: string, result: Record<string, unknown> | null): boolean {
+  return ['clarify', 'propose_plan', 'join_tasks'].includes(name) && result?.waiting === true;
+}
+function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
+  const value = record(outcome);
+  if (name !== 'exec' || !value) return <pre>{format(outcome)}</pre>;
+  const outputKeys = new Set(['stdout', 'stderr']);
+  const facts = Object.entries(value).filter(([key]) => !outputKeys.has(key));
+  return (
+    <>
+      {facts.length > 0 && <pre>{format(Object.fromEntries(facts))}</pre>}
+      {(['stdout', 'stderr'] as const).map((key) =>
+        typeof value[key] === 'string' ? (
+          <div className="tool-activity-output" key={key}>
+            <h5>
+              {key === 'stdout' ? '标准输出' : '标准错误'} <code>{key}</code>
+            </h5>
+            {value[key] ? <pre>{value[key]}</pre> : <p className="tool-activity-note">本次返回为空。</p>}
+          </div>
+        ) : value[key] !== undefined ? (
+          <pre key={key}>{format({ [key]: value[key] })}</pre>
+        ) : null,
+      )}
+    </>
+  );
 }
 
 export function ToolActivity({
@@ -206,43 +183,53 @@ export function ToolActivity({
   taskStatus,
   toolResponse,
   focused = false,
+  invocationLabel,
 }: {
   call: ToolCall;
   operation?: Operation;
   taskStatus?: Task['status'];
   toolResponse?: Message;
   focused?: boolean;
+  invocationLabel?: string;
 }) {
   const { api } = useSurfaceClient();
   const [full, setFull] = useState<Operation | null>(null),
-    [readError, setReadError] = useState('');
+    [readError, setReadError] = useState(''),
+    [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false),
     [readAttempt, setReadAttempt] = useState(0);
   const activity = useRef<HTMLDetailsElement>(null);
-  const details = useRef<HTMLDetailsElement>(null);
+  const sameRecord = (value: Operation | null) =>
+    !!value &&
+    !!summaryOperation &&
+    value.runId === summaryOperation.runId &&
+    value.id === summaryOperation.id &&
+    value.toolCallId === summaryOperation.toolCallId &&
+    value.name === summaryOperation.name &&
+    value.revision === summaryOperation.revision &&
+    (!summaryOperation.assistantMessageId ||
+      value.assistantMessageId === summaryOperation.assistantMessageId);
+  const loaded = sameRecord(full) ? full : null;
+  const operation = loaded || summaryOperation;
+  const omitted = !!(summaryOperation as (Operation & { detailsOmitted?: boolean }) | undefined)
+    ?.detailsOmitted;
   useLayoutEffect(() => {
     if (!focused) return;
     if (activity.current) activity.current.open = true;
-    if (details.current) details.current.open = true;
     setDetailsOpen(true);
   }, [focused, toolResponse?.id]);
   useEffect(() => {
     setFull(null);
     setReadError('');
-  }, [summaryOperation?.id, summaryOperation?.revision]);
-  const operation =
-    full?.id === summaryOperation?.id && full?.revision === summaryOperation?.revision
-      ? full
-      : summaryOperation;
+  }, [summaryOperation?.runId, summaryOperation?.id, summaryOperation?.revision]);
   useEffect(() => {
-    if (
-      !summaryOperation ||
-      !(summaryOperation as Operation & { detailsOmitted?: boolean }).detailsOmitted ||
-      !detailsOpen
-    )
+    if (!summaryOperation || !omitted || !detailsOpen || loaded) {
+      setLoading(false);
       return;
+    }
     const controller = new AbortController();
     setReadError('');
+    setLoading(true);
     void api<Operation>(
       `/runs/${summaryOperation.runId}/records/operations/${summaryOperation.id}`,
       undefined,
@@ -250,19 +237,50 @@ export function ToolActivity({
       controller.signal,
     )
       .then((result) => {
-        if (!controller.signal.aborted && result.revision === summaryOperation.revision) setFull(result);
-        else if (!controller.signal.aborted) setReadError('操作已更新，请刷新对话后重试。');
+        if (controller.signal.aborted) return;
+        if (
+          !result ||
+          result.runId !== summaryOperation.runId ||
+          result.id !== summaryOperation.id ||
+          result.toolCallId !== summaryOperation.toolCallId ||
+          result.name !== summaryOperation.name ||
+          result.toolCallId !== call.id ||
+          result.name !== call.name ||
+          (summaryOperation.assistantMessageId &&
+            result.assistantMessageId !== summaryOperation.assistantMessageId)
+        )
+          throw new Error('操作详情归属无法核对，已保留当前摘要。');
+        if (result.revision !== summaryOperation.revision)
+          throw new Error('操作记录已更新，已保留当前摘要；请刷新会话后重试。');
+        setFull(result);
       })
       .catch((error) => {
         if (!controller.signal.aborted) setReadError(error instanceof Error ? error.message : '详情读取失败');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [summaryOperation?.id, summaryOperation?.revision, detailsOpen, readAttempt, api]);
+  }, [
+    summaryOperation?.runId,
+    summaryOperation?.id,
+    summaryOperation?.revision,
+    summaryOperation?.toolCallId,
+    summaryOperation?.name,
+    summaryOperation?.assistantMessageId,
+    call.id,
+    call.name,
+    omitted,
+    detailsOpen,
+    loaded,
+    readAttempt,
+    api,
+  ]);
   let parsed: unknown = call.arguments;
   try {
     parsed = JSON.parse(call.arguments);
   } catch {
-    // 保留不可解析的参数，便于用户核对失败原因。
+    // Preserve invalid arguments so the actual request remains reviewable.
   }
   const args = operation?.args || record(parsed) || {};
   let response: unknown = toolResponse?.text;
@@ -270,7 +288,7 @@ export function ToolActivity({
     try {
       response = JSON.parse(toolResponse.text);
     } catch {
-      // 非 JSON 工具返回继续按文本展示。
+      // Plain text tool results remain plain text.
     }
   }
   const returned = record(response);
@@ -281,6 +299,8 @@ export function ToolActivity({
         ? returned.result
         : response;
   const result = record(outcome);
+  const waiting = registeredWait(call.name, result);
+  const mcpFailed = call.name === 'mcp_call' && record(result?.result)?.isError === true;
   const responseFailed = !operation && typeof returned?.error === 'string';
   const responseError = responseFailed
     ? (returned.error as string) || '工具返回错误，但未提供具体原因。'
@@ -290,68 +310,85 @@ export function ToolActivity({
     (operation?.status === 'DONE' || (!operation && !!toolResponse)) &&
     (result?.timedOut === true || (result !== null && 'exitCode' in result && result.exitCode !== 0));
   const stopped = !!taskStatus && ['DONE', 'FAILED', 'CANCELLED'].includes(taskStatus);
-  let status = '待执行';
-  let tone = 'pending';
-  let statusIcon = 'history';
+  let status = '尚无执行记录',
+    tone = 'pending',
+    statusIcon = 'history';
   if (operation?.status === 'UNCERTAIN') {
     status = '待核验';
     tone = 'uncertain';
     statusIcon = 'lock';
-  } else if (operation?.status === 'FAILED' || commandFailed || responseFailed) {
+  } else if (operation?.status === 'FAILED' || commandFailed || responseFailed || mcpFailed) {
     status = '失败';
     tone = 'failed';
     statusIcon = 'close';
   } else if (operation?.status === 'DONE' || (!operation && toolResponse)) {
-    status = '已完成';
+    status = operation && !waiting ? '已完成' : '已返回';
     tone = 'done';
     statusIcon = 'check';
   } else if (operation?.status === 'INTENT') {
-    status = stopped ? '已中断' : taskStatus === 'WAITING' ? '等待继续' : '执行中';
-    tone = stopped || taskStatus === 'WAITING' ? 'pending' : 'running';
-    statusIcon = tone === 'running' ? 'refresh' : 'pause';
-  } else if (stopped) {
-    status = '未执行';
+    status = stopped ? '结果未记录' : '等待结果';
+    tone = 'pending';
+    statusIcon = 'history';
   }
   const target =
     call.name === 'exec'
       ? command(args)
-      : typeof args.path === 'string'
-        ? args.path
-        : typeof args.url === 'string'
-          ? args.url
-          : call.name === 'load_skill' && typeof args.id === 'string'
-            ? args.id
+      : call.name === 'mcp_call'
+        ? [args.serverId, args.tool].filter((value) => typeof value === 'string').join(' · ')
+        : typeof args.path === 'string'
+          ? args.path
+          : typeof args.url === 'string'
+            ? args.url
             : typeof args.title === 'string'
               ? args.title
               : typeof args.name === 'string'
                 ? args.name
-                : '';
+                : typeof args.id === 'string'
+                  ? args.id
+                  : typeof args.artifactId === 'string'
+                    ? args.artifactId
+                    : typeof args.serverId === 'string'
+                      ? args.serverId
+                      : '';
   const error =
     operation?.error ||
     responseError ||
-    (typeof result?.error === 'string' ? result.error : '') ||
+    (mcpFailed ? 'MCP 工具返回错误（isError: true），请查看执行结果。' : '') ||
+    (operation?.status === 'FAILED' && typeof result?.error === 'string' ? result.error : '') ||
     (commandFailed
       ? result?.timedOut
         ? '命令执行超时'
         : `${result?.exitCode === null ? '命令未正常退出' : '命令退出码为 ' + result?.exitCode}${typeof result?.stderr === 'string' && result.stderr.trim() ? '：' + result.stderr.trim() : ''}`
       : '');
-  const fields = Object.entries(args).filter(
-    ([key]) => !internalFields.has(key) || (call.name === 'load_skill' && key === 'id'),
-  );
+  const fields = Object.entries(args);
   const briefResult =
     !error && tone === 'done' && outcome !== undefined ? resultSummary(call.name, outcome) : '';
-  const preview = !error && tone === 'done' ? resultPreview(call.name, outcome) : '';
   return (
-    <details ref={activity} className={`tool-activity ${tone}`} data-history-anchor={toolResponse?.id}>
-      <summary>
-        <span className="tool-activity-glyph">
+    <details
+      ref={activity}
+      className={`tool-activity ${tone}`}
+      data-testid="tool-activity"
+      data-tool-name={call.name}
+      data-tool-call-id={call.id}
+      data-operation-id={operation?.id}
+      data-operation-state={operation?.status || (toolResponse ? 'RETURNED' : 'UNRECORDED')}
+      data-history-anchor={toolResponse?.id}
+      onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+    >
+      <summary data-testid="tool-activity-toggle">
+        <span className="tool-activity-glyph" aria-hidden="true">
           <Icon
             name={call.name === 'exec' ? 'code' : call.name === 'fetch_url' ? 'globe' : 'file'}
             size={15}
           />
         </span>
         <span className="tool-activity-heading">
-          <span className="tool-activity-name">{toolNames[call.name] || call.name}</span>
+          <span className="tool-activity-kind">
+            {invocationLabel && <span>{invocationLabel}</span>}
+            <span>工具调用</span>
+            <code>{call.name}</code>
+          </span>
+          <span className="tool-activity-name">{toolNames[call.name] || '其他工具'}</span>
           {(target || briefResult) && (
             <span className="tool-activity-overview">
               {target && <code title={target}>{target === '.' ? '当前目录' : target}</code>}
@@ -364,83 +401,88 @@ export function ToolActivity({
             </span>
           )}
         </span>
-        <span className="tool-activity-status">
+        <span className="tool-activity-status" data-testid="tool-activity-status">
           <Icon name={statusIcon} size={12} />
           {status}
         </span>
-        <span className="tool-activity-chevron">
+        <span className="tool-activity-chevron" aria-hidden="true">
           <Icon name="arrow" size={13} />
         </span>
       </summary>
-      <div className="tool-activity-body">
-        {preview && <pre className="tool-activity-preview">{preview}</pre>}
+      <div className="tool-activity-body" data-testid="tool-activity-body" aria-busy={loading}>
         {operation?.status === 'UNCERTAIN' && (
-          <p className="tool-activity-note">结果待核验，请在产物中检查证据。</p>
+          <p className="tool-activity-note">操作可能已产生影响，结果尚待核验；请核对任务中的说明与证据。</p>
         )}
-        {!operation && !toolResponse && (
-          <p className="tool-activity-note">{stopped ? '任务已停止，操作未执行。' : '等待执行。'}</p>
-        )}
+        {!operation && !toolResponse && <p className="tool-activity-note">当前未找到这次调用的结果记录。</p>}
         {operation?.status === 'INTENT' && (
           <p className="tool-activity-note">
-            {stopped ? '操作已中断，暂无结果。' : taskStatus === 'WAITING' ? '等待继续。' : '正在执行…'}
+            {stopped ? '当前只记录了调用意图，结果尚未记录。' : '调用已登记，等待结果记录。'}
           </p>
         )}
-        <details
-          ref={details}
-          className="tool-activity-details"
-          onToggle={(event) => {
-            setDetailsOpen(event.currentTarget.open);
-          }}
-        >
-          <summary>查看详情</summary>
-          {readError && (
-            <p role="alert">
-              {readError}{' '}
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => setReadAttempt((value) => value + 1)}
-              >
-                重试
-              </button>
-            </p>
+        {waiting && (
+          <p className="tool-activity-note">该次调用返回时已登记等待；当前是否仍在等待，以会话进度为准。</p>
+        )}
+        {loading && (
+          <p className="tool-activity-note" role="status">
+            正在读取完整参数与结果，当前摘要仍保留。
+          </p>
+        )}
+        {readError && (
+          <div className="tool-activity-read-error" role="alert">
+            <p>{readError}</p>
+            <button
+              type="button"
+              data-testid="tool-activity-retry"
+              onClick={() => setReadAttempt((value) => value + 1)}
+            >
+              重试读取
+            </button>
+          </div>
+        )}
+        {!loaded && omitted && (
+          <p className="tool-activity-note">当前显示摘要，参数与结果可能省略；完整记录在展开时读取。</p>
+        )}
+        <section aria-label="输入参数">
+          <h4>输入参数</h4>
+          {fields.length ? (
+            <dl>
+              {fields.map(([key, value]) => (
+                <div key={key}>
+                  <dt>
+                    {fieldNames[key] ? (
+                      <>
+                        {fieldNames[key]} <code>({key})</code>
+                      </>
+                    ) : (
+                      key
+                    )}
+                  </dt>
+                  <dd>
+                    <pre>{format(value)}</pre>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : !operation && !record(parsed) ? (
+            <pre>{call.arguments}</pre>
+          ) : (
+            <p className="tool-activity-note">没有额外参数。</p>
           )}
-          {!full &&
-            (summaryOperation as (Operation & { detailsOmitted?: boolean }) | undefined)?.detailsOmitted && (
-              <p className="tool-activity-note">当前显示摘要，完整参数与结果在展开时读取。</p>
-            )}
-          <section>
-            <h4>输入参数</h4>
-            {fields.length ? (
-              <dl>
-                {fields.map(([key, value]) => (
-                  <div key={key}>
-                    <dt>{fieldNames[key] || key}</dt>
-                    <dd>
-                      <pre>{format(value)}</pre>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : typeof parsed === 'string' ? (
-              <pre>{parsed}</pre>
-            ) : (
-              <p className="tool-activity-note">没有额外参数。</p>
-            )}
+        </section>
+        {error && (
+          <section className="tool-activity-error" aria-label="错误原因">
+            <h4>错误原因</h4>
+            <pre>{error}</pre>
           </section>
-          {error && (
-            <section className="tool-activity-error">
-              <h4>错误原因</h4>
-              <pre>{error}</pre>
-            </section>
-          )}
-          {outcome !== undefined && (
-            <section>
-              <h4>执行结果</h4>
-              <pre>{format(outcome)}</pre>
-            </section>
-          )}
-        </details>
+        )}
+        {outcome !== undefined ? (
+          <section aria-label="执行结果">
+            <h4>执行结果</h4>
+            <ResultContent name={call.name} outcome={outcome} />
+          </section>
+        ) : operation?.status === 'DONE' ? (
+          <p className="tool-activity-note">当前记录未包含返回内容。</p>
+        ) : null}
       </div>
     </details>
   );

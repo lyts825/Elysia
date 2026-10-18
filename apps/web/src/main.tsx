@@ -2998,19 +2998,34 @@ function App({
                             ) : (
                               <p>{m.text}</p>
                             ))}
-                          {m.calls?.map((c) => (
-                            <ToolActivity
-                              key={c.id}
-                              call={c}
-                              operation={messageIndex.operations.get(conversationCallKey(m.id, c.id))}
-                              toolResponse={messageIndex.responses.get(conversationCallKey(m.id, c.id))}
-                              focused={
-                                initialHistoryAnchor?.id ===
-                                messageIndex.responses.get(conversationCallKey(m.id, c.id))?.id
-                              }
-                              taskStatus={task?.status}
-                            />
-                          ))}
+                          {!!m.calls?.length && (
+                            <section className="tool-process" aria-label="工具调用与操作过程">
+                              <div className="tool-process-heading">
+                                <span>操作过程</span>
+                                <small>本轮 {m.calls.length} 项工具调用</small>
+                              </div>
+                              <ol className="tool-process-calls" aria-label="按请求顺序列出的工具调用">
+                                {m.calls.map((c, index) => (
+                                  <li key={`${c.id}:${index}`}>
+                                    <ToolActivity
+                                      invocationLabel={`调用 ${index + 1}`}
+                                      call={c}
+                                      operation={messageIndex.operations.get(conversationCallKey(m.id, c.id))}
+                                      toolResponse={messageIndex.responses.get(
+                                        conversationCallKey(m.id, c.id),
+                                      )}
+                                      focused={
+                                        !!initialHistoryAnchor?.id &&
+                                        initialHistoryAnchor.id ===
+                                          messageIndex.responses.get(conversationCallKey(m.id, c.id))?.id
+                                      }
+                                      taskStatus={task?.status}
+                                    />
+                                  </li>
+                                ))}
+                              </ol>
+                            </section>
+                          )}
                         </div>
                       </div>
                     );
