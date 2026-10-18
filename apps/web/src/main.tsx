@@ -158,7 +158,9 @@ import {
 } from './HistoryWindow';
 import { StartupTransition } from './StartupTransition';
 import { ToolActivity } from './ToolActivity';
-import { RunStream } from './RunStream';
+import { RunStream, type LiveReasoning } from './RunStream';
+import { ReasoningView, type ReasoningReadings } from './ReasoningView';
+import type { ReasoningDelta } from '../../../packages/contracts/src/reasoning';
 import { ReadCoordinator } from './ReadCoordinator';
 import { bindReadingCheckpointScope } from './ReadingCheckpoint';
 import { conversationMessages, isInboxUserMessage } from './MessageTimeline';
@@ -334,6 +336,7 @@ function App({
     [modal, setModalState] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
+  const [streamingReasoning, setStreamingReasoning] = useState<Record<string, LiveReasoning>>({});
   const [cacheState, setCacheState] = useState(createWorkbenchSnapshot);
   const [settingsTarget, setSettingsTarget] = useState<{
     providerId?: string;
@@ -703,6 +706,7 @@ function App({
   const heldNavigation = useRef<{ runId: string; operationId: string; epoch: number } | undefined>(undefined);
   const detailRequest = useRef(0);
   const runStream = useRef(new RunStream());
+  const reasoningReadings = useRef<ReasoningReadings>(new Map());
   const streamRun = useRef('');
   const [connection, setConnection] = useState('connecting');
   const actionPending = useRef(false);
@@ -1244,6 +1248,7 @@ function App({
             clearReadIssue('detail', request);
             runStream.current.sync(result.requests);
             setStreaming(runStream.current.texts());
+            setStreamingReasoning(runStream.current.reasonings());
             setDetail((old) => {
               if (old?.run.id !== wanted) return result;
               const messages = append ? earlierMessages(result.messages, old.messages) : result.messages;
@@ -1456,6 +1461,7 @@ function App({
       streamRun.current = runId;
       runStream.current.clear();
       setStreaming({});
+      setStreamingReasoning({});
     }
     // Preserve the last task view on a hot return while reconciling it with the
     // server. A different run was already cleared by navigate().
@@ -1470,7 +1476,10 @@ function App({
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        if (!disposed) setStreaming(runStream.current.texts());
+        if (!disposed) {
+          setStreaming(runStream.current.texts());
+          setStreamingReasoning(runStream.current.reasonings());
+        }
       });
     };
     let listsDirty = false;
@@ -1556,6 +1565,7 @@ function App({
           }
           if (event === 'message.completed') {
             const data = JSON.parse((e as MessageEvent).data);
+            if (data.runId !== runId) return;
             runStream.current.complete(data.taskId, data.payload);
             publishStream();
           }
@@ -1572,7 +1582,15 @@ function App({
       source.addEventListener('message.delta', (e) => {
         if (disposed) return;
         const data = JSON.parse((e as MessageEvent).data);
+        if (data.runId !== runId) return;
         if (!runStream.current.delta(data)) reload();
+        publishStream();
+      });
+      source.addEventListener('message.reasoning.delta', (e) => {
+        if (disposed || terminalSurface) return;
+        const data = JSON.parse((e as MessageEvent).data) as ReasoningDelta;
+        if (data.runId !== runId) return;
+        if (!runStream.current.reasoningDelta(data)) reload();
         publishStream();
       });
     };
@@ -2951,6 +2969,17 @@ function App({
                                 : ''}
                             </small>
                           </div>
+                          {!terminalSurface &&
+                          m.role === 'assistant' &&
+                          (m.reasoning?.characters || m.reasoning?.readUnavailable) ? (
+                            <ReasoningView
+                              runId={detail.run.id}
+                              messageId={m.id}
+                              requestId={m.requestId}
+                              reasoning={m.reasoning}
+                              readings={reasoningReadings.current}
+                            />
+                          ) : null}
                           {m.text &&
                             (m.role === 'tool' ? (
                               <details open={initialHistoryAnchor?.id === m.id || undefined}>
@@ -2986,31 +3015,102 @@ function App({
                       </div>
                     );
                   })}
-                  {Object.entries(streaming)
-                    .filter(([, value]) => value && !detail.messagePage?.before)
-                    .map(([taskId, value]) => (
+                  {(streamRun.current === detail.run.id
+                    ? [...new Set([...Object.keys(streaming), ...Object.keys(streamingReasoning)])]
+                    : []
+                  )
+                    .filter(
+                      (taskId) =>
+                        (streaming[taskId] || streamingReasoning[taskId]) &&
+                        !detail.messagePage?.before &&
+                        !detail.messages.some(
+                          (message) =>
+                            message.requestId && message.requestId === streamingReasoning[taskId]?.requestId,
+                        ),
+                    )
+                    .map((taskId) => (
                       <div className="message assistant" key={taskId}>
                         <div className="message-avatar assistant">
                           <Icon name="spark" size={17} />
                         </div>
                         <div className="message-body">
                           <div className="message-label">
-                            正在生成
+                            {streaming[taskId] ? '正在生成回答' : '正在思考'}
                             <span className="typing-dot" />
                           </div>
-                          <MarkdownDocument
-                            text={value}
-                            onLocalLink={
-                              detail.run.contract.permissionProfile.read
-                                ? previewFileLinks.get(taskId)
-                                : undefined
-                            }
-                          />
+                          {!terminalSurface && streamingReasoning[taskId] && (
+                            <ReasoningView
+                              runId={detail.run.id}
+                              requestId={streamingReasoning[taskId].requestId}
+                              reasoning={streamingReasoning[taskId]}
+                              liveText={streamingReasoning[taskId].text}
+                              readings={reasoningReadings.current}
+                              onPage={(text, offset) => {
+                                if (activeRunId.current !== detail.run.id) return;
+                                runStream.current.seedReasoning(
+                                  taskId,
+                                  streamingReasoning[taskId].requestId,
+                                  text,
+                                  offset,
+                                );
+                                setStreaming(runStream.current.texts());
+                                setStreamingReasoning(runStream.current.reasonings());
+                              }}
+                            />
+                          )}
+                          {streaming[taskId] && (
+                            <MarkdownDocument
+                              text={streaming[taskId]}
+                              onLocalLink={
+                                detail.run.contract.permissionProfile.read
+                                  ? previewFileLinks.get(taskId)
+                                  : undefined
+                              }
+                            />
+                          )}
                         </div>
                       </div>
                     ))}
+                  {!terminalSurface &&
+                    detail.requests
+                      .filter(
+                        (request) =>
+                          !detail.messagePage?.before &&
+                          request.reasoning?.status === 'interrupted' &&
+                          (request.reasoning.characters || request.reasoning.readUnavailable) &&
+                          !detail.messages.some((message) => message.requestId === request.id),
+                      )
+                      .map((request) => (
+                        <div
+                          className="message"
+                          key={`reasoning:${request.id}`}
+                          data-reasoning-request={request.id}
+                        >
+                          <div className="message-avatar assistant">
+                            <Icon name="history" size={17} />
+                          </div>
+                          <div className="message-body">
+                            <div className="message-label">
+                              已中断的思考 ·{' '}
+                              {messageIndex.tasks.get(request.taskId)?.spec.title || '模型请求'}
+                            </div>
+                            <ReasoningView
+                              runId={detail.run.id}
+                              requestId={request.id}
+                              reasoning={request.reasoning!}
+                              readings={reasoningReadings.current}
+                            />
+                          </div>
+                        </div>
+                      ))}
                   {detail.tasks
-                    .filter((t) => t.status === 'RUNNING' && !streaming[t.id] && !detail.messagePage?.before)
+                    .filter(
+                      (t) =>
+                        t.status === 'RUNNING' &&
+                        !streaming[t.id] &&
+                        !streamingReasoning[t.id] &&
+                        !detail.messagePage?.before,
+                    )
                     .map((t) => (
                       <div
                         className="message assistant pending-response"

@@ -50,7 +50,7 @@ export function ContextMeter({
       {showStreaming && projection?.metrics?.phase === 'streaming' && (
         <span
           className="context-stream-output"
-          title="按可见生成文本字节估算，不含隐藏思考；实际用量由供应商返回。"
+          title="按回答正文字节估算，不含思考记录；实际用量由供应商返回。"
         >
           生成 ≈{count(projection.streamingOutputTokens)} Token
         </span>
@@ -132,7 +132,7 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
           </div>
         </dl>
         <p className="context-status-note">
-          生成估算仅含可见文本，不含隐藏思考。实际用量来自最近一次供应商返回；累计调用预算单独统计。
+          生成估算仅含回答正文，不含思考记录。实际用量来自最近一次供应商返回；累计调用预算单独统计。
         </p>
       </details>
       <details className="context-reserves">

@@ -6,7 +6,7 @@ import type { RoleRoutingSnapshot, RoleRoutingDecision } from './model-routing.j
 import type { ProjectCapabilitySnapshot } from './project-intelligence.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.12.2';
+export const VERSION = '1.13.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -425,6 +425,8 @@ export interface ToolCall {
   arguments: string;
 }
 export interface Message extends Entity {
+  /** Read-only display metadata. Full provider reasoning remains in reasoningContent for replay. */
+  reasoning?: import('./reasoning.js').ReasoningDisplay;
   sourceInboxId?: string;
   purpose?: 'model_handoff' | 'runtime_notice';
   handoffHistoryRef?: string;
@@ -477,6 +479,8 @@ export const UsageSchema = z
     '推理用量必须包含于输出总量',
   );
 export interface RequestRecord extends Entity {
+  /** Read-only display metadata; the display cache is independent of request accounting. */
+  reasoning?: import('./reasoning.js').ReasoningDisplay;
   runId: string;
   taskId: string;
   attemptId: string;

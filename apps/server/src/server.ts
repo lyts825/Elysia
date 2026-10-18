@@ -49,6 +49,7 @@ import {
 import { TEXT_PAGE_BYTES } from '../../../packages/contracts/src/files.js';
 import type { FileResource } from './file-reader.js';
 import { ArtifactPreviewService } from './artifact-preview.js';
+import { reasoningMessagePreview, reasoningPrefixLength } from '../../../packages/contracts/src/reasoning.js';
 import { CodexSubscription } from './codex-subscription.js';
 import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
@@ -1262,12 +1263,14 @@ export function createServer(
       agents: store.all<Agent>('agents', run.id),
       contexts,
       ...history,
+      messages: history.messages.map(reasoningMessagePreview),
       ...(conversation
         ? conversation
         : {
             artifacts: store.all<Artifact>('artifacts', run.id),
             snapshots: store.all('snapshots', run.id),
-            requests: 'requests' in records ? records.requests : [],
+            requests:
+              'requests' in records ? records.requests.map((record) => runReads.requestPreview(record)) : [],
             operations: 'operations' in records ? records.operations : [],
             decisions: store.all('decisions', run.id),
           }),
@@ -1655,6 +1658,19 @@ export function createServer(
             '\n\n',
           true,
         );
+  };
+  executor.onReasoningDelta = (value) => {
+    // JSON can escape each UTF-16 unit to six bytes; keep every public delta under the frame bound.
+    for (let offset = 0; offset < value.text.length; ) {
+      const end = reasoningPrefixLength(value.text, offset + 8192);
+      if (end <= offset) break;
+      const frame =
+        'event: message.reasoning.delta\ndata: ' +
+        JSON.stringify({ ...value, text: value.text.slice(offset, end), offset: value.offset + offset }) +
+        '\n\n';
+      for (const stream of streams.get(value.runId) ?? []) boundedStreams.get(stream)?.write(frame, true);
+      offset = end;
+    }
   };
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/api/runs/:id/events',

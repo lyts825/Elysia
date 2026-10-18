@@ -30,6 +30,7 @@ import {
   type ContextSnapshot,
 } from '../../contracts/src/index.js';
 import { Store, id, now, stable } from '../../storage/src/index.js';
+import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 import { freezeRoleRouting, routeTask } from './model-routing.js';
 import { ROLE_ROUTING_PROVIDER, type RoleRoutingDecision } from '../../contracts/src/model-routing.js';
 import { freezeProjectCapabilities } from '../../context/src/project-intelligence.js';
@@ -814,7 +815,7 @@ export class Kernel {
       text,
       ...extra,
     });
-    this.event(task.runId, 'message.completed', message, task.id);
+    this.event(task.runId, 'message.completed', reasoningMessagePreview(message), task.id);
     return message;
   }
   claim(taskId: string) {

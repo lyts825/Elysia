@@ -23,6 +23,7 @@ export class ProviderError extends AppError {
 }
 export type ProviderEvent =
   | { type: 'delta'; text: string }
+  | { type: 'reasoning_delta'; text: string; kind: 'reasoning_content' }
   | {
       type: 'completed';
       text: string;
@@ -389,7 +390,14 @@ export class NativeProvider implements ProviderAdapter {
             text += choice.delta.content;
             yield { type: 'delta', text: choice.delta.content };
           }
-          if (choice.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
+          if (typeof choice.delta?.reasoning_content === 'string' && choice.delta.reasoning_content) {
+            reasoningContent += choice.delta.reasoning_content;
+            yield {
+              type: 'reasoning_delta',
+              text: choice.delta.reasoning_content,
+              kind: 'reasoning_content',
+            };
+          }
           for (const c of choice.delta?.tool_calls ?? []) {
             if (!Number.isInteger(c.index) || c.index < 0 || (c.type && c.type !== 'function'))
               throw new ProviderError('INVALID_TOOL_CALLS', '模型返回了无效的工具调用片段', 502);

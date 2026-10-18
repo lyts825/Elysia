@@ -18,6 +18,10 @@ import type {
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
 import { readCurrentQuestions } from '../../../packages/storage/src/current-questions.js';
 import { readDetailEvents } from '../../../packages/storage/src/detail-events.js';
+import {
+  REASONING_DISPLAY_MAX_CHARS,
+  REASONING_PAGE_MAX_CHARS,
+} from '../../../packages/contracts/src/reasoning.js';
 import { hash, type Store, type ConversationMessageLinks } from '../../../packages/storage/src/index.js';
 import {
   projectionIssue,
@@ -103,6 +107,40 @@ export class RunReads {
   }
   eventPreview(runId: string) {
     return readDetailEvents(this.store, runId);
+  }
+  requestPreview(request: RequestRecord) {
+    try {
+      const reasoning = this.store.requestReasoningMetadata(request.id);
+      return { ...request, ...(reasoning ? { reasoning } : {}) };
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== 'REASONING_UNAVAILABLE') throw error;
+      const completed =
+        request.status === 'SETTLED' &&
+        Boolean(
+          this.store.db
+            .prepare(
+              `SELECT 1 FROM messages
+        WHERE run_id=? AND json_extract(data,'$.role')='assistant'
+        AND json_extract(data,'$.conversationLinks.requestId')=? LIMIT 1`,
+            )
+            .get(request.runId, request.id),
+        );
+      return {
+        ...request,
+        reasoning: {
+          kind: 'reasoning_content' as const,
+          status:
+            request.status === 'RESERVED'
+              ? ('streaming' as const)
+              : completed
+                ? ('complete' as const)
+                : ('interrupted' as const),
+          characters: 0,
+          truncated: false,
+          readUnavailable: true as const,
+        },
+      };
+    }
   }
   currentQuestions(run: Run, tasks: readonly Task[]) {
     const unavailable = this.store.db
@@ -286,11 +324,27 @@ export class RunReads {
         .all(run.id, run.id, JSON.stringify([...linked]), JSON.stringify(statuses)) as { id: string }[];
     };
     const selectedRequests = select('requests', requestIds, ['RESERVED']);
+    const retainedReasoning = this.store.db
+      .prepare(
+        `SELECT s.request_id id FROM reasoning_streams_v1 s
+      WHERE s.run_id=? AND s.complete=0 AND s.characters>0
+      AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.run_id=s.run_id
+        AND json_extract(m.data,'$.role')='assistant'
+        AND json_extract(m.data,'$.conversationLinks.requestId')=s.request_id)
+      ORDER BY s.rowid DESC LIMIT 12`,
+      )
+      .all(run.id) as { id: string }[];
+    const selectedIds = new Set(selectedRequests.map((row) => row.id));
+    for (const row of retainedReasoning)
+      if (!selectedIds.has(row.id)) {
+        selectedRequests.push(row);
+        selectedIds.add(row.id);
+      }
     const selectedOperations = select('tool_operations', calls, ['INTENT', 'UNCERTAIN']);
     const artifacts = this.store.entityPage<Artifact>('artifacts', 60, undefined, run.id);
     const requests = selectedRequests.flatMap((row) => {
       const value = this.projections.read<RequestRecord>('requests', row.id);
-      return value ? [briefRequest(value)] : [];
+      return value ? [this.requestPreview(briefRequest(value))] : [];
     });
     const operations = selectedOperations.flatMap((row) => {
       const value = this.projections.read<Operation>('tool_operations', row.id);
@@ -478,6 +532,45 @@ export class RunReads {
 }
 export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
   const projections = projectionReads(store);
+  for (const collection of ['messages', 'requests'] as const) {
+    app.get<{ Params: { id: string; recordId: string } }>(
+      `/api/runs/:id/${collection}/:recordId/reasoning`,
+      async (request) => {
+        projections.require<Run>('runs', request.params.id);
+        const query = z
+          .object({
+            offset: z.coerce.number().int().min(0).max(REASONING_DISPLAY_MAX_CHARS).default(0),
+            limit: z.coerce.number().int().min(1).max(REASONING_PAGE_MAX_CHARS).default(8192),
+          })
+          .strict()
+          .parse(request.query);
+        try {
+          return collection === 'messages'
+            ? store.messageReasoningPage(
+                request.params.id,
+                request.params.recordId,
+                query.offset,
+                query.limit,
+              )
+            : store.requestReasoningPage(
+                request.params.id,
+                request.params.recordId,
+                query.offset,
+                query.limit,
+              );
+        } catch (error) {
+          if (error instanceof AppError) throw error;
+          throw new AppError(
+            'REASONING_UNAVAILABLE',
+            '思考文本暂时无法读取，原始记录已保留。',
+            true,
+            null,
+            422,
+          );
+        }
+      },
+    );
+  }
   const requestSignal = (request: FastifyRequest, reply: FastifyReply) => {
     const controller = new AbortController(),
       abort = () => controller.abort();

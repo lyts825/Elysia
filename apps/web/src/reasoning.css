@@ -1,0 +1,159 @@
+.reasoning-panel {
+  min-width: 0;
+  margin: 0 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface-soft);
+  color: var(--secondary);
+  overflow: hidden;
+}
+.reasoning-panel button {
+  touch-action: manipulation;
+}
+.reasoning-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  transition: background-color 120ms ease;
+}
+.reasoning-toggle:hover,
+.reasoning-toggle:active {
+  background: var(--surface-hover);
+}
+.reasoning-toggle:focus-visible {
+  outline-offset: -3px;
+}
+.reasoning-mark,
+.reasoning-chevron {
+  display: flex;
+  flex: none;
+  color: var(--muted);
+}
+.reasoning-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.reasoning-state {
+  margin-left: auto;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.reasoning-chevron {
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.reasoning-toggle[aria-expanded='true'] .reasoning-chevron {
+  transform: rotate(90deg);
+}
+.reasoning-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  padding: 0 0.8rem 0.7rem;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.reasoning-content {
+  border-top: 1px solid var(--border);
+  padding: 0.55rem 0.8rem 0.8rem;
+}
+.reasoning-content[hidden],
+.reasoning-viewport[hidden] {
+  display: none;
+}
+.reasoning-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.25rem;
+}
+.reasoning-copy,
+.reasoning-more,
+.reasoning-read-error button,
+.reasoning-notice button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--secondary);
+}
+.reasoning-copy:active,
+.reasoning-more:active,
+.reasoning-read-error button:active,
+.reasoning-notice button:active {
+  background: var(--surface-selected);
+}
+.reasoning-viewport {
+  max-height: min(26rem, 48vh);
+  overflow: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0.35rem 0.4rem 0.35rem 0;
+  font-size: 0.9rem;
+  line-height: 1.8;
+}
+.reasoning-viewport pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.reasoning-notice,
+.reasoning-error,
+.reasoning-read-error {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.reasoning-notice {
+  color: var(--muted);
+}
+.reasoning-error,
+.reasoning-read-error {
+  color: var(--danger);
+}
+.reasoning-read-error button {
+  margin-top: 0.4rem;
+}
+.reasoning-more {
+  margin-top: 0.6rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-toggle,
+  .reasoning-chevron {
+    transition: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .reasoning-panel,
+  .reasoning-content {
+    border-color: var(--secondary);
+  }
+  .reasoning-state,
+  .reasoning-preview,
+  .reasoning-notice {
+    color: var(--secondary);
+  }
+}

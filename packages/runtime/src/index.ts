@@ -30,6 +30,7 @@ import type {
 } from '../../contracts/src/terminal-runtime.js';
 import type { TerminalResourcePool } from './terminal-resources.js';
 import type { RunStopCurrentResult } from '../../contracts/src/run-reads.js';
+import type { ReasoningDelta } from '../../contracts/src/reasoning.js';
 import { toolRecovery } from './tool-recovery.js';
 export interface ExecutorAdapter {
   capabilities: { recursive: boolean; recoverable: boolean };
@@ -56,6 +57,7 @@ export class NativeExecutor implements ExecutorAdapter {
   private capacityController = new AbortController();
   onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
     () => {};
+  onReasoningDelta: (value: ReasoningDelta) => void = () => {};
   adapterFactory: (agent: Agent) => ProviderAdapter = (agent) => new NativeProvider(agent.providerBinding);
   terminalRunner?: (task: Task, signal: AbortSignal) => Promise<void>;
   terminalInterrupt?: (runId: string, taskId?: string) => Promise<void>;
@@ -724,6 +726,8 @@ export class NativeExecutor implements ExecutorAdapter {
       );
       store.startRequestStream(record.id);
       let partial = '';
+      let reasoningOffset = 0,
+        reasoningCacheFailed = false;
       let lastContextUpdate = 0;
       metrics = {
         ...metrics,
@@ -754,6 +758,29 @@ export class NativeExecutor implements ExecutorAdapter {
               );
               lastContextUpdate = Date.now();
             }
+          } else if (event.type === 'reasoning_delta') {
+            if (!reasoningCacheFailed) {
+              try {
+                const saved = store.appendRequestReasoning(
+                  record.id,
+                  event.text,
+                  reasoningOffset,
+                  event.kind,
+                );
+                if (saved.text)
+                  this.onReasoningDelta({
+                    runId: run.id,
+                    taskId: task.id,
+                    requestId: record.id,
+                    kind: event.kind,
+                    ...saved,
+                  });
+              } catch {
+                // Optional display caching cannot change model output, usage or tool execution.
+                reasoningCacheFailed = true;
+              }
+            }
+            reasoningOffset += event.text.length;
           } else complete = event;
         }
         if (!complete) throw new ProviderError('STREAM_INTERRUPTED', '模型未产生完成响应', 0);
@@ -861,6 +888,13 @@ export class NativeExecutor implements ExecutorAdapter {
       });
       return message;
     });
+    if (typeof completed.reasoningContent === 'string') {
+      try {
+        store.completeRequestReasoning(successfulRequestId!, completed.reasoningContent);
+      } catch {
+        /* The canonical Message still supports explicit historical reads. */
+      }
+    }
     signal.throwIfAborted();
     if (completed.calls.length)
       await this.executeCalls(task, attempt, completed.calls, signal, assistantMessage.id);

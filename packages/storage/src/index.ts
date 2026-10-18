@@ -8,6 +8,7 @@ import {
   existsSync,
   realpathSync,
   rmSync,
+  statSync,
 } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -24,6 +25,17 @@ import {
 } from '../../contracts/src/index.js';
 import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
+import { ReasoningStreams } from './reasoning-stream.js';
+import {
+  completedReasoning,
+  reasoningMessagePreview,
+  REASONING_DISPLAY_MAX_CHARS,
+  REASONING_PAGE_MAX_CHARS,
+  reasoningPrefixLength,
+  splitsReasoningCharacter,
+  type ReasoningKind,
+  type ReasoningPage,
+} from '../../contracts/src/reasoning.js';
 import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
 import { publishFileObject } from './file-objects.js';
@@ -255,6 +267,8 @@ function projection(table: Table, entity: any) {
       ? {
           sessionId: entity.sessionId,
           ordinal: entity.ordinal,
+          role: entity.role,
+          reasoningDisplay: completedReasoning(entity.reasoningContent) ?? null,
           conversationLinks: conversationLinks(entity),
         }
       : {}),
@@ -287,6 +301,7 @@ export class Store {
   private depth = 0;
   private searchWork = new SearchWork();
   private requestStreams: RequestStreams;
+  private reasoningStreams: ReasoningStreams;
   private artifactDeliveryReads: ArtifactDeliveryMetadataReads;
   private objectReferences?: ObjectReferenceProjection;
   private requestReadProjectionUpdate?: ReturnType<DatabaseSync['prepare']>;
@@ -310,6 +325,7 @@ export class Store {
       );
       this.recovery = new ExecutionRecovery(this);
       this.requestStreams = new RequestStreams(this.db);
+      this.reasoningStreams = new ReasoningStreams(this.db);
       this.objectReferences = new ObjectReferenceProjection(this.db, tables, expand, objectRefs);
       // Raw repairs invalidate the derived log pointer without rewriting request/usage projections.
       this.db.exec(`CREATE TABLE IF NOT EXISTS request_log_pointer_dirty_v1(
@@ -689,6 +705,89 @@ export class Store {
   }
   appendRequestText(key: string, text: string, expectedOffset: number) {
     this.tx(() => this.requestStreams.append(key, text, expectedOffset));
+  }
+  appendRequestReasoning(key: string, text: string, offset: number, kind: ReasoningKind) {
+    return this.tx(() => this.reasoningStreams.append(key, text, offset, kind));
+  }
+  completeRequestReasoning(key: string, text: string) {
+    this.tx(() => this.reasoningStreams.complete(key, text));
+  }
+  requestReasoningMetadata(key: string) {
+    return this.reasoningStreams.metadata(key);
+  }
+  requestReasoningPage(runId: string, requestId: string, offset: number, limit: number): ReasoningPage {
+    if (!this.db.prepare('SELECT 1 FROM requests WHERE id=? AND run_id=?').get(requestId, runId))
+      throw new AppError('NOT_FOUND', '模型请求不存在', false, null, 404);
+    return { runId, requestId, ...this.reasoningStreams.page(requestId, offset, limit) };
+  }
+  messageReasoningPage(runId: string, messageId: string, offset: number, limit: number): ReasoningPage {
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset > REASONING_DISPLAY_MAX_CHARS ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > REASONING_PAGE_MAX_CHARS
+    )
+      throw new AppError('REASONING_RANGE', '思考文本读取范围无效');
+    const row = this.db.prepare('SELECT data FROM messages WHERE id=? AND run_id=?').get(messageId, runId) as
+      | { data: string }
+      | undefined;
+    if (!row) throw new AppError('NOT_FOUND', '消息不存在', false, null, 404);
+    const metadata = JSON.parse(row.data);
+    const requestId = metadata.conversationLinks?.requestId;
+    if (
+      typeof requestId === 'string' &&
+      metadata.role === 'assistant' &&
+      metadata.reasoningDisplay &&
+      this.db.prepare('SELECT 1 FROM requests WHERE id=? AND run_id=?').get(requestId, runId) &&
+      this.reasoningStreams.metadata(requestId)?.status === 'complete' &&
+      this.db.prepare('SELECT 1 FROM reasoning_streams_v1 WHERE request_id=? AND complete=1').get(requestId)
+    )
+      return { ...this.requestReasoningPage(runId, requestId, offset, limit), messageId };
+    // Legacy messages have no display cache. Read only their public body, never providerNativeRef.
+    const body = this.db
+      .prepare(
+        'SELECT CASE WHEN length(content)<=33554432 THEN content END content,length(content)>33554432 oversized FROM messages WHERE id=? AND run_id=?',
+      )
+      .get(messageId, runId) as { content?: Uint8Array; oversized: number };
+    if (body.oversized)
+      throw new AppError(
+        'REASONING_UNAVAILABLE',
+        '历史消息过大，无法读取思考预览；原文已保留',
+        false,
+        null,
+        422,
+      );
+    const message = body.content
+      ? JSON.parse(gunzipSync(body.content, { maxOutputLength: 32 * 1024 * 1024 }).toString('utf8'))
+      : metadata;
+    if (message.contentRef)
+      Object.assign(
+        message,
+        JSON.parse(this.readObject(message.contentRef, 32 * 1024 * 1024).toString('utf8')),
+      );
+    if (message.id !== messageId || message.runId !== runId)
+      throw new AppError('REASONING_UNAVAILABLE', '思考文本归属无法核对', true, null, 422);
+    const reasoning = message.role === 'assistant' ? completedReasoning(message.reasoningContent) : undefined;
+    if (offset > (reasoning?.characters ?? 0))
+      throw new AppError('REASONING_RANGE', '思考文本读取位置已变化，请从头读取');
+    if (reasoning && splitsReasoningCharacter(message.reasoningContent, offset))
+      throw new AppError('REASONING_RANGE', '读取位置位于字符中间，请使用上一页返回的位置');
+    const end = reasoning
+      ? reasoningPrefixLength(message.reasoningContent, Math.min(reasoning.characters, offset + limit))
+      : 0;
+    if (reasoning && offset < reasoning.characters && end <= offset)
+      throw new AppError('REASONING_RANGE', '页长度不足以读取完整字符');
+    return {
+      runId,
+      messageId,
+      ...(typeof message.requestId === 'string' ? { requestId: message.requestId } : {}),
+      reasoning: reasoning ?? null,
+      text: reasoning ? message.reasoningContent.slice(offset, end) : '',
+      offset,
+      nextOffset: end < (reasoning?.characters ?? 0) ? end : null,
+    };
   }
   private historySearchSchema() {
     this.db.exec(`
@@ -1393,6 +1492,13 @@ export class Store {
         type = 'run.updated';
         payload = { detailsOmitted: true, readUnavailable: true, eventType: row.type };
       }
+      if (
+        row.type === 'message.completed' &&
+        payload &&
+        typeof payload === 'object' &&
+        typeof (payload as Message).reasoningContent === 'string'
+      )
+        payload = reasoningMessagePreview(payload as Message);
       return {
         runId: row.run_id,
         seq: row.seq,
@@ -1654,14 +1760,20 @@ export class Store {
   publishFileObject(source: string, expected: { hash: string; size: number }, signal?: AbortSignal) {
     return publishFileObject(this.directory, source, expected, signal);
   }
-  readObject(ref: string): Buffer {
+  readObject(ref: string, maxBytes?: number): Buffer {
     if (!legacyObjectPattern.test(ref) && !sqliteObjectPattern.test(ref))
       throw new AppError('INVALID_OBJECT', '无效对象引用');
     const compressed = this.db
-      .prepare('SELECT hash,raw_size,content FROM compressed_objects WHERE ref=?')
-      .get(ref) as any;
+      .prepare(
+        'SELECT hash,raw_size,CASE WHEN ? IS NULL OR (raw_size<=? AND length(content)<=?) THEN content END content FROM compressed_objects WHERE ref=?',
+      )
+      .get(maxBytes ?? null, maxBytes ?? null, maxBytes ?? null, ref) as any;
     if (compressed) {
-      const data = gunzipSync(compressed.content);
+      if (!compressed.content) throw new AppError('OBJECT_LIMIT', '对象超过本次读取上限');
+      const data = gunzipSync(
+        compressed.content,
+        maxBytes === undefined ? undefined : { maxOutputLength: maxBytes },
+      );
       if (data.length !== compressed.raw_size || hash(data) !== compressed.hash)
         throw new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
       return data;
@@ -1672,6 +1784,8 @@ export class Store {
       real = realpathSync(file),
       root = realpathSync(path.join(this.directory, 'objects'));
     if (!real.startsWith(root + path.sep)) throw new AppError('INVALID_OBJECT', '对象越界');
+    if (maxBytes !== undefined && statSync(real).size > maxBytes)
+      throw new AppError('OBJECT_LIMIT', '对象超过本次读取上限');
     const data = readFileSync(real);
     if (hash(data) !== path.basename(ref)) throw new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
     return data;

@@ -2,6 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import type { Event } from '../../contracts/src/index.js';
 import type { EventPreviewCoverage } from '../../contracts/src/run-reads.js';
 import type { Store } from './index.js';
+import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 
 export const DETAIL_EVENT_LIMITS = {
   count: 100,
@@ -89,6 +90,13 @@ export function readDetailEvents(
       coverage.limited ||= limited;
       payload = { detailsOmitted: true, readUnavailable: true };
     }
+    if (
+      row.type === 'message.completed' &&
+      payload &&
+      typeof payload === 'object' &&
+      typeof (payload as { reasoningContent?: unknown }).reasoningContent === 'string'
+    )
+      payload = reasoningMessagePreview(payload as { reasoningContent: string });
     return {
       runId,
       seq: row.seq,
