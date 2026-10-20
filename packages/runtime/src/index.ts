@@ -17,6 +17,7 @@ import { hash, id, stable } from '../../storage/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
 import { ToolGateway } from '../../tools/src/index.js';
 import { compileContext, requestDifference } from '../../context/src/index.js';
+import { nativeContinuationNotice } from '../../context/src/harness.js';
 import {
   NativeProvider,
   ProviderError,
@@ -566,7 +567,7 @@ export class NativeExecutor implements ExecutorAdapter {
         this.kernel.appendMessage(
           task,
           'user',
-          `运行提醒：${repeated.tool} 已连续产生相同确定性错误 ${repeated.code}，相关状态没有进展。请按工具结果的 recovery 修正参数或改用已授权能力；不要重复同一调用，继续相同错误将暂停该分支。已有任务：` +
+          `运行提醒：${repeated.tool} 已重复产生确定性错误 ${repeated.code}，相关状态没有进展。按最新 recovery 修正原因或改用已开放能力；相同条件下继续调用将暂停该分支。下列任务仅供核对归属，等待只能使用直属子任务 ID：` +
             stable(
               store
                 .all<Task>('tasks', task.runId)
@@ -911,9 +912,7 @@ export class NativeExecutor implements ExecutorAdapter {
       this.kernel.appendMessage(
         task,
         'user',
-        store.require<Task>('tasks', task.id).phase === 'planning'
-          ? '请使用 planning 阶段的工具：关键需求缺口用 clarify，需求明确后用 propose_plan。普通文本不改变完成状态。'
-          : '当前已授权任务应继续执行：自行选择下一项可用工具，常规实现、修复和验证无需再确认；只有影响目标、授权或验收且无法自行查明的缺口才用 clarify。完成后提供真实产物证据并 submit_result；普通文本不改变完成状态。',
+        nativeContinuationNotice(store.require<Task>('tasks', task.id)),
         { purpose: 'runtime_notice' },
       );
     }

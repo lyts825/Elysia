@@ -36,6 +36,11 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
       'conflict',
       '用可用的 read 重新读取目标文件及真实哈希，核对现有修改后重新构造写入或唯一原文补丁；不要沿用过期哈希或覆盖其他修改。',
     );
+  if (code === 'REVIEW_MODEL_CONFLICT')
+    return advice(
+      'dependency',
+      '审计模型与执行模型冲突。按当前角色配置选择不同型号，连接、账号或思考强度不同不能消除冲突；历史已使用型号也参与校验。保留合同 allowSameModelReview，只有用户在合同界面明确确认才能开启同模型审计。无其他可用模型时说明所需配置，不自行开启例外或反复重试。',
+    );
   if (['PATH_ESCAPE', 'WRITE_SCOPE', 'EXEC_SCOPE', 'PATH_DENIED', 'ARTIFACT_SCOPE'].includes(code))
     return advice(
       'scope',
@@ -73,7 +78,7 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   )
     return advice(
       'evidence',
-      '按当前任务 acceptanceCriteria 核对缺失项，继续完成并登记真实文件、产物或成功命令证据后重新提交。只调整错误的证据引用，不能放宽验收项或声称失败已通过。',
+      '按本任务 acceptanceCriteria 和从 0 开始的 criterion 核对缺失项。file 使用可读路径及实际哈希；artifact 只能引用本任务或已完成直属子任务的产物；command 必须是本任务成功 exec 的 operationId。按当前角色补足真实证据，不能清空真实未完成项、放宽验收或把他人结果伪造成自己的操作。',
     );
   if (
     [

@@ -22,7 +22,7 @@ export interface LoadedSkill extends SkillSummary {
   hash: string;
 }
 
-export const SKILL_CATALOG_VERSION = '1';
+export const SKILL_CATALOG_VERSION = '2';
 // Only application-maintained entrypoints can become instructions. Metadata lives in SKILL.md.
 const skillIds = [
   'data-analysis',

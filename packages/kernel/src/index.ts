@@ -1264,7 +1264,7 @@ export class Kernel {
       this.appendMessage(
         next,
         'user',
-        '模型切换交接包（既有对话与结果，非新的用户请求）：' +
+        '模型切换交接包：这是既有对话与结果的历史资料。按当前合同、任务身份和实际状态继续，先核对已有成果；截断细节按 originalHistoryRef 回查，不重复已完成动作或继承旧授权。' +
           stable({
             task: next.spec,
             result: task.result,
@@ -1697,8 +1697,9 @@ export class Kernel {
             task,
             'user',
             (needsDecision
-              ? '子任务出现失败或阻塞，请根据部分结果处理失败分支；已完成产物应保留，不要重复执行：'
-              : '等待的子任务已结束：') + stable(this.childResults(children)),
+              ? '子任务失败或阻塞：核对下列状态、原因和部分成果，处理具体缺口；保留已完成产物，不重复委派或把失败分支视为完成。'
+              : '等待的子任务已结束：逐项核对实际状态和证据，再决定集成或后续处理；结束不等于全部成功。') +
+              stable(this.childResults(children)),
             { purpose: 'runtime_notice' },
           );
           if (needsDecision && this.taskNeedsVerification(task)) this.wait(task, 'verification');
