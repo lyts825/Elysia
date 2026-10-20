@@ -1,0 +1,35 @@
+import type { ProviderConfig } from '../../../packages/contracts/src/index.js';
+import {
+  NativeProvider,
+  ProviderRegistry,
+  nativeProviderPlugins,
+} from '../../../packages/providers/src/index.js';
+import type { CodexSubscription } from './codex-subscription.js';
+import type { SubscriptionService } from './subscription.js';
+import type { ProviderKeys } from './provider-keys.js';
+
+/** Server-owned account capabilities stay out of the runtime and of the terminal surface. */
+export function serverProviderPlugins(services: {
+  codex: Pick<CodexSubscription, 'adapter'>;
+  subscription: Pick<SubscriptionService, 'credential'>;
+  keys: Pick<ProviderKeys, 'credential'>;
+}) {
+  return new ProviderRegistry([
+    ...nativeProviderPlugins((binding) =>
+      binding.credentialId ? () => services.keys.credential(binding) : undefined,
+    ),
+    {
+      manifest: { id: 'provider.chatgpt', version: '1.0.0', apiVersion: 1 },
+      contributions: {
+        'openai:chatgpt': (binding: ProviderConfig) =>
+          new NativeProvider(binding, () => services.subscription.credential(binding.subscriptionAccountId!)),
+      },
+    },
+    {
+      manifest: { id: 'provider.codex', version: '1.0.0', apiVersion: 1 },
+      contributions: {
+        'openai:codex': (binding: ProviderConfig) => services.codex.adapter(binding),
+      },
+    },
+  ]);
+}

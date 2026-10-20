@@ -35,7 +35,9 @@ import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
 import { registerTerminalCommunication } from './terminal-communication.js';
 import { terminalBinding } from './terminal-binding.js';
-import { NativeProvider, providerBaseUrl } from '../../../packages/providers/src/index.js';
+import { providerBaseUrl, ProviderRegistry } from '../../../packages/providers/src/index.js';
+import { serverProviderPlugins } from './provider-plugins.js';
+import { terminalExecutionPlugin } from '../../../packages/runtime/src/terminal-plugin.js';
 import { PreviewService } from './preview.js';
 import { SubscriptionService } from './subscription.js';
 import { desktopServices, type DesktopServices } from './desktop.js';
@@ -179,22 +181,27 @@ export function createServer(
       : url.startsWith('/terminal/')
         ? null
         : url;
-  const kernel = new Kernel(store),
-    executor = new NativeExecutor(kernel);
+  const kernel = new Kernel(store);
+  const terminalControl =
+    options.surface === 'terminal'
+      ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
+      : undefined;
+  let terminal!: DockerAgentService;
+  const executor = new NativeExecutor(kernel, {
+    executionPlugins: (gateway) => {
+      terminal = new DockerAgentService(kernel, gateway, {
+        ...options.terminal,
+        ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
+      });
+      return [terminalExecutionPlugin(terminal)];
+    },
+  });
   executor.acceptRun = (run) =>
     options.surface === 'native'
       ? run.execution?.kind !== 'docker-agent'
       : options.surface === 'terminal'
         ? run.execution?.kind === 'docker-agent'
         : true;
-  const terminalControl =
-    options.surface === 'terminal'
-      ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
-      : undefined;
-  const terminal = new DockerAgentService(kernel, executor.gateway, {
-    ...options.terminal,
-    ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
-  });
   const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
     if (!terminalControl) return profile;
     if (profile.connectionId === undefined && projectId) {
@@ -210,11 +217,6 @@ export function createServer(
     }
     return terminalControl.bindProfile(profile);
   };
-  executor.terminalRunner = (task, signal) => terminal.run(task, signal);
-  executor.terminalInterrupt = (runId, taskId) => terminal.interrupt(runId, taskId);
-  executor.terminalDispose = () => terminal.dispose();
-  executor.terminalResources = terminal.resources;
-  executor.terminalCapacityRefresh = (signal) => terminal.refreshResourceCapacity(signal);
   const nativeService = <T extends object>(factory: () => T): T =>
     options.surface === 'terminal'
       ? new Proxy({} as T, {
@@ -231,17 +233,11 @@ export function createServer(
   );
   const keys = nativeService(() => options.keys ?? new ProviderKeys(desktopServices()));
   const apiCatalog = (provider: ProviderConfig) => apiModels(provider, keys);
-  const providerAdapter = (provider: ProviderConfig) =>
-    provider.authMode === 'codex'
-      ? codex.adapter(provider)
-      : new NativeProvider(
-          provider,
-          provider.authMode === 'chatgpt'
-            ? () => subscription.credential(provider.subscriptionAccountId!)
-            : provider.credentialId
-              ? () => keys.credential(provider)
-              : undefined,
-        );
+  const providerPlugins =
+    options.surface === 'terminal'
+      ? new ProviderRegistry([])
+      : serverProviderPlugins({ codex, subscription, keys });
+  const providerAdapter = (provider: ProviderConfig) => providerPlugins.adapter(provider);
   executor.adapterFactory = (agent) => {
     invariant(options.surface !== 'terminal', 'SURFACE_EXECUTION', 'Agent 终端入口不调用原生模型');
     return providerAdapter(agent.providerBinding);
@@ -1793,6 +1789,7 @@ export function createServer(
     kernel,
     executor,
     terminal,
+    providerPlugins,
     scheduler,
     auth,
     bootstrapToken,

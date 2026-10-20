@@ -1,6 +1,7 @@
 import { AppError, invariant, type Task } from '../../contracts/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
+import { LazyPlugin } from '../../plugins/src/index.js';
 
 export const PLAN_ALIGNMENT_MODULE = { id: 'plan-alignment', version: '1' } as const;
 
@@ -27,74 +28,46 @@ export type PlanAlignmentLoader = () => Promise<PlanAlignmentFactory>;
 
 /** Fixed registration, lazy activation and one instance per gateway; no external code loading. */
 export class PlanAlignmentHost {
-  private instance?: PlanAlignmentModule;
-  private pending?: Promise<PlanAlignmentModule>;
-  private closing?: Promise<void>;
-  private closed = false;
+  private readonly plugin: LazyPlugin<PlanAlignmentContext, PlanAlignmentModule>;
   constructor(
-    private context: PlanAlignmentContext,
-    private loader: PlanAlignmentLoader = async () => (await import('./modules/plan-alignment.js')).default,
-  ) {}
+    context: PlanAlignmentContext,
+    loader: PlanAlignmentLoader = async () => (await import('./modules/plan-alignment.js')).default,
+  ) {
+    this.plugin = new LazyPlugin(
+      { ...PLAN_ALIGNMENT_MODULE, apiVersion: 1 },
+      context,
+      async () => {
+        const factory = await loader();
+        return {
+          manifest: { id: factory.id, version: factory.version, apiVersion: 1 },
+          create: (context) => factory.apply(context),
+        };
+      },
+      (instance) =>
+        invariant(
+          instance.id === PLAN_ALIGNMENT_MODULE.id &&
+            instance.version === PLAN_ALIGNMENT_MODULE.version &&
+            instance.definition.name === 'propose_plan',
+          'MODULE_CONTRACT',
+          '计划对齐模块贡献点无效',
+        ),
+    );
+  }
   get loaded() {
-    return this.instance;
+    return this.plugin.loaded;
   }
   load(): Promise<PlanAlignmentModule> {
-    if (this.closed) return Promise.reject(new AppError('MODULE_DISPOSED', '计划对齐模块已释放'));
-    if (this.instance) return Promise.resolve(this.instance);
-    if (this.pending) return this.pending;
-    const pending = (async () => {
-      try {
-        const factory = await this.loader();
-        invariant(!this.closed, 'MODULE_DISPOSED', '计划对齐模块已释放');
-        invariant(
-          factory.id === PLAN_ALIGNMENT_MODULE.id && factory.version === PLAN_ALIGNMENT_MODULE.version,
-          'MODULE_CONTRACT',
-          '计划对齐模块契约版本不匹配',
-        );
-        const instance = factory.apply(this.context);
-        if (
-          instance.id !== factory.id ||
-          instance.version !== factory.version ||
-          instance.definition.name !== 'propose_plan'
-        ) {
-          await instance.dispose();
-          throw new AppError('MODULE_CONTRACT', '计划对齐模块贡献点无效');
-        }
-        if (this.closed) {
-          await instance.dispose();
-          throw new AppError('MODULE_DISPOSED', '计划对齐模块已释放');
-        }
-        this.instance = instance;
-        return instance;
-      } catch (error) {
-        if (error instanceof AppError && error.code === 'MODULE_DISPOSED') throw error;
-        throw new AppError(
-          'PLAN_MODULE_LOAD',
-          '计划对齐模块加载失败，请重试：' + (error instanceof Error ? error.message : String(error)),
-          true,
-        );
-      }
-    })();
-    this.pending = pending;
-    const settled = () => {
-      if (this.pending === pending) this.pending = undefined;
-    };
-    void pending.then(settled, settled);
-    return pending;
+    return this.plugin.load().catch((error: unknown) => {
+      if (error instanceof AppError && error.code === 'PLUGIN_DISPOSED')
+        throw new AppError('MODULE_DISPOSED', '计划对齐模块已释放');
+      throw new AppError(
+        'PLAN_MODULE_LOAD',
+        '计划对齐模块加载失败，请重试：' + (error instanceof Error ? error.message : String(error)),
+        true,
+      );
+    });
   }
   dispose(): Promise<void> {
-    if (this.closing) return this.closing;
-    this.closed = true;
-    this.closing = (async () => {
-      try {
-        await this.pending;
-      } catch {
-        // A load cancelled by shutdown must not leave an activated contribution.
-      }
-      const instance = this.instance;
-      this.instance = undefined;
-      await instance?.dispose();
-    })();
-    return this.closing;
+    return this.plugin.dispose();
   }
 }

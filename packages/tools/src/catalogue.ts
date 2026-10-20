@@ -1,0 +1,182 @@
+import { invariant } from '../../contracts/src/index.js';
+import { hash } from '../../storage/src/index.js';
+import type { McpInspection, McpTool } from './mcp-client.js';
+export const MCP_CATALOGUE_BYTES = 16000;
+const MCP_INLINE_SCHEMA_BYTES = 6000;
+export function unicodeBoundary(value: string, offset: number) {
+  const end = Math.min(offset, value.length);
+  return end > 0 &&
+    value.charCodeAt(end - 1) >= 0xd800 &&
+    value.charCodeAt(end - 1) <= 0xdbff &&
+    value.charCodeAt(end) >= 0xdc00 &&
+    value.charCodeAt(end) <= 0xdfff
+    ? end - 1
+    : end;
+}
+function clipMcpText(value: string, limit: number) {
+  return value.slice(0, unicodeBoundary(value, limit));
+}
+function clipCatalogueText(value: string, byteLimit: number) {
+  let text = '',
+    bytes = 0;
+  for (const character of value) {
+    const size = Buffer.byteLength(JSON.stringify(character), 'utf8') - 2;
+    if (bytes + size > byteLimit) break;
+    text += character;
+    bytes += size;
+  }
+  return text;
+}
+export function localCataloguePage(
+  items: { id: string; name: string; description?: string }[],
+  args: { query?: string; offset: number; limit: number },
+  trust: string,
+  byteBudget: number,
+) {
+  const query = (args.query || '').toLocaleLowerCase(),
+    matched = items.filter((item) =>
+      `${item.name} ${item.description || ''}`.toLocaleLowerCase().includes(query),
+    );
+  const entries: { id: string; name: string; description?: string; descriptionOmitted?: boolean }[] = [];
+  const page = () => ({
+    entries,
+    total: matched.length,
+    nextOffset: args.offset + entries.length < matched.length ? args.offset + entries.length : null,
+    trust,
+  });
+  for (const item of matched.slice(args.offset, args.offset + args.limit)) {
+    entries.push({
+      id: item.id,
+      name: clipCatalogueText(item.name, 64),
+      ...(item.description ? { description: clipCatalogueText(item.description, 160) } : {}),
+    });
+    if (Buffer.byteLength(JSON.stringify(JSON.stringify(page())), 'utf8') <= byteBudget * 0.75) continue;
+    if (entries.length === 1) {
+      delete entries[0].description;
+      entries[0].descriptionOmitted = true;
+      if (Buffer.byteLength(JSON.stringify(JSON.stringify(page())), 'utf8') <= byteBudget * 0.75) continue;
+    }
+    entries.pop();
+    break;
+  }
+  invariant(
+    entries.length || args.offset >= matched.length,
+    'CATALOGUE_PAGE_LIMIT',
+    '当前窗口无法容纳一条目录，请增大窗口',
+  );
+  return page();
+}
+export function mcpCataloguePage(
+  inspection: McpInspection,
+  args: {
+    serverId: string;
+    query?: string;
+    offset: number;
+    limit: number;
+    schemaTool?: string;
+    schemaOffset: number;
+  },
+  byteBudget: number,
+) {
+  const metadata = {
+    serverId: args.serverId,
+    protocolVersion: inspection.protocolVersion,
+    truncated: inspection.truncated,
+    trust: 'untrusted' as const,
+  };
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+  const historyBytes = (value: unknown) => bytes(JSON.stringify(value));
+  const historyBudget = Math.max(768, Math.floor(byteBudget * 0.75));
+  if (args.schemaTool) {
+    const tool = inspection.tools.find((item) => item.name === args.schemaTool);
+    invariant(tool, 'MCP_TOOL_NOT_FOUND', 'MCP 工具不存在或未允许');
+    const schema = JSON.stringify(tool.inputSchema),
+      start = unicodeBoundary(schema, args.schemaOffset),
+      schemaHash = hash(schema);
+    const page = (end: number) => ({
+      serverId: args.serverId,
+      trust: 'untrusted' as const,
+      schemaTool: tool.name,
+      schemaHash,
+      schemaOffset: start,
+      schemaText: schema.slice(start, end),
+      totalCharacters: schema.length,
+      nextSchemaOffset: end < schema.length ? end : null,
+    });
+    // Bound the encoded result as well as its text: escapes and UTF-8 can enlarge JSON.
+    let low = start,
+      high = Math.min(schema.length, start + 8000);
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2),
+        end = unicodeBoundary(schema, middle);
+      if (historyBytes(page(end)) <= historyBudget) low = middle;
+      else high = middle - 1;
+    }
+    const end = unicodeBoundary(schema, low);
+    invariant(
+      end > start || start === schema.length,
+      'MCP_CATALOGUE_LIMIT',
+      '当前窗口无法容纳schema分页，请增大窗口',
+    );
+    return page(end);
+  }
+  const query = (args.query || '').toLocaleLowerCase(),
+    matched = inspection.tools.filter((tool) =>
+      `${tool.name} ${tool.title || ''} ${tool.description || ''}`.toLocaleLowerCase().includes(query),
+    );
+  const tools: Array<Record<string, unknown>> = [];
+  const page = () => ({
+    ...metadata,
+    tools,
+    total: matched.length,
+    offset: args.offset,
+    nextOffset: args.offset + tools.length < matched.length ? args.offset + tools.length : null,
+  });
+  const entry = (tool: McpTool) => {
+    const schemaBytes = bytes(tool.inputSchema),
+      annotations = Object.fromEntries(
+        ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']
+          .filter((key) => typeof tool.annotations?.[key] === 'boolean')
+          .map((key) => [key, tool.annotations![key]]),
+      );
+    return {
+      name: tool.name,
+      ...(tool.title ? { title: clipCatalogueText(clipMcpText(tool.title, 120), 96) } : {}),
+      ...(tool.description
+        ? { description: clipCatalogueText(clipMcpText(tool.description, 240), 160) }
+        : {}),
+      ...(Object.keys(annotations).length ? { annotations } : {}),
+      schemaBytes,
+      ...(schemaBytes <= MCP_INLINE_SCHEMA_BYTES
+        ? { inputSchema: tool.inputSchema }
+        : { schemaOmitted: true, schemaTool: tool.name }),
+    };
+  };
+  for (const tool of matched.slice(args.offset, args.offset + args.limit)) {
+    const value = entry(tool);
+    tools.push(value);
+    if (historyBytes(page()) <= historyBudget) continue;
+    const omitted: Record<string, unknown> = { ...value, schemaOmitted: true, schemaTool: tool.name };
+    delete omitted.inputSchema;
+    tools[tools.length - 1] = omitted;
+    if (historyBytes(page()) <= historyBudget) continue;
+    if (tools.length === 1) {
+      delete omitted.annotations;
+      if (typeof omitted.title === 'string') omitted.title = clipCatalogueText(omitted.title, 32);
+      if (typeof omitted.description === 'string')
+        omitted.description = clipCatalogueText(omitted.description, 64);
+      if (historyBytes(page()) <= historyBudget) continue;
+      delete omitted.title;
+      delete omitted.description;
+      if (historyBytes(page()) <= historyBudget) continue;
+    }
+    tools.pop();
+    break;
+  }
+  invariant(
+    tools.length || args.offset >= matched.length,
+    'MCP_CATALOGUE_LIMIT',
+    '当前窗口无法容纳一个MCP工具，请增大窗口',
+  );
+  return page();
+}

@@ -19,7 +19,8 @@ import { ToolGateway } from '../../tools/src/index.js';
 import { compileContext, requestDifference } from '../../context/src/index.js';
 import { nativeContinuationNotice } from '../../context/src/harness.js';
 import {
-  NativeProvider,
+  ProviderRegistry,
+  nativeProviderPlugins,
   ProviderError,
   type ProviderAdapter,
   type ProviderEvent,
@@ -29,7 +30,7 @@ import type {
   RuntimeQueueEntry,
   RuntimeQueueReason,
 } from '../../contracts/src/terminal-runtime.js';
-import type { TerminalResourcePool } from './terminal-resources.js';
+import { ExecutionPlugins, type ExecutionPlugin, type ExecutionDriver } from './execution-plugins.js';
 import type { RunStopCurrentResult } from '../../contracts/src/run-reads.js';
 import type { ReasoningDelta } from '../../contracts/src/reasoning.js';
 import { toolRecovery } from './tool-recovery.js';
@@ -59,18 +60,29 @@ export class NativeExecutor implements ExecutorAdapter {
   onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
     () => {};
   onReasoningDelta: (value: ReasoningDelta) => void = () => {};
-  adapterFactory: (agent: Agent) => ProviderAdapter = (agent) => new NativeProvider(agent.providerBinding);
-  terminalRunner?: (task: Task, signal: AbortSignal) => Promise<void>;
-  terminalInterrupt?: (runId: string, taskId?: string) => Promise<void>;
-  terminalDispose?: () => Promise<void>;
-  terminalResources?: TerminalResourcePool;
-  terminalCapacityRefresh?: (signal?: AbortSignal) => Promise<void>;
+  private readonly providers = new ProviderRegistry(nativeProviderPlugins());
+  adapterFactory: (agent: Agent) => ProviderAdapter = (agent) =>
+    this.providers.adapter(agent.providerBinding);
+  readonly executionPlugins: ExecutionPlugins;
+  private closing?: Promise<void>;
   /** A workbench surface owns only its selected execution kind. */
   acceptRun: (run: Run) => boolean = () => true;
-  constructor(public kernel: Kernel) {
+  constructor(
+    public kernel: Kernel,
+    options: { executionPlugins?: (gateway: ToolGateway) => readonly ExecutionPlugin[] } = {},
+  ) {
     this.gateway = new ToolGateway(kernel);
+    this.executionPlugins = new ExecutionPlugins([
+      {
+        manifest: { id: 'execution.native', version: '1.0.0', apiVersion: 1 },
+        contributions: { native: { step: (task, signal) => this.nativeStep(task, signal) } },
+      },
+      ...(options.executionPlugins?.(this.gateway) ?? []),
+    ]);
   }
   start() {
+    if (this.closing) throw new AppError('EXECUTOR_DISPOSED', '执行器已释放');
+    if (this.timer && !this.stopped) return;
     this.stopped = false;
     if (this.capacityController.signal.aborted) this.capacityController = new AbortController();
     this.timer = setInterval(() => void this.tick(), 300);
@@ -98,7 +110,7 @@ export class NativeExecutor implements ExecutorAdapter {
       const active = [...this.active.entries()].filter(([, value]) => value.runId === runId);
       for (const [, value] of active) value.controller.abort();
       const stopped = await Promise.allSettled([
-        Promise.resolve().then(() => this.terminalInterrupt?.(runId)),
+        Promise.resolve().then(() => this.executionPlugins.interrupt(runId)),
         Promise.resolve().then(() => {
           const rows = this.kernel.store.db.prepare('SELECT id FROM tasks WHERE run_id=?').all(runId) as {
             id: string;
@@ -137,23 +149,16 @@ export class NativeExecutor implements ExecutorAdapter {
         .every((key) => this.kernel.store.require<Task>('tasks', key).status === 'DONE')
     )
       return 'dependencies';
-    if (run.execution?.kind === 'docker-agent' && this.terminalResources) {
-      const reason = this.terminalResources.reason(run.execution.profile.resourcePreset);
-      if (reason !== 'terminal-resources') return reason;
-    }
+    const admission = this.executionPlugins.forRun(run).admission;
+    const unavailable = admission?.unavailable(run);
+    if (unavailable) return unavailable;
     const agent = this.kernel.store.require<Agent>('agents', task.agentId);
     if (
       [...this.active.values()].filter((entry) => entry.account === agent.providerBinding.account).length >=
       agent.providerBinding.concurrency
     )
       return 'account-concurrency';
-    if (
-      run.execution?.kind === 'docker-agent' &&
-      this.terminalResources &&
-      !this.terminalResources.canAcquireTask(task.id, run.execution.profile.resourcePreset)
-    )
-      return this.terminalResources.reason(run.execution.profile.resourcePreset);
-    return 'ready';
+    return admission?.reason(task, run) ?? 'ready';
   }
   private schedulableRun(run: Run) {
     return (
@@ -178,9 +183,7 @@ export class NativeExecutor implements ExecutorAdapter {
           taskId: task.id,
           position: queue.length + 1,
           reason: this.queueReason(task, run),
-          ...(run.execution?.kind === 'docker-agent'
-            ? { resourcePreset: run.execution.profile.resourcePreset ?? 'standard' }
-            : {}),
+          ...this.executionPlugins.forRun(run).queueMetadata?.(run),
         });
     }
     const activeTaskIds = [...this.active.keys()];
@@ -204,7 +207,7 @@ export class NativeExecutor implements ExecutorAdapter {
     );
     for (const [, value] of active) value.controller.abort();
     const stopped = await Promise.allSettled([
-      Promise.resolve().then(() => this.terminalInterrupt?.(runId, taskId)),
+      Promise.resolve().then(() => this.executionPlugins.interrupt(runId, taskId)),
       Promise.resolve().then(() =>
         this.gateway.processes.cancel(
           tasks ?? new Set(this.kernel.store.all<Task>('tasks', runId).map((t) => t.id)),
@@ -215,7 +218,10 @@ export class NativeExecutor implements ExecutorAdapter {
     const error = stopped.find((result) => result.status === 'rejected');
     if (error?.status === 'rejected') throw error.reason;
   }
-  async dispose() {
+  dispose(): Promise<void> {
+    return (this.closing ??= this.close());
+  }
+  private async close() {
     this.stopped = true;
     this.capacityController.abort();
     if (this.timer) clearInterval(this.timer);
@@ -228,7 +234,7 @@ export class NativeExecutor implements ExecutorAdapter {
       this.kernel.action(run.id, 'pause');
     for (const value of this.active.values()) value.controller.abort();
     const stopped = await Promise.allSettled([
-      Promise.resolve().then(() => this.terminalDispose?.()),
+      Promise.resolve().then(() => this.executionPlugins.dispose()),
       Promise.resolve().then(() => this.gateway.processes.cancel()),
       Promise.allSettled([...this.active.values()].map((v) => v.promise)),
     ]);
@@ -285,14 +291,13 @@ export class NativeExecutor implements ExecutorAdapter {
         excludeRunIds: [...this.locallyStopped],
         excludeExecutionHolds: true,
       });
-      if (
-        this.terminalResources &&
-        tasks.some((task) => {
-          const run = this.kernel.store.require<Run>('runs', task.runId);
-          return run.execution?.kind === 'docker-agent' && this.schedulableRun(run);
-        })
-      )
-        await this.terminalCapacityRefresh?.(this.capacityController.signal);
+      const admissions = new Set<NonNullable<ExecutionDriver['admission']>>();
+      for (const task of tasks) {
+        const run = this.kernel.store.require<Run>('runs', task.runId);
+        const admission = this.executionPlugins.forRun(run).admission;
+        if (admission && !admissions.has(admission) && this.schedulableRun(run)) admissions.add(admission);
+      }
+      for (const admission of admissions) await admission.prepare(this.capacityController.signal);
       if (this.stopped) return;
       for (const candidate of tasks) {
         if (this.active.size >= 4) break;
@@ -322,21 +327,13 @@ export class NativeExecutor implements ExecutorAdapter {
         )
           continue;
         const controller = new AbortController();
-        const terminalReservation = run.execution?.kind === 'docker-agent' && !!this.terminalResources;
-        if (
-          terminalReservation &&
-          !this.terminalResources!.tryAcquire(
-            task.id,
-            'task',
-            run.execution?.kind === 'docker-agent' ? run.execution.profile.resourcePreset : undefined,
-          )
-        )
-          continue;
+        const admission = this.executionPlugins.forRun(run).admission;
+        if (admission && !admission.acquire(task, run)) continue;
         const promise = this.step(task, controller.signal)
           .catch((error) => this.fail(task, error))
           .finally(() => {
             this.active.delete(task.id);
-            if (terminalReservation) this.terminalResources!.release(task.id);
+            admission?.release(task.id);
           });
         this.active.set(task.id, {
           controller,
@@ -405,22 +402,7 @@ export class NativeExecutor implements ExecutorAdapter {
       if (owners.size === 1) assistantMessageId = [...owners][0];
     }
     const outcomes: { call: ToolCall; result: unknown }[] = [];
-    const orchestration = new Set([
-      'write',
-      'apply_patch',
-      'materialize_artifact',
-      'exec',
-      'artifact',
-      'mcp_call',
-      'clarify',
-      'propose_plan',
-      'spawn_task',
-      'allocate_context',
-      'join_tasks',
-      'submit_result',
-      'integrate_worktrees',
-    ]);
-    if (calls.some((c) => orchestration.has(c.name))) {
+    if (calls.some((c) => this.gateway.toolPolicy(c.name)?.serial !== false)) {
       for (const call of calls) {
         const result = await this.tool(task, attempt, call, signal, assistantMessageId);
         this.kernel.store.tx(() =>
@@ -501,15 +483,6 @@ export class NativeExecutor implements ExecutorAdapter {
       task = store.require<Task>('tasks', task.id);
       if (task.status !== 'RUNNING') return;
       const run = store.require<Run>('runs', task.runId);
-      const mutating = new Set([
-        'write',
-        'apply_patch',
-        'materialize_artifact',
-        'exec',
-        'artifact',
-        'integrate_worktrees',
-        'mcp_call',
-      ]);
       const progressKey = hash(
         stable({
           contract: run.contract,
@@ -528,7 +501,7 @@ export class NativeExecutor implements ExecutorAdapter {
           snapshots: store.all<Snapshot>('snapshots', task.runId).map((s) => [s.id, s.revision]),
           operations: store
             .all<Operation>('tool_operations', task.runId)
-            .filter((o) => o.status === 'DONE' && mutating.has(o.name))
+            .filter((o) => o.status === 'DONE' && this.gateway.toolPolicy(o.name)?.progress)
             .map((o) => [o.id, o.revision]),
         }),
       );
@@ -608,10 +581,12 @@ export class NativeExecutor implements ExecutorAdapter {
     return current;
   }
   async step(task: Task, signal: AbortSignal) {
-    if (this.kernel.store.require<Run>('runs', task.runId).execution?.kind === 'docker-agent') {
-      if (!this.terminalRunner) throw new AppError('TERMINAL_UNAVAILABLE', 'Agent 终端执行服务尚未连接');
-      return this.terminalRunner(task, signal);
-    }
+    if (this.closing) throw new AppError('EXECUTOR_DISPOSED', '执行器已释放');
+    signal.throwIfAborted();
+    const run = this.kernel.store.require<Run>('runs', task.runId);
+    return this.executionPlugins.forRun(run).step(task, signal);
+  }
+  private async nativeStep(task: Task, signal: AbortSignal) {
     const cooldown = task.rateLimit;
     const store = this.kernel.store;
     const resumeAt = this.rateLimitResumeAt(task);

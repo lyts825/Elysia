@@ -79,6 +79,8 @@ importers:
 
   packages/kernel: {}
 
+  packages/plugins: {}
+
   packages/providers: {}
 
   packages/runtime: {}
