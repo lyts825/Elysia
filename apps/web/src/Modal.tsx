@@ -113,6 +113,7 @@ export function Modal({
             )}
           </div>
           <button
+            type="button"
             className="icon-button"
             onClick={close}
             disabled={busy}

@@ -47,6 +47,8 @@ export function RunConfirmation({
         <dd>
           {value.planMode ? '先生成计划，接受后执行' : '创建后直接执行'} · {value.concurrency} 个并发实例
         </dd>
+        <dt>审计模型</dt>
+        <dd>{value.allowSameModelReview ? '已确认允许与执行模型相同' : '必须与执行模型不同'}</dd>
         <dt>权限范围</dt>
         <dd>
           项目内读取；

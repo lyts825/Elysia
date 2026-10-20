@@ -1002,6 +1002,8 @@ export function createServer(
         reasoningEffort: ModelChoice.shape.reasoningEffort,
         contextPolicy: ContextPolicy.optional(),
         planMode: z.boolean().default(true),
+        allowSameModelReview: z.boolean().optional(),
+        sameModelReviewConfirmed: z.boolean().optional(),
         execution: ExecutionBinding.default({ kind: 'native' }),
         permissionProfile: Permissions.default({
           read: true,
@@ -1026,6 +1028,12 @@ export function createServer(
         acceptanceCriteria: RunDeliveryItems.optional(),
       })
       .parse(request.body);
+    invariant(
+      !body.allowSameModelReview ||
+        (body.kind === 'task' && body.execution.kind === 'native' && body.sameModelReviewConfirmed === true),
+      'REVIEW_MODEL_CONFIRMATION',
+      '允许同模型审计需要用户明确确认，且仅适用于原生项目任务',
+    );
     invariant(
       options.surface !== 'native' || body.execution.kind === 'native',
       'SURFACE_EXECUTION',
@@ -1094,6 +1102,7 @@ export function createServer(
           body.acceptanceCriteria ??
           (body.kind === 'chat' ? ['回答用户消息'] : ['交付产物可读取，并有实际验证证据']),
         constraints: ['遵守用户指定的授权和预算'],
+        allowSameModelReview: body.allowSameModelReview,
         permissionProfile:
           body.kind === 'chat'
             ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
@@ -1291,7 +1300,9 @@ export function createServer(
         expectedRevision: z.number().int(),
         text: z.string().min(1).max(20000),
         intent: z.enum(['continue', 'replan']).optional(),
-        contract: Contract.optional(),
+        // Keep omitted fields omitted in the command fingerprint for pre-upgrade retries.
+        contract: Contract.extend({ allowSameModelReview: z.boolean().optional() }).optional(),
+        sameModelReviewConfirmed: z.boolean().optional(),
       })
       .parse(request.body);
     const result = executionCommand(request.params.id, body, request.url, () => {
@@ -1318,6 +1329,13 @@ export function createServer(
       invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
       if (body.contract) {
         invariant(
+          !body.contract.allowSameModelReview ||
+            run.contract.allowSameModelReview === true ||
+            (run.kind === 'task' && body.sameModelReviewConfirmed === true),
+          'REVIEW_MODEL_CONFIRMATION',
+          '请先确认同模型审计可能重复执行模型的盲点，再开启此选项',
+        );
+        invariant(
           run.execution?.kind !== 'docker-agent',
           'TERMINAL_CONTRACT_FROZEN',
           '终端任务约定已冻结，请新建任务调整交付要求',
@@ -1329,7 +1347,7 @@ export function createServer(
           'CONTRACT_AUTHORITY',
           '编辑约定不能扩大权限或预算',
         );
-        kernel.updateRun(run, { contract: body.contract });
+        kernel.updateRun(run, { contract: Contract.parse(body.contract) });
       }
       return kernel.inbox(run.id, body.text, { intent });
     });

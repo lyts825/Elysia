@@ -51,5 +51,9 @@ export function nativeHarnessPolicy(run: Run, task: Task, toolNames: string[]) {
         : '普通补充消息在当前合同内提供信息，不撤销已接受计划，不增加权限或预算。只有用户明确选择重新规划或修改计划约定，才使旧计划失效。',
     scope:
       '合同 permissionProfile 是范围上限，当前角色、阶段和 availableTools 决定本步能力；工具未列出不代表整个任务都无法推进。',
+    reviewModels:
+      run.contract.allowSameModelReview === true
+        ? '用户已确认允许审计与执行使用相同模型；审计仍须独立核对证据。保持合同 allowSameModelReview，不得自行修改。'
+        : '审计（reviewer）必须使用不同于总代理及执行任务的模型，包括历史请求使用过的型号。更换连接、账号或思考强度不算更换模型。合同 allowSameModelReview 默认为 false，只有用户在界面确认后才能开启；没有可用的不同模型时说明缺口，不绕过校验。',
   };
 }

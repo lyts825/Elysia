@@ -18,6 +18,7 @@ import { manageUsage } from './desktop';
 import { NativeProjectDefaultsPanel } from './NativeProjectDefaults';
 import type { NativeProjectDefaults } from '../../../packages/contracts/src/workflow';
 import { RunConfirmation } from './RunConfirmation';
+import { ReviewModelPolicy } from './ReviewModelPolicy';
 import { TaskRequirements, requirementLines, validRequirements } from './TaskRequirements';
 import './workflow.css';
 import type { RunSetupDraft } from './RunSetupDraft';
@@ -69,6 +70,9 @@ export function RunModal({
   const [defaultsBusy, setDefaultsBusy] = useState(false);
   const [appliedDefaults, setAppliedDefaults] = useState<NativeProjectDefaults>();
   const [expanded, setExpanded] = useState(false);
+  // A restored creation draft is not a saved contract: require a fresh explicit confirmation.
+  const [allowSameModelReview, setAllowSameModelReview] = useState(false);
+  const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [deliverables, setDeliverables] = useState(
     initial?.deliverables ?? initialRequirements?.deliverables ?? '',
   );
@@ -141,6 +145,7 @@ export function RunModal({
     concurrency,
     deliverables,
     acceptanceCriteria,
+    allowSameModelReview,
   };
   const changedRef = useRef(changed);
   changedRef.current = changed;
@@ -162,6 +167,7 @@ export function RunModal({
     concurrency,
     deliverables,
     acceptanceCriteria,
+    allowSameModelReview,
   ]);
   const applyDefaults = (defaults: NativeProjectDefaults) => {
     setAppliedDefaults(defaults);
@@ -191,6 +197,7 @@ export function RunModal({
             busy ||
             defaultsBusy ||
             submitDisabled ||
+            reviewConfirmationPending ||
             !setupReady ||
             !requirementsReady ||
             !objective.trim() ||
@@ -206,6 +213,8 @@ export function RunModal({
               inputs: lines(inputs),
               ...(!chat && !terminal
                 ? {
+                    allowSameModelReview,
+                    ...(allowSameModelReview ? { sameModelReviewConfirmed: true } : {}),
                     ...(requirementLines(deliverables).length
                       ? { deliverables: requirementLines(deliverables) }
                       : {}),
@@ -252,6 +261,14 @@ export function RunModal({
                 setExpanded(true);
               }}
               disabled={busy}
+            />
+          )}
+          {!chat && !terminal && (
+            <ReviewModelPolicy
+              allowed={allowSameModelReview}
+              disabled={busy || defaultsBusy}
+              change={setAllowSameModelReview}
+              pendingChanged={setReviewConfirmationPending}
             />
           )}
           {!chat && !terminal && (
@@ -568,7 +585,13 @@ export function RunModal({
           <button
             className="primary"
             disabled={
-              busy || defaultsBusy || submitDisabled || !setupReady || !requirementsReady || !objective.trim()
+              busy ||
+              defaultsBusy ||
+              submitDisabled ||
+              reviewConfirmationPending ||
+              !setupReady ||
+              !requirementsReady ||
+              !objective.trim()
             }
           >
             {busy

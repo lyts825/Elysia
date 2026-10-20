@@ -1,0 +1,48 @@
+import { invariant, type Agent, type RequestRecord, type Run, type Task } from '../../contracts/src/index.js';
+import { reviewModelConflict, type ReviewModelAssignment } from '../../contracts/src/review-policy.js';
+import type { RequestLedgerRow, Store } from '../../storage/src/index.js';
+
+/** Validate the resolved models inside the same transaction that saves or reserves them. */
+export function assertReviewModelPolicy(
+  store: Store,
+  run: Run,
+  candidates: ReviewModelAssignment[],
+  replacingTaskIds: string[] = [],
+  ledger?: RequestLedgerRow[],
+) {
+  if (
+    run.kind !== 'task' ||
+    run.execution?.kind === 'docker-agent' ||
+    run.contract.allowSameModelReview === true
+  )
+    return;
+  const tasks = store.all<Task>('tasks', run.id);
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const assignments = tasks
+    .filter((task) => task.status !== 'CANCELLED' && !replacingTaskIds.includes(task.id))
+    .map((task) => ({
+      key: task.id,
+      title: task.spec.title,
+      role: task.spec.role,
+      model: store.require<Agent>('agents', task.agentId).providerBinding.model,
+    }));
+  for (const request of ledger ?? store.requestLedger({ runId: run.id })) {
+    if (request.status === 'RELEASED') continue;
+    // Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
+    const original =
+      !request.model || !request.taskId ? store.require<RequestRecord>('requests', request.id) : undefined;
+    const task = byId.get(request.taskId ?? original?.taskId ?? '');
+    const model = request.model ?? original?.providerBinding.model;
+    invariant(task && model, 'REVIEW_MODEL_UNKNOWN', '历史请求的任务或模型无法核对，请修复记录后继续');
+    assignments.push({ key: request.id, title: task.spec.title, role: task.spec.role, model });
+  }
+  for (const candidate of candidates) {
+    const conflict = reviewModelConflict([
+      candidate,
+      ...[...assignments, ...candidates].filter(
+        (item) => (item.role === 'reviewer') !== (candidate.role === 'reviewer'),
+      ),
+    ]);
+    invariant(!conflict, 'REVIEW_MODEL_CONFLICT', conflict ?? '');
+  }
+}

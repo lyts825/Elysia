@@ -32,6 +32,7 @@ import {
 import { Store, id, now, stable } from '../../storage/src/index.js';
 import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 import { freezeRoleRouting, routeTask } from './model-routing.js';
+import { assertReviewModelPolicy } from './review-policy.js';
 import { ROLE_ROUTING_PROVIDER, type RoleRoutingDecision } from '../../contracts/src/model-routing.js';
 import { freezeProjectCapabilities } from '../../context/src/project-intelligence.js';
 import {
@@ -531,9 +532,10 @@ export class Kernel {
       );
       invariant(
         stable(contract.permissionProfile) === stable(run.contract.permissionProfile) &&
-          stable(contract.budget) === stable(run.contract.budget),
+          stable(contract.budget) === stable(run.contract.budget) &&
+          contract.allowSameModelReview === (run.contract.allowSameModelReview === true),
         'PLAN_ESCALATION',
-        '计划不能改变用户授权和预算',
+        '计划不能改变用户授权、预算或同模型审计设置',
       );
       invariant(
         plan.tasks.length + this.store.all<Agent>('agents', run.id).length <= run.limits.maxAgents,
@@ -563,6 +565,14 @@ export class Kernel {
           'SNAPSHOT_SCOPE',
           '资料快照越界',
         );
+      assertReviewModelPolicy(
+        this.store,
+        run,
+        plan.tasks.map((spec) => ({
+          ...spec,
+          model: spec.model ?? this.store.require<ProviderConfig>('providers', spec.providerId).model,
+        })),
+      );
       const next = this.updateRun(run, {
         contract,
         plan,
@@ -638,6 +648,7 @@ export class Kernel {
         'MODEL_BINDING',
         '任务思考强度与冻结配置不匹配',
       );
+      assertReviewModelPolicy(this.store, run, [{ ...spec, model: binding.model }]);
       if (spec.budget)
         for (const ancestor of this.ancestors(parent))
           this.checkBudgetSubset(spec.budget, ancestor.spec.budget ?? run.contract.budget);
@@ -756,6 +767,7 @@ export class Kernel {
         );
         return { ...spec, providerId, model: binding.model, reasoningEffort: binding.reasoningEffort };
       });
+      assertReviewModelPolicy(this.store, run, tasks);
       run = this.updateRun(run, {
         plan: { ...run.plan!, tasks },
         planRouting,
@@ -956,6 +968,14 @@ export class Kernel {
         '运行时间达到上限',
       );
       const requests = this.store.requestLedger({ runId: run.id });
+      const currentTask = this.store.require<Task>('tasks', task.id);
+      assertReviewModelPolicy(
+        this.store,
+        run,
+        [{ ...currentTask.spec, model: provider.model }],
+        [task.id],
+        requests,
+      );
       const price = provider.prices;
       const reservedCost = price
         ? (tokens * (Math.max(price.input, price.cacheRead) + (price.cacheWrite ?? 0)) +
@@ -1121,6 +1141,7 @@ export class Kernel {
         invariant(run.authorized || task.phase === 'planning', 'NOT_AUTHORIZED', '请先接受具体计划');
       const binding = this.binding(provider.id, provider),
         agent = this.store.require<Agent>('agents', task.agentId);
+      assertReviewModelPolicy(this.store, run, [{ ...task.spec, model: binding.model }], [task.id]);
       const currentPolicy = agent.contextPolicy ?? { mode: 'managed' as const };
       const contextPolicy = this.validateContextPolicy(
         binding,

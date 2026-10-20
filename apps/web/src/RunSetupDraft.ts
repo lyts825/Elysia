@@ -19,6 +19,7 @@ export type RunSetupDraft = {
   maxCost?: number | null;
   deliverables?: string;
   acceptanceCriteria?: string;
+  allowSameModelReview?: boolean;
 };
 
 // Drafts may contain incomplete input. Validate their shape here; the form validates execution values.
@@ -51,6 +52,7 @@ const draftShape = z.object({
   maxCost: z.number().nullable().optional(),
   deliverables: z.string().optional(),
   acceptanceCriteria: z.string().optional(),
+  allowSameModelReview: z.boolean().optional(),
 });
 
 export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {

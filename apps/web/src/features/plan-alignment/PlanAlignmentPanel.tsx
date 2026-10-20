@@ -9,6 +9,7 @@ import {
 import { ContextPolicyEditor, validContextPolicy } from '../../ContextPolicyEditor';
 import { contextPolicyLabel } from '../../ContextWindow';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './types';
+import { reviewModelConflict } from '../../../../../packages/contracts/src/review-policy';
 
 export const manifest = {
   id: 'plan-alignment',
@@ -60,6 +61,28 @@ export function PlanAlignmentPanel({
       provider?.contextLimit || 4096,
     );
   });
+  const reviewConflict =
+    pending && run.contract.allowSameModelReview !== true
+      ? reviewModelConflict([
+          ...detail.tasks
+            .filter((task) => task.status !== 'CANCELLED')
+            .map((task) => ({
+              ...task.spec,
+              model:
+                detail.agents.find((agent) => agent.id === task.agentId)?.providerBinding.model ??
+                task.spec.model ??
+                '',
+            })),
+          ...plan.tasks.map((task) => {
+            const choice = pendingChoice(task);
+            return {
+              ...task,
+              model:
+                choice.model ?? providers.find((provider) => provider.id === choice.providerId)?.model ?? '',
+            };
+          }),
+        ])
+      : null;
   return (
     <div className="plan-card" data-module={manifest.id}>
       <div className="plan-card-head">
@@ -72,6 +95,15 @@ export function PlanAlignmentPanel({
         <span className="plan-count">{plan.tasks.length} 个子任务</span>
       </div>
       <p>{plan.summary}</p>
+      <p className="field-help">
+        审计模型：{run.contract.allowSameModelReview ? '用户已确认允许与执行模型相同' : '必须与执行模型不同'}
+        。
+      </p>
+      {reviewConflict && (
+        <p className="field-error" role="alert">
+          {reviewConflict}
+        </p>
+      )}
       <details className="plan-contract">
         <summary>查看目标、交付物与验收要求</summary>
         <p className="plan-objective">{run.contract.objective}</p>
@@ -211,6 +243,7 @@ export function PlanAlignmentPanel({
               busy ||
               archived ||
               invalidContext ||
+              !!reviewConflict ||
               plan.tasks.some(
                 (task) => !Object.hasOwn(assignmentReady, task.key) || !assignmentReady[task.key],
               )
