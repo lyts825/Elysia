@@ -55,7 +55,19 @@ export function TerminalSettings({
   const handledCallback = useRef(focusHandled);
   handledCallback.current = focusHandled;
   const submitting = useRef(false);
+  const editorTitle = useRef<HTMLHeadingElement>(null);
+  const focusEditor = useRef(false);
   const selected = profiles.find((profile) => profile.id === selectedId);
+  function revealEditor() {
+    editorTitle.current?.scrollIntoView({ block: 'start' });
+    editorTitle.current?.focus({ preventScroll: true });
+  }
+  useEffect(() => {
+    if (focusEditor.current) {
+      focusEditor.current = false;
+      revealEditor();
+    }
+  }, [selectedId]);
   function finishFocus() {
     focusIntent.current.handled = true;
     setFocusIssue('');
@@ -216,6 +228,8 @@ export function TerminalSettings({
                   onClick={() => {
                     finishFocus();
                     setPendingFocus(null);
+                    if (selectedId === profile.id) revealEditor();
+                    else focusEditor.current = true;
                     setSelectedId(profile.id);
                   }}
                 >
@@ -249,6 +263,9 @@ export function TerminalSettings({
           </div>
           {selected && (
             <div className="terminal-settings-editor">
+              <h3 className="terminal-settings-title" ref={editorTitle} tabIndex={-1}>
+                {selected.label || '未命名模板'}
+              </h3>
               <div className="terminal-settings-actions">
                 <label className="check-label">
                   <input

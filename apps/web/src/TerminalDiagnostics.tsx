@@ -124,35 +124,57 @@ export function TerminalDiagnostics({
   };
   return (
     <div className="terminal-diagnostics">
-      <button type="button" className="text-button" disabled={disabled || busy} onClick={() => void check()}>
+      <button type="button" className="secondary" disabled={disabled || busy} onClick={() => void check()}>
         {busy ? '检查中…' : '检查就绪'}
       </button>
       {error && (
-        <p className="cli-app-error" role="alert">
+        <p className="terminal-diagnostic-error" role="alert" aria-label="就绪检查失败详情" tabIndex={0}>
           {error}
         </p>
       )}
       {result && (
-        <details open>
+        <details className="terminal-diagnostic-result" open>
           <summary>
             {result.configuration.ready && result.readiness.available ? '本地运行环境已就绪' : '就绪检查结果'}
           </summary>
-          <p className="field-help">
-            {result.configuration.profileLabel} · {sourceLabels[result.configuration.source]}
-            {result.configuration.connection &&
-              ` · ${result.configuration.connection.name} / ${result.configuration.connection.model}`}
-          </p>
+          <dl className="terminal-diagnostic-context">
+            <div>
+              <dt>模板</dt>
+              <dd>{result.configuration.profileLabel}</dd>
+            </div>
+            <div>
+              <dt>配置来源</dt>
+              <dd>{sourceLabels[result.configuration.source]}</dd>
+            </div>
+            {result.configuration.connection && (
+              <div>
+                <dt>连接与模型</dt>
+                <dd>
+                  {result.configuration.connection.name} / {result.configuration.connection.model}
+                </dd>
+              </div>
+            )}
+          </dl>
           {Object.entries(result.readiness.stages || {}).map(([key, stage]) => (
-            <p key={key} className="terminal-diagnostic-stage">
-              <span>{stageLabels[key] || key}</span>
-              <span className={stage.status === 'failed' ? 'cli-app-error' : ''}>
-                {stage.status === 'ready' ? '✓ ' : stage.status === 'failed' ? '× ' : '○ '}
+            <div key={key} className="terminal-diagnostic-stage" data-status={stage.status}>
+              <div className="terminal-diagnostic-stage-heading">
+                <strong>{stageLabels[key] || key}</strong>
+                <span className="terminal-diagnostic-status" data-status={stage.status}>
+                  {stage.status === 'ready' ? '已就绪' : stage.status === 'failed' ? '未通过' : '待确认'}
+                </span>
+              </div>
+              <p
+                className="terminal-diagnostic-message"
+                role="region"
+                aria-label={`${stageLabels[key] || key}阶段完整诊断`}
+                tabIndex={0}
+              >
                 {stage.message}
-              </span>
+              </p>
               {repair && stage.status === 'failed' && key !== 'engine' && (
                 <button
                   type="button"
-                  className="text-button"
+                  className="secondary"
                   disabled={disabled || busy}
                   onClick={() =>
                     target(
@@ -175,16 +197,24 @@ export function TerminalDiagnostics({
                   }
                 </button>
               )}
-            </p>
+            </div>
           ))}
           {!result.readiness.stages && <p className="field-help">{result.readiness.message}</p>}
           {result.configuration.issues.map((issue) => (
-            <div className="terminal-diagnostic-issue" key={issue.code}>
-              <p className={issue.severity === 'error' ? 'cli-app-error' : 'field-help'}>{issue.message}</p>
+            <div className="terminal-diagnostic-issue" key={issue.code} data-severity={issue.severity}>
+              <strong>{issue.severity === 'error' ? '配置问题' : '配置提示'}</strong>
+              <p
+                className="terminal-diagnostic-message"
+                role="region"
+                aria-label={`配置${issue.severity === 'error' ? '问题' : '提示'}：${issue.code}`}
+                tabIndex={0}
+              >
+                {issue.message}
+              </p>
               {repair && (
                 <button
                   type="button"
-                  className="text-button"
+                  className="secondary"
                   disabled={disabled || busy}
                   onClick={() => target(issueKind(issue.code))}
                 >

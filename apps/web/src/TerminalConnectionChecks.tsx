@@ -20,13 +20,23 @@ export function TerminalConnectionChecks({
   const [health, setHealth] = useState<TerminalConnectionHealth | undefined>(connection.health);
   const [catalog, setCatalog] = useState<TerminalConnectionProbeResult | null>(null);
   const [error, setError] = useState('');
+  const [errorRequest, setErrorRequest] = useState(0);
   const controller = useRef<AbortController | null>(null);
+  const errorElement = useRef<HTMLParagraphElement>(null);
+  const focusError = useRef(false);
+  useEffect(() => {
+    if (error && focusError.current) {
+      focusError.current = false;
+      errorElement.current?.focus();
+    }
+  }, [error, errorRequest]);
   useEffect(() => {
     controller.current?.abort();
     setHealth(connection.health);
     setCatalog(null);
     setError('');
     setBusy(null);
+    focusError.current = false;
     if (!enabled) return;
     const request = new AbortController();
     controller.current = request;
@@ -82,7 +92,11 @@ export function TerminalConnectionChecks({
         if (kind === 'models') setCatalog(value);
       }
     } catch (issue) {
-      if (!request.signal.aborted) setError(issue instanceof Error ? issue.message : '连接检查未完成');
+      if (!request.signal.aborted) {
+        focusError.current = true;
+        setError(issue instanceof Error ? issue.message : '连接检查未完成');
+        setErrorRequest((request) => request + 1);
+      }
     } finally {
       if (controller.current === request && !request.signal.aborted) setBusy(null);
     }
@@ -122,14 +136,16 @@ export function TerminalConnectionChecks({
               role="status"
               className={current && result?.status === 'failed' ? 'cli-app-error' : 'field-help'}
             >
-              <strong>{kind === 'check' ? '连接验证' : '模型目录'}</strong> ·{' '}
-              {!enabled
-                ? '当前修改待保存'
-                : !result
-                  ? '尚未检查'
-                  : !current
-                    ? '配置已变化，待重新检查'
-                    : result.message}
+              <strong>{kind === 'check' ? '连接验证' : '模型目录'}</strong>
+              <span>
+                {!enabled
+                  ? '当前修改待保存'
+                  : !result
+                    ? '尚未检查'
+                    : !current
+                      ? '配置已变化，待重新检查'
+                      : result.message}
+              </span>
               {result && (
                 <small>
                   上次检查 {new Date(result.checkedAt).toLocaleString()}
@@ -144,7 +160,7 @@ export function TerminalConnectionChecks({
         })}
       </div>
       {enabled && error && (
-        <p role="alert" className="cli-app-error">
+        <p role="alert" className="terminal-connection-error" ref={errorElement} tabIndex={-1}>
           {error}
         </p>
       )}
@@ -161,7 +177,7 @@ export function TerminalConnectionChecks({
             <option value="">选择模型后保存…</option>
             {catalog.models!.map((model) => (
               <option key={model.id} value={model.id}>
-                {model.name || model.id}
+                {model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id}
               </option>
             ))}
           </select>

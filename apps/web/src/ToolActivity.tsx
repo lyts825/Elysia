@@ -199,6 +199,9 @@ export function ToolActivity({
   const [detailsOpen, setDetailsOpen] = useState(false),
     [readAttempt, setReadAttempt] = useState(0);
   const activity = useRef<HTMLDetailsElement>(null);
+  const readErrorRef = useRef<HTMLParagraphElement>(null);
+  const retryFocus = useRef(false);
+  const [focusRequest, setFocusRequest] = useState<{ target: 'summary' | 'error' }>();
   const sameRecord = (value: Operation | null) =>
     !!value &&
     !!summaryOperation &&
@@ -228,6 +231,8 @@ export function ToolActivity({
       return;
     }
     const controller = new AbortController();
+    const focusFeedback = retryFocus.current;
+    retryFocus.current = false;
     setReadError('');
     setLoading(true);
     void api<Operation>(
@@ -253,9 +258,13 @@ export function ToolActivity({
         if (result.revision !== summaryOperation.revision)
           throw new Error('操作记录已更新，已保留当前摘要；请刷新会话后重试。');
         setFull(result);
+        if (focusFeedback) setFocusRequest({ target: 'summary' });
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setReadError(error instanceof Error ? error.message : '详情读取失败');
+        if (!controller.signal.aborted) {
+          setReadError(error instanceof Error ? error.message : '详情读取失败');
+          if (focusFeedback) setFocusRequest({ target: 'error' });
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -276,6 +285,20 @@ export function ToolActivity({
     readAttempt,
     api,
   ]);
+  useEffect(() => {
+    if (!focusRequest || !activity.current?.open) return;
+    // Recover focus lost with the retry button, without interrupting another control.
+    const active = document.activeElement;
+    if (
+      active !== document.body &&
+      active !== activity.current.querySelector('.tool-activity-read-error > button')
+    )
+      return;
+    const target =
+      focusRequest.target === 'error' ? readErrorRef.current : activity.current.querySelector('summary');
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [focusRequest]);
   let parsed: unknown = call.arguments;
   try {
     parsed = JSON.parse(call.arguments);
@@ -429,11 +452,17 @@ export function ToolActivity({
         )}
         {readError && (
           <div className="tool-activity-read-error" role="alert">
-            <p>{readError}</p>
+            <p ref={readErrorRef} tabIndex={0} role="region" aria-label="工具详情读取失败">
+              {readError}
+            </p>
             <button
               type="button"
+              className="secondary"
               data-testid="tool-activity-retry"
-              onClick={() => setReadAttempt((value) => value + 1)}
+              onClick={() => {
+                retryFocus.current = true;
+                setReadAttempt((value) => value + 1);
+              }}
             >
               重试读取
             </button>

@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.4 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.5 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -44,6 +44,10 @@ v1.19.4 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 - 本机能力预览将条目名称、来源、正文及继续读取分开；Skills、记忆和工具列表使用有界键盘阅读区，分页置于正文之外。扫描提示与失败分别使用警告和错误状态，完整展示来源路径及移除目标。
 - 工作区管理的标签页采用单一Tab入口，方向键及Home/End切换；长标题不改变网格宽度。文件导航后焦点指向当前位置，路径、文档和源码提供完整键盘阅读入口，空筛选提供清除操作。
 - 搜索输入自动读取时保留输入焦点；显式分页或重试完成后定位结果，失败定位错误。搜索失败与消息定位失败分别提示，关闭嵌入搜索后回到打开入口。重复同文案的操作失败仍需可见反馈。
+- 终端运行面板按排队、运行、资源和暂时保留的资源分区；长任务名完整换行，资源说明明确“已预留 / 容量”。计时与最近输出时间置于实时播报区域之外，阶段与排队状态仍保留更新通知。
+- 工具详情显式重试成功后返回已展开摘要，失败定位完整错误；若用户已转到其他控件，保留其当前焦点。长错误可键盘滚动，重试操作置于错误正文之外。原生可聚焦的代码滚动区保持浏览器行为，避免额外增加短内容的Tab停靠点。
+- 终端连接与模板导航使用有界纵向列表，选择后定位编辑字段或标题；模型目录同时呈现名称与ID。未保存确认进入可滚动内容，短窗口允许整体滚动，避免确认栏或底部动作挤占编辑区。
+- 诊断的配置来源、阶段状态、完整消息和修复入口分开；安装历史区分版本、状态、时间与恢复目标。长消息支持具名键盘阅读，动作置于正文之外；分页失败明确保留旧记录，不能显示尚未读取的页码。
 
 ## 页面覆盖
 
@@ -52,7 +56,7 @@ v1.19.4 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 | 基础、主页、入口与启动 | style、motion、home、surface、Startup |
 | 预览与文档 | preview、preview-dock、markdown、file-content、file-page |
 | 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning |
-| 执行与终端 | local-agents、terminal-control、terminal-communication、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
+| 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-communication、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-files、project-usage、project-intelligence、project-schedules、project-schedule-history |
 | 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、readiness、task-center、delivery-read-progress、workbench-persistence |
 

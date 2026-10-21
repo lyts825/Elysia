@@ -23,16 +23,15 @@ export function TerminalInstallFailure({
   const failure = terminalCliInstallFailure(job.code, job.message);
   return (
     <div className="terminal-install-failure" data-failure={failure.code}>
-      <small className="cli-app-error">
-        <strong>{failure.category}</strong> · {failure.message}
-      </small>
+      <strong className="terminal-install-failure-title">{failure.category}</strong>
+      <p>{failure.message}</p>
       {repair && (
         <div className="terminal-install-repairs">
           {failure.actions.map((action) => (
             <button
               type="button"
               key={action}
-              className="text-button"
+              className="secondary"
               disabled={disabled}
               onClick={() => repair(job, action)}
             >

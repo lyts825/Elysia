@@ -193,6 +193,12 @@ export function TerminalControlCenter({
     request: number;
   } | null>(null);
   const content = useRef<HTMLDivElement>(null);
+  const connectionName = useRef<HTMLInputElement>(null);
+  const modelField = useRef<HTMLInputElement>(null);
+  const continueEditing = useRef<HTMLButtonElement>(null);
+  const operationError = useRef<HTMLParagraphElement>(null);
+  const confirmationOrigin = useRef<HTMLElement | null>(null);
+  const editorFocus = useRef(false);
   const submitting = useRef(false);
   const drafts = useRef({ projectDraft, projectBaseline });
   drafts.current = { projectDraft, projectBaseline };
@@ -369,18 +375,35 @@ export function TerminalControlCenter({
     setDeleting(null);
     setPending(null);
   }
-  function selectConnection(next: ConnectionDraft) {
+  function selectConnection(next: ConnectionDraft, focusEditor = false) {
     if (busy) return;
     setInitialFocus(undefined);
     if (next.id === draft?.id) return;
-    if (connectionDirty) setPending({ kind: 'connection', next });
-    else replaceConnection(next);
+    if (connectionDirty) {
+      confirmationOrigin.current = document.activeElement as HTMLElement;
+      setPending({ kind: 'connection', next });
+    } else {
+      editorFocus.current = focusEditor;
+      replaceConnection(next);
+    }
   }
   function requestClose() {
     if (busy) return;
-    if (connectionDirty || projectDirty || templateDirty) setPending({ kind: 'close' });
-    else close();
+    if (connectionDirty || projectDirty || templateDirty) {
+      confirmationOrigin.current = document.activeElement as HTMLElement;
+      setPending({ kind: 'close' });
+    } else close();
   }
+  useEffect(() => {
+    if (pending) continueEditing.current?.focus();
+    else if (editorFocus.current && tab === 'connections' && draft) {
+      editorFocus.current = false;
+      connectionName.current?.focus();
+    }
+  }, [pending, draft?.id, tab]);
+  useEffect(() => {
+    if (error && !busy) operationError.current?.focus();
+  }, [error, busy]);
   function selectTab(next: typeof tab) {
     setInitialFocus(undefined);
     if (next === 'templates') setTemplateVisited(true);
@@ -551,24 +574,6 @@ export function TerminalControlCenter({
           </button>
         ))}
       </div>
-      {pending && (
-        <div className="terminal-control-confirm" role="group" aria-label="未保存修改确认">
-          <span>有未保存的修改。</span>
-          <button className="secondary" disabled={busy} onClick={() => setPending(null)}>
-            继续编辑
-          </button>
-          <button
-            className="secondary danger"
-            disabled={busy}
-            onClick={() => {
-              if (pending.kind === 'close') close();
-              else replaceConnection(pending.next);
-            }}
-          >
-            {pending.kind === 'close' ? '放弃并关闭' : '放弃并切换'}
-          </button>
-        </div>
-      )}
       {initialFocus?.kind === 'connection' &&
         reads.control.loaded &&
         !reads.control.loading &&
@@ -590,6 +595,37 @@ export function TerminalControlCenter({
         className={`terminal-control-content ${tab === 'templates' ? 'with-templates' : ''}`}
         ref={content}
       >
+        {pending && (
+          <div className="terminal-control-confirm" role="group" aria-label="未保存修改确认">
+            <span>有未保存的修改。</span>
+            <button
+              ref={continueEditing}
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                editorFocus.current = tab === 'connections';
+                setPending(null);
+                if (tab !== 'connections' && confirmationOrigin.current?.isConnected)
+                  confirmationOrigin.current.focus();
+              }}
+            >
+              继续编辑
+            </button>
+            <button
+              className="secondary danger"
+              disabled={busy}
+              onClick={() => {
+                if (pending.kind === 'close') close();
+                else {
+                  editorFocus.current = true;
+                  replaceConnection(pending.next);
+                }
+              }}
+            >
+              {pending.kind === 'close' ? '放弃并关闭' : '放弃并切换'}
+            </button>
+          </div>
+        )}
         {repairTarget && (
           <div className="terminal-diagnostic-return" role="status">
             <span>保存修复后将返回原诊断并重新检查本地配置；已有任务保持原配置。</span>
@@ -608,7 +644,7 @@ export function TerminalControlCenter({
         )}
         {error && (
           <div className="terminal-control-read-error">
-            <p className="inline-warning" role="alert">
+            <p className="inline-warning" role="alert" ref={operationError} tabIndex={-1}>
               {error}
             </p>
             <button className="secondary" disabled={busy} onClick={() => void perform(() => load())}>
@@ -1003,40 +1039,42 @@ export function TerminalControlCenter({
                   aria-label="新增 API 连接"
                   disabled={busy}
                   onClick={() => {
-                    selectConnection(newConnection());
+                    selectConnection(newConnection(), true);
                   }}
                 >
                   <Icon name="plus" />
                 </button>
               </div>
-              {overview.connections.map((connection) => (
-                <button
-                  type="button"
-                  key={connection.id}
-                  aria-current={draft?.id === connection.id ? 'true' : undefined}
-                  data-connection-id={connection.id}
-                  disabled={busy}
-                  onClick={() => {
-                    selectConnection(connectionDraft(connection));
-                  }}
-                >
-                  <strong>{connection.name}</strong>
-                  <small>
-                    {connection.keyConfigured ? '凭据已配置' : '待配置凭据'} ·{' '}
-                    {protocolLabels[connection.protocol]}
-                  </small>
-                </button>
-              ))}
-              {!overview.connections.length && (
-                <p className="field-help">添加连接后，可为各 CLI 单独选择。</p>
-              )}
+              <div className="terminal-connection-options" aria-label="已保存的 API 连接">
+                {overview.connections.map((connection) => (
+                  <button
+                    type="button"
+                    key={connection.id}
+                    aria-current={draft?.id === connection.id ? 'true' : undefined}
+                    data-connection-id={connection.id}
+                    disabled={busy}
+                    onClick={() => {
+                      selectConnection(connectionDraft(connection), true);
+                    }}
+                  >
+                    <strong>{connection.name}</strong>
+                    <small>
+                      {connection.keyConfigured ? '凭据已配置' : '待配置凭据'} ·{' '}
+                      {protocolLabels[connection.protocol]}
+                    </small>
+                  </button>
+                ))}
+                {!overview.connections.length && (
+                  <p className="field-help">添加连接后，可为各 CLI 单独选择。</p>
+                )}
+              </div>
             </aside>
             {!draft ? (
               <div className="terminal-connection-empty">
                 <Icon name="settings" size={32} />
                 <h3>连接你的模型服务</h3>
                 <p>端点、模型和凭据集中管理。</p>
-                <button className="primary" onClick={() => selectConnection(newConnection())}>
+                <button className="primary" onClick={() => selectConnection(newConnection(), true)}>
                   添加 API 连接
                 </button>
               </div>
@@ -1064,6 +1102,7 @@ export function TerminalControlCenter({
                   });
                 }}
               >
+                <h3 className="terminal-connection-title">{draft.name || '未命名连接'}</h3>
                 {selectedConnection && draft.revision !== selectedConnection.revision && (
                   <div className="terminal-control-conflict" role="status">
                     <span>连接已更新，当前修改已保留。</span>
@@ -1103,6 +1142,7 @@ export function TerminalControlCenter({
                 <label>
                   连接名称
                   <input
+                    ref={connectionName}
                     value={draft.name}
                     disabled={busy}
                     onChange={(event) => setDraft({ ...draft, name: event.target.value })}
@@ -1129,6 +1169,7 @@ export function TerminalControlCenter({
                   <label>
                     模型 ID
                     <input
+                      ref={modelField}
                       value={draft.model}
                       placeholder="服务商的模型 ID"
                       disabled={busy}
@@ -1196,7 +1237,10 @@ export function TerminalControlCenter({
                     key={selectedConnection.id}
                     connection={selectedConnection}
                     enabled={!busy && !connectionDirty && draft.revision === selectedConnection.revision}
-                    chooseModel={(model) => setDraft({ ...draft, model })}
+                    chooseModel={(model) => {
+                      setDraft({ ...draft, model });
+                      modelField.current?.focus();
+                    }}
                   />
                 )}
                 <div className="terminal-control-form-actions">

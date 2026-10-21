@@ -85,47 +85,49 @@ export function TerminalInstallHistory({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>安装历史</summary>
-      {error && (
-        <p className="cli-app-error" role="alert">
-          {error}
-        </p>
-      )}
       {page?.items.map((job) => {
         const profile = job.profileId
           ? settings.profiles.find((value) => value.id === job.profileId && value.agent === appId)
           : settings.profiles.find((value) => value.id === targets[job.id] && value.agent === appId);
         return (
-          <div key={job.id} className="terminal-install-record">
-            <span>
-              {job.result?.version || job.requestedVersion || '预设版本'} · {statuses[job.status]}
-              <small>
-                {new Date(job.createdAt).toLocaleString()} · {installationPhase(job)}
-              </small>
-            </span>
+          <article key={job.id} className="terminal-install-record">
+            <header className="terminal-install-record-heading">
+              <strong>{job.result?.version || job.requestedVersion || '预设版本'}</strong>
+              <span className="terminal-install-status" data-status={job.status}>
+                {statuses[job.status]}
+              </span>
+            </header>
+            <p className="terminal-install-record-meta">
+              <time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString()}</time>
+              <span>{installationPhase(job)}</span>
+            </p>
             {job.status === 'completed' && job.result && (
-              <>
+              <div className="terminal-install-record-actions">
                 {!job.profileId && (
-                  <select
-                    aria-label="历史镜像目标模板"
-                    value={targets[job.id] || ''}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      setTargets((current) => ({ ...current, [job.id]: event.target.value }))
-                    }
-                  >
-                    <option value="">选择模板…</option>
-                    {settings.profiles
-                      .filter((value) => value.agent === appId)
-                      .map((value) => (
-                        <option key={value.id} value={value.id}>
-                          {value.label}
-                        </option>
-                      ))}
-                  </select>
+                  <label className="terminal-install-target">
+                    恢复目标模板
+                    <select
+                      aria-label="历史镜像目标模板"
+                      value={targets[job.id] || ''}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        setTargets((current) => ({ ...current, [job.id]: event.target.value }))
+                      }
+                    >
+                      <option value="">选择模板…</option>
+                      {settings.profiles
+                        .filter((value) => value.agent === appId)
+                        .map((value) => (
+                          <option key={value.id} value={value.id}>
+                            {value.label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
                 )}
                 <button
                   type="button"
-                  className="text-button"
+                  className="secondary"
                   disabled={disabled || !profile || profile.image === job.result.image}
                   onClick={() =>
                     void perform(async () => {
@@ -144,15 +146,21 @@ export function TerminalInstallHistory({
                   {profile?.image === job.result.image ? '正在使用' : '恢复到模板'}
                 </button>
                 {job.profileId && !profile && <small>原模板已删除</small>}
-              </>
+              </div>
             )}
             <TerminalInstallFailure job={job} disabled={disabled} repair={repair} />
-          </div>
+          </article>
         );
       })}
       {page && !page.items.length && <p className="field-help">暂无安装记录。</p>}
+      {error && (
+        <p className="terminal-install-error" role="alert" aria-label="安装历史读取失败详情" tabIndex={0}>
+          {page && <strong>仍显示上次读取的记录。 </strong>}
+          {error}
+        </p>
+      )}
       {page && (trail.length > 0 || page.nextCursor) && (
-        <div className="terminal-control-form-actions">
+        <nav className="terminal-install-pagination" aria-label="安装历史分页">
           <button
             type="button"
             className="secondary"
@@ -165,7 +173,7 @@ export function TerminalInstallHistory({
           >
             上一页
           </button>
-          <span className="field-help">共 {page.total} 条</span>
+          <span>共 {page.total} 条</span>
           <button
             type="button"
             className="secondary"
@@ -177,7 +185,7 @@ export function TerminalInstallHistory({
           >
             更早记录
           </button>
-        </div>
+        </nav>
       )}
     </details>
   );

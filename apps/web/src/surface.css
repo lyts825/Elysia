@@ -126,6 +126,9 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  max-height: 28rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .terminal-settings-profiles > button {
   display: flex;
@@ -144,6 +147,22 @@
   color: var(--text);
   background: var(--surface-selected);
   border-color: var(--border);
+}
+.terminal-settings-profiles > button:focus-visible,
+.terminal-settings-title:focus-visible {
+  outline-offset: -2px;
+}
+.terminal-settings-profiles > button > span {
+  min-width: 0;
+}
+.terminal-settings-profiles > button > svg {
+  flex: none;
+}
+.terminal-settings-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-lg);
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
 }
 .terminal-settings-body {
   display: flex;
@@ -173,14 +192,11 @@
     width: 100%;
   }
   .terminal-settings-profiles {
-    flex-direction: row;
-    align-items: flex-start;
-    overflow-x: auto;
+    max-height: 12rem;
   }
   .terminal-settings-profiles > button {
     flex: none;
-    min-height: 42px;
-    max-width: 220px;
+    min-height: var(--control-lg);
   }
   .terminal-settings-list > label {
     display: flex;

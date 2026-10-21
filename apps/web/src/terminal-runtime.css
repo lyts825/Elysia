@@ -1,0 +1,134 @@
+.terminal-activity.terminal-runtime {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-runtime > summary {
+  color: var(--secondary);
+  font-size: var(--font-md);
+  font-weight: 600;
+  line-height: var(--leading-body);
+  cursor: pointer;
+}
+.terminal-runtime > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.terminal-runtime-body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-top: var(--space-4);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  color: var(--secondary);
+}
+.terminal-runtime-body section,
+.terminal-runtime-item,
+.terminal-runtime-resources > div {
+  min-width: 0;
+}
+.terminal-runtime-body h4 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.terminal-runtime-body h4 > span,
+.terminal-runtime-times,
+.terminal-runtime-body .field-help {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-weight: 400;
+}
+.terminal-runtime-list {
+  display: grid;
+  gap: var(--space-2);
+}
+.terminal-runtime-item {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-runtime-item-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.terminal-runtime-item-heading > strong {
+  flex: 1 1 12rem;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.terminal-runtime-state {
+  color: var(--warning);
+  font-weight: 500;
+}
+.terminal-runtime-state:is(
+  [data-phase='preparing'],
+  [data-phase='starting'],
+  [data-phase='running'],
+  [data-phase='finalizing']
+) {
+  color: var(--accent);
+}
+.terminal-runtime-state[data-phase='unavailable'] {
+  color: var(--danger);
+}
+.terminal-runtime-state[data-phase='stopped'] {
+  color: var(--muted);
+}
+.terminal-runtime .terminal-runtime-body p {
+  margin: var(--space-2) 0 0;
+}
+.terminal-runtime-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+.terminal-runtime-times:empty {
+  display: none;
+}
+.terminal-runtime-resources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.terminal-runtime-resources > div {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-runtime-resources dt {
+  color: var(--muted);
+}
+.terminal-runtime-resources dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+.terminal-runtime-held {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+.terminal-runtime-owner {
+  display: grid;
+  gap: var(--space-1);
+}
+.terminal-runtime-held > button {
+  margin-top: var(--space-3);
+  max-width: 100%;
+}
