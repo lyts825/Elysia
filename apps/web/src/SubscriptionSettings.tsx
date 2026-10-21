@@ -40,6 +40,15 @@ export function SubscriptionSettings({
   const pending = useRef(''),
     changeRef = useRef(change),
     modelRef = useRef(model);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const focusError = useRef(false);
+  const catalogFocusRequested = useRef(false);
+  useEffect(() => {
+    if (!error || !focusError.current) return;
+    focusError.current = false;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [error]);
   changeRef.current = change;
   modelRef.current = model;
   const selected = status?.accounts.find((a) => a.id === accountId);
@@ -74,6 +83,8 @@ export function SubscriptionSettings({
   }, []);
   useEffect(() => {
     let alive = true;
+    const focusOnFailure = catalogFocusRequested.current;
+    catalogFocusRequested.current = false;
     setModels([]);
     setLoadedCatalog('');
     setLoading(false);
@@ -91,7 +102,10 @@ export function SubscriptionSettings({
         }
       })
       .catch((e) => {
-        if (alive) setError(e.message);
+        if (alive) {
+          focusError.current = focusOnFailure;
+          setError(e.message);
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -121,6 +135,7 @@ export function SubscriptionSettings({
       await action();
       await refresh();
     } catch (e) {
+      focusError.current = true;
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -234,7 +249,14 @@ export function SubscriptionSettings({
             </p>
           )}
           <div className="subscription-actions">
-            <button className="secondary" disabled={loading} onClick={() => setReload((v) => v + 1)}>
+            <button
+              className="secondary"
+              disabled={loading}
+              onClick={() => {
+                catalogFocusRequested.current = true;
+                setReload((v) => v + 1);
+              }}
+            >
               刷新模型
             </button>
             <button className="secondary" onClick={manageUsage}>
@@ -247,6 +269,7 @@ export function SubscriptionSettings({
                 onClick={() =>
                   void act(async () => {
                     await mutation('/subscription/' + selected.id + '/retry', {});
+                    catalogFocusRequested.current = true;
                     setReload((v) => v + 1);
                   })
                 }
@@ -285,7 +308,7 @@ export function SubscriptionSettings({
         </p>
       )}
       {error && (
-        <p className="inline-warning" role="alert">
+        <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
           {error}
         </p>
       )}

@@ -124,7 +124,7 @@ export function Modal({
           </button>
         </header>
         {error && (
-          <div className="modal-operation-error" role="alert">
+          <div className="modal-operation-error" role="alert" aria-label="操作失败详情" tabIndex={0}>
             {error}
           </div>
         )}

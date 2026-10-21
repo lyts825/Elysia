@@ -41,8 +41,16 @@ export function CodexSettings({
     [usage, setUsage] = useState<any>();
   const generation = useRef(0),
     current = useRef({ config, change });
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const focusError = useRef(false);
+  useEffect(() => {
+    if (!error || !focusError.current) return;
+    focusError.current = false;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [error]);
   current.current = { config, change };
-  const refresh = async (reconnect = false) => {
+  const refresh = async (reconnect = false, focusOnFailure = reconnect) => {
     const seq = ++generation.current;
     setBusy(true);
     setCatalogLoaded(false);
@@ -73,7 +81,10 @@ export function CodexSettings({
         });
       }
     } catch (e) {
-      if (generation.current === seq) setError((e as Error).message);
+      if (generation.current === seq) {
+        focusError.current = focusOnFailure;
+        setError((e as Error).message);
+      }
     } finally {
       if (generation.current === seq) setBusy(false);
     }
@@ -104,8 +115,9 @@ export function CodexSettings({
     setError('');
     try {
       await action();
-      await refresh();
+      await refresh(false, true);
     } catch (e) {
+      focusError.current = true;
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -315,6 +327,7 @@ export function CodexSettings({
             try {
               setUsage(await api('/codex/' + status!.accountId + '/usage'));
             } catch (e) {
+              focusError.current = true;
               setError((e as Error).message);
             }
           }}
@@ -345,7 +358,7 @@ export function CodexSettings({
         </div>
       )}
       {error && (
-        <p className="inline-warning" role="alert">
+        <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
           {error}
         </p>
       )}

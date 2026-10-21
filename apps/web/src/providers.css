@@ -15,6 +15,8 @@
   background: var(--surface-soft);
   border-right: 1px solid var(--border);
   overflow-y: auto;
+  min-width: 0;
+  overscroll-behavior: contain;
 }
 .section-heading {
   display: flex;
@@ -28,6 +30,15 @@
   margin: 0;
   font-size: var(--font-lg);
   font-weight: 600;
+}
+.provider-editor .section-heading > div:first-child {
+  min-width: 0;
+}
+.provider-editor h3,
+.provider-editor p,
+.provider-editor strong,
+.provider-editor summary {
+  overflow-wrap: anywhere;
 }
 .section-heading .field-help {
   margin: var(--space-1) 0 0;
@@ -49,6 +60,7 @@
   margin-bottom: var(--space-2);
   color: var(--secondary);
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 .provider-card:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -62,8 +74,16 @@
   font-weight: 600;
   color: var(--text);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.provider-card-title > span:last-child {
+  min-width: 0;
+}
+.provider-card-model {
+  max-width: 100%;
 }
 .provider-card > span:not(.provider-card-title) {
   font-size: var(--font-sm);
@@ -89,6 +109,7 @@
   min-height: 0;
   scroll-padding-bottom: 86px;
   min-width: 0;
+  overscroll-behavior: contain;
 }
 .provider-editor label {
   display: flex;
@@ -221,6 +242,8 @@
   background: var(--surface-hover);
   color: var(--muted);
   font-size: var(--font-xs);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .connection-stages .passed {
   background: var(--success-bg);
@@ -335,6 +358,17 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+.provider-error {
+  margin: var(--space-3) 0 var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
 .connection-notice {
   color: var(--success);
   background: var(--success-bg);
@@ -350,9 +384,11 @@
   padding: var(--space-3);
   margin-bottom: var(--space-4);
   font-size: var(--font-sm);
+  overflow-wrap: anywhere;
 }
 .draft-prompt button {
   margin-right: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 .provider-symbol {
   display: grid;
@@ -364,7 +400,7 @@
   color: var(--accent);
   background: var(--accent-pale);
 }
-.provider-card > span:nth-child(2),
+.provider-card-model,
 .provider-card > small {
   padding-left: 36px;
 }
@@ -407,28 +443,19 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
   .provider-list {
-    display: flex;
-    gap: var(--space-2);
+    display: block;
     padding: var(--space-3) var(--space-3);
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    max-height: 150px;
+    max-height: 12rem;
   }
   .provider-list .section-heading {
-    flex: none;
-    min-width: 90px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    margin: 0;
+    margin-bottom: var(--space-2);
     padding: 0;
   }
   .provider-list .provider-card {
-    flex: 0 0 168px;
-    margin: 0;
+    margin-bottom: var(--space-2);
     padding: var(--space-3) var(--space-3);
     gap: var(--space-1);
   }
@@ -437,7 +464,7 @@
     height: 22px;
   }
   .provider-list > .secondary {
-    flex: 0 0 150px;
+    width: 100%;
     white-space: normal;
   }
   .provider-editor .provider-advanced .form-columns {
@@ -449,6 +476,8 @@
   .provider-footer {
     gap: var(--space-2);
     padding: var(--space-3) 0;
+    position: static;
+    box-shadow: none;
   }
   .provider-footer button {
     flex: 1;
@@ -492,7 +521,7 @@
   }
 }
 @media (max-width: 760px) {
-  .provider-card > span:nth-child(2),
+  .provider-card-model,
   .provider-card > small {
     padding-left: 0;
   }
@@ -507,6 +536,20 @@
   }
   .provider-editor {
     padding: var(--space-4) var(--space-3) 0;
+  }
+}
+
+@media (max-width: 760px) and (max-height: 600px) {
+  .provider-workspace {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .provider-list {
+    max-height: 10rem;
+  }
+  .provider-editor {
+    overflow: visible;
   }
 }
 

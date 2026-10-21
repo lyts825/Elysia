@@ -5,6 +5,8 @@
   border-radius: var(--radius-card);
   background: var(--surface);
   min-width: 0;
+  container: project-intelligence / inline-size;
+  overflow-wrap: anywhere;
 }
 .project-intelligence header p,
 .project-intelligence .field-help {
@@ -25,6 +27,13 @@
 .project-intelligence h4 {
   font-size: var(--font-md);
   margin: var(--space-2) 0;
+}
+.project-intelligence .intelligence-heading h3 {
+  margin: 0;
+}
+.intelligence-heading > strong {
+  flex: 1 1 16rem;
+  min-width: 0;
 }
 .intelligence-section {
   padding: var(--space-4) 0;
@@ -97,8 +106,9 @@
 .project-intelligence textarea {
   resize: vertical;
 }
-.intelligence-check {
+.project-intelligence label.intelligence-check {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: var(--space-2);
   font-size: var(--font-sm);
@@ -109,31 +119,44 @@
   height: var(--space-4);
   flex: 0 0 var(--space-4);
   padding: 0;
+  margin: var(--space-1) 0 0;
 }
 .intelligence-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: var(--space-2);
-  max-height: 300px;
+  max-height: clamp(12rem, 45vh, 24rem);
   overflow: auto;
+  scrollbar-gutter: stable;
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
 }
-.intelligence-options label {
+.project-intelligence .intelligence-options > label {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: var(--space-2);
-  padding: var(--space-2);
+  padding: var(--space-3);
+  margin: 0;
   min-width: 0;
   border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--surface-soft);
   cursor: pointer;
 }
-.intelligence-options label:has(input:checked) {
+.project-intelligence .intelligence-options > label:has(input:checked) {
   background: var(--accent-pale);
   border-color: var(--border-strong);
 }
-.intelligence-options label:hover:not(:has(input:disabled)) {
+.project-intelligence .intelligence-options > label:hover:not(:has(input:disabled, input:checked)) {
   background: var(--surface-hover);
+}
+.project-intelligence .intelligence-options > label:has(input:disabled) {
+  cursor: default;
+}
+.project-intelligence .intelligence-options > label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .intelligence-options input {
   flex-shrink: 0;
@@ -143,7 +166,10 @@
   min-width: 0;
 }
 .intelligence-options strong {
+  display: block;
   font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
 }
 .intelligence-options small {
   display: block;
@@ -167,6 +193,14 @@
 .project-intelligence .field-error {
   overflow-wrap: anywhere;
 }
+.project-intelligence > .field-error,
+.intelligence-read .field-error {
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  padding: var(--space-3);
+  min-width: 0;
+}
 .intelligence-issue {
   padding: var(--space-3);
   border: 1px solid var(--warning-border);
@@ -179,12 +213,6 @@
 }
 .intelligence-issue p {
   margin: var(--space-2) 0;
-}
-.intelligence-issue label {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
 }
 .intelligence-editor {
   margin: var(--space-3) 0;
@@ -211,6 +239,21 @@
   font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
+.intelligence-heading .intelligence-memory-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-soft);
+  font-variant-numeric: tabular-nums;
+}
+.intelligence-heading .intelligence-memory-state[data-status='active'] {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
 .project-intelligence details {
   margin: var(--space-3) 0;
   font-size: var(--font-sm);
@@ -219,12 +262,37 @@
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+.intelligence-content {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.intelligence-content > div {
+  min-width: 0;
+}
+.intelligence-content-label {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
 .intelligence-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: var(--leading-body);
-  max-height: 320px;
+  max-height: clamp(10rem, 35vh, 20rem);
   overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  scrollbar-gutter: stable;
+}
+.intelligence-text:focus-visible,
+.intelligence-options:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .intelligence-history {
   margin: var(--space-4) 0;
@@ -236,6 +304,24 @@
   border-bottom: 1px solid var(--border);
   padding: var(--space-2) 0;
 }
+.intelligence-history h4,
+.intelligence-history strong {
+  overflow-wrap: anywhere;
+}
+.intelligence-restore-preview {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--warning-border);
+}
+.intelligence-restore > .project-actions {
+  border-top: 1px solid var(--warning-border);
+  padding-top: var(--space-3);
+}
+@container project-intelligence (max-width: 640px) {
+  .intelligence-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 480px) {
   .project-intelligence {
     padding: var(--space-3);
@@ -246,9 +332,6 @@
   }
   .intelligence-editor {
     padding: var(--space-3);
-  }
-  .project-intelligence .project-actions button {
-    font-size: var(--font-sm);
   }
   .intelligence-heading {
     align-items: flex-start;

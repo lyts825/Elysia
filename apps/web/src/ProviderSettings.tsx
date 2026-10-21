@@ -98,6 +98,45 @@ export function ProviderSettings({
   const [pendingChoice, setPendingChoice] = useState<Provider>();
   const [confirmClose, setConfirmClose] = useState(false);
   const actionPending = useRef(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const choiceRef = useRef<HTMLDivElement>(null);
+  const closePromptRef = useRef<HTMLDivElement>(null);
+  const editorTitleRef = useRef<HTMLHeadingElement>(null);
+  const providerListRef = useRef<HTMLElement>(null);
+  const editingRequested = useRef(false);
+  useEffect(() => {
+    if (!error) return;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [error]);
+  useEffect(() => {
+    const prompt = confirmClose ? closePromptRef.current : pendingChoice ? choiceRef.current : null;
+    prompt?.focus({ preventScroll: true });
+    prompt?.scrollIntoView({ block: 'nearest' });
+  }, [confirmClose, pendingChoice]);
+  useEffect(() => {
+    if (!editingRequested.current) return;
+    editingRequested.current = false;
+    editorTitleRef.current?.focus({ preventScroll: true });
+    editorTitleRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [config?.id]);
+  useEffect(() => {
+    const list = providerListRef.current;
+    if (!list) return;
+    const revealSelection = () => {
+      const selected = list.querySelector<HTMLElement>('.provider-card.selected');
+      if (!selected) return;
+      const listBounds = list.getBoundingClientRect();
+      const selectedBounds = selected.getBoundingClientRect();
+      if (selectedBounds.top < listBounds.top || selectedBounds.bottom > listBounds.bottom) {
+        list.scrollTop += selectedBounds.top - listBounds.top;
+      }
+    };
+    revealSelection();
+    const observer = new ResizeObserver(revealSelection);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [config?.id]);
   useEffect(() => {
     if (!requestedProviderId && !adding && !config && providers.length) {
       const initial = providers.find((p) => p.authMode === 'codex') || providers[0];
@@ -152,6 +191,7 @@ export function ProviderSettings({
       setPendingChoice(next);
       return;
     }
+    editingRequested.current = true;
     setConfig(next);
     setKeyMode(credentialMode(next));
     setSavedKeyMode(credentialMode(next));
@@ -238,9 +278,15 @@ export function ProviderSettings({
       }}
     >
       {confirmClose && (
-        <div className="dialog-notice" role="alert">
+        <div className="dialog-notice" role="alert" ref={closePromptRef} tabIndex={-1}>
           <span>配置尚未保存，继续编辑或舍弃更改后关闭。</span>
-          <button className="secondary" onClick={() => setConfirmClose(false)}>
+          <button
+            className="secondary"
+            onClick={() => {
+              setConfirmClose(false);
+              editorTitleRef.current?.focus();
+            }}
+          >
             继续编辑
           </button>
           <button className="text-button" onClick={close}>
@@ -268,7 +314,7 @@ export function ProviderSettings({
           </div>
         )}
       <div className="provider-workspace">
-        <nav className="provider-list" aria-label="提供商配置">
+        <nav className="provider-list" aria-label="提供商配置" ref={providerListRef}>
           <div className="section-heading">
             <strong>提供商</strong>
             <button
@@ -298,9 +344,9 @@ export function ProviderSettings({
                     size={16}
                   />
                 </span>
-                {p.label}
+                <span>{p.label}</span>
               </span>
-              <span>{p.model}</span>
+              <span className="provider-card-model">{p.model}</span>
               <small>
                 {p.authMode === 'codex'
                   ? 'ChatGPT · Codex'
@@ -334,9 +380,15 @@ export function ProviderSettings({
         </nav>
         <MotionContent className="provider-editor" motionKey={adding ? 'presets' : config?.id || 'empty'}>
           {pendingChoice && (
-            <div className="draft-prompt">
+            <div className="draft-prompt" role="alert" ref={choiceRef} tabIndex={-1}>
               <p>当前配置有未保存的更改。</p>
-              <button className="secondary" onClick={() => setPendingChoice(undefined)}>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setPendingChoice(undefined);
+                  editorTitleRef.current?.focus();
+                }}
+              >
                 继续编辑
               </button>
               <button className="secondary" onClick={() => choose(pendingChoice, true)}>
@@ -361,7 +413,9 @@ export function ProviderSettings({
             <fieldset className="provider-fields" disabled={busy}>
               <div className="section-heading">
                 <div>
-                  <h3>{config.label || '新配置'}</h3>
+                  <h3 ref={editorTitleRef} tabIndex={-1}>
+                    {config.label || '新配置'}
+                  </h3>
                   <p className="field-help">
                     {!saved
                       ? '新建配置'
@@ -815,7 +869,7 @@ export function ProviderSettings({
                 新任务选择已验证的配置。保存、复制和删除不会改变已启动任务的模型绑定。连接检查会发起一次短请求。
               </p>
               {error && (
-                <p className="inline-warning" role="alert">
+                <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
                   {error}
                 </p>
               )}

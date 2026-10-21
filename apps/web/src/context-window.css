@@ -2,6 +2,7 @@
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+  container: context-policy / inline-size;
 }
 .context-policy-editor > label {
   font-size: var(--font-sm);
@@ -352,7 +353,7 @@
     min-height: var(--control-md);
   }
 }
-@media (max-width: 400px) {
+@container context-policy (max-width: 300px) {
   .context-preset-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -360,6 +361,8 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
+}
+@media (max-width: 400px) {
   .context-usage-summary strong {
     font-size: var(--font-2xl);
   }
@@ -375,6 +378,26 @@
   }
   .context-capacity {
     gap: var(--space-3);
+  }
+}
+@media (max-height: 500px) {
+  .modal.context-window-modal {
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block-start: calc(var(--space-8) * 4);
+  }
+  .modal.context-window-modal > header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+  .modal.context-window-modal > form {
+    flex: none;
+    overflow: visible;
+  }
+  .context-window-modal > form > .form-body {
+    overflow: visible;
   }
 }
 @media (min-width: 600px) and (max-height: 500px) {
@@ -396,5 +419,8 @@
   .context-window-modal .form-body:has(.context-current) > p {
     grid-column: 1 / -1;
     margin: 0;
+  }
+  .context-window-modal .form-body:has(.context-current) > .task-working-state {
+    grid-column: 1 / -1;
   }
 }

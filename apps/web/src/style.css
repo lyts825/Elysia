@@ -964,6 +964,7 @@ a {
   flex: none;
   max-height: 100px;
   overflow: auto;
+  overflow-wrap: anywhere;
   margin: var(--space-3) var(--space-6) 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--danger-border);

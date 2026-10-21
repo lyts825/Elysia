@@ -450,7 +450,7 @@ function IntelligenceEditor({
           </div>
           {parseError && (
             <>
-              <label>
+              <label className="intelligence-check">
                 <input
                   type="checkbox"
                   checked={clearConfirmed}
@@ -527,7 +527,7 @@ function IntelligenceEditor({
             </label>
             <fieldset disabled={locked || capRead.status !== 'ready'}>
               <legend>内置 Skills</legend>
-              <div className="intelligence-options">
+              <div className="intelligence-options" role="region" aria-label="内置 Skills 列表" tabIndex={0}>
                 {view.catalog.builtinSkills
                   .filter((item) => matched(item.name, item.description))
                   .map((item) => (
@@ -548,7 +548,12 @@ function IntelligenceEditor({
             {(['skill', 'memory', 'mcp'] as const).map((kind) => (
               <fieldset key={kind} disabled={locked || capRead.status !== 'ready'}>
                 <legend>{{ skill: '导入 Skills', memory: '导入记忆', mcp: 'MCP 服务' }[kind]}</legend>
-                <div className="intelligence-options">
+                <div
+                  className="intelligence-options"
+                  role="region"
+                  aria-label={`${{ skill: '导入 Skills', memory: '导入记忆', mcp: 'MCP 服务' }[kind]}列表`}
+                  tabIndex={0}
+                >
                   {view.catalog.localItems
                     .filter((item) => item.kind === kind && matched(item.name, item.description))
                     .map((item) => (
@@ -761,8 +766,11 @@ function IntelligenceEditor({
                     <details>
                       <summary>查看当前版本 {currentMemory.revision} 的完整内容</summary>
                       <strong>{currentMemory.title}</strong>
-                      <p className="intelligence-text">{currentMemory.text}</p>
-                      <p className="intelligence-text">来源：{currentMemory.source || '未填写'}</p>
+                      <MemoryContent
+                        context={`当前记忆版本 ${currentMemory.revision}`}
+                        text={currentMemory.text}
+                        source={currentMemory.source || '未填写'}
+                      />
                       <p>{states[currentMemory.status]}</p>
                     </details>
                     <button
@@ -821,14 +829,17 @@ function IntelligenceEditor({
             <article key={item.id}>
               <div className="intelligence-heading">
                 <strong>{item.title}</strong>
-                <span>
+                <span className="intelligence-memory-state" data-status={item.status}>
                   {states[item.status]} · 版本 {item.revision}
                 </span>
               </div>
               <details>
                 <summary>正文与来源</summary>
-                <p className="intelligence-text">{item.text}</p>
-                <p className="intelligence-text">来源：{item.source || '未填写来源说明'}</p>
+                <MemoryContent
+                  context={`${item.title}，当前版本 ${item.revision}`}
+                  text={item.text}
+                  source={item.source || '未填写来源说明'}
+                />
                 <small>更新于 {new Date(item.updatedAt).toLocaleString()}</small>
               </details>
               <div className="project-actions">
@@ -863,6 +874,7 @@ function IntelligenceEditor({
                 <button
                   type="button"
                   className="text-button"
+                  aria-expanded={historyId === item.id}
                   onClick={() => {
                     setHistoryId(historyId === item.id ? '' : item.id);
                     setRestore(undefined);
@@ -893,8 +905,11 @@ function IntelligenceEditor({
                   {new Date(version.updatedAt).toLocaleString()}
                 </summary>
                 <strong>{version.title}</strong>
-                <p className="intelligence-text">{version.text}</p>
-                <p className="intelligence-text">来源：{version.source || '未填写'}</p>
+                <MemoryContent
+                  context={`历史记忆版本 ${version.revision}`}
+                  text={version.text}
+                  source={version.source || '未填写'}
+                />
                 <button
                   type="button"
                   className="secondary"
@@ -908,15 +923,20 @@ function IntelligenceEditor({
           </section>
         )}
         {restore && (
-          <div className="intelligence-issue" aria-label="恢复记忆版本确认">
+          <div className="intelligence-issue intelligence-restore" aria-label="恢复记忆版本确认">
             <h4>恢复为新版本</h4>
             <p>
               将把当前版本 {restore.expectedRevision} 替换为以下历史内容，状态为“
               {states[restore.version.status]}”。当前历史仍保留。
             </p>
-            <strong>{restore.version.title}</strong>
-            <p className="intelligence-text">{restore.version.text}</p>
-            <p className="intelligence-text">来源：{restore.version.source || '未填写'}</p>
+            <div className="intelligence-restore-preview">
+              <strong>{restore.version.title}</strong>
+              <MemoryContent
+                context={`待恢复记忆版本 ${restore.version.revision}`}
+                text={restore.version.text}
+                source={restore.version.source || '未填写'}
+              />
+            </div>
             {memories?.memories.find((item) => item.id === restore.id)?.revision !==
               restore.expectedRevision && (
               <p className="field-error">当前记忆已变化，请重新选择历史版本核对。</p>
@@ -958,5 +978,24 @@ function IntelligenceEditor({
       </section>
       <ProjectModelRouting projectId={projectId} cache={cache} archived={archived} />
     </section>
+  );
+}
+
+function MemoryContent({ context, text, source }: { context: string; text: string; source: string }) {
+  return (
+    <div className="intelligence-content">
+      <div>
+        <span className="intelligence-content-label">正文</span>
+        <p className="intelligence-text" role="region" aria-label={`${context}正文`} tabIndex={0}>
+          {text}
+        </p>
+      </div>
+      <div>
+        <span className="intelligence-content-label">来源与核对说明</span>
+        <p className="intelligence-text" role="region" aria-label={`${context}来源`} tabIndex={0}>
+          {source}
+        </p>
+      </div>
+    </div>
   );
 }

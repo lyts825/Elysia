@@ -53,7 +53,7 @@ export function ContextPolicyEditor({
   const maximumK = Math.floor(limit / CONTEXT_TOKEN_UNIT);
   const isPreset = CONTEXT_WINDOW_PRESETS.some((tokens) => tokens === value.windowTokens);
   const custom = customSelected || !isPreset;
-  const fractionalLegacy =
+  const fractionalWindow =
     value.mode === 'manual' &&
     value.windowTokens !== undefined &&
     value.windowTokens % CONTEXT_TOKEN_UNIT !== 0;
@@ -154,10 +154,9 @@ export function ContextPolicyEditor({
               ? `可分配 ${minimumK}–${maximumK}K，含输入与输出预留。1K = 1000 Token · 1M = 1000K。`
               : '当前模型容量无法容纳整数 K 的窗口及必要指令与输出预留。'}
           </p>
-          {fractionalLegacy && (
+          {fractionalWindow && (
             <p className="inline-warning" role="status">
-              历史设置为 {value.windowTokens?.toLocaleString()} Token，已保留原值。请选择档位或输入整数 K
-              后保存。
+              当前设置为 {value.windowTokens?.toLocaleString()} Token。请选择档位或输入整数 K 后保存。
             </p>
           )}
         </>
@@ -174,7 +173,7 @@ export function ContextPolicyEditor({
           </p>
         </div>
       )}
-      {!valid && !fractionalLegacy && (
+      {!valid && !fractionalWindow && (
         <p className="inline-warning" role="status">
           {limit < minimumWindowTokens
             ? `当前可用容量不足，至少需要 ${minimumWindowTokens.toLocaleString()} Token 保留必要指令与输出。`
