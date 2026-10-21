@@ -133,12 +133,12 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
       </div>
       {loading && <p role="status">正在读取创建历史…{display ? '暂时显示上次成功页。' : ''}</p>}
       {readError && (
-        <p className="field-error" role="alert">
+        <p className="field-error schedule-history-error" role="alert">
           {readError}
         </p>
       )}
       {openError && (
-        <p className="field-error" role="alert">
+        <p className="field-error schedule-history-error" role="alert">
           {openError}
         </p>
       )}
@@ -148,12 +148,22 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
             {phase === 'ready' ? '读取于' : '上次成功读取于'} {new Date(display.receivedAt).toLocaleString()}{' '}
             · 第 {position.trail.length + 1} 页
           </p>
-          <p>
-            累计创建 {page.createdCount} 次 · 已读取创建记录 {page.coverage.retainedDispatches} 条 ·
-            可定位任务 {page.coverage.traceableRuns} 个
-          </p>
+          <dl className="schedule-history-summary">
+            <div>
+              <dt>累计创建</dt>
+              <dd>{page.createdCount} 次</dd>
+            </div>
+            <div>
+              <dt>已读记录</dt>
+              <dd>{page.coverage.retainedDispatches} 条</dd>
+            </div>
+            <div>
+              <dt>可定位任务</dt>
+              <dd>{page.coverage.traceableRuns} 个</dd>
+            </div>
+          </dl>
           {!page.coverage.complete && (
-            <p className="field-error" role="status">
+            <p className="schedule-history-notice" role="status">
               {page.coverage.message}
             </p>
           )}
@@ -167,14 +177,14 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
           )}
           <ol className="schedule-history-items">
             {page.items.map((item) => (
-              <li key={item.dispatchId}>
+              <li key={item.dispatchId} data-unavailable={!item.run || undefined}>
                 <p className="field-help">
                   调度时段：{item.dueAt ? new Date(item.dueAt).toLocaleString() : '无法读取'}
                 </p>
                 {item.run ? (
                   <>
-                    <strong>{item.run.title}</strong>
-                    <p>
+                    <strong className="schedule-history-title">{item.run.title}</strong>
+                    <p className="schedule-history-status" data-state={item.run.status}>
                       {executionLabel(item.run.status)}
                       {item.run.reason === 'paused' ? ' · 已暂停' : ''}
                       {item.run.archived ? ' · 已归档' : ''}
@@ -191,32 +201,37 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
                 ) : (
                   <p>此条记录暂时无法定位任务。</p>
                 )}
-                {item.issue && <p className="field-error">{item.issue.message}</p>}
+                {item.issue && <p className="schedule-history-issue">{item.issue.message}</p>}
               </li>
             ))}
           </ol>
-          <div className="schedule-actions">
-            <button
-              type="button"
-              className="secondary"
-              disabled={loading || !position.trail.length}
-              onClick={() =>
-                void read({ before: position.trail.at(-1) ?? null, trail: position.trail.slice(0, -1) })
-              }
-            >
-              上一页历史
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={phase !== 'ready' || !page.page.hasMore || !page.page.nextBefore}
-              onClick={() =>
-                void read({ before: page.page.nextBefore, trail: [...position.trail, position.before] })
-              }
-            >
-              下一页历史
-            </button>
-          </div>
+          <nav className="schedule-history-pagination" aria-label="创建历史分页">
+            <span>
+              第 {position.trail.length + 1} 页 · 本页 {page.items.length} 条
+            </span>
+            <div className="schedule-history-page-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={loading || !position.trail.length}
+                onClick={() =>
+                  void read({ before: position.trail.at(-1) ?? null, trail: position.trail.slice(0, -1) })
+                }
+              >
+                上一页历史
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={phase !== 'ready' || !page.page.hasMore || !page.page.nextBefore}
+                onClick={() =>
+                  void read({ before: page.page.nextBefore, trail: [...position.trail, position.before] })
+                }
+              >
+                下一页历史
+              </button>
+            </div>
+          </nav>
         </>
       )}
     </section>

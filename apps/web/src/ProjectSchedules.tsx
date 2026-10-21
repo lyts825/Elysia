@@ -506,26 +506,59 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       )}
       <div className="schedule-list">
         {list?.schedules.map((record) => (
-          <article key={record.id}>
-            <div>
-              <strong>{record.settings.name}</strong>
-              <span>
-                {stateLabels[record.status]} ·{' '}
-                {record.settings.mode === 'review' ? '创建暂停任务' : '自动执行'}
-              </span>
+          <article
+            key={record.id}
+            aria-labelledby={`schedule-title-${record.id}`}
+            data-selected={selected?.id === record.id || undefined}
+          >
+            <div className="schedule-card-heading">
+              <h3 className="schedule-card-title" id={`schedule-title-${record.id}`}>
+                {record.settings.name}
+              </h3>
+              <div className="schedule-card-state">
+                <span className="schedule-status" data-state={record.status}>
+                  {stateLabels[record.status]}
+                </span>
+                <span className="schedule-mode">
+                  {record.settings.mode === 'review' ? '创建暂停任务' : '自动执行'}
+                </span>
+              </div>
             </div>
-            <p>
-              每 {record.settings.intervalMinutes} 分钟 · 已创建 {record.createdCount}/
-              {record.settings.maxRuns} 次 · 跳过 {record.skippedCount} 个时段
-            </p>
-            <p>
-              下次：{record.nextDueAt ? new Date(record.nextDueAt).toLocaleString() : '—'} · 截止：
-              {new Date(record.settings.until).toLocaleString()}
-            </p>
-            {record.reason && <p>{record.reason}</p>}
+            <dl className="schedule-metrics">
+              <div>
+                <dt>间隔</dt>
+                <dd>{record.settings.intervalMinutes} 分钟</dd>
+              </div>
+              <div>
+                <dt>创建进度</dt>
+                <dd>
+                  {record.createdCount} / {record.settings.maxRuns} 次
+                </dd>
+              </div>
+              <div>
+                <dt>已跳过</dt>
+                <dd>{record.skippedCount} 个时段</dd>
+              </div>
+            </dl>
+            <dl className="schedule-timing">
+              <div>
+                <dt>下次调度</dt>
+                <dd>{record.nextDueAt ? new Date(record.nextDueAt).toLocaleString() : '—'}</dd>
+              </div>
+              <div>
+                <dt>截止时间</dt>
+                <dd>{new Date(record.settings.until).toLocaleString()}</dd>
+              </div>
+            </dl>
+            {record.reason && <p className="schedule-reason">{record.reason}</p>}
             <div className="schedule-actions">
-              <button className="secondary" disabled={locked || !current} onClick={() => select(record)}>
-                核对“{record.settings.name}”
+              <button
+                className="secondary"
+                aria-label={`核对与编辑：${record.settings.name}`}
+                disabled={locked || !current}
+                onClick={() => select(record)}
+              >
+                核对与编辑
               </button>
               {record.status === 'enabled' && (
                 <button
@@ -678,7 +711,9 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                 {shown.template.sourceTitle} · {shown.template.provider.label} /{' '}
                 {shown.template.provider.model}
               </p>
-              <p className="schedule-objective">{shown.template.objective}</p>
+              <p className="schedule-objective" role="region" aria-label="定时任务完整目标" tabIndex={0}>
+                {shown.template.objective}
+              </p>
               <p>
                 每次最多 {budget?.maxRequests.toLocaleString()} 个请求、{budget?.maxTokens.toLocaleString()}{' '}
                 Token；{totalRuns} 次累计上限 {((budget?.maxRequests ?? 0) * totalRuns).toLocaleString()}{' '}
@@ -700,7 +735,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
               </p>
               <details>
                 <summary>完整任务约定、执行限制与上下文策略</summary>
-                <pre>
+                <pre tabIndex={0} role="region" aria-label="完整任务约定、执行限制与上下文策略">
                   {JSON.stringify(
                     {
                       contract: shown.template.contract,
@@ -767,6 +802,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
           </div>
           {selected && (
             <div className="schedule-delete">
+              <h4>删除定时任务</h4>
               <label className="schedule-check">
                 <input
                   type="checkbox"

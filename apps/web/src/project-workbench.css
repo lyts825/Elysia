@@ -398,45 +398,9 @@
   padding: var(--space-4);
   margin: var(--space-4) 0;
 }
-.project-draft-difference {
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-3);
-  margin-top: var(--space-4);
-}
-.project-draft-difference h4 {
-  font-size: var(--font-md);
-  margin: 0 0 var(--space-3);
-  overflow-wrap: anywhere;
-}
-.project-difference-columns {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.project-difference-columns > div {
-  min-width: 0;
-  padding: var(--space-3);
-  background: var(--surface-soft);
-  border-radius: var(--radius-control);
-}
-.project-difference-columns strong {
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
-.project-difference-columns p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: var(--font-md);
-}
-.project-draft-difference label {
-  max-width: 360px;
-}
 @container (max-width:680px) {
   .project-item-layout,
   .project-form-columns {
-    grid-template-columns: 1fr;
-  }
-  .project-difference-columns {
     grid-template-columns: 1fr;
   }
   .project-todo-row {

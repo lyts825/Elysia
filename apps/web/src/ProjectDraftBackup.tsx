@@ -343,6 +343,7 @@ export function ProjectDraftBackup({
         <button
           type="button"
           className="secondary"
+          aria-expanded={open}
           disabled={restoring || deleting}
           onClick={() => {
             if (open) {
@@ -405,23 +406,37 @@ export function ProjectDraftBackup({
             />
           </div>
           {protectedRaw !== null && protectionInfo && (
-            <section className="project-draft-protection" aria-label="当前项目恢复前副本">
-              <h3>当前项目恢复前副本</h3>
-              <p>
-                副本时间：
-                {protectionInfo.createdAt ? (
-                  <time dateTime={protectionInfo.createdAt} title={protectionInfo.createdAt}>
-                    {new Date(protectionInfo.createdAt).toLocaleString('zh-CN')}
-                  </time>
-                ) : (
-                  '未知（副本无法读取）'
-                )}
-              </p>
-              <p>
-                {protectionInfo.readable ? 'JSON' : '原文'} UTF-8 文件大小：
-                {protectionInfo.bytes.toLocaleString('zh-CN')} 字节（
-                {(protectionInfo.bytes / 1024).toFixed(1)} KiB）。这是另存文件的大小，不表示浏览器剩余空间。
-              </p>
+            <section
+              className="project-draft-protection"
+              aria-label="当前项目恢复前副本"
+              data-readable={protectionInfo.readable}
+            >
+              <div className="project-draft-backup-heading">
+                <h3>当前项目恢复前副本</h3>
+                <span>{protectionInfo.readable ? '可预览' : '仅可另存原文'}</span>
+              </div>
+              <dl className="project-draft-backup-summary">
+                <div>
+                  <dt>副本时间</dt>
+                  <dd>
+                    {protectionInfo.createdAt ? (
+                      <time dateTime={protectionInfo.createdAt} title={protectionInfo.createdAt}>
+                        {new Date(protectionInfo.createdAt).toLocaleString('zh-CN')}
+                      </time>
+                    ) : (
+                      '未知（副本无法读取）'
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{protectionInfo.readable ? 'JSON' : '原文'} UTF-8 文件大小</dt>
+                  <dd>
+                    {protectionInfo.bytes.toLocaleString('zh-CN')} 字节（
+                    {(protectionInfo.bytes / 1024).toFixed(1)} KiB）
+                  </dd>
+                </div>
+              </dl>
+              <p className="field-help">这是另存文件的大小，不表示浏览器剩余空间。</p>
               {!protectionInfo.readable && (
                 <p className="field-help">
                   此副本格式或绑定无法读取。可先另存完整原文，再明确删除；不会尝试将损坏副本恢复为草稿。
@@ -458,23 +473,26 @@ export function ProjectDraftBackup({
                   预览恢复前副本
                 </button>
               </div>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={deleteConfirmed}
-                  disabled={busy || downloadedProtection !== protectedRaw}
-                  onChange={(event) => setDeleteConfirmed(event.target.checked)}
-                />
-                <span>已确认另存文件保存完成，删除此浏览器中当前项目的恢复前副本。</span>
-              </label>
-              <button
-                type="button"
-                className="secondary danger"
-                disabled={busy || !deleteConfirmed || downloadedProtection !== protectedRaw}
-                onClick={() => void deleteProtection()}
-              >
-                明确删除恢复前副本
-              </button>
+              <div className="project-draft-delete-controls">
+                <h4>删除本地恢复前副本</h4>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={deleteConfirmed}
+                    disabled={busy || downloadedProtection !== protectedRaw}
+                    onChange={(event) => setDeleteConfirmed(event.target.checked)}
+                  />
+                  <span>已确认另存文件保存完成，删除此浏览器中当前项目的恢复前副本。</span>
+                </label>
+                <button
+                  type="button"
+                  className="secondary danger"
+                  disabled={busy || !deleteConfirmed || downloadedProtection !== protectedRaw}
+                  onClick={() => void deleteProtection()}
+                >
+                  明确删除恢复前副本
+                </button>
+              </div>
             </section>
           )}
           <p className="field-help">
@@ -522,82 +540,95 @@ export function ProjectDraftBackup({
           {preview && (
             <section className="project-draft-backup-preview" aria-label="工作台备份恢复预览">
               <h3>工作台备份恢复预览</h3>
-              <p>
-                备份时间 {preview.backup.file.createdAt}；原稿{' '}
-                {preview.backup.file.draftRaw.length.toLocaleString('zh-CN')} 字符。
-              </p>
-              <p>
-                计划草稿 {preview.backup.draft.edit?.items.length ?? 0} 个交付项；
-                {preview.backup.draft.launch ? '包含创建任务草稿' : '无创建任务草稿'}；
-                {preview.backup.draft.manifest ? '包含交付清单草稿' : '无交付清单草稿'}；
-                {preview.backup.draft.planImportUndo ? '包含导入前原稿' : '无导入前原稿'}。
-              </p>
-              <p className="field-help">
+              <dl className="project-draft-backup-summary">
+                <div>
+                  <dt>备份时间</dt>
+                  <dd>
+                    <time dateTime={preview.backup.file.createdAt}>{preview.backup.file.createdAt}</time>
+                  </dd>
+                </div>
+                <div>
+                  <dt>原稿长度</dt>
+                  <dd>{preview.backup.file.draftRaw.length.toLocaleString('zh-CN')} 字符</dd>
+                </div>
+              </dl>
+              <ul className="project-draft-backup-inventory" aria-label="备份包含内容">
+                <li>计划草稿 {preview.backup.draft.edit?.items.length ?? 0} 个交付项</li>
+                <li>{preview.backup.draft.launch ? '包含创建任务草稿' : '无创建任务草稿'}</li>
+                <li>{preview.backup.draft.manifest ? '包含交付清单草稿' : '无交付清单草稿'}</li>
+                <li>{preview.backup.draft.planImportUndo ? '包含导入前原稿' : '无导入前原稿'}</li>
+              </ul>
+              <p className="field-help project-draft-backup-warning">
                 恢复会替换整个本地工作台草稿，并取消未应用的计划导入预览。旧交付项、任务、清单引用与计划版本必须重新核对；备份中的旧版本不能授权保存当前项目。
               </p>
-              <details>
+              <details className="project-draft-backup-content">
                 <summary>查看全部草稿内容</summary>
-                <pre>{preview.backup.file.draftRaw || '（空草稿）'}</pre>
+                <pre tabIndex={0} role="region" aria-label="备份完整草稿原文">
+                  {preview.backup.file.draftRaw || '（空草稿）'}
+                </pre>
               </details>
-              {!unchanged && (
-                <>
-                  <p className="field-error" role="alert">
-                    当前原稿或恢复前副本已变化，请重新核对。恢复预览保留，尚未覆盖任何输入。
-                  </p>
+              <div className="project-draft-restore-confirmation">
+                <h4>确认恢复到本地草稿</h4>
+                {!unchanged && (
+                  <>
+                    <p className="field-error" role="alert">
+                      当前原稿或恢复前副本已变化，请重新核对。恢复预览保留，尚未覆盖任何输入。
+                    </p>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => attempt(() => prepare(preview.backup))}
+                    >
+                      重新核对当前原稿
+                    </button>
+                  </>
+                )}
+                {differentProtection && (
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={replace}
+                      disabled={busy || downloadedProtection !== preview.protection}
+                      onChange={(event) => setReplace(event.target.checked)}
+                    />
+                    <span>已另存现有恢复前副本，允许用当前原稿替换这份本地备份。</span>
+                  </label>
+                )}
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={acknowledged}
+                    disabled={busy || !unchanged || !protectionReady}
+                    onChange={(event) => setAcknowledged(event.target.checked)}
+                  />
+                  <span>先完整保留当前原稿，再将此备份恢复为本地草稿；之后重新核对并显式保存。</span>
+                </label>
+                <div className="project-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy || !unchanged || !protectionReady || !acknowledged}
+                    onClick={() => void restore()}
+                  >
+                    保留当前原稿并恢复草稿
+                  </button>
                   <button
                     type="button"
                     className="secondary"
                     disabled={busy}
-                    onClick={() => attempt(() => prepare(preview.backup))}
+                    onClick={() => {
+                      generation.current++;
+                      setReading(false);
+                      setPreview(undefined);
+                      setAcknowledged(false);
+                      setReplace(false);
+                      setNotice('已取消恢复预览，当前原稿未改动。');
+                    }}
                   >
-                    重新核对当前原稿
+                    取消恢复 · 保留当前原稿
                   </button>
-                </>
-              )}
-              {differentProtection && (
-                <label className="check-row">
-                  <input
-                    type="checkbox"
-                    checked={replace}
-                    disabled={busy || downloadedProtection !== preview.protection}
-                    onChange={(event) => setReplace(event.target.checked)}
-                  />
-                  <span>已另存现有恢复前副本，允许用当前原稿替换这份本地备份。</span>
-                </label>
-              )}
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={acknowledged}
-                  disabled={busy || !unchanged || !protectionReady}
-                  onChange={(event) => setAcknowledged(event.target.checked)}
-                />
-                <span>先完整保留当前原稿，再将此备份恢复为本地草稿；之后重新核对并显式保存。</span>
-              </label>
-              <div className="project-actions">
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy || !unchanged || !protectionReady || !acknowledged}
-                  onClick={() => void restore()}
-                >
-                  保留当前原稿并恢复草稿
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    generation.current++;
-                    setReading(false);
-                    setPreview(undefined);
-                    setAcknowledged(false);
-                    setReplace(false);
-                    setNotice('已取消恢复预览，当前原稿未改动。');
-                  }}
-                >
-                  取消恢复 · 保留当前原稿
-                </button>
+                </div>
               </div>
             </section>
           )}

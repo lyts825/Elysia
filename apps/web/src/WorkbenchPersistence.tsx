@@ -113,6 +113,7 @@ export function WorkbenchPersistence({
   const [notice, setNotice] = useState('');
   const [page, setPage] = useState(0);
   const inspectionSection = useRef<HTMLElement>(null);
+  const errorMessage = useRef<HTMLParagraphElement>(null);
   const request = useRef(0),
     working = useRef(false);
   useEffect(() => {
@@ -130,6 +131,11 @@ export function WorkbenchPersistence({
     inspectionSection.current?.scrollIntoView({ block: 'nearest' });
     inspectionSection.current?.focus({ preventScroll: true });
   }, [inspection?.token]);
+  useEffect(() => {
+    if (!error) return;
+    errorMessage.current?.scrollIntoView({ block: 'nearest' });
+    errorMessage.current?.focus({ preventScroll: true });
+  }, [error]);
   const run = async (label: string, action: () => Promise<void> | void) => {
     if (working.current) return;
     working.current = true;
@@ -308,27 +314,29 @@ export function WorkbenchPersistence({
             </article>
           ))}
           {lastPage > 0 && (
-            <div className="workbench-persistence-actions" aria-label="保存问题分页">
-              <button
-                type="button"
-                className="secondary"
-                disabled={actualPage === 0 || !!busy}
-                onClick={() => setPage(actualPage - 1)}
-              >
-                上一页
-              </button>
+            <nav className="workbench-persistence-pagination" aria-label="保存问题分页">
               <span>
                 第 {actualPage + 1} / {lastPage + 1} 页
               </span>
-              <button
-                type="button"
-                className="secondary"
-                disabled={actualPage === lastPage || !!busy}
-                onClick={() => setPage(actualPage + 1)}
-              >
-                下一页
-              </button>
-            </div>
+              <div className="workbench-persistence-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={actualPage === 0 || !!busy}
+                  onClick={() => setPage(actualPage - 1)}
+                >
+                  上一页
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={actualPage === lastPage || !!busy}
+                  onClick={() => setPage(actualPage + 1)}
+                >
+                  下一页
+                </button>
+              </div>
+            </nav>
           )}
         </section>
         {inspection && (
@@ -444,7 +452,7 @@ export function WorkbenchPersistence({
         )}
         {busy && <p role="status">正在处理所选内容…</p>}
         {error && (
-          <p className="field-error" role="alert">
+          <p ref={errorMessage} tabIndex={-1} className="field-error" role="alert">
             {error}
           </p>
         )}

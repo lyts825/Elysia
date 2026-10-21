@@ -1,4 +1,5 @@
 import { differenceText, type MergeChoice, type ProjectDraftDifference } from './ProjectDraftMerge';
+import './project-draft-comparison.css';
 
 export function ProjectDraftComparison({
   differences,
@@ -13,24 +14,56 @@ export function ProjectDraftComparison({
     <div className="project-draft-differences">
       {!differences.length && <p>内容未发生变化，可核对后沿用当前计划版本。</p>}
       {differences.map((row) => (
-        <section key={row.key} className="project-draft-difference" aria-label={row.label}>
-          <h4>{row.label}</h4>
+        <section
+          key={row.key}
+          className="project-draft-difference"
+          aria-label={row.label}
+          data-conflict={row.conflict}
+          data-choice={row.choice}
+        >
+          <div className="project-difference-heading">
+            <h4>{row.label}</h4>
+            <span className="project-difference-status">
+              {row.conflict ? (row.choice ? '已选择' : '待选择') : '无冲突'}
+            </span>
+          </div>
           <div className="project-difference-columns">
-            <div>
+            <div className="project-difference-side">
               <strong>原始基线</strong>
-              <p>{differenceText(row.original, row.unknownBaseline)}</p>
+              <div
+                className="project-difference-content"
+                role="region"
+                tabIndex={0}
+                aria-label={`${row.label}：原始基线内容`}
+              >
+                <p>{differenceText(row.original, row.unknownBaseline)}</p>
+              </div>
             </div>
-            <div>
-              <strong>当前计划</strong>
-              <p>{differenceText(row.current)}</p>
+            <div className="project-difference-side" data-selected={row.choice === 'current'}>
+              <strong>当前计划 {row.choice === 'current' && <span>将采用</span>}</strong>
+              <div
+                className="project-difference-content"
+                role="region"
+                tabIndex={0}
+                aria-label={`${row.label}：当前计划内容`}
+              >
+                <p>{differenceText(row.current)}</p>
+              </div>
             </div>
-            <div>
-              <strong>本人草稿</strong>
-              <p>{differenceText(row.mine)}</p>
+            <div className="project-difference-side" data-selected={row.choice === 'mine'}>
+              <strong>本人草稿 {row.choice === 'mine' && <span>将采用</span>}</strong>
+              <div
+                className="project-difference-content"
+                role="region"
+                tabIndex={0}
+                aria-label={`${row.label}：本人草稿内容`}
+              >
+                <p>{differenceText(row.mine)}</p>
+              </div>
             </div>
           </div>
           {row.conflict ? (
-            <label>
+            <label className="project-difference-choice">
               {row.unknownBaseline ? '基线未知，请明确选择' : '双方修改冲突，请明确选择'}
               <select
                 value={row.choice || ''}

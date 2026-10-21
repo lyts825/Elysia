@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.1 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.2 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -34,6 +34,10 @@ v1.19.1 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 - 交付核验使用摘要指标、逐文件状态与独立原因说明。临时下载和项目归档分别呈现，长文件路径完整换行。
 - 预览内容保留最小阅读高度；短窗口和两倍缩放允许面板纵向滚动，关闭入口保持可达。长模型标识在内部换行，不能通过隐藏溢出掩盖裁剪。
 - 弹窗中的欢迎说明使用普通信息区语义；只有实际独立弹窗声明dialog，避免干扰外层焦点循环和Esc关闭。
+- 版本冲突对照区分“待选择”“已选择”“无冲突”，采用侧标记“将采用”；选择不等于已合并或已保存。三侧原文可独立聚焦和滚动，完整内容不截断。
+- 草稿备份按摘要、包含内容、原文阅读、恢复确认分区，副本删除与恢复操作分开；不可读副本保留明确说明。已有确认条件继续决定控件是否可操作。
+- 定时任务名称只在标题完整展示，操作按钮使用简短动词并通过可访问名称说明目标；状态、次数、时间分别呈现。模板长目标与约定保留键盘阅读区，历史分页就近显示页码与本页数量。
+- 弹窗标题也必须处理长项目名和连续标识。操作失败提示若处于长列表之外，应滚入视野并获得焦点，保留错误语义；不能只有页面底部的不可见反馈。
 
 ## 页面覆盖
 
@@ -44,9 +48,9 @@ v1.19.1 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 | 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning |
 | 执行与终端 | local-agents、terminal-control、terminal-communication、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-files、project-usage、project-intelligence、project-schedules、project-schedule-history |
-| 交付与工作流 | project-delivery-bundle、project-draft-backup、project-plan-transfer、workflow、readiness、task-center、delivery-read-progress、workbench-persistence |
+| 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、readiness、task-center、delivery-read-progress、workbench-persistence |
 
-以上36份CSS统一引用共享规范。供应商标识保留独立brand变量；用户自定义启动颜色、进度宽度、任务深度、图形坐标和代码行定位属于内容或几何数据，允许动态计算。Startup.css独立导入tokens，便携包同时包含两份资源。桌面与Web默认启动色在各自配置中同步，已有偏好不迁移覆盖。
+以上界面CSS统一引用共享规范。供应商标识保留独立brand变量；用户自定义启动颜色、进度宽度、任务深度、图形坐标和代码行定位属于内容或几何数据，允许动态计算。Startup.css独立导入tokens，便携包同时包含两份资源。桌面与Web默认启动色在各自配置中同步，已有偏好不迁移覆盖。
 
 ## 可访问性与维护
 
