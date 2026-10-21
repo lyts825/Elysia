@@ -158,9 +158,9 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
     this.closing = (async () => {
       try {
         await this.pending;
-      } catch (error) {
-        // Activation owns cleanup; retain cleanup failures rather than reporting a clean shutdown.
-        if (error instanceof AggregateError) throw error;
+      } catch {
+        // Activation owns cleanup. Only its recorded cleanup failure makes shutdown fail;
+        // a loader may itself reject with AggregateError without having created an instance.
       }
       if (this.cleanupFailure) throw this.cleanupFailure;
       const instance = this.instance;

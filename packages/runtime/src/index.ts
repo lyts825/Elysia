@@ -52,7 +52,7 @@ export class NativeExecutor implements ExecutorAdapter {
   private stopped = false;
   private locallyStopped = new Set<string>();
   private stoppingRuns = new Map<string, number>();
-  private ticking = false;
+  private ticking?: Promise<void>;
   private toolActive = 0;
   private runtimeRevision = 0;
   private runtimeLast = '';
@@ -219,32 +219,56 @@ export class NativeExecutor implements ExecutorAdapter {
     if (error?.status === 'rejected') throw error.reason;
   }
   dispose(): Promise<void> {
-    return (this.closing ??= this.close());
-  }
-  private async close() {
+    if (this.closing) return this.closing;
     this.stopped = true;
     this.capacityController.abort();
     if (this.timer) clearInterval(this.timer);
-    for (const run of this.kernel.store
-      .stateCandidates<Run>('runs', ['READY', 'RUNNING'], {
+    return (this.closing = Promise.resolve().then(() => this.close()));
+  }
+  private async close() {
+    const errors: unknown[] = [];
+    const settle = async (work: Promise<unknown>[]) => {
+      for (const result of await Promise.allSettled(work))
+        if (result.status === 'rejected') errors.push(result.reason);
+    };
+    try {
+      for (const run of this.kernel.store.stateCandidates<Run>('runs', ['READY', 'RUNNING'], {
         excludeRunIds: [...this.locallyStopped],
         excludeExecutionHolds: true,
-      })
-      .filter((r) => this.acceptRun(r) && ['READY', 'RUNNING'].includes(r.status)))
-      this.kernel.action(run.id, 'pause');
-    for (const value of this.active.values()) value.controller.abort();
-    const stopped = await Promise.allSettled([
-      Promise.resolve().then(() => this.executionPlugins.dispose()),
+      })) {
+        try {
+          if (this.acceptRun(run) && ['READY', 'RUNNING'].includes(run.status))
+            this.kernel.action(run.id, 'pause');
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+    const active = [...this.active.values()];
+    // Observe task failures immediately, even while a slower admission check is still draining.
+    const draining = settle(active.map((value) => value.promise));
+    for (const value of active) value.controller.abort();
+    // Admission can still be using a driver while shutdown begins. Drain the scheduler first.
+    await settle([
+      this.ticking ?? Promise.resolve(),
       Promise.resolve().then(() => this.gateway.processes.cancel()),
-      Promise.allSettled([...this.active.values()].map((v) => v.promise)),
     ]);
-    const disposed = await Promise.allSettled([Promise.resolve().then(() => this.gateway.dispose())]);
-    const error = [...stopped, ...disposed].find((result) => result.status === 'rejected');
-    if (error?.status === 'rejected') throw error.reason;
+    await settle([Promise.resolve().then(() => this.executionPlugins.dispose()), draining]);
+    await settle([Promise.resolve().then(() => this.gateway.dispose())]);
+    if (errors.length) throw new AggregateError(errors, '执行器退出未完全成功');
   }
-  async tick() {
-    if (this.ticking || this.stopped) return;
-    this.ticking = true;
+  tick(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    return (this.ticking ??= Promise.resolve()
+      .then(() => this.schedule())
+      .finally(() => {
+        this.ticking = undefined;
+      }));
+  }
+  private async schedule() {
+    if (this.stopped) return;
     try {
       for (let run of this.kernel.store
         .schedulerRunCandidates(Date.now(), [...this.locallyStopped])
@@ -294,10 +318,14 @@ export class NativeExecutor implements ExecutorAdapter {
       const admissions = new Set<NonNullable<ExecutionDriver['admission']>>();
       for (const task of tasks) {
         const run = this.kernel.store.require<Run>('runs', task.runId);
+        if (this.active.has(task.id) || !this.schedulableRun(run)) continue;
         const admission = this.executionPlugins.forRun(run).admission;
-        if (admission && !admissions.has(admission) && this.schedulableRun(run)) admissions.add(admission);
+        if (admission) admissions.add(admission);
       }
-      for (const admission of admissions) await admission.prepare(this.capacityController.signal);
+      for (const admission of admissions) {
+        if (this.stopped) return;
+        await admission.prepare(this.capacityController.signal);
+      }
       if (this.stopped) return;
       for (const candidate of tasks) {
         if (this.active.size >= 4) break;
@@ -308,24 +336,8 @@ export class NativeExecutor implements ExecutorAdapter {
         if (this.active.has(task.id)) continue;
         const run = this.kernel.store.get<Run>('runs', task.runId);
         if (!run) continue;
-        if (this.isLocallyStopped(run.id)) continue;
-        if (!this.acceptRun(run)) continue;
-        if (run.archived || !['READY', 'RUNNING'].includes(run.status)) continue;
-        if (run.projectId && this.kernel.store.require<Project>('projects', run.projectId).archived) continue;
-        if ([...this.active.values()].filter((a) => a.runId === run.id).length >= run.limits.concurrency)
-          continue;
-        if (
-          !this.kernel
-            .dependencies(task)
-            .every((dep) => this.kernel.store.require<Task>('tasks', dep).status === 'DONE')
-        )
-          continue;
+        if (!this.schedulableRun(run) || this.queueReason(task, run) !== 'ready') continue;
         const agent = this.kernel.store.require<Agent>('agents', task.agentId);
-        if (
-          [...this.active.values()].filter((a) => a.account === agent.providerBinding.account).length >=
-          agent.providerBinding.concurrency
-        )
-          continue;
         const controller = new AbortController();
         const admission = this.executionPlugins.forRun(run).admission;
         if (admission && !admission.acquire(task, run)) continue;
@@ -344,8 +356,6 @@ export class NativeExecutor implements ExecutorAdapter {
       }
     } catch (error) {
       console.error('调度错误：', error instanceof Error ? error.message : error);
-    } finally {
-      this.ticking = false;
     }
   }
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {

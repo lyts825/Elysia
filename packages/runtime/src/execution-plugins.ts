@@ -21,9 +21,11 @@ export type ExecutionPlugin = PluginContributions<ExecutionDriver>;
 /** Registration is fixed at executor construction; scheduling and claiming remain host-owned. */
 export class ExecutionPlugins {
   private readonly registry: PluginRegistry<ExecutionDriver>;
+  private readonly drivers: readonly ExecutionDriver[];
   private closing?: Promise<void>;
   constructor(plugins: readonly ExecutionPlugin[]) {
     this.registry = new PluginRegistry(plugins);
+    this.drivers = [...new Set(this.registry.entries().map(([, driver]) => driver))];
   }
   forRun(run: Run) {
     const kind = run.execution?.kind ?? 'native';
@@ -40,9 +42,7 @@ export class ExecutionPlugins {
   }
   async interrupt(runId: string, taskId?: string) {
     const results = await Promise.allSettled(
-      this.registry
-        .entries()
-        .map(([, driver]) => Promise.resolve().then(() => driver.interrupt?.(runId, taskId))),
+      this.drivers.map((driver) => Promise.resolve().then(() => driver.interrupt?.(runId, taskId))),
     );
     const errors = results.filter((result) => result.status === 'rejected');
     if (errors.length)
@@ -54,9 +54,7 @@ export class ExecutionPlugins {
   dispose() {
     return (this.closing ??= (async () => {
       const results = await Promise.allSettled(
-        [...this.registry.entries()]
-          .reverse()
-          .map(([, driver]) => Promise.resolve().then(() => driver.dispose?.())),
+        [...this.drivers].reverse().map((driver) => Promise.resolve().then(() => driver.dispose?.())),
       );
       const errors = results.filter((result) => result.status === 'rejected');
       if (errors.length)
