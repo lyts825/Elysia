@@ -499,7 +499,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       {pending && (
         <div className="schedule-notice">
           <p>上次操作结果待核对。请求已保留，重试不会重复创建同一条任务。</p>
-          <button disabled={busy || archived} onClick={() => void send(pending)}>
+          <button className="secondary" disabled={busy || archived} onClick={() => void send(pending)}>
             核对同一定时请求
           </button>
         </div>
@@ -743,6 +743,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
           )}
           <div className="schedule-actions">
             <button
+              className={selected ? 'secondary' : 'primary'}
               disabled={locked || !current || !previewCurrent || !preview || !reviewed}
               onClick={saveTemplate}
             >
@@ -750,6 +751,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
             </button>
             {selected && selected.status !== 'enabled' && (
               <button
+                className="primary"
                 disabled={
                   locked ||
                   !current ||

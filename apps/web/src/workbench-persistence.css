@@ -1,16 +1,16 @@
 .cache-protection-state {
   display: block;
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   overflow-wrap: anywhere;
 }
 .workbench-persistence section + section {
   border-top: 1px solid var(--border);
-  margin-top: 18px;
-  padding-top: 18px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
 }
 .workbench-persistence h3,
 .workbench-persistence h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 .workbench-persistence p {
   overflow-wrap: anywhere;
@@ -19,19 +19,20 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
 }
 .workbench-save-issue {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
-  margin-top: 12px;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  margin-top: var(--space-3);
 }
 .workbench-inspection-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .workbench-inspection-columns label {
   min-width: 0;
@@ -39,7 +40,7 @@
 .workbench-inspection-columns textarea {
   display: block;
   width: 100%;
-  margin-top: 6px;
+  margin-top: var(--space-2);
   min-height: 180px;
   resize: vertical;
   white-space: pre-wrap;
@@ -47,16 +48,16 @@
 }
 .workbench-inspection fieldset {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
-  margin: 16px 0;
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  margin: var(--space-4) 0;
   min-width: 0;
 }
 .workbench-choice {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin: 10px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
 }
 .workbench-choice input {
   width: auto;
@@ -68,6 +69,6 @@
     grid-template-columns: 1fr;
   }
   .workbench-save-issue {
-    padding: 10px;
+    padding: var(--space-3);
   }
 }

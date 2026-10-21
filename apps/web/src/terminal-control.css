@@ -3,30 +3,36 @@
 }
 .terminal-control-tabs {
   display: flex;
-  gap: 6px;
-  padding: 12px 22px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
 }
 .terminal-control-tabs button {
+  flex: none;
+  min-height: var(--control-md);
   border: 0;
   background: transparent;
   color: var(--muted);
-  border-radius: 9px;
-  padding: 8px 14px;
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-4);
   font-weight: 600;
 }
 .terminal-control-tabs button[aria-selected='true'] {
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-pale);
 }
-.terminal-control-tabs button:active,
-.cli-app-actions button:active {
+.terminal-control-tabs button:hover:not(:disabled):not([aria-selected='true']) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.terminal-control-tabs button:active:not(:disabled),
+.cli-app-actions button:active:not(:disabled) {
   transform: scale(0.97);
 }
 .terminal-control-content {
-  padding: 22px;
+  padding: var(--space-6);
   overflow: auto;
   min-height: 0;
 }
@@ -40,8 +46,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  min-width: 0;
+  margin-bottom: var(--space-5);
 }
 .terminal-control-heading h3,
 .cli-app-title h4 {
@@ -50,28 +58,28 @@
 .terminal-control-heading p,
 .cli-app-info p {
   color: var(--muted);
-  font-size: 13px;
-  margin: 6px 0 0;
+  font-size: var(--font-md);
+  margin: var(--space-2) 0 0;
 }
 .terminal-control-tag {
   color: var(--accent);
   background: var(--accent-pale);
-  border-radius: 7px;
-  font-size: 11px;
-  padding: 4px 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
+  padding: var(--space-1) var(--space-2);
   flex-shrink: 0;
 }
 .cli-app-list {
   border: 1px solid var(--border);
-  border-radius: 15px;
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 .cli-app-row {
   display: grid;
   grid-template-columns: 42px minmax(160px, 1fr) minmax(120px, 175px) 138px 46px;
-  gap: 14px;
+  gap: var(--space-4);
   align-items: center;
-  padding: 20px 18px;
+  padding: var(--space-5) var(--space-5);
 }
 .cli-app-row + .cli-app-row {
   border-top: 1px solid var(--border);
@@ -81,160 +89,166 @@
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--surface-soft);
-  font-size: 24px;
+  font-size: var(--font-2xl);
   color: var(--text);
   font-weight: 600;
 }
 .cli-app-glyph.dsh {
-  background: #eef3ff;
-  color: #526cdd;
-  font-size: 21px;
+  background: var(--brand-dsh-bg);
+  color: var(--brand-dsh);
+  font-size: var(--font-xl);
 }
 .cli-app-glyph.claude {
-  background: #fff1e8;
-  color: #c97652;
+  background: var(--brand-claude-bg);
+  color: var(--brand-claude);
 }
 .cli-app-glyph.gemini {
-  background: #f0edff;
-  color: #8064d6;
+  background: var(--brand-gemini-bg);
+  color: var(--brand-gemini);
 }
 .cli-app-glyph.custom {
   color: var(--muted);
-  font-size: 17px;
+  font-size: var(--font-lg);
 }
 .cli-app-title {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 .cli-app-title h4 {
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 600;
 }
 .cli-api-binding {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 11px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .cli-api-binding select {
   min-width: 0;
   max-width: 230px;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-sm);
 }
 .cli-app-version {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--muted);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .cli-app-version .connected {
   color: var(--success);
 }
 .cli-app-version small {
   overflow-wrap: anywhere;
-  line-height: 1.5;
-  font-size: 11px;
+  line-height: var(--leading-ui);
+  font-size: var(--font-xs);
 }
 .cli-app-error {
   color: var(--danger);
 }
 .terminal-install-failure {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 .terminal-install-repairs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 9px;
+  gap: var(--space-1) var(--space-2);
 }
 .terminal-install-repairs .text-button {
   padding: 2px 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .cli-app-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
 }
 .cli-app-actions .secondary {
-  padding: 6px 9px;
-  font-size: 12px;
+  min-width: 0;
+  white-space: normal;
+  padding: var(--space-2) var(--space-2);
 }
 .cli-app-actions .text-button {
   grid-column: 1/-1;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .cli-visibility {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .cli-visibility input {
   appearance: none;
-  width: 34px;
-  height: 21px;
-  border-radius: 20px;
+  width: 40px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-pill);
   border: 0;
-  background: #a8a6ad;
+  background: var(--border-strong);
   cursor: pointer;
   position: relative;
   margin: 0;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 }
 .cli-visibility input::after {
   content: '';
   position: absolute;
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: white;
+  background: var(--on-accent);
   left: 3px;
   top: 3px;
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) ease;
 }
 .cli-visibility input:checked {
   background: var(--accent);
 }
 .cli-visibility input:checked::after {
-  transform: translateX(13px);
+  transform: translateX(16px);
 }
 .cli-visibility input:disabled {
   opacity: 0.5;
   cursor: default;
 }
 .cli-install-options {
-  margin-top: 18px;
-  font-size: 13px;
+  margin-top: var(--space-5);
+  font-size: var(--font-md);
 }
 .cli-install-options summary {
   color: var(--muted);
   cursor: pointer;
 }
 .cli-install-options .form-columns {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .terminal-control-notice {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   color: var(--success);
-  font-size: 13px;
-  margin: 0 0 18px;
+  font-size: var(--font-md);
+  margin: 0 0 var(--space-5);
 }
 .terminal-control-loading {
   padding: 60px 0;
@@ -244,71 +258,74 @@
 .terminal-connection-layout {
   display: grid;
   grid-template-columns: 235px minmax(0, 1fr);
-  gap: 26px;
+  gap: var(--space-6);
   min-height: 380px;
 }
 .terminal-connection-list {
   border-right: 1px solid var(--border);
-  padding-right: 20px;
+  padding-right: var(--space-5);
 }
 .terminal-connection-list .terminal-control-heading {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-3);
 }
 .terminal-connection-list > button {
   display: flex;
   flex-direction: column;
   text-align: left;
-  gap: 6px;
+  gap: var(--space-2);
   border: 0;
   background: transparent;
   width: 100%;
-  padding: 12px;
-  border-radius: 10px;
-  margin-bottom: 4px;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  margin-bottom: var(--space-1);
 }
 .terminal-connection-list > button[aria-current='true'] {
   background: var(--accent-pale);
-  color: var(--accent);
+  color: var(--accent-strong);
+}
+.terminal-connection-list > button:hover:not(:disabled):not([aria-current='true']) {
+  background: var(--surface-hover);
 }
 .terminal-connection-list strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 .terminal-connection-list small {
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
 }
 .terminal-connection-editor {
-  gap: 15px !important;
+  gap: var(--space-4) !important;
   overflow: visible !important;
 }
 .terminal-connection-editor label,
 .terminal-project-defaults label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: var(--font-md);
 }
 .terminal-control-center input,
 .terminal-control-center select {
-  border-radius: 9px;
+  border-radius: var(--radius-control);
 }
 .terminal-control-form-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .terminal-delete-confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 12px;
-  font-size: 12px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  font-size: var(--font-sm);
 }
 .terminal-delete-confirm span {
   flex: 1 1 180px;
@@ -319,8 +336,8 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 35px 15px;
-  gap: 15px;
+  padding: 35px var(--space-4);
+  gap: var(--space-4);
   color: var(--muted);
 }
 .terminal-connection-empty h3,
@@ -329,16 +346,16 @@
 }
 .terminal-connection-empty h3 {
   color: var(--text);
-  font-size: 17px;
+  font-size: var(--font-lg);
 }
 .terminal-connection-empty p {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .terminal-project-defaults {
   max-width: 600px;
   margin: 0 auto;
-  padding: 10px 0 25px;
-  gap: 22px !important;
+  padding: var(--space-3) 0 var(--space-6);
+  gap: var(--space-6) !important;
   overflow: visible !important;
 }
 .terminal-project-defaults > .primary {
@@ -352,20 +369,20 @@
     width: calc(100vw - 20px);
   }
   .terminal-control-content {
-    padding: 16px;
+    padding: var(--space-4);
   }
   .terminal-control-tabs {
-    padding: 10px 12px;
+    padding: var(--space-3) var(--space-3);
     gap: 2px;
   }
   .terminal-control-tabs button {
-    padding: 8px 9px;
-    font-size: 12px;
+    padding: var(--space-2) var(--space-2);
+    font-size: var(--font-sm);
   }
   .cli-app-row {
     grid-template-columns: 34px minmax(0, 1fr) 40px;
-    gap: 12px;
-    padding: 16px;
+    gap: var(--space-3);
+    padding: var(--space-4);
   }
   .cli-app-glyph {
     width: 32px;
@@ -380,22 +397,22 @@
   }
   .cli-app-actions {
     grid-column: 2/4;
-    grid-template-columns: max-content max-content 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .cli-app-actions .text-button {
-    grid-column: auto;
+    grid-column: 1 / -1;
   }
   .cli-api-binding {
     flex-wrap: wrap;
   }
   .terminal-connection-layout {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: var(--space-5);
   }
   .terminal-connection-list {
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    padding: 0 0 12px;
+    padding: 0 0 var(--space-3);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -413,8 +430,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .terminal-control-read-error .inline-warning {
   flex: 1 1 240px;
@@ -424,11 +441,11 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 12px;
-  font-size: 12px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .terminal-control-conflict span {
@@ -438,11 +455,11 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 12px 22px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
   border-bottom: 1px solid var(--border);
   background: var(--accent-pale);
-  font-size: 13px;
+  font-size: var(--font-md);
   flex-shrink: 0;
 }
 .terminal-control-confirm span {
@@ -451,33 +468,33 @@
 .terminal-settings-body ~ .terminal-control-confirm,
 .form-body > .terminal-control-confirm {
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
 }
 .terminal-control-content.with-templates > .terminal-control-read-error,
 .terminal-control-content.with-templates > .terminal-control-notice {
-  margin: 12px 22px;
+  margin: var(--space-3) var(--space-6);
   flex-shrink: 0;
 }
 .cli-app-version select {
   min-width: 0;
   max-width: 100%;
-  padding: 5px 7px;
-  font-size: 11px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-xs);
 }
 .terminal-connection-checks,
 .terminal-diagnostics,
 .terminal-install-history {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .terminal-diagnostics details,
 .terminal-install-history {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .terminal-diagnostic-stage {
   display: flex;
-  gap: 12px;
-  margin: 6px 0;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
   flex-wrap: wrap;
 }
 .terminal-diagnostic-issue,
@@ -485,65 +502,65 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .terminal-diagnostic-issue p {
   flex: 1 1 160px;
-  margin: 6px 0;
+  margin: var(--space-2) 0;
 }
 .terminal-diagnostic-return {
-  padding: 10px 12px;
-  margin-bottom: 16px;
+  padding: var(--space-3) var(--space-3);
+  margin-bottom: var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-diagnostic-return span {
   flex: 1 1 220px;
 }
 .terminal-data-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: var(--space-3);
 }
 .terminal-data-groups > div {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 13px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-md);
 }
 .terminal-data-groups small,
 .terminal-data-references span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-data-references {
-  margin-top: 18px;
-  font-size: 13px;
+  margin-top: var(--space-5);
+  font-size: var(--font-md);
 }
 .terminal-data-references p,
 .terminal-maintenance-plan p {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
   overflow-wrap: anywhere;
 }
 .terminal-data-backups {
   display: grid;
-  gap: 12px;
-  margin-top: 24px;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
 }
 .terminal-data-backups h4 {
   margin-bottom: 0;
 }
 .terminal-data-backups label {
   display: grid;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: var(--font-md);
 }
 .terminal-data-backups select {
   min-width: 0;
@@ -553,24 +570,24 @@
   justify-self: start;
 }
 .terminal-maintenance-plan {
-  margin-top: 20px;
+  margin-top: var(--space-5);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
 }
 .terminal-maintenance-plan code {
   flex: 1 1 160px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-capabilities {
-  margin-top: 10px;
-  font-size: 12px;
+  margin-top: var(--space-3);
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .terminal-capabilities p {
   display: grid;
-  gap: 4px;
-  padding: 6px 0;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
 }
 .terminal-capabilities strong {
   font-weight: 600;
@@ -582,8 +599,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 .terminal-install-record small {
@@ -591,69 +608,68 @@
 }
 @media (max-width: 760px) {
   .terminal-control-confirm {
-    padding: 10px 14px;
-    gap: 8px;
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-2);
   }
   .terminal-control-confirm .secondary {
-    font-size: 12px;
-    padding: 7px 10px;
+    padding: var(--space-2) var(--space-3);
   }
 }
 .terminal-template-connection {
   display: grid;
-  gap: 8px;
-  padding: 12px 0;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
 }
 
 .terminal-maintenance-scan {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin: 12px 0;
-  padding: 12px;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 13px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-md);
 }
 .terminal-maintenance-scan > span {
   flex: 1 1 180px;
   overflow-wrap: anywhere;
 }
 .terminal-pending-cleanup {
-  margin: 18px 0;
-  padding: 12px;
+  margin: var(--space-5) 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
 }
 .terminal-pending-cleanup > div + div {
-  margin-top: 14px;
+  margin-top: var(--space-4);
   border-top: 1px solid var(--border);
-  padding-top: 12px;
+  padding-top: var(--space-3);
 }
 
 .terminal-connection-health p {
   display: grid;
-  gap: 5px;
-  margin: 10px 0;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
 }
 .terminal-connection-health small,
 .terminal-backup-eligibility small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-backup-pages {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .terminal-backup-eligibility {
-  padding: 10px 12px;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 13px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 .terminal-backup-eligibility p {
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-2);
 }

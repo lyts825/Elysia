@@ -1,15 +1,15 @@
 .surface-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 40px;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 5px var(--space-2);
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: transparent;
   color: var(--text);
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 650;
   text-align: left;
 }
@@ -34,19 +34,19 @@
   max-width: calc(100vw - 16px);
   padding: 7px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--radius-panel);
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 10px 32px rgb(34 27 31 / 12%);
+  box-shadow: var(--shadow-popover);
 }
 .surface-menu > button {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
   padding: 13px 11px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -67,17 +67,17 @@
   display: block;
 }
 .surface-menu strong {
-  font-size: 16px;
-  font-weight: 550;
+  font-size: var(--font-lg);
+  font-weight: 600;
 }
 .surface-menu small,
 .surface-menu > p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
 }
 .surface-menu > p {
-  margin: 4px 12px 7px;
+  margin: var(--space-1) var(--space-3) 7px;
 }
 .surface-loading-switcher {
   position: absolute;
@@ -109,7 +109,7 @@
 .terminal-start-empty {
   display: flex;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-3);
   margin-top: 22px;
   flex-wrap: wrap;
 }
@@ -131,10 +131,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 11px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--secondary);
   background: transparent;
   text-align: left;
@@ -148,7 +148,7 @@
 .terminal-settings-body {
   display: flex;
   align-items: flex-start;
-  gap: 20px;
+  gap: var(--space-5);
 }
 .terminal-settings-editor {
   flex: 1;
@@ -157,7 +157,7 @@
 .terminal-settings-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
   margin-bottom: 18px;
 }

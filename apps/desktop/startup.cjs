@@ -9,8 +9,8 @@ const DEFAULT_STARTUP = Object.freeze({
   style: 'bloom',
   title: 'Elysia',
   caption: '把想法，慢慢做成喜欢的日常。',
-  accent: '#bd8c96',
-  background: '#f8faf5',
+  accent: '#8c4d64',
+  background: '#faf8f9',
 });
 const types = { gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm' };
 const extensionFor = (mime) => Object.keys(types).find((extension) => types[extension] === mime);

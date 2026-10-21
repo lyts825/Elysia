@@ -1,11 +1,3 @@
-:root {
-  --motion-press: 70ms;
-  --motion-fast: 120ms;
-  --motion-enter: 160ms;
-  --motion-exit: 120ms;
-  --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
-}
 button {
   transition:
     background-color var(--motion-fast),
@@ -52,7 +44,7 @@ button {
   visibility: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   transform-origin: left center;
   z-index: -1;
 }

@@ -104,7 +104,7 @@ if (!app.requestSingleInstanceLock()) {
         height: 960,
         minWidth: 1000,
         minHeight: 680,
-        backgroundColor: '#f6f7fa',
+        backgroundColor: '#faf8f9',
         show: false,
         webPreferences: {
           partition: 'elysia-desktop',

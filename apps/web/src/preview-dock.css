@@ -26,13 +26,13 @@
 .preview-dock-heading > div {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .preview-dock-heading {
   justify-content: space-between;
   min-height: 48px;
   flex: none;
-  padding: 6px 12px 6px 16px;
+  padding: 6px var(--space-3) 6px var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface-soft);
 }
@@ -40,7 +40,7 @@
   color: var(--accent);
 }
 .preview-dock-heading strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 .preview-divider {
@@ -77,9 +77,9 @@
 }
 .preview-dock-tabs {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   flex: none;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
 }
 .preview-dock-tabs button {
@@ -87,10 +87,10 @@
   align-items: center;
   gap: 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   padding: 6px 10px;
   min-height: 32px;
 }
@@ -100,7 +100,7 @@
   font-weight: 600;
 }
 .preview-dock-tabs span {
-  font-size: 10px;
+  font-size: var(--font-xs);
   min-width: 16px;
   text-align: center;
 }
@@ -136,10 +136,10 @@
 .preview-dock-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 10px 14px;
   flex: none;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted);
 }
 .preview-artifact-selector {
@@ -151,14 +151,11 @@
 }
 .preview-artifact-selector select {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .preview-dock-footer {
   border-top: 1px solid var(--border);
   justify-content: space-between;
-}
-.preview-dock-footer .secondary {
-  font-size: 12px;
 }
 @container (max-width: 480px) {
   .preview-agent-info {
@@ -174,9 +171,9 @@
     width: 84px;
   }
   .preview-markdown {
-    padding: 16px;
+    padding: var(--space-4);
   }
   .preview-tabs button {
-    gap: 4px;
+    gap: var(--space-1);
   }
 }

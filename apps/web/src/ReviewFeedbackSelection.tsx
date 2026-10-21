@@ -107,7 +107,7 @@ export function ReviewFeedbackSelection({
       {error && (
         <p role="alert" className="field-error">
           {error} 选择及备注草稿仍保留。
-          <button type="button" onClick={retry} disabled={disabled || reading}>
+          <button type="button" className="secondary" onClick={retry} disabled={disabled || reading}>
             重试读取备注
           </button>
         </p>

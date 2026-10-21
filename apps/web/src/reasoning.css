@@ -1,8 +1,8 @@
 .reasoning-panel {
   min-width: 0;
-  margin: 0 0 0.9rem;
+  margin: 0 0 var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 0.85rem;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
   color: var(--secondary);
   overflow: hidden;
@@ -13,19 +13,19 @@
 .reasoning-toggle {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: var(--space-2);
   width: 100%;
-  min-height: 44px;
-  padding: 0.65rem 0.8rem;
+  min-height: var(--control-lg);
+  padding: var(--space-3) var(--space-4);
   border: 0;
   border-radius: 0;
   background: transparent;
   text-align: left;
   color: inherit;
-  transition: background-color 120ms ease;
+  transition: background-color var(--motion-fast) ease;
 }
-.reasoning-toggle:hover,
-.reasoning-toggle:active {
+.reasoning-toggle:hover:not(:disabled),
+.reasoning-toggle:active:not(:disabled) {
   background: var(--surface-hover);
 }
 .reasoning-toggle:focus-visible {
@@ -38,19 +38,19 @@
   color: var(--muted);
 }
 .reasoning-title {
-  font-size: 0.86rem;
+  font-size: var(--font-md);
   font-weight: 600;
-  line-height: 1.45;
+  line-height: var(--leading-ui);
 }
 .reasoning-state {
   margin-left: auto;
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
   color: var(--muted);
 }
 .reasoning-chevron {
   transform: rotate(0deg);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-fast) ease;
 }
 .reasoning-toggle[aria-expanded='true'] .reasoning-chevron {
   transform: rotate(90deg);
@@ -61,14 +61,14 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
-  padding: 0 0.8rem 0.7rem;
-  font-size: 0.86rem;
-  line-height: 1.6;
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
   color: var(--muted);
 }
 .reasoning-content {
   border-top: 1px solid var(--border);
-  padding: 0.55rem 0.8rem 0.8rem;
+  padding: var(--space-2) var(--space-4) var(--space-4);
 }
 .reasoning-content[hidden],
 .reasoning-viewport[hidden] {
@@ -77,7 +77,7 @@
 .reasoning-tools {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
 }
 .reasoning-copy,
 .reasoning-more,
@@ -86,20 +86,27 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  min-height: 36px;
-  padding: 0.3rem 0.55rem;
+  gap: var(--space-1);
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   background: var(--surface);
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
   color: var(--secondary);
 }
-.reasoning-copy:active,
-.reasoning-more:active,
-.reasoning-read-error button:active,
-.reasoning-notice button:active {
+.reasoning-copy:hover:not(:disabled),
+.reasoning-more:hover:not(:disabled),
+.reasoning-read-error button:hover:not(:disabled),
+.reasoning-notice button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.reasoning-copy:active:not(:disabled),
+.reasoning-more:active:not(:disabled),
+.reasoning-read-error button:active:not(:disabled),
+.reasoning-notice button:active:not(:disabled) {
   background: var(--surface-selected);
 }
 .reasoning-viewport {
@@ -108,9 +115,9 @@
   overflow-anchor: none;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 0.35rem 0.4rem 0.35rem 0;
-  font-size: 0.9rem;
-  line-height: 1.8;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
 }
 .reasoning-viewport pre {
   margin: 0;
@@ -122,9 +129,9 @@
 .reasoning-notice,
 .reasoning-error,
 .reasoning-read-error {
-  margin: 0.55rem 0 0;
-  font-size: 0.8rem;
-  line-height: 1.6;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 .reasoning-notice {
@@ -135,10 +142,10 @@
   color: var(--danger);
 }
 .reasoning-read-error button {
-  margin-top: 0.4rem;
+  margin-top: var(--space-2);
 }
 .reasoning-more {
-  margin-top: 0.6rem;
+  margin-top: var(--space-2);
 }
 @media (prefers-reduced-motion: reduce) {
   .reasoning-toggle,

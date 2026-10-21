@@ -2,68 +2,73 @@
   min-height: 0;
 }
 .task-detail:focus {
-  outline: 2px solid var(--accent, #a56880);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: var(--radius-card);
 }
 .task-recovery {
-  margin: 10px 0;
+  margin: var(--space-3) 0;
 }
 .workflow-confirmation,
 .workflow-user-review {
-  border: 1px solid var(--line, #e7dce1);
-  border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 .workflow-confirmation dl {
   margin: 0;
 }
 .workflow-confirmation dt {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .workflow-confirmation dd {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 .workflow-confirmation dd p {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .workflow-review-note {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .workflow-history-row {
   display: grid;
-  gap: 5px;
-  padding: 10px;
-  margin: 8px 0;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin: var(--space-2) 0;
   width: 100%;
   text-align: left;
   overflow-wrap: anywhere;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--surface);
+}
+.workflow-history-row:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 .workflow-history-row span,
 .workflow-note-provenance {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .workflow-history-detail,
 .workflow-change-summary,
 .workflow-artifact-change {
-  padding: 12px;
-  margin-block: 12px;
+  padding: var(--space-3);
+  margin-block: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .workflow-note-choice {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: start;
-  margin-block: 12px;
+  margin-block: var(--space-3);
 }
 .workflow-note-choice > input {
   flex: none;
@@ -84,82 +89,84 @@
 .workflow-revision-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: var(--space-2) var(--space-3);
   overflow-wrap: anywhere;
 }
 .workflow-revision-row span {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .workflow-revision-row button {
   text-align: left;
 }
 .workflow-requirements {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 .workflow-body section + section {
-  margin-top: 20px;
+  margin-top: var(--space-5);
 }
 .workflow-body h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-lg);
+  line-height: var(--leading-heading);
 }
 .workflow-body h4 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
 }
 .workflow-prose {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.65;
+  line-height: var(--leading-body);
 }
 .workflow-defaults,
 .workflow-criterion,
 .workflow-selection,
 .workflow-source {
-  padding: 14px;
-  border: 1px solid var(--line, #e7dce1);
-  border-radius: 12px;
-  margin-bottom: 12px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  margin-bottom: var(--space-3);
 }
 .workflow-defaults > div:first-child {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: var(--space-2) var(--space-4);
   align-items: baseline;
 }
 .workflow-defaults span,
 .workflow-source small {
-  font-size: 12px;
-  color: var(--text-muted, #776a72);
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 .workflow-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   flex-wrap: wrap;
 }
 .workflow-evidence {
-  padding: 10px 0;
-  border-top: 1px solid var(--line, #e7dce1);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
 }
 .workflow-evidence code,
 .workflow-evidence small {
   display: block;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .workflow-file {
   display: flex;
   align-items: baseline;
-  gap: 6px 12px;
+  gap: var(--space-2) var(--space-3);
   flex-wrap: wrap;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
 }
 .workflow-file span {
-  font-size: 12px;
-  color: var(--text-muted, #776a72);
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 .workflow-file button {
   text-align: left;
@@ -169,16 +176,16 @@
   min-height: 180px;
   max-height: 480px;
   overflow: auto;
-  border: 1px solid var(--line, #e7dce1);
-  border-radius: 12px;
-  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
 }
 .workflow-selection {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .workflow-selection label {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-start;
 }
 .workflow-selection label input {
@@ -187,7 +194,7 @@
   margin-top: 3px;
 }
 .workflow-selection details {
-  margin: 8px 0 0 24px;
+  margin: var(--space-2) 0 0 var(--space-6);
 }
 .workflow-selection pre {
   white-space: pre-wrap;
@@ -195,10 +202,10 @@
   max-height: 220px;
   overflow: auto;
   font: inherit;
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 .workflow-source {
-  font-size: 13px;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 .workflow-source summary,
@@ -206,17 +213,17 @@
   cursor: pointer;
 }
 .permission-card[open] summary {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .workflow-form fieldset {
   border: 0;
   padding: 0;
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-4);
   min-width: 0;
 }
 .workflow-form legend {
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .workflow-modal .modal-footer {
   flex-wrap: wrap;
@@ -225,7 +232,7 @@
   .workflow-defaults,
   .workflow-criterion,
   .workflow-selection {
-    padding: 10px;
+    padding: var(--space-3);
   }
   .workflow-file {
     align-items: flex-start;

@@ -1,22 +1,22 @@
 .project-usage-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 16px;
-  margin: 16px 0;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
 }
 .project-usage-totals > div {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
   min-width: 0;
 }
 .project-usage-totals dt {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .project-usage-totals dd {
-  margin: 8px 0 0;
-  font-size: 19px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-xl);
   overflow-wrap: anywhere;
 }
 .project-usage-totals dd > span {
@@ -24,21 +24,21 @@
 }
 .project-usage-totals small {
   display: block;
-  font-size: 12px;
-  line-height: 1.6;
-  margin-top: 6px;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  margin-top: var(--space-2);
   color: var(--muted);
 }
 .project-usage-connections > article {
   border-bottom: 1px solid var(--border);
-  padding: 12px 0;
+  padding: var(--space-3) 0;
   min-width: 0;
 }
 .project-usage-run {
   border: 1px solid var(--border);
-  padding: 14px;
-  border-radius: 10px;
-  margin: 10px 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  margin: var(--space-3) 0;
   min-width: 0;
 }
 .project-usage strong,
@@ -47,7 +47,7 @@
 }
 .project-usage-fees {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   overflow-wrap: anywhere;
 }
@@ -56,9 +56,9 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .project-usage-previous {
   border-left: 3px solid var(--border);
-  padding-left: 12px;
+  padding-left: var(--space-3);
 }

@@ -1,29 +1,29 @@
 .task-working-state {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .task-working-state .field-help {
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
   color: var(--muted);
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .task-working-state .workflow-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .task-working-state button {
   max-width: 100%;
   white-space: normal;
 }
 .task-working-state details {
-  margin: 10px 0;
+  margin: var(--space-3) 0;
 }
 .task-working-state summary {
   cursor: pointer;
@@ -34,13 +34,13 @@
   overflow-wrap: anywhere;
   max-height: 250px;
   overflow: auto;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .working-state-editor {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 .working-state-editor textarea {
   width: 100%;
@@ -48,26 +48,26 @@
 }
 .working-state-confirm {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-start;
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.6;
+  margin-top: var(--space-3);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .working-state-confirm input[type='checkbox'] {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   padding: 0;
-  margin-top: 3px;
+  margin-top: var(--space-1);
 }
 .working-state-pending {
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  margin: 10px 0;
+  border-radius: var(--radius-control);
+  margin: var(--space-3) 0;
 }
 .task-working-state .field-error {
   overflow-wrap: anywhere;
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }

@@ -1,7 +1,9 @@
+@import './design-tokens.css';
+
 .startup-screen {
-  --startup-accent: #bd8c96;
-  --startup-background: #f8faf5;
-  --startup-ink: #28332e;
+  --startup-accent: var(--accent);
+  --startup-background: var(--canvas);
+  --startup-ink: var(--text);
   margin: 0;
   min-height: 100vh;
   display: grid;
@@ -10,7 +12,9 @@
   box-sizing: border-box;
   background: var(--startup-background);
   color: var(--startup-ink);
-  font-family: system-ui, 'Microsoft YaHei UI', sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
   text-align: center;
 }
 .startup-content {
@@ -18,15 +22,14 @@
 }
 .startup-screen h1 {
   margin: 1.25rem 0 0.4rem;
-  font-size: clamp(1.7rem, 4vw, 2.5rem);
+  font-size: clamp(var(--font-2xl), 4vw, var(--font-display));
   font-weight: 650;
   letter-spacing: -0.035em;
   overflow-wrap: anywhere;
 }
 .startup-caption {
-  opacity: 0.7;
   margin: 0.4rem 0 1.8rem;
-  font-size: 0.9rem;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 .startup-visual {
@@ -46,7 +49,7 @@
   position: relative;
 }
 .startup-emblem span {
-  color: #fff;
+  color: var(--surface);
   font:
     600 3.1rem/1 Georgia,
     serif;
@@ -111,8 +114,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
-  opacity: 0.85;
+  font-size: var(--font-sm);
 }
 .startup-status-dot {
   width: 0.4rem;
@@ -125,15 +127,15 @@
   border: 1px solid currentColor;
   background: transparent;
   color: inherit;
-  opacity: 0.7;
-  border-radius: 99px;
-  padding: 0.4rem 0.8rem;
+  min-height: var(--control-md);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 .startup-skip:hover {
-  opacity: 1;
+  text-decoration: underline;
 }
 .startup-skip:active {
   transform: scale(0.97);
@@ -165,13 +167,12 @@
 .startup-settings-preview strong {
   display: block;
   margin-top: 0.6rem;
-  font-size: 1.3rem;
+  font-size: var(--font-xl);
   overflow-wrap: anywhere;
 }
 .startup-settings-preview p {
   margin: 0.3rem 0 0;
-  opacity: 0.7;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 .startup-settings-toggle,
@@ -194,8 +195,8 @@
   gap: 0.5rem;
 }
 .startup-styles .selected {
-  background: var(--accent-soft, #e8e4ef);
-  border-color: var(--accent, #965d6b);
+  background: var(--accent-pale);
+  border-color: var(--accent);
 }
 .startup-settings-fields {
   display: grid;
@@ -205,7 +206,7 @@
 .startup-settings-fields label {
   display: grid;
   gap: 0.3rem;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
 }
 .startup-color-fields {
   display: grid;
@@ -230,30 +231,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
 }
 .startup-settings-hint {
-  font-size: 0.8rem;
-  color: var(--muted, #69746e);
+  font-size: var(--font-sm);
+  color: var(--muted);
   margin: 0.75rem 0 1rem;
   line-height: 1.5;
 }
 .startup-settings-error {
-  color: var(--danger, #a44040);
-  font-size: 0.85rem;
+  color: var(--danger);
+  font-size: var(--font-sm);
 }
 .startup-settings footer {
   margin-top: 1rem;
 }
 .startup-settings footer span {
   flex: 1;
-  font-size: 0.8rem;
-  color: var(--muted, #69746e);
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 .startup-diagnostics {
-  border-top: 1px solid var(--border, #e1e5e0);
+  border-top: 1px solid var(--border);
   padding-top: 0.75rem;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
 }
 .startup-diagnostics summary {
   cursor: pointer;
@@ -263,7 +264,7 @@
   margin-top: 0.75rem;
 }
 .startup-diagnostic-record strong {
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   font-weight: 500;
 }
 .startup-diagnostic-record dl {

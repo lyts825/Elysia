@@ -104,7 +104,7 @@ export function CurrentCriterionPicker({
       {error && (
         <p role="alert" className="field-error">
           {error}{' '}
-          <button type="button" onClick={() => setRetry((n) => n + 1)}>
+          <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试这一页
           </button>
         </p>

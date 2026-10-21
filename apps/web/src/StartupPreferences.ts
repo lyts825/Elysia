@@ -25,8 +25,8 @@ export const defaultStartupPreferences: StartupPreferences = {
   style: 'bloom',
   title: 'Elysia',
   caption: '把想法，慢慢做成喜欢的日常。',
-  accent: '#bd8c96',
-  background: '#f8faf5',
+  accent: '#8c4d64',
+  background: '#faf8f9',
 };
 export const startupMediaLimit = 4 * 1024 * 1024;
 const storageKey = 'elysia:startup:v2',

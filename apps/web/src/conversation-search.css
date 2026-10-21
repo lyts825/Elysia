@@ -10,9 +10,9 @@
   width: min(420px, calc(100vw - 32px));
   max-height: min(580px, calc(100dvh - 130px));
   overflow: auto;
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
   text-align: left;
@@ -20,7 +20,7 @@
 }
 .conversation-search.embedded {
   min-height: 0;
-  margin: 8px 18px;
+  margin: var(--space-2) var(--space-5);
 }
 .conversation-search.embedded .conversation-search-panel {
   position: static;
@@ -34,35 +34,35 @@
 .conversation-search-input {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
 }
 .conversation-search-input input {
   flex: 1;
   min-width: 0;
-  padding: 8px;
+  padding: var(--space-2);
 }
 .conversation-search-status,
 .conversation-search-results > p,
 .conversation-search-pages small {
-  margin: 10px 0;
-  font-size: 12px;
+  margin: var(--space-3) 0;
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 .conversation-search-results {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   max-height: 330px;
   overflow: auto;
   overscroll-behavior: contain;
 }
 .conversation-search-results > button {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   width: 100%;
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   color: var(--text);
   background: var(--surface-hover);
   text-align: left;
@@ -72,32 +72,31 @@
   background: var(--surface-selected);
 }
 .conversation-search-results span {
-  line-height: 1.5;
+  line-height: var(--leading-ui);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .conversation-search-results small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .conversation-search-pages,
 .conversation-search-error {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 .conversation-search-pages button,
 .conversation-search-error button {
-  padding: 6px 9px;
-  font-size: 12px;
+  padding: var(--space-2) var(--space-2);
 }
 .conversation-search-error span {
   flex: 1;
   min-width: 140px;
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }

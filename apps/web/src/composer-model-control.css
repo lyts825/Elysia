@@ -1,7 +1,7 @@
 .composer-model-control {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
   max-width: 100%;
   flex: 0 1 auto;
@@ -11,15 +11,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 5px 8px;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: var(--space-1) var(--space-2);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
 }
 .composer-model-chip {
   min-width: 0;
@@ -43,17 +43,17 @@
 }
 .composer-model-effort {
   flex: none;
-  padding-left: 6px;
+  padding-left: var(--space-2);
   border-left: 1px solid var(--border-strong);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .composer-model-chip svg,
 .composer-context-chip {
   flex: none;
 }
 .composer-context-chip {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
 .composer-context-ring {
@@ -84,25 +84,25 @@
   position: fixed;
   z-index: 45;
   width: min(350px, calc(100vw - 16px));
-  padding: 16px;
+  padding: var(--space-4);
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
   color: var(--text);
   text-align: left;
-  font-size: 12px;
+  font-size: var(--font-sm);
   transform-origin: bottom right;
-  animation: composer-context-enter 120ms ease-out;
+  animation: composer-context-enter var(--motion-enter) var(--ease-enter);
 }
 .composer-context-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .composer-context-heading > div {
   min-width: 0;
@@ -111,8 +111,8 @@
   flex: none;
 }
 .composer-context-heading h3 {
-  margin: 0 0 3px;
-  font-size: 14px;
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-md);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -122,40 +122,40 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .composer-context-heading .icon-button {
   flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 4px;
+  width: var(--control-md);
+  height: var(--control-md);
+  padding: var(--space-1);
 }
 .composer-context-percent {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: var(--space-2);
 }
 .composer-context-percent > strong {
   color: var(--text);
-  font-size: 25px;
+  font-size: var(--font-2xl);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: var(--leading-heading);
   letter-spacing: -0.02em;
 }
 .composer-context-percent > span {
   color: var(--secondary);
 }
 .composer-context-percent small {
-  margin-left: 5px;
+  margin-left: var(--space-1);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 .composer-context-progress {
   height: 5px;
-  margin: 12px 0 9px;
+  margin: var(--space-3) 0 var(--space-2);
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--border);
 }
 .composer-context-progress > i {
@@ -165,7 +165,7 @@
   border-radius: inherit;
   background: var(--accent);
   transform-origin: left center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) ease-out;
 }
 .composer-context-progress[data-known='false'] {
   background: repeating-linear-gradient(90deg, var(--border-strong) 0 3px, transparent 3px 6px);
@@ -177,39 +177,39 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 4px 10px;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
   color: var(--secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .composer-context-usage > p > strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .composer-context-metrics {
   display: grid;
-  gap: 10px;
-  margin: 16px 0 12px;
-  padding-top: 14px;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-3);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
 .composer-context-metrics > div {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .composer-context-metrics dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .composer-context-metrics dd {
   margin: 0;
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: right;
   overflow-wrap: anywhere;
   min-width: 0;
@@ -217,28 +217,28 @@
 .composer-context-updated {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 .composer-context-error {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--font-xs);
   overflow-wrap: anywhere;
 }
 .composer-context-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-top: 14px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 .composer-context-actions button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 4px 0;
-  font-size: 11px;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: var(--space-1) 0;
+  font-size: var(--font-xs);
 }
 @keyframes composer-context-enter {
   from {
@@ -252,14 +252,14 @@
 }
 @media (max-width: 480px) {
   .composer-model-control {
-    gap: 3px;
+    gap: var(--space-1);
   }
   .composer-model-chip {
     max-width: min(210px, 100%);
-    padding: 5px;
+    padding: var(--space-1);
   }
   .composer-context-chip {
-    padding: 5px;
+    padding: var(--space-1);
   }
 }
 @container (max-width: 500px) {

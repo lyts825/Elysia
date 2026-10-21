@@ -1,18 +1,18 @@
 .terminal-communication {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
   min-width: 0;
 }
 .terminal-communication > summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 .terminal-communication-body {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
   min-width: 0;
 }
 .terminal-communication h4,
@@ -20,7 +20,7 @@
   margin: 0;
 }
 .terminal-communication h4 {
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 .terminal-communication-heading,
 .terminal-message-meta,
@@ -30,7 +30,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: var(--space-2) var(--space-3);
   min-width: 0;
 }
 .terminal-communication-heading h4,
@@ -38,8 +38,8 @@
   margin-right: auto;
 }
 .terminal-communication .text-button {
-  font-size: 12px;
-  padding: 3px 0;
+  font-size: var(--font-sm);
+  padding: var(--space-1) 0;
   overflow-wrap: anywhere;
   text-align: left;
 }
@@ -48,21 +48,21 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   max-height: 420px;
   overflow-y: auto;
 }
 .terminal-message-list > li {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
   min-width: 0;
 }
 .terminal-message-meta,
 .terminal-message-footer,
 .terminal-communication-pages {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   overflow-wrap: anywhere;
 }
 .terminal-message-meta time {
@@ -71,42 +71,45 @@
 .terminal-message-list .terminal-message-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  margin: 8px 0;
-  line-height: 1.65;
-  font-size: 13px;
+  margin: var(--space-2) 0;
+  line-height: var(--leading-body);
+  font-size: var(--font-md);
   max-height: 240px;
   overflow-y: auto;
 }
 .terminal-message-status {
-  padding: 3px 7px;
-  border-radius: 6px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
   background: var(--surface-soft);
 }
 .terminal-message-status.included,
 .terminal-communication-notice {
   color: var(--success);
 }
+.terminal-message-status.included {
+  background: var(--success-bg);
+}
 .terminal-communication-read-state,
 .terminal-resolution-editor {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 .terminal-communication-read-state > button {
   justify-self: start;
 }
 .terminal-resolution-editor {
-  padding: 14px;
+  padding: var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
 .terminal-resolution-original,
 .terminal-message-resolution p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
   max-height: 160px;
   overflow: auto;
 }
@@ -114,16 +117,16 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: var(--space-3) var(--space-4);
 }
 .terminal-message-resolution {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted);
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .terminal-message-resolution time {
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .terminal-message-status.queued {
   color: var(--accent);
@@ -131,17 +134,17 @@
 }
 .terminal-communication-compose {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
   border-top: 1px solid var(--border);
-  margin-top: 4px;
-  padding-top: 14px;
+  margin-top: var(--space-1);
+  padding-top: var(--space-4);
 }
 .terminal-communication label {
   display: grid;
   min-width: 0;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--space-2);
+  font-size: var(--font-sm);
 }
 .terminal-communication input,
 .terminal-communication textarea {
@@ -155,7 +158,7 @@
 .terminal-peer-search {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .terminal-peer-search label {
   flex: 1;
@@ -164,13 +167,13 @@
   max-height: 260px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
 }
 .terminal-peer-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-right: 12px;
+  gap: var(--space-3);
+  padding-right: var(--space-3);
 }
 .terminal-peer-row + .terminal-peer-row {
   border-top: 1px solid var(--border);
@@ -179,32 +182,35 @@
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   border: 0;
   border-radius: 0;
   background: transparent;
   text-align: left;
-  padding: 10px 12px;
+  padding: var(--space-3) var(--space-3);
   overflow-wrap: anywhere;
 }
 .terminal-peer-select strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-peer-select span,
 .terminal-peer-select small {
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
 }
 .terminal-peer-select[aria-pressed='true'] {
   background: var(--accent-pale);
-  color: var(--accent);
+  color: var(--accent-strong);
+}
+.terminal-peer-select:hover:not(:disabled):not([aria-pressed='true']) {
+  background: var(--surface-hover);
 }
 .terminal-selected-peer {
-  padding: 10px 12px;
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 .terminal-selected-peer p {
@@ -214,8 +220,8 @@
   justify-self: start;
 }
 .terminal-communication-notice {
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 @media (max-width: 560px) {
   .terminal-peer-search {
@@ -231,44 +237,44 @@
 }
 .terminal-pending-messages {
   min-width: 0;
-  margin: 12px 0;
-  padding: 12px;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
 }
 .terminal-pending-messages legend {
-  padding: 0 5px;
-  font-size: 12px;
+  padding: 0 var(--space-1);
+  font-size: var(--font-sm);
 }
 .terminal-pending-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  margin: 8px 0;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0;
 }
 .terminal-pending-actions .text-button {
-  padding: 3px 0;
-  font-size: 12px;
+  padding: var(--space-1) 0;
+  font-size: var(--font-sm);
 }
 .terminal-continuation .terminal-pending-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  margin: 10px 0;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
 }
 .terminal-pending-item input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   margin: 2px 0 0;
 }
 .terminal-pending-item > span {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 0;
   flex: 1;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .terminal-pending-item strong {
   font-weight: 600;
@@ -279,6 +285,6 @@
   overflow-wrap: anywhere;
   max-height: 160px;
   overflow: auto;
-  line-height: 1.6;
+  line-height: var(--leading-body);
   color: var(--muted);
 }

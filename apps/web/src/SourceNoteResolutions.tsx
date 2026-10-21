@@ -246,6 +246,7 @@ export function SourceNoteResolutions({
           {error}{' '}
           <button
             type="button"
+            className="secondary"
             disabled={reading || saving !== undefined}
             onClick={conflict ? reload : () => setRetry((n) => n + 1)}
           >

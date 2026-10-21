@@ -48,7 +48,13 @@ const runtimeInputs = new Map();
 walk(path.join(root, 'apps/desktop'), (filename) =>
   runtimeInputs.set(path.relative(root, filename), readFileSync(filename)),
 );
-for (const filename of ['scripts/launch-cache.cjs', 'assets/brand/app-icon.ico', 'assets/brand/app-icon.png'])
+for (const filename of [
+  'scripts/launch-cache.cjs',
+  'assets/brand/app-icon.ico',
+  'assets/brand/app-icon.png',
+  'apps/web/src/Startup.css',
+  'apps/web/src/design-tokens.css',
+])
   runtimeInputs.set(filename, readFileSync(path.join(root, filename)));
 if (
   !existsSync(path.join(root, 'node_modules/.pnpm/lock.yaml')) ||

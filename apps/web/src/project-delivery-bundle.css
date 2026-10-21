@@ -1,13 +1,13 @@
 .project-delivery-bundle {
-  margin: 20px 0;
-  padding: 16px;
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .project-delivery-bundle h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 .project-bundle-files {
   list-style: none;
@@ -15,8 +15,8 @@
 }
 .project-bundle-files li {
   display: grid;
-  gap: 4px;
-  padding: 10px 0;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border);
   min-width: 0;
 }
@@ -30,14 +30,14 @@
 }
 .project-bundle-progress {
   display: grid;
-  gap: 6px;
-  margin: 12px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
   min-width: 0;
 }
 .project-bundle-progress progress {
   width: 100%;
   max-width: 100%;
-  accent-color: var(--primary);
+  accent-color: var(--accent);
 }
 .project-bundle-progress small,
 .project-bundle-progress span {
@@ -46,21 +46,22 @@
 }
 .project-delivery-archives,
 .project-archive-save {
-  margin: 20px 0;
+  margin: var(--space-5) 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .project-delivery-archive,
 .project-archive-confirm {
-  margin: 12px 0;
-  padding: 14px;
+  margin: var(--space-3) 0;
+  padding: var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .project-archive-confirm {
-  border-color: var(--danger, var(--border));
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 .project-archive-delete-notice {
   min-width: 0;
@@ -68,13 +69,13 @@
 .project-archive-delete-notice .project-delivery-archives {
   max-height: 48vh;
   overflow: auto;
-  padding-right: 4px;
+  padding-right: var(--space-1);
 }
 .project-archive-delete-notice .check-row {
   display: flex;
-  gap: 10px;
+  gap: var(--space-3);
   align-items: flex-start;
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 .project-archive-delete-notice .check-row span {
   min-width: 0;

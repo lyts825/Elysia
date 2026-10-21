@@ -314,7 +314,7 @@ export function RunHandoff({
             {error && (
               <p className="field-error" role="alert">
                 {error}{' '}
-                <button type="button" onClick={() => setRetry((v) => v + 1)}>
+                <button type="button" className="secondary" onClick={() => setRetry((v) => v + 1)}>
                   重新读取来源
                 </button>
               </p>
@@ -499,7 +499,12 @@ export function RunHandoff({
           {error && (
             <p className="field-error" role="alert">
               {error}{' '}
-              <button type="button" disabled={loading} onClick={() => setRetry((v) => v + 1)}>
+              <button
+                type="button"
+                className="secondary"
+                disabled={loading}
+                onClick={() => setRetry((v) => v + 1)}
+              >
                 重新读取来源
               </button>
             </p>

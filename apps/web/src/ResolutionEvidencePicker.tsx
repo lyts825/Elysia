@@ -91,6 +91,7 @@ export function ResolutionEvidencePicker({
         <div className="workflow-actions">
           <button
             type="button"
+            className="secondary"
             disabled={!page.page.offset || !!error}
             onClick={() => setOffset(Math.max(0, page.page.offset - page.page.limit))}
           >
@@ -99,6 +100,7 @@ export function ResolutionEvidencePicker({
           <span>{page.page.total} 条证据</span>
           <button
             type="button"
+            className="secondary"
             disabled={!page.page.hasMore || !!error}
             onClick={() => setOffset(page.page.nextOffset!)}
           >
@@ -110,7 +112,7 @@ export function ResolutionEvidencePicker({
       {error && (
         <p role="alert" className="field-error">
           {error}{' '}
-          <button type="button" onClick={() => setRetry((n) => n + 1)}>
+          <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试证据
           </button>
         </p>

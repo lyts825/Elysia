@@ -1,25 +1,25 @@
 .tool-process {
   min-width: 0;
-  margin-top: 14px;
+  margin-top: var(--space-4);
 }
 .tool-process-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
-  margin-bottom: 8px;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
   color: var(--secondary);
-  font-size: 0.86rem;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 .tool-process-heading small {
   color: var(--muted);
-  font-size: 0.79rem;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 .tool-process .tool-process-calls {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -34,9 +34,9 @@
   margin-top: 0;
 }
 .tool-activity {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
   color: var(--secondary);
   min-width: 0;
@@ -44,11 +44,11 @@
 .tool-activity > summary {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   list-style: none;
   cursor: pointer;
-  min-height: 44px;
+  min-height: var(--control-lg);
 }
 .tool-activity > summary::-webkit-details-marker {
   display: none;
@@ -56,7 +56,7 @@
 .tool-activity > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
 }
 .tool-activity-glyph,
 .tool-activity-chevron {
@@ -68,25 +68,25 @@
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .tool-activity-name {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 0.86rem;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--font-md);
   font-weight: 600;
 }
 .tool-activity-kind {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 3px 8px;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
   color: var(--muted);
-  font-size: 0.79rem;
-  line-height: 1.5;
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
 }
 .tool-activity-kind > code {
   min-width: 0;
@@ -96,10 +96,10 @@
 }
 .tool-activity-overview {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  font-size: 0.79rem;
-  line-height: 1.55;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
 }
 .tool-activity-overview > code {
   min-width: 0;
@@ -121,11 +121,11 @@
 .tool-activity-status {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-top: 1px;
   flex: none;
-  font-size: 0.79rem;
-  line-height: 1.5;
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
   color: var(--muted);
 }
 .tool-activity.done .tool-activity-status {
@@ -136,13 +136,13 @@
   color: var(--danger);
 }
 .tool-activity.failed {
-  border-color: #dfbcc0;
+  border-color: var(--danger-border);
 }
 .tool-activity.uncertain {
-  border-color: #dccab0;
+  border-color: var(--warning-border);
 }
 .tool-activity.uncertain .tool-activity-status {
-  color: #78592d;
+  color: var(--warning);
 }
 .tool-activity-error-summary {
   display: -webkit-box;
@@ -150,44 +150,44 @@
   -webkit-line-clamp: 1;
   overflow: hidden;
   overflow-wrap: anywhere;
-  font-size: 0.79rem;
-  line-height: 1.55;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
 }
 .tool-activity-chevron {
   transform: rotate(90deg);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-fast) ease;
 }
 .tool-activity[open] > summary .tool-activity-chevron {
   transform: rotate(-90deg);
 }
 .tool-activity-body {
-  padding: 0 12px 12px;
+  padding: 0 var(--space-3) var(--space-3);
   border-top: 1px solid var(--border);
   min-width: 0;
 }
 .tool-activity-body section {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   min-width: 0;
 }
 .tool-activity-body h4 {
-  margin: 0 0 6px;
-  font-size: 0.79rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-xs);
   color: var(--muted);
   font-weight: 600;
 }
 .tool-activity-body dl {
   margin: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .tool-activity-body dl > div {
   display: grid;
   grid-template-columns: minmax(65px, 105px) minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
 }
 .tool-activity-body dt {
-  font-size: 0.79rem;
-  line-height: 1.7;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -201,9 +201,9 @@
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: Consolas, monospace;
-  font-size: 0.79rem;
-  line-height: 1.7;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
   color: var(--secondary);
   tab-size: 2;
 }
@@ -211,14 +211,14 @@
   color: var(--danger);
 }
 .tool-activity-output {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 .tool-activity-output h5 {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   color: var(--muted);
-  font-size: 0.79rem;
+  font-size: var(--font-xs);
   font-weight: 500;
-  line-height: 1.7;
+  line-height: var(--leading-body);
 }
 .tool-activity-body dt code,
 .tool-activity-output h5 code {
@@ -226,20 +226,20 @@
   font-weight: 400;
 }
 .tool-activity-read-error {
-  margin-top: 10px;
+  margin-top: var(--space-3);
   color: var(--danger);
-  font-size: 0.79rem;
-  line-height: 1.7;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 .tool-activity .tool-activity-read-error p {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
 }
 .tool-activity-read-error button {
-  min-height: 36px;
-  padding: 5px 10px;
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--secondary);
   font-size: inherit;
@@ -250,17 +250,17 @@
 }
 .message-body .tool-activity-note,
 .tool-activity .tool-activity-note {
-  margin: 10px 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--muted);
-  font-size: 0.79rem;
-  line-height: 1.7;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
 }
 @media (max-width: 700px) {
   .tool-activity > summary {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 6px;
-    padding: 9px;
+    gap: var(--space-2);
+    padding: var(--space-2);
   }
   .tool-activity-status {
     grid-column: 2;
@@ -279,7 +279,7 @@
   }
   .tool-activity-body dl > div {
     grid-template-columns: minmax(0, 1fr);
-    gap: 3px;
+    gap: var(--space-1);
   }
 }
 @media (prefers-reduced-motion: reduce) {

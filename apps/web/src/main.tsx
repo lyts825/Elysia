@@ -2575,7 +2575,7 @@ function App({
         {error && (
           <div className="error-banner" role="alert">
             <span>{error}</span>
-            <button onClick={() => setError('')} aria-label="关闭错误">
+            <button className="icon-button" onClick={() => setError('')} aria-label="关闭错误">
               <Icon name="close" size={16} />
             </button>
           </div>
@@ -2588,6 +2588,7 @@ function App({
             </span>
             {readIssue.retryable && (
               <button
+                className="secondary"
                 aria-label="重试连接"
                 disabled={retrying || busy}
                 aria-busy={retrying}
@@ -2597,7 +2598,11 @@ function App({
                 {retrying ? '正在重试…' : '重试连接'}
               </button>
             )}
-            <button onClick={() => readSource && clearReadIssue(readSource)} aria-label="关闭连接错误">
+            <button
+              className="icon-button"
+              onClick={() => readSource && clearReadIssue(readSource)}
+              aria-label="关闭连接错误"
+            >
               <Icon name="close" size={16} />
             </button>
           </div>
@@ -3648,14 +3653,14 @@ function App({
                       !runReadOnly &&
                       !['DONE', 'CANCELLED'].includes(detail.run.status) &&
                       (detail.run.authorized || detail.run.plan) && (
-                        <p className="field-help" style={{ padding: '0 16px 10px' }}>
+                        <p className="field-help reply-guidance">
                           {detail.run.execution?.kind === 'docker-agent'
                             ? '补充需求进入待处理队列。运行中不会打断 CLI；正常结束后在“补充需求并继续”中选择消息。暂停和中断须先恢复或核验。'
                             : '补充消息会在安全边界送入当前任务；权限和累计预算保持。'}
                         </p>
                       )}
                     {pendingReplyReceipt && (
-                      <p className="field-help" role="status" style={{ padding: '0 16px 10px' }}>
+                      <p className="field-help reply-guidance" role="status">
                         {busy
                           ? '正在核对本次发送结果…'
                           : `上次${pendingReplyReceipt.intent === 'replan' ? '重新规划' : '补充'}发送结果待核对；重试沿用原请求，修改正文或处理方式将发送新请求。`}
@@ -3729,7 +3734,7 @@ function App({
                   ((cachedReplyReceipt?.targetRunId === runId && cachedReplyReceipt) ||
                     replyReceiptRead.status === 'unreadable' ||
                     replyReceiptStatus.get(replyIntentKey)) && (
-                    <div className="system-note" style={{ margin: '8px 16px', alignItems: 'start' }}>
+                    <div className="system-note reply-receipt-notice">
                       <Icon name="history" size={14} />
                       <div>
                         <p role="status">
@@ -3744,12 +3749,15 @@ function App({
                           <>
                             <details>
                               <summary>查看发送原文</summary>
-                              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                                {cachedReplyReceipt.text}
-                              </pre>
+                              <pre>{cachedReplyReceipt.text}</pre>
                             </details>
                             {!cachedReplyReceipt.outcome && (
-                              <button type="button" disabled={busy} onClick={reconcileReply}>
+                              <button
+                                className="secondary"
+                                type="button"
+                                disabled={busy}
+                                onClick={reconcileReply}
+                              >
                                 {busy ? '正在核对…' : '核对上次发送结果'}
                               </button>
                             )}

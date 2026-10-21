@@ -1,14 +1,14 @@
 .context-policy-editor {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .context-policy-editor > label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--secondary);
 }
 .context-policy-editor select {
-  min-height: 40px;
+  min-height: var(--control-lg);
   margin-top: 0;
   color: var(--text);
 }
@@ -18,12 +18,12 @@
 }
 .context-policy-editor .field-help {
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .context-window-presets {
   min-width: 0;
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   border: 0;
 }
@@ -31,23 +31,23 @@
 .context-custom-window > label {
   padding: 0;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .context-preset-options {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 .context-preset-option {
-  min-height: 42px;
+  min-height: var(--control-lg);
   min-width: 0;
-  padding: 8px 6px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--secondary);
-  font-size: 13px;
+  font-size: var(--font-md);
   font-variant-numeric: tabular-nums;
 }
 .context-preset-option:hover:not(:disabled) {
@@ -77,8 +77,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(112px, 0.8fr);
   align-items: center;
-  gap: 12px;
-  margin-top: 6px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 .context-window-input {
   position: relative;
@@ -87,7 +87,7 @@
 .context-window-input input {
   width: 100%;
   min-width: 0;
-  min-height: 40px;
+  min-height: var(--control-lg);
   margin-top: 0;
   padding-right: 46px;
   color: var(--text);
@@ -100,24 +100,24 @@
   transform: translateY(-50%);
   pointer-events: none;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .context-policy-hint {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px 16px;
-  margin-top: 4px;
-  padding: 12px 14px;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-1);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .context-policy-hint strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -127,14 +127,14 @@
 .context-meter {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   border: 0;
-  border-radius: 8px;
-  padding: 7px 8px;
-  min-height: 32px;
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-2);
+  min-height: var(--control-sm);
   color: var(--secondary);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -144,7 +144,7 @@
 }
 .context-stream-output {
   color: var(--secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -168,58 +168,58 @@
 }
 .context-overview {
   display: grid;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .context-agent-row {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
   background: var(--surface);
 }
 .context-agent-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
   flex-wrap: wrap;
 }
 .context-agent-head strong {
-  font-size: 13px;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
   color: var(--text);
 }
 .context-agent-row > small {
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .context-agent-row .context-window-details {
-  margin-top: 14px;
+  margin-top: var(--space-4);
 }
 .context-usage-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   align-items: end;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 .context-usage-summary > div {
   display: grid;
   min-width: 0;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .context-usage-label {
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
 }
 .context-usage-summary strong {
   color: var(--text);
-  font-size: 28px;
+  font-size: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.6px;
-  line-height: 1.15;
+  line-height: var(--leading-heading);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
@@ -227,25 +227,25 @@
   grid-template-columns: minmax(0, 1fr) auto;
   justify-items: end;
   align-items: baseline;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .context-remaining .context-usage-label {
   grid-column: 1 / -1;
 }
 .context-remaining strong {
-  font-size: 22px;
+  font-size: var(--font-2xl);
   letter-spacing: -0.4px;
 }
 .context-token-unit {
   color: var(--secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .context-capacity,
 .context-breakdown {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 14px 0;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
 }
 .context-capacity > div,
 .context-breakdown > div {
@@ -254,36 +254,36 @@
 .context-capacity dt,
 .context-breakdown dt {
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
 }
 .context-capacity dd,
 .context-breakdown dd {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 .context-capacity dd {
-  font-size: 16px;
+  font-size: var(--font-lg);
 }
 .context-input-line {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 6px 14px;
-  margin: 10px 0;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0;
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 .context-progress {
   height: 5px;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--border);
 }
@@ -297,59 +297,59 @@
   background: var(--danger);
 }
 .context-current {
-  padding-bottom: 18px;
-  margin-bottom: 18px;
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-5);
   border-bottom: 1px solid var(--border);
 }
 .context-status-note {
-  margin: 10px 0;
+  margin: var(--space-3) 0;
   color: var(--secondary);
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 .context-usage-details,
 .context-reserves {
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 .context-window-details summary {
   width: fit-content;
   max-width: 100%;
-  padding: 5px 0;
-  border-radius: 3px;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-sm);
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 .context-window-details summary:hover {
   color: var(--text);
 }
 .context-usage-details .context-breakdown {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .context-window-modal {
   width: 560px;
 }
 .context-window-modal .form-body > .field-help {
-  margin-top: 14px;
+  margin-top: var(--space-4);
 }
 .context-compact-setup {
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
 }
 .context-compact-setup > summary {
   cursor: pointer;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .context-compact-setup[open] > summary {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 @media (max-width: 760px) {
   .context-meter {
-    min-height: 36px;
+    min-height: var(--control-md);
   }
 }
 @media (max-width: 400px) {
@@ -358,23 +358,23 @@
   }
   .context-custom-window {
     grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    gap: var(--space-2);
   }
   .context-usage-summary strong {
-    font-size: 26px;
+    font-size: var(--font-2xl);
   }
   .context-usage-summary .context-remaining {
     grid-template-columns: minmax(0, 1fr);
-    gap: 3px;
+    gap: var(--space-1);
   }
   .context-remaining strong {
-    font-size: 20px;
+    font-size: var(--font-xl);
   }
   .context-window-modal .form-body {
-    padding: 14px;
+    padding: var(--space-4);
   }
   .context-capacity {
-    gap: 10px;
+    gap: var(--space-3);
   }
 }
 @media (min-width: 600px) and (max-height: 500px) {
@@ -385,10 +385,10 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
-    gap: 16px;
+    gap: var(--space-4);
   }
   .context-window-modal .context-current {
-    padding: 0 16px 0 0;
+    padding: 0 var(--space-4) 0 0;
     margin: 0;
     border-bottom: 0;
     border-right: 1px solid var(--border);

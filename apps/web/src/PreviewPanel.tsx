@@ -742,7 +742,9 @@ export function PreviewPanel({
       {snapshotError && (
         <div role="alert" className="preview-error">
           <span>工作区同步失败：{snapshotError}</span>
-          <button onClick={() => setRefresh((n) => n + 1)}>重试</button>
+          <button className="quiet-button" onClick={() => setRefresh((n) => n + 1)}>
+            重试
+          </button>
         </div>
       )}
       {fileError && (
@@ -759,7 +761,7 @@ export function PreviewPanel({
                     : '自动更新已关闭，请手动重试。'}
             </small>
           </span>
-          <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
+          <button className="quiet-button" disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
             重试
           </button>
         </div>
@@ -799,7 +801,7 @@ export function PreviewPanel({
             )}
             <small>修复本地文件后可刷新页面；开启自动更新时会检查文件变化。</small>
           </span>
-          <button disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
+          <button className="quiet-button" disabled={loading} onClick={() => setRefresh((n) => n + 1)}>
             刷新页面
           </button>
         </div>
@@ -967,7 +969,9 @@ export function PreviewPanel({
           {selectedFile?.page?.paged && view === 'page' && selectedFile.kind === 'markdown' && (
             <div className="preview-format-note">
               仅渲染当前页片段。跨页代码块、表格或公式可能不完整。
-              <button onClick={() => setView('source')}>查看源码</button>
+              <button className="quiet-button" onClick={() => setView('source')}>
+                查看源码
+              </button>
             </div>
           )}
           <MotionContent
@@ -1055,7 +1059,9 @@ export function PreviewPanel({
                 <>
                   <div className="preview-format-note">
                     此 HTML 为 {formatFileBytes(htmlBytes)}，默认按片段显示源码。加载页面会读取整份文档。
-                    <button onClick={() => setHtmlPermission(htmlPermissionKey)}>加载页面</button>
+                    <button className="quiet-button" onClick={() => setHtmlPermission(htmlPermissionKey)}>
+                      加载页面
+                    </button>
                   </div>
                   {sourceText(selectedFile.text || '')}
                 </>

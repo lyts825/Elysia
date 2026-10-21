@@ -2,94 +2,96 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
   min-width: 0;
 }
 .project-files-toolbar {
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
   min-width: 0;
 }
 .project-files-toolbar > .icon-button:first-child svg {
   transform: rotate(180deg);
 }
 .project-files-toolbar code {
-  font:
-    12px/1.6 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: var(--font-sm) / var(--leading-body) var(--font-mono);
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
 }
 .project-file-size {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 .file-encoding-choice label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .file-download-link {
   color: var(--secondary);
   text-decoration: none;
   margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
 }
 .file-download-link:hover {
-  background: var(--surface-hover, #eee);
+  background: var(--surface-hover);
 }
 .project-file-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding-left: 10px;
-  margin-bottom: 8px;
+  border-radius: var(--radius-control);
+  padding-left: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 .project-file-search input {
   min-width: 0;
-  padding: 7px 8px 7px 0;
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
   border: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   background: transparent;
 }
 .project-file-search:focus-within {
-  outline: 2px solid var(--border-strong, #bbb);
-  outline-offset: 1px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .project-file-search input:focus {
   box-shadow: none;
 }
 .project-file-list button {
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
   min-width: 0;
+  min-height: var(--control-md);
 }
 .project-file-list button > svg {
   flex: none;
   color: var(--muted);
 }
 .project-file-list button .project-file-name {
-  color: var(--text, #202020);
-  font-size: 13px;
+  color: var(--text);
+  font-size: var(--font-md);
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .project-file-list button small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   flex: none;
 }
 @media (max-width: 560px) {
-  .project-files {
-    padding: 12px;
+  .project-files.project-files {
+    padding: var(--space-3);
   }
   .project-file-list {
     max-height: 52vh;

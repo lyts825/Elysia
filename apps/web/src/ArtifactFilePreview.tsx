@@ -274,7 +274,7 @@ export function ArtifactFilePreview({
       {error && (
         <div className="inline-warning" role="alert">
           <span>{error}</span>
-          <button type="button" disabled={loading} onClick={reader.restart}>
+          <button className="secondary" type="button" disabled={loading} onClick={reader.restart}>
             重试
           </button>
         </div>

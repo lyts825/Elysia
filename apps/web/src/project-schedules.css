@@ -1,9 +1,9 @@
 .project-schedules {
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 20px;
-  margin: 16px 0;
-  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-5);
+  margin: var(--space-4) 0;
+  background: var(--surface);
   min-width: 0;
 }
 .project-schedules header,
@@ -11,7 +11,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .project-schedules header {
   justify-content: space-between;
@@ -20,30 +20,34 @@
 .project-schedules h2,
 .project-schedules h3,
 .project-schedules h4 {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
 }
 .project-schedules p {
-  line-height: 1.65;
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 .schedule-list {
   display: grid;
-  gap: 12px;
-  margin: 16px 0;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
 }
 .schedule-list article,
 .schedule-template,
 .schedule-notice {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
   min-width: 0;
+}
+.schedule-notice {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
 }
 .schedule-list article > div:first-child {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .schedule-list strong,
 .schedule-actions button {
@@ -51,8 +55,8 @@
   overflow-wrap: anywhere;
 }
 .schedule-editor {
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-5);
 }
 .schedule-editor fieldset {
   border: 0;
@@ -60,11 +64,11 @@
   margin: 0;
   min-width: 0;
   display: grid;
-  gap: 14px;
+  gap: var(--space-4);
 }
 .schedule-editor label {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .schedule-editor input,
@@ -75,15 +79,15 @@
 .schedule-fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .project-schedules label.schedule-check {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 8px;
-  margin: 12px 0;
-  line-height: 1.6;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  line-height: var(--leading-body);
 }
 .project-schedules .schedule-check span {
   min-width: 0;
@@ -93,18 +97,18 @@
 .project-schedules .schedule-check input {
   width: 16px;
   flex: 0 0 16px;
-  margin-top: 5px;
+  margin-top: var(--space-2);
 }
 .schedule-template {
-  margin: 14px 0;
+  margin: var(--space-4) 0;
 }
 .schedule-template pre {
   max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .schedule-template summary {
   cursor: pointer;
@@ -113,13 +117,13 @@
   white-space: pre-wrap;
 }
 .schedule-delete {
-  margin-top: 20px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
+  margin-top: var(--space-5);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
 }
 @media (max-width: 720px) {
   .project-schedules {
-    padding: 14px;
+    padding: var(--space-4);
   }
   .schedule-fields {
     grid-template-columns: 1fr;

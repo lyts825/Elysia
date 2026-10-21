@@ -121,7 +121,7 @@ export function ArtifactRevisionSelection({
     return (
       <section className="workflow-source">
         <p role="alert">差异草稿无法读取，原文已保留。请先保留所需内容，再清除此部分选择。</p>
-        <button type="button" disabled={disabled} onClick={() => change([])}>
+        <button type="button" className="secondary" disabled={disabled} onClick={() => change([])}>
           清除无法读取的差异选择
         </button>
       </section>
@@ -220,7 +220,7 @@ export function ArtifactRevisionSelection({
       {error && (
         <p className="field-error" role="alert">
           {error}{' '}
-          <button type="button" disabled={disabled || busy} onClick={reload}>
+          <button type="button" className="secondary" disabled={disabled || busy} onClick={reload}>
             重新读取来源
           </button>
         </p>
