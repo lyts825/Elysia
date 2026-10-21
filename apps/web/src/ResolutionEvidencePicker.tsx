@@ -88,29 +88,36 @@ export function ResolutionEvidencePicker({
         <p className="field-help">当前验收项尚无登记证据；可保留待复验或说明判断依据。</p>
       )}
       {page && (
-        <div className="workflow-actions">
-          <button
-            type="button"
-            className="secondary"
-            disabled={!page.page.offset || !!error}
-            onClick={() => setOffset(Math.max(0, page.page.offset - page.page.limit))}
-          >
-            上一页证据
-          </button>
-          <span>{page.page.total} 条证据</span>
-          <button
-            type="button"
-            className="secondary"
-            disabled={!page.page.hasMore || !!error}
-            onClick={() => setOffset(page.page.nextOffset!)}
-          >
-            下一页证据
-          </button>
-        </div>
+        <nav className="workflow-pagination" aria-label="登记证据分页">
+          <span className="workflow-pagination-summary">
+            {page.evidence.length
+              ? `${page.page.offset + 1}–${page.page.offset + page.evidence.length}`
+              : '0'}{' '}
+            / {page.page.total} 条证据
+          </span>
+          <div className="workflow-pagination-actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={!page.page.offset || !!error}
+              onClick={() => setOffset(Math.max(0, page.page.offset - page.page.limit))}
+            >
+              上一页证据
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!page.page.hasMore || !!error}
+              onClick={() => setOffset(page.page.nextOffset!)}
+            >
+              下一页证据
+            </button>
+          </div>
+        </nav>
       )}
       {busy && <p role="status">正在读取证据…</p>}
       {error && (
-        <p role="alert" className="field-error">
+        <p role="alert" className="field-error workflow-read-error">
           {error}{' '}
           <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试证据

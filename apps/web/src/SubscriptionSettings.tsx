@@ -190,7 +190,7 @@ export function SubscriptionSettings({
       {selected?.connected && selected.planEnabled && (
         <>
           {!selected.welcomed && (
-            <div className="subscription-welcome" role="dialog" aria-label="正在使用 ChatGPT 订阅">
+            <div className="subscription-welcome" role="region" aria-label="正在使用 ChatGPT 订阅">
               <strong>正在使用 ChatGPT 订阅</strong>
               <p>
                 选择并验证此账号的模型后，合资格的调用将使用你的 ChatGPT 订阅或获准使用的额度，可在 ChatGPT

@@ -334,11 +334,21 @@ export function ProjectDeliveryBundle({
         </p>
       )}
       {plan && (
-        <div>
-          <p>
-            已选择 {plan.fileCount} 份文件 · 已知文件正文 {sizeLabel(plan.totalBytes)} · 交付包{' '}
-            {sizeLabel(plan.archiveBytes)}
-          </p>
+        <div className="project-bundle-result">
+          <dl className="project-bundle-summary" aria-label="文件检查摘要">
+            <div>
+              <dt>已选文件</dt>
+              <dd>{plan.fileCount} 份</dd>
+            </div>
+            <div>
+              <dt>已知文件正文</dt>
+              <dd>{sizeLabel(plan.totalBytes)}</dd>
+            </div>
+            <div>
+              <dt>交付包</dt>
+              <dd>{sizeLabel(plan.archiveBytes)}</dd>
+            </div>
+          </dl>
           {plan.issues.length > 0 && (
             <ul className="field-error">
               {plan.issues.map((issue, i) => (
@@ -350,13 +360,23 @@ export function ProjectDeliveryBundle({
             <summary>查看文件与检查结果（{plan.files.length}）</summary>
             <ul className="project-bundle-files">
               {plan.files.map((file) => (
-                <li key={`${file.itemId}:${file.artifactId}`}>
+                <li
+                  key={`${file.itemId}:${file.artifactId}`}
+                  data-state={file.state === 'ready' ? 'ready' : 'blocked'}
+                >
                   <strong>{file.name}</strong>
-                  <span>
-                    {sizeLabel(file.size)} ·{' '}
-                    {file.state === 'ready' ? '与冻结内容一致' : file.reason || '无法打包'}
-                  </span>
-                  <small>包内位置：{file.path}</small>
+                  <div className="project-bundle-file-meta">
+                    <span className="project-bundle-file-state">
+                      {file.state === 'ready' ? '与冻结内容一致' : '无法打包'}
+                    </span>
+                    <span>{sizeLabel(file.size)}</span>
+                  </div>
+                  {file.state !== 'ready' && file.reason && (
+                    <p className="project-bundle-file-reason">{file.reason}</p>
+                  )}
+                  <small className="project-bundle-file-path">
+                    包内位置 <code>{file.path}</code>
+                  </small>
                 </li>
               ))}
             </ul>

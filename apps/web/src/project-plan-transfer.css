@@ -13,25 +13,67 @@
   margin-top: var(--space-4);
   padding-top: var(--space-3);
 }
+.project-plan-preview-heading,
+.project-plan-comparison-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.project-plan-preview-heading h4,
+.project-plan-comparison-heading h4 {
+  margin: 0;
+}
+.project-plan-preview-heading > span,
+.project-plan-filename {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.project-plan-diff-state {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.project-plan-diff-state[data-changed='true'] {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
 .project-plan-preview-content {
-  max-height: 440px;
+  max-height: min(50vh, 32rem);
   overflow: auto;
   padding: var(--space-3);
   background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
+  scroll-padding-block: var(--space-3);
 }
 .project-plan-preview p,
 .project-plan-preview h4 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.project-plan-preview-content section + section {
-  border-top: 1px solid var(--border);
+.project-plan-comparison-section {
   margin-top: var(--space-4);
+}
+.project-plan-comparison-section + .project-plan-comparison-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
 }
 .project-plan-capacity {
   margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-plan-capacity[data-status='blocked'] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 .project-plan-leave {
   border: 1px solid var(--warning-border);
@@ -47,6 +89,40 @@
 }
 .project-plan-comparison-columns > div {
   min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.project-plan-comparison-columns > div:last-child {
+  border-color: var(--border-strong);
+}
+.project-plan-comparison-columns > div > :first-child {
+  display: block;
+  margin: 0 0 var(--space-2);
+  color: var(--secondary);
+}
+.project-plan-item + .project-plan-item {
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+}
+.project-plan-item > h4 {
+  margin-bottom: var(--space-2);
+}
+.project-plan-item > strong {
+  font-size: var(--font-sm);
+  color: var(--secondary);
+}
+.project-plan-confirmation {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.project-plan-confirmation .project-actions {
+  margin-bottom: 0;
 }
 @container (max-width: 560px) {
   .project-plan-comparison-columns {

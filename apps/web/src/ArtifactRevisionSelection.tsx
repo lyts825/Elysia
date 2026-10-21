@@ -14,16 +14,18 @@ import { useSurfaceClient } from './SurfaceClientContext';
 
 export function ArtifactRevisionSummary({
   items,
+  embedded = false,
 }: {
   items: (Pick<ArtifactRevisionEntry, 'change' | 'requirement'> | SourceArtifactChange)[];
+  embedded?: boolean;
 }) {
   return (
     <section aria-label="修改清单">
-      <h4>修改清单 · {items.length} 项差异</h4>
+      {!embedded && <h4>修改清单 · {items.length} 项差异</h4>}
       {items.map((entry, index) => {
         const item = 'change' in entry ? entry.change : entry;
         return (
-          <div key={index} className="workflow-selection">
+          <div key={index} className={embedded ? 'workflow-artifact-summary-item' : 'workflow-selection'}>
             <strong>
               {{ added: '新增', removed: '已移除', changed: '已变化' }[item.kind]} ·{' '}
               {item.after?.name ?? item.before?.name ?? item.artifactId}
@@ -36,9 +38,11 @@ export function ArtifactRevisionSummary({
           </div>
         );
       })}
-      <p className="field-help">
-        此清单仅包含差异元数据与修改要求；不包含文件正文。需要正文时请单独选择产物。
-      </p>
+      {!embedded && (
+        <p className="field-help">
+          此清单仅包含差异元数据与修改要求；不包含文件正文。需要正文时请单独选择产物。
+        </p>
+      )}
     </section>
   );
 }
@@ -133,6 +137,7 @@ export function ArtifactRevisionSelection({
         差异修改清单 · 已加入 {entries.filter((e) => e.added).length} 项 · 待加入{' '}
         {entries.filter((e) => !e.added).length} 项
       </h3>
+      <p className="field-help">清单包含差异元数据与修改要求；需要文件正文时请单独选择产物。</p>
       {entries.map((entry) => {
         const key = artifactRevisionKey(entry),
           stale = entry.fingerprint !== fingerprint;
@@ -144,8 +149,8 @@ export function ArtifactRevisionSelection({
         ]);
         return (
           <div key={key} className="workflow-selection">
-            <ArtifactRevisionSummary items={[entry]} />
-            <label>
+            <ArtifactRevisionSummary items={[entry]} embedded />
+            <label className="workflow-field">
               具体修改要求
               <textarea
                 aria-label={`清单修改要求：${entry.change.after?.name ?? entry.change.before?.name}`}
@@ -177,6 +182,7 @@ export function ArtifactRevisionSelection({
                   <>
                     <ArtifactRevisionSummary
                       items={[{ change: current.change, requirement: entry.requirement }]}
+                      embedded
                     />
                     <button
                       type="button"
@@ -218,7 +224,7 @@ export function ArtifactRevisionSelection({
         );
       })}
       {error && (
-        <p className="field-error" role="alert">
+        <p className="field-error workflow-read-error" role="alert">
           {error}{' '}
           <button type="button" className="secondary" disabled={disabled || busy} onClick={reload}>
             重新读取来源

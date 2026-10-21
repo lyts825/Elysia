@@ -242,7 +242,7 @@ export function SourceNoteResolutions({
         </p>
       )}
       {error && (
-        <p className="field-error" role="alert">
+        <p className="field-error workflow-read-error" role="alert">
           {error}{' '}
           <button
             type="button"
@@ -325,7 +325,7 @@ export function SourceNoteResolutions({
                     </button>
                   </div>
                 )}
-                <label>
+                <label className="workflow-field">
                   处理状态
                   <select
                     aria-label={`意见 ${row.noteIndex + 1} 处理状态`}
@@ -342,7 +342,7 @@ export function SourceNoteResolutions({
                     ))}
                   </select>
                 </label>
-                <label>
+                <label className="workflow-field">
                   处理说明
                   <textarea
                     aria-label={`意见 ${row.noteIndex + 1} 处理说明`}

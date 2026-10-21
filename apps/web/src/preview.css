@@ -5,14 +5,20 @@
   min-width: 0;
 }
 .preview-panel {
+  --preview-reading-height: min(16rem, 50dvh);
   width: 60%;
   flex: 1;
   min-width: 400px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--surface);
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.preview-panel > :not(.preview-canvas, .preview-activity) {
+  flex-shrink: 0;
 }
 .preview-panel.preview-expanded {
   position: absolute;
@@ -72,14 +78,20 @@
 }
 .preview-agent-info {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px var(--space-3);
   padding: 0 14px var(--space-2) 46px;
   font-size: var(--font-xs);
   color: var(--muted);
   flex-wrap: wrap;
 }
+.preview-agent-info > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .preview-agent-info strong {
+  flex: none;
   font-weight: 500;
   color: var(--secondary);
   margin-left: auto;
@@ -142,7 +154,7 @@
   color: var(--secondary);
 }
 .preview-tools input {
-  width: auto;
+  width: 1rem;
   accent-color: var(--accent);
   margin: 0;
 }
@@ -257,8 +269,8 @@
   padding: 2px;
 }
 .preview-canvas {
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 var(--preview-reading-height);
+  min-height: var(--preview-reading-height);
   margin: 0;
   overflow: auto;
   background: var(--surface);
@@ -493,8 +505,8 @@
 }
 .preview-activity {
   overflow: auto;
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 var(--preview-reading-height);
+  min-height: var(--preview-reading-height);
   padding: 5px var(--space-5) var(--space-5);
 }
 .preview-activity h3 {
@@ -633,7 +645,7 @@
   width: 7px;
   height: 7px;
 }
-.preview-tools button:hover {
+.preview-tools button:hover:not(:disabled) {
   background: var(--accent-pale);
 }
 @media (max-width: 420px) {

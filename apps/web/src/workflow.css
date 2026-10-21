@@ -146,6 +146,42 @@
   align-items: center;
   flex-wrap: wrap;
 }
+.workflow-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.workflow-pagination-summary {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-pagination-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.workflow-read-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.workflow-read-error button {
+  max-width: 100%;
+}
 .workflow-evidence {
   padding: var(--space-3) 0;
   border-top: 1px solid var(--border);
@@ -183,10 +219,23 @@
 .workflow-selection {
   margin-top: var(--space-3);
 }
-.workflow-selection label {
+.workflow-selection label:not(.workflow-field) {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
+}
+.workflow-field {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+  min-width: 0;
+}
+.workflow-field :is(textarea, select) {
+  margin: 0;
+  min-width: 0;
+}
+.workflow-artifact-summary-item {
+  margin-bottom: var(--space-3);
 }
 .workflow-selection label input {
   flex: none;
@@ -236,5 +285,13 @@
   }
   .workflow-file {
     align-items: flex-start;
+  }
+  .workflow-pagination-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .workflow-pagination-actions button {
+    min-width: 0;
   }
 }

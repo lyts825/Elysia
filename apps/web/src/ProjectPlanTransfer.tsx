@@ -187,14 +187,19 @@ export function ProjectPlanTransfer({
       )}
       {preview && (
         <section className="project-plan-preview" aria-label="导入计划预览">
-          <h4>导入计划预览</h4>
-          <p>
-            {preview.name} · {preview.file.plan.items.length} 个交付项
-          </p>
+          <div className="project-plan-preview-heading">
+            <h4>导入计划预览</h4>
+            <span>{preview.file.plan.items.length} 个交付项</span>
+          </div>
+          <p className="project-plan-filename">{preview.name}</p>
           <p className="field-help">
             应用后可在本项目编辑。全部交付项使用新编号；保存后仍需重新关联任务和确认，现有任务与历史交付清单不会迁移到新编号。核对后仍需点击“保存项目计划”。
           </p>
-          <section className="project-plan-capacity" aria-label="导入草稿容量检查">
+          <section
+            className="project-plan-capacity"
+            aria-label="导入草稿容量检查"
+            data-status={canApply ? 'ready' : 'blocked'}
+          >
             {capacity?.canApply ? (
               <>
                 <p role="status">
@@ -235,17 +240,29 @@ export function ProjectPlanTransfer({
               </>
             )}
           </section>
-          <div className="project-plan-preview-content">
+          <div
+            className="project-plan-preview-content"
+            role="region"
+            aria-label="项目计划替换对照内容"
+            tabIndex={0}
+          >
             <h4>当前草稿 → 导入计划</h4>
             {[
               { label: '项目目标', current: edit.goal, imported: preview.file.plan.goal },
               { label: '范围', current: edit.scope, imported: preview.file.plan.scope.join('\n') },
               { label: '不做事项', current: edit.nonGoals, imported: preview.file.plan.nonGoals.join('\n') },
             ].map(({ label, current, imported }) => (
-              <section key={label} aria-label={`${label}替换对照`}>
-                <h4>
-                  {label} · {current === imported ? '文字一致' : '文字不同'}
-                </h4>
+              <section
+                className="project-plan-comparison-section"
+                key={label}
+                aria-label={`${label}替换对照`}
+              >
+                <div className="project-plan-comparison-heading">
+                  <h4>{label}</h4>
+                  <span className="project-plan-diff-state" data-changed={current !== imported}>
+                    {current === imported ? '文字一致' : '文字不同'}
+                  </span>
+                </div>
                 <div className="project-plan-comparison-columns">
                   <div>
                     <strong>当前草稿</strong>
@@ -258,7 +275,7 @@ export function ProjectPlanTransfer({
                 </div>
               </section>
             ))}
-            <section aria-label="交付项替换对照">
+            <section className="project-plan-comparison-section" aria-label="交付项替换对照">
               <h4>交付项全部替换</h4>
               <p>
                 当前 {edit.items.length} 项（必需 {edit.items.filter((item) => item.required).length} 项） →
@@ -286,46 +303,48 @@ export function ProjectPlanTransfer({
               </div>
             </section>
           </div>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={acknowledgedKey === confirmationKey}
-              disabled={busy || !canApply}
-              onChange={(event) => setAcknowledgedKey(event.target.checked ? confirmationKey : '')}
-            />
-            <span>用此计划替换当前编辑内容；导入前原稿保留，可在保存前恢复。</span>
-          </label>
-          <div className="project-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={busy || canRestore || !canApply || acknowledgedKey !== confirmationKey}
-              onClick={() => {
-                if (apply(preview.file)) {
+          <div className="project-plan-confirmation">
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={acknowledgedKey === confirmationKey}
+                disabled={busy || !canApply}
+                onChange={(event) => setAcknowledgedKey(event.target.checked ? confirmationKey : '')}
+              />
+              <span>用此计划替换当前编辑内容；导入前原稿保留，可在保存前恢复。</span>
+            </label>
+            <div className="project-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || canRestore || !canApply || acknowledgedKey !== confirmationKey}
+                onClick={() => {
+                  if (apply(preview.file)) {
+                    pending.current = false;
+                    setPreview(undefined);
+                    setAcknowledgedKey('');
+                    setNotice('已应用到本项目编辑草稿。请调整并核对，再保存项目计划。');
+                    setError('');
+                  }
+                }}
+              >
+                应用到编辑草稿
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  generation.current++;
                   pending.current = false;
                   setPreview(undefined);
                   setAcknowledgedKey('');
-                  setNotice('已应用到本项目编辑草稿。请调整并核对，再保存项目计划。');
-                  setError('');
-                }
-              }}
-            >
-              应用到编辑草稿
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={() => {
-                generation.current++;
-                pending.current = false;
-                setPreview(undefined);
-                setAcknowledgedKey('');
-                setNotice('已取消导入预览，当前草稿未改动。');
-              }}
-            >
-              取消导入 · 保留当前草稿
-            </button>
+                  setNotice('已取消导入预览，当前草稿未改动。');
+                }}
+              >
+                取消导入 · 保留当前草稿
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -343,7 +362,7 @@ function PlanItemText({
   side: '当前草稿' | '导入';
 }) {
   return (
-    <section aria-label={`${side}交付项 ${index + 1}`}>
+    <section className="project-plan-item" aria-label={`${side}交付项 ${index + 1}`}>
       <h4>
         {index + 1}. {item.title || '（未命名）'} · {item.required ? '必需' : '可选'}
       </h4>

@@ -78,31 +78,35 @@ export function CurrentCriterionPicker({
           </span>
         </label>
       ))}
-      <div className="workflow-actions">
-        <span>
-          {page.criteriaPage.offset + 1}–{page.criteriaPage.offset + page.criteria.length} /{' '}
-          {page.criteriaPage.total} 项
+      <nav className="workflow-pagination" aria-label="当前验收项分页">
+        <span className="workflow-pagination-summary">
+          {page.criteria.length
+            ? `${page.criteriaPage.offset + 1}–${page.criteriaPage.offset + page.criteria.length}`
+            : '0'}{' '}
+          / {page.criteriaPage.total} 项
         </span>
-        <button
-          type="button"
-          className="text-button"
-          disabled={!page.criteriaPage.offset || !!error}
-          onClick={() => setOffset(Math.max(0, page.criteriaPage.offset - page.criteriaPage.limit))}
-        >
-          上一页标准
-        </button>
-        <button
-          type="button"
-          className="text-button"
-          disabled={!page.criteriaPage.hasMore || !!error}
-          onClick={() => setOffset(page.criteriaPage.nextOffset!)}
-        >
-          下一页标准
-        </button>
-      </div>
+        <div className="workflow-pagination-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={!page.criteriaPage.offset || !!error}
+            onClick={() => setOffset(Math.max(0, page.criteriaPage.offset - page.criteriaPage.limit))}
+          >
+            上一页标准
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!page.criteriaPage.hasMore || !!error}
+            onClick={() => setOffset(page.criteriaPage.nextOffset!)}
+          >
+            下一页标准
+          </button>
+        </div>
+      </nav>
       {busy && <p role="status">正在读取验收项…</p>}
       {error && (
-        <p role="alert" className="field-error">
+        <p role="alert" className="field-error workflow-read-error">
           {error}{' '}
           <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试这一页

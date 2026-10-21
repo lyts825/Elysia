@@ -312,7 +312,7 @@ export function RunHandoff({
               {selectionPreview}
             </details>
             {error && (
-              <p className="field-error" role="alert">
+              <p className="field-error workflow-read-error" role="alert">
                 {error}{' '}
                 <button type="button" className="secondary" onClick={() => setRetry((v) => v + 1)}>
                   重新读取来源
@@ -497,7 +497,7 @@ export function RunHandoff({
             字节（UTF-8，最多 16 KiB）。
           </p>
           {error && (
-            <p className="field-error" role="alert">
+            <p className="field-error workflow-read-error" role="alert">
               {error}{' '}
               <button
                 type="button"
@@ -601,24 +601,27 @@ export function RunHandoff({
                   );
                 })}
                 {!options.messages.length && <p className="field-help">此页没有可选择的公开消息。</p>}
-                <div className="workflow-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || loading || !messageBefore}
-                    onClick={() => setMessageBefore('')}
-                  >
-                    最新消息
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || loading || !options.messagePage.hasMore}
-                    onClick={() => setMessageBefore(options.messagePage.nextBefore!)}
-                  >
-                    更早消息
-                  </button>
-                </div>
+                <nav className="workflow-pagination" aria-label="来源消息分页">
+                  <span className="workflow-pagination-summary">本页 {options.messages.length} 条消息</span>
+                  <div className="workflow-pagination-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || loading || !messageBefore}
+                      onClick={() => setMessageBefore('')}
+                    >
+                      最新消息
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || loading || !options.messagePage.hasMore}
+                      onClick={() => setMessageBefore(options.messagePage.nextBefore!)}
+                    >
+                      更早消息
+                    </button>
+                  </div>
+                </nav>
               </fieldset>
               <fieldset>
                 <legend>选择产物版本</legend>
@@ -650,24 +653,27 @@ export function RunHandoff({
                   );
                 })}
                 {!options.artifacts.length && <p className="field-help">此页没有登记产物。</p>}
-                <div className="workflow-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || loading || !artifactBefore}
-                    onClick={() => setArtifactBefore('')}
-                  >
-                    最新产物
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || loading || !options.artifactPage.hasMore}
-                    onClick={() => setArtifactBefore(options.artifactPage.nextBefore!)}
-                  >
-                    更早产物
-                  </button>
-                </div>
+                <nav className="workflow-pagination" aria-label="来源产物分页">
+                  <span className="workflow-pagination-summary">本页 {options.artifacts.length} 个产物</span>
+                  <div className="workflow-pagination-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || loading || !artifactBefore}
+                      onClick={() => setArtifactBefore('')}
+                    >
+                      最新产物
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || loading || !options.artifactPage.hasMore}
+                      onClick={() => setArtifactBefore(options.artifactPage.nextBefore!)}
+                    >
+                      更早产物
+                    </button>
+                  </div>
+                </nav>
               </fieldset>
             </>
           )}

@@ -105,7 +105,7 @@ export function ReviewFeedbackSelection({
       </p>
       {reading && <p role="status">正在核对来源交付版本…</p>}
       {error && (
-        <p role="alert" className="field-error">
+        <p role="alert" className="field-error workflow-read-error">
           {error} 选择及备注草稿仍保留。
           <button type="button" className="secondary" onClick={retry} disabled={disabled || reading}>
             重试读取备注
