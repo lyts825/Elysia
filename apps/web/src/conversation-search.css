@@ -56,6 +56,10 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+.conversation-search-results:focus-visible,
+.conversation-search-error:focus-visible {
+  outline-offset: -2px;
+}
 .conversation-search-results > button {
   display: grid;
   gap: var(--space-1);
@@ -81,21 +85,32 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-.conversation-search-pages,
-.conversation-search-error {
+.conversation-search-pages {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-3);
 }
+.conversation-search-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  max-height: min(16rem, 28dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+}
 .conversation-search-pages button,
 .conversation-search-error button {
   padding: var(--space-2) var(--space-2);
 }
 .conversation-search-error span {
-  flex: 1;
-  min-width: 140px;
+  min-width: 0;
   color: var(--danger);
   font-size: var(--font-sm);
   overflow-wrap: anywhere;

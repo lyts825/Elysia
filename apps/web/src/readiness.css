@@ -18,6 +18,19 @@
   font-size: var(--font-sm);
   color: var(--muted);
 }
+.readiness-error {
+  max-height: min(12rem, 30dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
 .readiness-list {
   display: grid;
   gap: var(--space-3);

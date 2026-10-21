@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Project, ProjectSpace, RunListItem, RecordPage } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -59,6 +59,20 @@ export function WorkspaceManager({
     } | null>(null);
   const [archiveConsent, setArchiveConsent] = useState<ProjectArchiveDeleteConsent>();
   const actionPending = useRef(false);
+  const tabId = useId();
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const confirmationRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!error) return;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [error]);
+  useEffect(() => {
+    if (!confirmation) return;
+    confirmationRef.current?.focus({ preventScroll: true });
+    confirmationRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [confirmation]);
   useEffect(() => {
     changeListArchive?.(tab === 'archive');
   }, [tab, changeListArchive]);
@@ -265,7 +279,28 @@ export function WorkspaceManager({
   );
   return (
     <Modal title="管理工作空间" subtitle="平级项目空间、项目归属和对话归档" close={close} wide busy={busy}>
-      <div className="management-tabs" role="tablist" aria-label="管理类型">
+      <div
+        className="management-tabs"
+        role="tablist"
+        aria-label="管理类型"
+        ref={tabsRef}
+        onKeyDown={(event) => {
+          const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+          if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+          const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+          const current = tabs.indexOf(event.target as HTMLButtonElement);
+          if (current < 0 || busy) return;
+          event.preventDefault();
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? tabs.length - 1
+                : (current + direction + tabs.length) % tabs.length;
+          tabs[next]?.focus();
+          tabs[next]?.click();
+        }}
+      >
         {[
           ['projects', '项目'],
           ['runs', '对话'],
@@ -275,6 +310,9 @@ export function WorkspaceManager({
           <button
             role="tab"
             aria-selected={tab === key}
+            id={`${tabId}-${key}`}
+            aria-controls={`${tabId}-panel`}
+            tabIndex={tab === key ? 0 : -1}
             className={tab === key ? 'active' : ''}
             key={key}
             disabled={busy}
@@ -290,14 +328,19 @@ export function WorkspaceManager({
           </button>
         ))}
       </div>
-      <div className="form-body management-body">
+      <div
+        className="form-body management-body"
+        role="tabpanel"
+        id={`${tabId}-panel`}
+        aria-labelledby={`${tabId}-${tab}`}
+      >
         {error && (
-          <p className="inline-warning" role="alert">
+          <p className="management-error" role="alert" ref={errorRef} tabIndex={-1}>
             {error}
           </p>
         )}
         {confirmation ? (
-          <div className="delete-confirmation" role="alert">
+          <div className="delete-confirmation" role="alert" ref={confirmationRef} tabIndex={-1}>
             <h3>{confirmation.title}</h3>
             <p>{confirmation.description}</p>
             {confirmation.projectId && (
@@ -308,8 +351,15 @@ export function WorkspaceManager({
                 onConsent={setArchiveConsent}
               />
             )}
-            <div>
-              <button className="secondary" disabled={busy} onClick={() => setConfirmation(null)}>
+            <div className="management-confirm-actions">
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmation(null);
+                  tabsRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
+                }}
+              >
                 保留
               </button>
               <button

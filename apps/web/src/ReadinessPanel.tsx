@@ -41,7 +41,14 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
     [stale, setStale] = useState(false);
   const controller = useRef<AbortController | null>(null),
     mounted = useRef(true);
-  const load = async () => {
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const [errorFocus, setErrorFocus] = useState(0);
+  useEffect(() => {
+    if (!errorFocus) return;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [errorFocus]);
+  const load = async (focusFailure = false) => {
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
@@ -63,10 +70,12 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
       setSnapshot(result);
       setStale(false);
     } catch (issue) {
-      if (!request.signal.aborted && mounted.current)
+      if (!request.signal.aborted && mounted.current) {
         setError(
           issue instanceof Error && issue.name !== 'ZodError' ? issue.message : '检查结果无法读取，请重试。',
         );
+        if (focusFailure) setErrorFocus((value) => value + 1);
+      }
     } finally {
       if (!request.signal.aborted && mounted.current) setLoading(false);
     }
@@ -84,12 +93,14 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
     setLoading(false);
     setStale(true);
     setError('读取已取消。已显示的检查记录保留，可重新读取。');
+    setErrorFocus((value) => value + 1);
   };
   const follow = (action: ReadinessAction) => {
     try {
       repair(action);
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : '无法打开设置，请重试。');
+      setErrorFocus((value) => value + 1);
     }
   };
   const needsAttention =
@@ -106,7 +117,7 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
           这里只整理已保存的配置和验证记录，不读取凭据、不调用模型。已有记录不代表当前可以执行。
         </p>
         <div className="readiness-toolbar">
-          <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>
+          <button type="button" className="secondary" onClick={() => void load(true)} disabled={loading}>
             {loading ? '正在读取…' : '重新读取检查'}
           </button>
           {loading && (
@@ -125,7 +136,7 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
           )}
         </div>
         {error && (
-          <p className="field-error" role="alert">
+          <p className="readiness-error" role="alert" ref={errorRef} tabIndex={0}>
             {error}
           </p>
         )}

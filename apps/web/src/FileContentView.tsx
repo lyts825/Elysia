@@ -105,6 +105,9 @@ export function FileContentView({
           )}
           <div
             className="file-document-scroll"
+            role="region"
+            aria-label={'文档内容 · ' + file.path}
+            tabIndex={0}
             key={file.page?.offset || 0}
             ref={documentScroll.ref}
             onScroll={documentScroll.onScroll}
@@ -122,6 +125,9 @@ export function FileContentView({
         <pre
           key={file.page?.offset || 0}
           className={'file-source-scroll' + (wrap ? ' wrapped' : '')}
+          role="region"
+          aria-label={'文件源码 · ' + file.path}
+          tabIndex={0}
           ref={sourceScroll.ref}
           onScroll={sourceScroll.onScroll}
         >

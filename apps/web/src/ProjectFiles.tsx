@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { FileContentView, fileEncodingOptions } from './FileContentView';
@@ -17,12 +17,23 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
     selection.projectId === projectId ? selection : { path: '.', encoding: 'auto', file: false, anchor: '' };
   const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState('');
+  const pathRef = useRef<HTMLElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+  const feedback = useRef<'navigation' | 'error' | ''>('');
   const reader = useFilePage(
     '/projects/' + projectId + '/files?path=' + encodeURIComponent(path),
     encoding,
     revision,
   );
   const { value, loading, error } = reader;
+  useEffect(() => {
+    if (loading || !feedback.current) return;
+    const target = error ? errorRef.current : feedback.current === 'navigation' ? pathRef.current : null;
+    feedback.current = '';
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [loading, error, path]);
   const choose = (next: string, isFile: boolean, nextEncoding = 'auto') => {
     setFilter('');
     const hash = next.indexOf('#');
@@ -35,6 +46,7 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
     });
   };
   useEffect(() => {
+    feedback.current = '';
     setSelection({ projectId, path: '.', encoding: 'auto', file: false, anchor: '' });
     setFilter('');
   }, [projectId]);
@@ -50,19 +62,29 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
           aria-label="上一级文件夹"
           title="上一级文件夹"
           disabled={path === '.'}
-          onClick={() => choose(parent, false)}
+          onClick={() => {
+            feedback.current = 'navigation';
+            choose(parent, false);
+          }}
         >
           <Icon name="arrow" size={16} />
         </button>
-        <code title={path}>{path === '.' ? '项目文件' : path}</code>
-        {value?.page && <span className="project-file-size">{formatFileBytes(value.page.totalBytes)}</span>}
+        <div className="project-files-location">
+          <code ref={pathRef} role="region" aria-label="当前项目路径" tabIndex={0}>
+            {path === '.' ? '项目文件' : path}
+          </code>
+          {value?.page && <span className="project-file-size">{formatFileBytes(value.page.totalBytes)}</span>}
+        </div>
         <button
           type="button"
           className="icon-button"
           aria-label="刷新文件"
           title="刷新文件"
           disabled={loading}
-          onClick={() => setRevision((value) => value + 1)}
+          onClick={() => {
+            feedback.current = 'error';
+            setRevision((value) => value + 1);
+          }}
         >
           <Icon name="refresh" size={16} />
         </button>
@@ -99,9 +121,17 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
         </p>
       )}
       {error && (
-        <div className="inline-warning" role="alert">
+        <div className="project-file-error" role="alert" ref={errorRef} tabIndex={-1}>
           <span>{error}</span>
-          <button type="button" disabled={loading} onClick={reader.restart}>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading}
+            onClick={() => {
+              feedback.current = 'navigation';
+              reader.restart();
+            }}
+          >
             重试
           </button>
         </div>
@@ -116,6 +146,7 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
           <div className="project-file-search">
             <Icon name="search" size={15} />
             <input
+              ref={filterRef}
               type="search"
               aria-label="筛选项目文件"
               placeholder="筛选文件"
@@ -123,9 +154,16 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
               onChange={(event) => setFilter(event.target.value)}
             />
           </div>
-          <div className="project-file-list">
+          <div className="project-file-list" role="region" aria-label="项目目录内容" tabIndex={0}>
             {entries.map((entry) => (
-              <button type="button" key={entry.path} onClick={() => choose(entry.path, !entry.directory)}>
+              <button
+                type="button"
+                key={entry.path}
+                onClick={() => {
+                  feedback.current = 'navigation';
+                  choose(entry.path, !entry.directory);
+                }}
+              >
                 <Icon name={entry.directory ? 'folder' : 'file'} size={17} />
                 <span className="project-file-name">{entry.name}</span>
                 <small>
@@ -134,7 +172,21 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
               </button>
             ))}
             {!entries.length && (
-              <p className="file-read-notice">{filter ? '没有匹配的文件。' : '此文件夹没有文件。'}</p>
+              <div className="project-file-empty" role="status">
+                <p>{filter ? '没有匹配的文件。' : '此文件夹没有文件。'}</p>
+                {filter && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setFilter('');
+                      filterRef.current?.focus();
+                    }}
+                  >
+                    清除筛选
+                  </button>
+                )}
+              </div>
             )}
             {value.truncated && <p className="file-read-notice">目录显示前 300 项；进入子目录可继续浏览。</p>}
           </div>
@@ -156,7 +208,10 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
             <FileContentView
               key={projectId + ':' + path + ':' + encoding}
               file={value}
-              onLocalLink={(target) => choose(target, true)}
+              onLocalLink={(target) => {
+                feedback.current = 'navigation';
+                choose(target, true);
+              }}
               anchor={anchor}
             />
           </>

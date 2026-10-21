@@ -36,6 +36,10 @@ export function ConversationSearch({
   const [failedSelection, setFailedSelection] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const [focusRequest, setFocusRequest] = useState<{ target: 'error' | 'results' }>();
   const request = useRef<AbortController | undefined>(undefined);
   const sequence = useRef(0);
   const activeQuery = useRef('');
@@ -45,7 +49,7 @@ export function ConversationSearch({
   const context = useRef({ runId, query: query.trim(), open });
   context.current = { runId, query: query.trim(), open };
   const panelId = useId();
-  const read = async (before?: string | null, append = false) => {
+  const read = async (before?: string | null, append = false, focusFeedback = false) => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -72,9 +76,12 @@ export function ConversationSearch({
         for (const item of page.items) items.set(item.messageId, item);
         return { ...page, items: [...items.values()].slice(0, 60) };
       });
+      if (focusFeedback) setFocusRequest({ target: 'results' });
     } catch (issue) {
-      if (!controller.signal.aborted && ticket === sequence.current)
+      if (!controller.signal.aborted && ticket === sequence.current) {
         setError(issue instanceof Error ? issue.message : '搜索未完成，请重试。');
+        if (focusFeedback) setFocusRequest({ target: 'error' });
+      }
     } finally {
       if (!controller.signal.aborted && ticket === sequence.current) setLoading(false);
     }
@@ -115,12 +122,22 @@ export function ConversationSearch({
     };
   }, [runId, query, open, disabled, api]);
   useEffect(() => {
-    if (open) input.current?.focus();
+    if (open) {
+      returnFocus.current = document.activeElement as HTMLElement | null;
+      input.current?.focus();
+    }
   }, [open]);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const target = focusRequest.target === 'error' ? errorRef.current : resultsRef.current;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [focusRequest]);
   const close = () => {
     request.current?.abort();
     setOpen(false);
-    trigger.current?.focus();
+    const target = trigger.current ?? returnFocus.current;
+    if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     onClose?.();
   };
   const select = async (messageId: string) => {
@@ -135,6 +152,7 @@ export function ConversationSearch({
       if (context.current.runId === target.runId && context.current.query === target.query) {
         setError(issue instanceof Error ? issue.message : '消息定位未完成，请重试。');
         setFailedSelection(messageId);
+        setFocusRequest({ target: 'error' });
       }
     } finally {
       if (context.current.runId === target.runId && context.current.query === target.query) setSelecting('');
@@ -185,7 +203,9 @@ export function ConversationSearch({
             {loading
               ? '正在搜索…'
               : error
-                ? '搜索未完成'
+                ? failedSelection
+                  ? '消息定位未完成'
+                  : '搜索未完成'
                 : result
                   ? `找到 ${result.page.total} 条匹配`
                   : query.trim()
@@ -193,7 +213,7 @@ export function ConversationSearch({
                     : '输入关键词，按需读取消息。'}
           </p>
           {error && (
-            <div className="conversation-search-error" role="alert">
+            <div className="conversation-search-error" role="alert" ref={errorRef} tabIndex={0}>
               <span>{error}</span>
               <button
                 type="button"
@@ -202,7 +222,7 @@ export function ConversationSearch({
                 onClick={() =>
                   failedSelection
                     ? void select(failedSelection)
-                    : void read(lastRead.current.before, lastRead.current.append)
+                    : void read(lastRead.current.before, lastRead.current.append, true)
                 }
               >
                 {failedSelection ? '重试定位' : '重试搜索'}
@@ -211,7 +231,13 @@ export function ConversationSearch({
           )}
           {result && (
             <>
-              <div className="conversation-search-results" aria-label="正文匹配结果">
+              <div
+                className="conversation-search-results"
+                role="region"
+                aria-label="正文匹配结果"
+                ref={resultsRef}
+                tabIndex={0}
+              >
                 {result.items.map((item) => (
                   <button
                     type="button"
@@ -234,7 +260,7 @@ export function ConversationSearch({
                       type="button"
                       className="secondary"
                       disabled={loading || !result.page.nextBefore}
-                      onClick={() => void read(result.page.nextBefore, result.items.length < 60)}
+                      onClick={() => void read(result.page.nextBefore, result.items.length < 60, true)}
                     >
                       {result.items.length < 60 ? '更早匹配' : '继续更早匹配'}
                     </button>
@@ -244,7 +270,7 @@ export function ConversationSearch({
                       type="button"
                       className="secondary"
                       disabled={loading}
-                      onClick={() => void read()}
+                      onClick={() => void read(undefined, false, true)}
                     >
                       返回最新匹配
                     </button>

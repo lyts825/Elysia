@@ -43,6 +43,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState('读取');
   const [error, setError] = useState('');
+  const [errorFeedback, setErrorFeedback] = useState(0);
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
   const [view, setView] = useState<{ item: Entry; pages: string; nextOffset?: number | null }>();
@@ -54,6 +55,14 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   const request = useRef<AbortController | null>(null);
   const viewSequence = useRef(0);
   const preview = useRef<HTMLElement | null>(null);
+  const operationError = useRef<HTMLParagraphElement | null>(null);
+  const searchInput = useRef<HTMLInputElement | null>(null);
+  const contentTriggers = useRef(new Map<string, HTMLButtonElement>());
+  const toolTriggers = useRef(new Map<string, HTMLButtonElement>());
+  const restorePreviewFocus = (trigger?: HTMLButtonElement) => {
+    if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+    else searchInput.current?.focus();
+  };
   const reload = async (signal?: AbortSignal) => {
     const value = await api<Overview>('/local-agents', undefined, undefined, signal);
     if (alive.current && !signal?.aborted) setOverview(value);
@@ -80,6 +89,11 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   useEffect(() => {
     if (view || tools) preview.current?.scrollIntoView({ block: 'nearest' });
   }, [view?.item.id, tools?.id]);
+  useEffect(() => {
+    if (!errorFeedback) return;
+    operationError.current?.focus();
+    operationError.current?.scrollIntoView({ block: 'nearest' });
+  }, [errorFeedback]);
   const act = async (label: string, operation: (signal: AbortSignal) => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -94,6 +108,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
     } catch (error) {
       if (alive.current && !controller.signal.aborted) {
         setError(error instanceof Error ? error.message : '操作失败，请重试。');
+        setErrorFeedback((value) => value + 1);
         try {
           await reload(controller.signal);
         } catch {
@@ -300,7 +315,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
               </div>
               <small className="local-agent-path">{scan.source.root}</small>
               {scan.warnings.map((warning, index) => (
-                <p className="field-help" key={index}>
+                <p className="field-help local-agent-scan-warning" key={index}>
                   {warning}
                 </p>
               ))}
@@ -317,7 +332,12 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                     />
                     选择全部（{scan.candidates.length}）
                   </label>
-                  <div className="local-agent-candidate-list">
+                  <div
+                    className="local-agent-candidate-list"
+                    role="region"
+                    aria-label="待同步条目列表"
+                    tabIndex={0}
+                  >
                     {scan.candidates.map((entry) => (
                       <label key={entry.id}>
                         <input
@@ -373,6 +393,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           <label>
             <Icon name="search" size={16} />
             <input
+              ref={searchInput}
               aria-label="搜索本机能力"
               placeholder="搜索名称或说明…"
               value={search}
@@ -394,7 +415,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </button>
         </div>
         {error && (
-          <p className="inline-warning" role="alert">
+          <p ref={operationError} className="inline-warning local-agent-error" role="alert" tabIndex={-1}>
             {error}
           </p>
         )}
@@ -430,9 +451,14 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                   <Icon name={tabs.find(([key]) => key === entry.kind)?.[2] || 'file'} size={18} />
                 </span>
                 <button
+                  ref={(node) => {
+                    if (node) contentTriggers.current.set(entry.id, node);
+                    else contentTriggers.current.delete(entry.id);
+                  }}
                   className="local-agent-title"
                   disabled={!!busy}
                   title={entry.path}
+                  aria-expanded={view?.item.id === entry.id}
                   onClick={() => inspect(entry)}
                 >
                   <strong>{entry.name}</strong>
@@ -470,6 +496,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                   <button
                     className="secondary"
                     disabled={!!busy}
+                    aria-expanded={configEdit?.id === entry.id}
                     onClick={() =>
                       setConfigEdit({
                         id: entry.id,
@@ -483,6 +510,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 )}
                 {entry.kind === 'mcp' && (
                   <button
+                    ref={(node) => {
+                      if (node) toolTriggers.current.set(entry.id, node);
+                      else toolTriggers.current.delete(entry.id);
+                    }}
                     className="secondary"
                     disabled={!!busy || !entry.enabled}
                     onClick={() =>
@@ -507,6 +538,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 <button
                   className="quiet-button"
                   aria-label={`移除 ${entry.name}`}
+                  aria-expanded={remove === entry.id}
                   disabled={!!busy}
                   onClick={() => setRemove(remove === entry.id ? '' : entry.id)}
                 >
@@ -515,12 +547,15 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
               </div>
               {remove === entry.id && (
                 <div className="local-agent-confirm" role="status">
-                  <span>从 Elysia 移除该条目？来源文件会保留。</span>
+                  <div className="local-agent-confirm-copy">
+                    <strong>移除 {entry.name}？</strong>
+                    <span>仅从 Elysia 移除，来源文件会保留。</span>
+                  </div>
                   <button className="secondary" disabled={!!busy} onClick={() => setRemove('')}>
                     取消
                   </button>
                   <button
-                    className="danger"
+                    className="primary danger-confirm"
                     disabled={!!busy}
                     onClick={() =>
                       void act('移除', async (signal) => {
@@ -627,7 +662,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 className="quiet-button"
                 aria-label="关闭内容预览"
                 disabled={!!busy}
-                onClick={() => setView(undefined)}
+                onClick={() => {
+                  setView(undefined);
+                  restorePreviewFocus(contentTriggers.current.get(view.item.id));
+                }}
               >
                 <Icon name="close" size={16} />
               </button>
@@ -635,14 +673,21 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
             <p className="local-agent-preview-source" title={view.item.path}>
               {sources.find(([key]) => key === view.item.sourceKind)?.[1] || '本机'} · {view.item.path}
             </p>
-            {view.item.kind === 'skill' ? (
-              <>
-                <p className="field-help">{view.item.description}</p>
-                <MarkdownDocument text={view.pages.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')} />
-              </>
-            ) : (
-              <pre>{view.pages}</pre>
-            )}
+            <div
+              className="local-agent-preview-content"
+              role="region"
+              aria-label={`${view.item.name}的预览正文`}
+              tabIndex={0}
+            >
+              {view.item.kind === 'skill' ? (
+                <>
+                  <p className="field-help">{view.item.description}</p>
+                  <MarkdownDocument text={view.pages.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')} />
+                </>
+              ) : (
+                <pre>{view.pages}</pre>
+              )}
+            </div>
             {view.nextOffset != null && (
               <div className="local-agent-preview-more">
                 <span>分段加载</span>
@@ -660,22 +705,38 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 <small>MCP 工具目录</small>
                 <strong>可用工具（{tools.tools.length}）</strong>
               </div>
-              <button className="quiet-button" aria-label="关闭工具目录" onClick={() => setTools(undefined)}>
+              <button
+                className="quiet-button"
+                aria-label="关闭工具目录"
+                onClick={() => {
+                  setTools(undefined);
+                  restorePreviewFocus(toolTriggers.current.get(tools.id));
+                }}
+              >
                 <Icon name="close" size={16} />
               </button>
             </header>
-            {tools.tools.map((tool) => (
-              <div className="local-agent-tool" key={tool.name}>
-                <strong>{tool.name}</strong>
-                <p className="field-help">{tool.description}</p>
-              </div>
-            ))}
-            {!tools.tools.length && <p className="field-help">此连接暂未提供工具。</p>}
+            <div
+              className="local-agent-preview-content local-agent-tool-list"
+              role="region"
+              aria-label="MCP 可用工具列表"
+              tabIndex={0}
+            >
+              {tools.tools.map((tool) => (
+                <div className="local-agent-tool" key={tool.name}>
+                  <strong>{tool.name}</strong>
+                  <p className="field-help">{tool.description}</p>
+                </div>
+              ))}
+              {!tools.tools.length && <p className="field-help">此连接暂未提供工具。</p>}
+            </div>
           </section>
         )}
       </div>
       <footer className="modal-footer">
-        <span className="field-help">{busy ? `${busy}中…` : '同步不会修改来源配置或已有对话。'}</span>
+        <span className="field-help" role="status">
+          {busy ? `${busy}中…` : '同步不会修改来源配置或已有对话。'}
+        </span>
         {busy === '扫描' && (
           <button
             className="secondary"
