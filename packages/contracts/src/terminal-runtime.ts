@@ -24,6 +24,8 @@ export type RuntimeQueueReason =
   | 'run-concurrency'
   | 'account-concurrency'
   | 'dependencies'
+  | 'execution-preparing'
+  | 'execution-unavailable'
   | 'terminal-resources'
   | 'terminal-capacity'
   | 'terminal-engine';

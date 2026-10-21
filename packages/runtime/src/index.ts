@@ -30,7 +30,8 @@ import type {
   RuntimeQueueEntry,
   RuntimeQueueReason,
 } from '../../contracts/src/terminal-runtime.js';
-import { ExecutionPlugins, type ExecutionPlugin, type ExecutionDriver } from './execution-plugins.js';
+import { ExecutionPlugins, type ExecutionPlugin, type ExecutionAdmission } from './execution-plugins.js';
+import { ExecutionAdmissions } from './execution-admission.js';
 import type { RunStopCurrentResult } from '../../contracts/src/run-reads.js';
 import type { ReasoningDelta } from '../../contracts/src/reasoning.js';
 import { toolRecovery } from './tool-recovery.js';
@@ -57,6 +58,7 @@ export class NativeExecutor implements ExecutorAdapter {
   private runtimeRevision = 0;
   private runtimeLast = '';
   private capacityController = new AbortController();
+  private readonly admissions = new ExecutionAdmissions();
   onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
     () => {};
   onReasoningDelta: (value: ReasoningDelta) => void = () => {};
@@ -150,6 +152,8 @@ export class NativeExecutor implements ExecutorAdapter {
     )
       return 'dependencies';
     const admission = this.executionPlugins.forRun(run).admission;
+    const preparation = this.admissions.reason(admission);
+    if (preparation) return preparation;
     const unavailable = admission?.unavailable(run);
     if (unavailable) return unavailable;
     const agent = this.kernel.store.require<Agent>('agents', task.agentId);
@@ -315,47 +319,59 @@ export class NativeExecutor implements ExecutorAdapter {
         excludeRunIds: [...this.locallyStopped],
         excludeExecutionHolds: true,
       });
-      const admissions = new Set<NonNullable<ExecutionDriver['admission']>>();
+      const admissions = new Set<ExecutionAdmission>();
       for (const task of tasks) {
         const run = this.kernel.store.require<Run>('runs', task.runId);
         if (this.active.has(task.id) || !this.schedulableRun(run)) continue;
         const admission = this.executionPlugins.forRun(run).admission;
         if (admission) admissions.add(admission);
       }
-      for (const admission of admissions) {
-        if (this.stopped) return;
-        await admission.prepare(this.capacityController.signal);
-      }
-      if (this.stopped) return;
-      for (const candidate of tasks) {
-        if (this.active.size >= 4) break;
-        // A stop may arrive while terminal capacity is being refreshed above.
-        if (this.isLocallyStopped(candidate.runId)) continue;
-        const task = this.kernel.store.get<Task>('tasks', candidate.id);
-        if (!task || task.status !== 'READY') continue;
-        if (this.active.has(task.id)) continue;
-        const run = this.kernel.store.get<Run>('runs', task.runId);
-        if (!run) continue;
-        if (!this.schedulableRun(run) || this.queueReason(task, run) !== 'ready') continue;
-        const agent = this.kernel.store.require<Agent>('agents', task.agentId);
-        const controller = new AbortController();
-        const admission = this.executionPlugins.forRun(run).admission;
-        if (admission && !admission.acquire(task, run)) continue;
-        const promise = this.step(task, controller.signal)
-          .catch((error) => this.fail(task, error))
-          .finally(() => {
-            this.active.delete(task.id);
-            admission?.release(task.id);
-          });
-        this.active.set(task.id, {
-          controller,
-          promise,
-          account: agent.providerBinding.account,
-          runId: task.runId,
-        });
-      }
+      const dispatched = new Set<string>();
+      const dispatch = () => this.dispatchReady(tasks, dispatched);
+      const preparing = this.admissions.prepare(
+        admissions,
+        this.capacityController.signal,
+        dispatch,
+        (error) => console.error('执行环境检查失败：', error instanceof Error ? error.message : error),
+      );
+      // Resource-free tasks start now; each prepared channel gets another pass in candidate order.
+      const results = await Promise.allSettled([preparing, Promise.resolve().then(dispatch)]);
+      const errors = results.filter((result) => result.status === 'rejected');
+      if (errors.length)
+        throw new AggregateError(
+          errors.map((result) => result.reason),
+          '执行通道派发失败',
+        );
     } catch (error) {
       console.error('调度错误：', error instanceof Error ? error.message : error);
+    }
+  }
+  private dispatchReady(tasks: readonly Task[], dispatched: Set<string>) {
+    for (const candidate of tasks) {
+      if (this.stopped || this.active.size >= 4) break;
+      // Every preparation completion rechecks current host state, never its earlier snapshot.
+      if (dispatched.has(candidate.id) || this.isLocallyStopped(candidate.runId)) continue;
+      const task = this.kernel.store.get<Task>('tasks', candidate.id);
+      if (!task || task.status !== 'READY' || this.active.has(task.id)) continue;
+      const run = this.kernel.store.get<Run>('runs', task.runId);
+      if (!run || !this.schedulableRun(run) || this.queueReason(task, run) !== 'ready') continue;
+      const agent = this.kernel.store.require<Agent>('agents', task.agentId);
+      const controller = new AbortController();
+      const admission = this.executionPlugins.forRun(run).admission;
+      if (admission && !admission.acquire(task, run)) continue;
+      dispatched.add(task.id);
+      const promise = this.step(task, controller.signal)
+        .catch((error) => this.fail(task, error))
+        .finally(() => {
+          this.active.delete(task.id);
+          admission?.release(task.id);
+        });
+      this.active.set(task.id, {
+        controller,
+        promise,
+        account: agent.providerBinding.account,
+        runId: task.runId,
+      });
     }
   }
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
@@ -594,6 +610,7 @@ export class NativeExecutor implements ExecutorAdapter {
     if (this.closing) throw new AppError('EXECUTOR_DISPOSED', '执行器已释放');
     signal.throwIfAborted();
     const run = this.kernel.store.require<Run>('runs', task.runId);
+    if (!this.acceptRun(run)) throw new AppError('SURFACE_EXECUTION', '当前入口不执行此类型任务');
     return this.executionPlugins.forRun(run).step(task, signal);
   }
   private async nativeStep(task: Task, signal: AbortSignal) {

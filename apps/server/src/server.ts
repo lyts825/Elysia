@@ -32,7 +32,7 @@ import {
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
-import { DockerAgentService } from '../../../packages/runtime/src/docker-agent.js';
+import { DockerAgentService, type TerminalSessionView } from '../../../packages/runtime/src/docker-agent.js';
 import { registerTerminalCommunication } from './terminal-communication.js';
 import { terminalBinding } from './terminal-binding.js';
 import { providerBaseUrl, ProviderRegistry } from '../../../packages/providers/src/index.js';
@@ -948,8 +948,20 @@ export function createServer(
       return commit();
     });
   });
-  app.get<{ Params: { id: string } }>('/api/runs/:id/terminal/session', async (request) =>
-    terminal.sessionView(request.params.id),
+  app.get<{ Params: { id: string } }>(
+    '/api/runs/:id/terminal/session',
+    async (request): Promise<TerminalSessionView> => {
+      const run = store.require<Run>('runs', request.params.id);
+      if (options.surface === 'native' && run.execution?.kind === 'docker-agent')
+        return {
+          supported: false,
+          canResume: false,
+          canStartNew: false,
+          revision: run.revision,
+          reason: '旧版终端任务已保留为只读历史；请切换到 Agent 终端入口创建独立任务',
+        };
+      return terminal.sessionView(run.id);
+    },
   );
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/continue', async (request) => {
     const body = Command.extend({

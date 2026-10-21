@@ -2,17 +2,19 @@ import { AppError, type Run, type Task } from '../../contracts/src/index.js';
 import type { RuntimeQueueEntry, RuntimeQueueReason } from '../../contracts/src/terminal-runtime.js';
 import { PluginRegistry, type PluginContributions } from '../../plugins/src/index.js';
 
+export interface ExecutionAdmission {
+  prepare(signal: AbortSignal): Promise<void>;
+  unavailable(run: Run): RuntimeQueueReason | undefined;
+  reason(task: Task, run: Run): RuntimeQueueReason | undefined;
+  acquire(task: Task, run: Run): boolean;
+  release(taskId: string): void;
+}
+
 export interface ExecutionDriver {
   step(task: Task, signal: AbortSignal): Promise<void>;
   interrupt?(runId: string, taskId?: string): Promise<void>;
   dispose?(): Promise<void>;
-  admission?: {
-    prepare(signal: AbortSignal): Promise<void>;
-    unavailable(run: Run): RuntimeQueueReason | undefined;
-    reason(task: Task, run: Run): RuntimeQueueReason | undefined;
-    acquire(task: Task, run: Run): boolean;
-    release(taskId: string): void;
-  };
+  admission?: ExecutionAdmission;
   queueMetadata?(run: Run): Pick<RuntimeQueueEntry, 'resourcePreset'>;
 }
 

@@ -23,6 +23,8 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'run-concurrency': '等待本任务执行位',
   'account-concurrency': '等待账号执行位',
   dependencies: '等待前置任务',
+  'execution-preparing': '正在检查执行环境',
+  'execution-unavailable': '执行环境检查失败，等待重试',
   'terminal-resources': '等待终端资源',
   'terminal-capacity': '规格超出 Docker 容量，请增加 Docker 资源或新建较小规格任务',
   'terminal-engine': '等待 Docker 引擎',
