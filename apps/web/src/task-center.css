@@ -107,7 +107,8 @@
   color: var(--muted);
 }
 .task-center-status {
-  flex: 0 0 58px;
+  flex: 0 0 64px;
+  white-space: nowrap;
   text-align: center;
   color: var(--accent-strong);
   font-size: 12px;

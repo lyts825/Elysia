@@ -1,5 +1,5 @@
 import type { Run, Message } from './index.js';
-import type { RecordPage, ProjectionReadCoverage, ProjectionReadIssue } from './run-reads.js';
+import type { RecordPage, ProjectionReadCoverage, ProjectionReadIssue, ExecutionHold } from './run-reads.js';
 import type { DeliveryReviewIssue, DeliveryReviewStatus } from './workflow.js';
 
 export type TaskCenterCategory =
@@ -20,6 +20,8 @@ export type TaskCenterItem = {
   category: TaskCenterCategory;
   changeRevision: number;
   reason?: string;
+  /** Durable scheduling hold; independent of the underlying execution status. */
+  executionHold?: ExecutionHold;
   updatedAt?: string;
   reviewStatus?: DeliveryReviewStatus;
   reviewedAt?: string;

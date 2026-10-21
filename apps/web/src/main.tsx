@@ -78,6 +78,7 @@ import {
   type ReplyReceipt,
 } from './ReplyReceipt';
 import { RecordHistory } from './RecordHistory';
+import { taskCenterDestination, type TaskCenterTarget } from './TaskCenterNavigation';
 import type { RecordPage, RunUsageSummary, RunListItem } from '../../../packages/contracts/src/run-reads';
 import type {
   ExecutorRuntimeSnapshot,
@@ -594,8 +595,15 @@ function App({
       : '';
   const planRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
+  const runStatusRef = useRef<HTMLDivElement>(null);
+  const terminalReviewRef = useRef<HTMLDivElement>(null);
   const terminalRecoveryRefs = useRef(new Map<string, HTMLDivElement>());
-  const [taskCenterTarget, setTaskCenterTarget] = useState<{ id: string; category: string; epoch: number }>();
+  const [taskCenterTarget, setTaskCenterTarget] = useState<{
+    id: string;
+    category: TaskCenterTarget;
+    epoch: number;
+    afterRequest: number;
+  }>();
   const notificationSequence = useRef(0);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<
@@ -705,6 +713,7 @@ function App({
   const activeRunId = useRef('');
   const heldNavigation = useRef<{ runId: string; operationId: string; epoch: number } | undefined>(undefined);
   const detailRequest = useRef(0);
+  const detailLoadedRequest = useRef(0);
   const runStream = useRef(new RunStream());
   const reasoningReadings = useRef<ReasoningReadings>(new Map());
   const streamRun = useRef('');
@@ -1246,6 +1255,7 @@ function App({
               if (pending.reposition) setHistorySegment((value) => value + 1);
             }
             clearReadIssue('detail', request);
+            detailLoadedRequest.current = request;
             runStream.current.sync(result.requests);
             setStreaming(runStream.current.texts());
             setStreamingReasoning(runStream.current.reasonings());
@@ -1861,7 +1871,8 @@ function App({
     }
     setModal('');
     requestAnimationFrame(() => {
-      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch) return;
+      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch || modalCurrent.current)
+        return;
       const recovery = terminalRecoveryRefs.current.get(operation.id);
       if (recovery) {
         recovery.scrollIntoView({ block: 'start' });
@@ -1872,36 +1883,91 @@ function App({
   const focusQuestions = (ownerRunId = runId, epoch = navigationEpoch.current) => {
     setPreviewOpen(false);
     requestAnimationFrame(() => {
-      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch) return;
+      if (activeRunId.current !== ownerRunId || navigationEpoch.current !== epoch || modalCurrent.current)
+        return;
       if (questionRef.current) {
         questionRef.current.scrollIntoView({ block: 'start' });
         questionRef.current.focus({ preventScroll: true });
       } else replyRef.current?.focus();
     });
   };
+  const openTaskCenterTarget = (id: string, category: TaskCenterTarget) => {
+    setTaskCenterTarget({
+      id,
+      category,
+      epoch: navigationEpoch.current,
+      afterRequest: detailRequest.current,
+    });
+    // Even reopening the currently selected run must read past the list/header snapshot.
+    void refreshDetail(true, true);
+  };
   useEffect(() => {
     const target = taskCenterTarget;
-    if (!target || !detail || detail.run.id !== target.id) return;
+    if (!target) return;
+    if (target.epoch !== navigationEpoch.current || modalCurrent.current) {
+      setTaskCenterTarget(undefined);
+      return;
+    }
+    if (!detail || detail.run.id !== target.id || detailLoadedRequest.current <= target.afterRequest) return;
+    const destination = taskCenterDestination(detail, target.category, archived, terminalSurface);
+    if (destination.kind === 'summary') {
+      void loadDetailedSummary();
+      return;
+    }
     setTaskCenterTarget(undefined);
-    if (target.epoch !== navigationEpoch.current) return;
-    if (
-      target.category === 'review' &&
-      !terminalSurface &&
-      detail.run.kind === 'task' &&
-      detail.run.status === 'DONE' &&
-      detail.run.execution?.kind !== 'docker-agent'
-    ) {
-      setModal('delivery');
-    } else if (target.category === 'verification') {
-      const operation = detail.operations.find(
-        (item) =>
-          item.status === 'UNCERTAIN' &&
-          (detail.run.execution?.kind !== 'docker-agent' || item.name === 'terminal_agent'),
-      );
-      if (operation) openVerification(operation, target.id, target.epoch);
-      else replyRef.current?.focus();
-    } else if (target.category === 'waiting') {
-      focusQuestions(target.id, target.epoch);
+    setPreviewOpen(false);
+    setDetailsDrawerOpen(false);
+    const focus = (element: React.RefObject<HTMLDivElement | null>) => {
+      requestAnimationFrame(() => {
+        if (
+          activeRunId.current !== target.id ||
+          navigationEpoch.current !== target.epoch ||
+          modalCurrent.current
+        )
+          return;
+        element.current?.scrollIntoView({ block: 'start' });
+        element.current?.focus({ preventScroll: true });
+      });
+    };
+    switch (destination.kind) {
+      case 'operation': {
+        const operation = detail.operations.find((item) => item.id === destination.operationId);
+        if (operation) openVerification(operation, target.id, target.epoch);
+        break;
+      }
+      case 'review':
+        setModal('delivery');
+        break;
+      case 'terminal-review':
+        focus(terminalReviewRef);
+        break;
+      case 'plan':
+        focus(planRef);
+        break;
+      case 'questions':
+      case 'reply':
+        focusQuestions(target.id, target.epoch);
+        break;
+      case 'limits':
+      case 'settings':
+        setModal(destination.kind);
+        break;
+      case 'archive':
+        setModal('manage:archive');
+        break;
+      case 'tasks':
+        openTaskDetails(destination.taskId);
+        break;
+      case 'artifacts':
+      case 'usage':
+        setDetailsCollapsed(false);
+        setDetailsDrawerOpen(true);
+        setTab(destination.kind);
+        void loadDetailedSummary();
+        break;
+      case 'status':
+        focus(runStatusRef);
+        break;
     }
   }, [detail, taskCenterTarget]);
   useEffect(() => {
@@ -2565,8 +2631,7 @@ function App({
                   selectRun(target, {
                     intent,
                     after: () => {
-                      if (review)
-                        setTaskCenterTarget({ id, category: 'review', epoch: navigationEpoch.current });
+                      if (review) openTaskCenterTarget(id, 'review');
                     },
                   });
                 } catch (issue) {
@@ -2579,7 +2644,13 @@ function App({
           )
         ) : detail ? (
           <>
-            <div className="run-toolbar" inert={detailsOverlayOpen}>
+            <div
+              className="run-toolbar"
+              inert={detailsOverlayOpen}
+              ref={runStatusRef}
+              tabIndex={-1}
+              aria-label="执行状态"
+            >
               <div className="run-status">
                 <Badge status={feedback?.displayStatus || detail.run.status} />
                 <span className="run-reason" title={feedback?.text}>
@@ -3229,7 +3300,12 @@ function App({
                   )}
                   {detail.run.execution?.kind === 'docker-agent' &&
                     detail.run.reason === 'terminal_review' && (
-                      <div className="delivery-card">
+                      <div
+                        className="delivery-card"
+                        ref={terminalReviewRef}
+                        tabIndex={-1}
+                        aria-label="终端交付验收"
+                      >
                         <Icon name="terminal" size={24} />
                         <div>
                           <h3>Agent 终端已结束，等待验收</h3>
@@ -4185,7 +4261,7 @@ function App({
                     selectRun(target, {
                       intent,
                       after: () => {
-                        setTaskCenterTarget({ id, category, epoch: navigationEpoch.current });
+                        openTaskCenterTarget(id, category);
                         setModal('');
                       },
                     });
@@ -4879,6 +4955,11 @@ function UsagePanel({
       <div className="info-note">
         资料快照复用、厂商 Prompt 缓存和会话续接分别记录。未返回用量的请求保留预算预留；成本需要有效价格配置。
       </div>
+      {(summary?.unknownCount ?? unknown.length) > 0 && (
+        <p className="info-note" role="status">
+          部分模型调用尚未确认实际用量。请结合服务商记录核对下方请求清单；预算预留仍保留，打开此页不会恢复执行。
+        </p>
+      )}
       {detail.agents.some((a) => ['chatgpt', 'codex'].includes(a.providerBinding.authMode || '')) && (
         <div className="info-note">
           此任务使用 ChatGPT 订阅；API 单价不适用于订阅调用。

@@ -7,6 +7,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
+import { taskCenterCategoryLabels, taskCenterPresentation } from './TaskCenterPresentation';
 import {
   dismissTaskNotificationFailures,
   readNotificationHealth,
@@ -25,13 +26,7 @@ export type TaskCenterState = {
 };
 const labels: Record<'all' | TaskCenterCategory, string> = {
   all: '全部',
-  running: '执行中',
-  waiting: '待回应',
-  verification: '待核验',
-  done: '已结束',
-  failed: '失败',
-  paused: '暂停',
-  unavailable: '无法读取',
+  ...taskCenterCategoryLabels,
 };
 export function TaskCenter({
   state,
@@ -303,70 +298,47 @@ export function TaskCenter({
           </div>
         )}
         <div className="task-center-list" aria-busy={loading}>
-          {result?.items.map((item) => (
-            <button
-              key={item.id}
-              className="task-center-row"
-              aria-label={
-                item.title +
-                (item.readIssue
-                  ? '，尝试打开详情'
-                  : item.reviewStatus || item.reviewIssue
-                    ? '，打开交付复核'
-                    : item.category === 'waiting'
-                      ? '，回答问题'
-                      : item.category === 'verification'
-                        ? '，核验操作'
-                        : '，打开对话')
-              }
-              disabled={!!opening}
-              onClick={() => {
-                setOpening(item.id);
-                void openRun(
-                  item.id,
-                  item.readIssue
-                    ? 'unavailable'
-                    : item.reviewStatus || item.reviewIssue
-                      ? 'review'
-                      : item.category,
-                )
-                  .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
-                  .finally(() => setOpening(''));
-              }}
-            >
-              <span className={'task-center-status ' + item.category}>
-                {item.status === 'CANCELLED' ? '已取消' : labels[item.category]}
-              </span>
-              <span className="task-center-description">
-                <strong title={item.title}>{item.title}</strong>
-                <small>
-                  {projects.find((project) => project.id === item.projectId)?.name ||
-                    (item.kind === 'chat' ? '独立对话' : '项目任务')}
-                </small>
-                {item.readIssue ? (
-                  <small className="field-error">{item.readIssue.message}</small>
-                ) : item.reviewIssue ? (
-                  <small className="field-error">用户复核：暂不可读 · {item.reviewIssue.message}</small>
-                ) : (
-                  item.reviewStatus && (
-                    <small className="task-center-review-status">
-                      用户复核：{reviewStatusLabels[item.reviewStatus]}
-                    </small>
-                  )
-                )}
-              </span>
-              {item.readIssue ? (
-                <span className="task-center-action">详情</span>
-              ) : item.reviewStatus || item.reviewIssue ? (
-                <span className="task-center-action">{item.reviewIssue ? '检查' : '复核'}</span>
-              ) : (
-                ['waiting', 'verification'].includes(item.category) && (
-                  <span className="task-center-action">{item.category === 'waiting' ? '回答' : '核验'}</span>
-                )
-              )}
-              <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
-            </button>
-          ))}
+          {result?.items.map((item) => {
+            const presentation = taskCenterPresentation(item);
+            return (
+              <button
+                key={item.id}
+                className="task-center-row"
+                aria-label={`${item.title}，${presentation.status}，${presentation.action}`}
+                disabled={!!opening}
+                onClick={() => {
+                  setOpening(item.id);
+                  void openRun(item.id, presentation.target)
+                    .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
+                    .finally(() => setOpening(''));
+                }}
+              >
+                <span className={'task-center-status ' + item.category}>{presentation.status}</span>
+                <span className="task-center-description">
+                  <strong title={item.title}>{item.title}</strong>
+                  <small>
+                    {projects.find((project) => project.id === item.projectId)?.name ||
+                      (item.kind === 'chat' ? '独立对话' : '项目任务')}
+                  </small>
+                  {item.readIssue ? (
+                    <small className="field-error">{item.readIssue.message}</small>
+                  ) : presentation.review && item.reviewIssue ? (
+                    <small className="field-error">用户复核：暂不可读 · {item.reviewIssue.message}</small>
+                  ) : (
+                    presentation.review &&
+                    item.reviewStatus && (
+                      <small className="task-center-review-status">
+                        用户复核：{reviewStatusLabels[item.reviewStatus]}
+                      </small>
+                    )
+                  )}
+                  {presentation.hint && <small>{presentation.hint}</small>}
+                </span>
+                <span className="task-center-action">{presentation.action}</span>
+                <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
+              </button>
+            );
+          })}
           {!result?.items.length && (
             <p className="task-center-empty" role="status">
               {loading ? '正在读取任务…' : error ? '任务暂时无法读取' : '暂无此类任务'}

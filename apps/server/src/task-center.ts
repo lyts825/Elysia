@@ -70,6 +70,7 @@ export class TaskCenterReads {
       ),
     ].join(' OR ');
     const paused = `(${status}='WAITING' AND ${runReason} IN ('paused','interrupted')) OR ${tasks(`${taskWaiting} AND ${waitReason('t')} IN ('paused','interrupted')`)}`;
+    const held = 'EXISTS(SELECT 1 FROM execution_holds_v1 h WHERE h.run_id=r.id)';
     const waiting = `${status}='WAITING' OR ${tasks(`${taskWaiting} AND COALESCE(${waitReason('t')},'')<>'children'`)}`;
     this.store.db.exec(`
       CREATE TABLE IF NOT EXISTS task_center_changes_v1(
@@ -95,7 +96,7 @@ export class TaskCenterReads {
           WHEN ${status}='FAILED' THEN 'failed'
           WHEN ${status} IN ('DONE','CANCELLED') THEN 'done'
           WHEN ${tasks(`${state('t')}='FAILED'`)} THEN 'failed'
-          WHEN ${paused} THEN 'paused'
+          WHEN ${held} OR ${paused} THEN 'paused'
           WHEN ${waiting} THEN 'waiting' ELSE 'running' END category,
         COALESCE(${runReason},(SELECT ${waitReason('t')} FROM tasks t WHERE t.run_id=r.id
           AND ${taskWaiting} AND COALESCE(${waitReason('t')},'')<>'children' ORDER BY t.rowid LIMIT 1)) reason,
@@ -161,6 +162,20 @@ export class TaskCenterReads {
       BEGIN ${this.refreshSql('OLD.run_id')} END;
     `),
     );
+    for (const table of ['execution_holds_v1', 'execution_recovery_issues_v1'] as const) {
+      const changed =
+        table === 'execution_holds_v1'
+          ? 'NEW.reason IS NOT OLD.reason OR NEW.since IS NOT OLD.since OR NEW.run_id IS NOT OLD.run_id'
+          : 'NEW.run_id IS NOT OLD.run_id OR NEW.table_name IS NOT OLD.table_name OR NEW.record_id IS NOT OLD.record_id';
+      this.store.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_insert AFTER INSERT ON ${table}
+        BEGIN ${this.refreshSql('NEW.run_id')} END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_update AFTER UPDATE ON ${table} WHEN ${changed}
+        BEGIN ${this.refreshSql('CASE WHEN OLD.run_id IS NOT NEW.run_id THEN OLD.run_id END')} ${this.refreshSql('NEW.run_id')} END;
+        CREATE TRIGGER IF NOT EXISTS task_center_${table}_delete AFTER DELETE ON ${table}
+        BEGIN ${this.refreshSql('OLD.run_id')} END;
+      `);
+    }
   }
   private refreshSql(runId: string) {
     // seq is allocated even on upsert, so observations can continue across process restarts.
@@ -179,6 +194,16 @@ export class TaskCenterReads {
   }
   private async warm() {
     if (this.warming) return this.warming;
+    const pending = this.warmCurrent();
+    this.warming = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.warming === pending) this.warming = undefined;
+    }
+  }
+  private async warmCurrent() {
+    await this.warmExecutionHolds();
     if (
       (
         this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-warm:v1'").get() as {
@@ -188,12 +213,30 @@ export class TaskCenterReads {
       this.store.db.prepare("SELECT value FROM storage_meta WHERE key='task-center-complete:v2'").get()
     )
       return;
-    const pending = this.warmBatches();
-    this.warming = pending;
-    try {
-      await pending;
-    } finally {
-      if (this.warming === pending) this.warming = undefined;
+    await this.warmBatches();
+  }
+  private async warmExecutionHolds() {
+    const key = 'task-center-holds:v1';
+    let after =
+      (
+        this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
+          | { value: string }
+          | undefined
+      )?.value ?? '';
+    if (after === 'complete') return;
+    // Existing cached rows may predate hold-aware classification. Rebuild only held
+    // runs in bounded, resumable batches; triggers cover concurrent inserts/releases.
+    for (;;) {
+      const rows = this.store.db
+        .prepare('SELECT run_id FROM execution_holds_v1 WHERE run_id>? ORDER BY run_id LIMIT 32')
+        .all(after) as { run_id: string }[];
+      this.store.tx(() => {
+        for (const row of rows) this.store.db.prepare(this.refreshSql('?')).run(row.run_id);
+        after = rows.at(-1)?.run_id ?? 'complete';
+        this.store.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(key, after);
+      });
+      if (after === 'complete') return;
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
   private async warmBatches() {
@@ -273,6 +316,7 @@ export class TaskCenterReads {
   }
   private item(row: Row): TaskCenterItem {
     const unavailable = row.category === 'unavailable';
+    const executionHold = this.store.getExecutionHold(row.run_id);
     const review = unavailable ? undefined : this.delivery.cached(row.run_id);
     const expected =
       row.category === 'verification'
@@ -294,6 +338,7 @@ export class TaskCenterReads {
       category: row.category,
       changeRevision: row.seq,
       ...(row.reason ? { reason: row.reason } : {}),
+      ...(executionHold ? { executionHold } : {}),
       updatedAt: row.updated_at,
       ...(unavailable ? { readIssue: projectionIssue } : {}),
       ...(review?.reviewStatus ? { reviewStatus: review.reviewStatus } : {}),

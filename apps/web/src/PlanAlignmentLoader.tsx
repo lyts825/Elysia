@@ -75,7 +75,7 @@ export function PlanAlignmentLoader(props: PlanAlignmentProps & { anchorRef?: Re
     setGeneration((value) => value + 1);
   };
   return (
-    <div ref={props.anchorRef} className="plan-module">
+    <div ref={props.anchorRef} className="plan-module" tabIndex={-1} aria-label="计划确认">
       {failed ? (
         <LoadFailure retry={retry} />
       ) : Panel ? (
