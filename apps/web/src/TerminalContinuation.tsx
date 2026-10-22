@@ -3,7 +3,7 @@ import type { Run } from '../../../packages/contracts/src/index';
 import type { TerminalCommunicationPage } from '../../../packages/contracts/src/terminal-communication';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
-import './terminal-communication.css';
+import './terminal-continuation.css';
 
 type Session = {
   supported: boolean;
@@ -109,20 +109,25 @@ export function TerminalContinuation({
   return (
     <details className="terminal-continuation">
       <summary>补充需求并继续</summary>
-      <p className="field-help" role="status">
+      <p
+        className={`terminal-continuation-status${issue ? ' has-error' : ''}`}
+        role={issue ? 'alert' : 'status'}
+        aria-label="会话能力检查结果"
+        tabIndex={0}
+      >
         {issue || (sessionLoading ? '正在检查会话能力…' : session?.reason || '尚未确认会话能力。')}
         {session && !sessionReady ? ' 上次结果和草稿保留，检查成功后才能发起新的继续请求。' : ''}
       </p>
       <button
         type="button"
-        className="text-button"
+        className="secondary"
         disabled={disabled}
         onClick={() => setReadAttempt((value) => value + 1)}
       >
         刷新会话与待处理消息
       </button>
       <>
-        <label>
+        <label className="terminal-continuation-field">
           继续方式
           <select
             aria-label="终端继续方式"
@@ -144,11 +149,11 @@ export function TerminalContinuation({
           session &&
           !session.canResume &&
           session.canStartNew && (
-            <div className="field-help" role="status">
+            <div className="terminal-continuation-notice" role="status">
               <p>当前无法继续原 CLI 会话。可显式选择新会话，保留本次正文和消息选择。</p>
               <button
                 type="button"
-                className="text-button"
+                className="secondary"
                 disabled={disabled}
                 onClick={() => change({ mode: 'new-session' })}
               >
@@ -157,11 +162,11 @@ export function TerminalContinuation({
             </div>
           )}
         {draft.commandId && (
-          <p className="field-help" role="status">
+          <p className="terminal-continuation-notice" role="status">
             上次继续请求尚未确认。重试会使用同一请求核对结果；修改正文、方式或消息选择将创建新请求。
           </p>
         )}
-        <label>
+        <label className="terminal-continuation-field">
           补充需求
           <textarea
             aria-label="终端补充需求"
@@ -175,7 +180,12 @@ export function TerminalContinuation({
         </label>
         <fieldset className="terminal-pending-messages" disabled={disabled || !pendingReady}>
           <legend>选择本轮处理的消息{pending ? `（待处理 ${pending.pendingCount} 条）` : ''}</legend>
-          <p className="field-help">
+          <p
+            className={`terminal-continuation-status${pendingIssue ? ' has-error' : ''}`}
+            role={pendingIssue ? 'alert' : 'status'}
+            aria-label="待处理消息读取状态"
+            tabIndex={0}
+          >
             {pendingIssue ||
               (pendingLoading
                 ? '正在读取待处理消息…'
@@ -198,50 +208,66 @@ export function TerminalContinuation({
               <div className="terminal-pending-actions">
                 <button
                   type="button"
-                  className="text-button"
+                  className="secondary"
                   disabled={allSelectedIds.length > 100}
                   onClick={() => change({ inboxIds: allSelectedIds })}
                 >
                   全选当前显示消息
                 </button>
-                <button type="button" className="text-button" onClick={() => change({ inboxIds: [] })}>
+                <button type="button" className="secondary" onClick={() => change({ inboxIds: [] })}>
                   清空选择
                 </button>
               </div>
               {allSelectedIds.length > 100 && (
                 <p className="field-help">每轮最多选择100条。请先减少已有选择，再选择本页消息。</p>
               )}
-              {pending.items.map((item) => (
-                <label key={item.id} className="terminal-pending-item">
-                  <input
-                    type="checkbox"
-                    checked={inboxIds.includes(item.id)}
-                    disabled={!inboxIds.includes(item.id) && inboxIds.length >= 100}
-                    onChange={(event) =>
-                      change({
-                        inboxIds: event.target.checked
-                          ? [...inboxIds, item.id]
-                          : inboxIds.filter((id) => id !== item.id),
-                      })
-                    }
-                  />
-                  <span>
-                    <strong>{item.peer ? `${item.peer.title} · 用户转交` : '用户补充'}</strong>
-                    <span>{item.text}</span>
-                  </span>
-                </label>
+              {pending.items.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="terminal-pending-item"
+                  data-selected={inboxIds.includes(item.id)}
+                >
+                  <label className="terminal-pending-choice">
+                    <input
+                      type="checkbox"
+                      checked={inboxIds.includes(item.id)}
+                      disabled={!inboxIds.includes(item.id) && inboxIds.length >= 100}
+                      onChange={(event) =>
+                        change({
+                          inboxIds: event.target.checked
+                            ? [...inboxIds, item.id]
+                            : inboxIds.filter((id) => id !== item.id),
+                        })
+                      }
+                    />
+                    <span>
+                      <span>
+                        第 {index + 1} 条 · {inboxIds.includes(item.id) ? '已选择' : '未选择'}
+                      </span>
+                      <strong>{item.peer ? `${item.peer.title} · 用户转交` : '用户补充'}</strong>
+                    </span>
+                  </label>
+                  <p
+                    className="terminal-pending-text"
+                    role="region"
+                    aria-label={`第 ${index + 1} 条待处理消息正文`}
+                    tabIndex={0}
+                  >
+                    {item.text}
+                  </p>
+                </div>
               ))}
             </>
           )}
           {staleSelection && (
-            <div role="alert">
+            <div className="terminal-continuation-notice" role="alert">
               <p>
                 {staleIds.length}{' '}
                 条已选消息已被处理、撤回或不再处理。移除这些失效选择后，其他选择和正文继续保留。
               </p>
               <button
                 type="button"
-                className="text-button"
+                className="secondary"
                 onClick={() => change({ inboxIds: inboxIds.filter((id) => !staleIds.includes(id)) })}
               >
                 移除失效选择

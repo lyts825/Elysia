@@ -722,66 +722,6 @@
 .terminal-diagnostic-return span {
   flex: 1 1 220px;
 }
-.terminal-data-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
-  gap: var(--space-3);
-}
-.terminal-data-groups > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  font-size: var(--font-md);
-}
-.terminal-data-groups small,
-.terminal-data-references span {
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-.terminal-data-references {
-  margin-top: var(--space-5);
-  font-size: var(--font-md);
-}
-.terminal-data-references p,
-.terminal-maintenance-plan p {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  overflow-wrap: anywhere;
-}
-.terminal-data-backups {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-6);
-}
-.terminal-data-backups h4 {
-  margin-bottom: 0;
-}
-.terminal-data-backups label {
-  display: grid;
-  gap: var(--space-2);
-  font-size: var(--font-md);
-}
-.terminal-data-backups select {
-  min-width: 0;
-  max-width: 100%;
-}
-.terminal-data-backups > button {
-  justify-self: start;
-}
-.terminal-maintenance-plan {
-  margin-top: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--space-4);
-}
-.terminal-maintenance-plan code {
-  flex: 1 1 160px;
-  font-size: var(--font-sm);
-}
 .terminal-capabilities {
   margin-top: var(--space-3);
   font-size: var(--font-sm);
@@ -859,33 +799,6 @@
   padding: var(--space-3) 0;
 }
 
-.terminal-maintenance-scan {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin: var(--space-3) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  font-size: var(--font-md);
-}
-.terminal-maintenance-scan > span {
-  flex: 1 1 180px;
-  overflow-wrap: anywhere;
-}
-.terminal-pending-cleanup {
-  margin: var(--space-5) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-}
-.terminal-pending-cleanup > div + div {
-  margin-top: var(--space-4);
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-3);
-}
-
 .terminal-connection-health p {
   display: grid;
   gap: var(--space-1);
@@ -906,23 +819,7 @@
 .terminal-control-read-error [role='alert']:focus-visible {
   outline-offset: -2px;
 }
-.terminal-connection-health small,
-.terminal-backup-eligibility small {
+.terminal-connection-health small {
   color: var(--muted);
   font-size: var(--font-sm);
-}
-.terminal-backup-pages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.terminal-backup-eligibility {
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  font-size: var(--font-md);
-  overflow-wrap: anywhere;
-}
-.terminal-backup-eligibility p {
-  margin: 0 0 var(--space-2);
 }

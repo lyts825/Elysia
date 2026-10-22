@@ -1,0 +1,142 @@
+.terminal-continuation {
+  min-width: 0;
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.terminal-continuation > summary {
+  font-size: var(--font-md);
+  font-weight: 600;
+  line-height: var(--leading-body);
+  cursor: pointer;
+}
+.terminal-continuation-status {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  max-height: min(12rem, 35dvh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-continuation-status.has-error {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.terminal-continuation-status:focus-visible,
+.terminal-pending-text:focus-visible {
+  outline-offset: -2px;
+}
+.terminal-continuation-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: var(--space-4) 0;
+  font-size: var(--font-md);
+}
+.terminal-continuation-field :is(select, textarea) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.terminal-continuation button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.terminal-continuation > .field-help {
+  margin: var(--space-3) 0;
+}
+.terminal-continuation-notice {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-continuation-notice > button {
+  justify-self: start;
+}
+.terminal-pending-messages {
+  min-width: 0;
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.terminal-pending-messages legend {
+  max-width: 100%;
+  padding: 0 var(--space-1);
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.terminal-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.terminal-pending-item {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-pending-item[data-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-pale);
+}
+.terminal-pending-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  cursor: pointer;
+}
+.terminal-pending-choice input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  margin-top: 2px;
+}
+.terminal-pending-choice > span {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-pending-choice > span > span {
+  color: var(--muted);
+}
+.terminal-pending-choice strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.terminal-pending-item .terminal-pending-text {
+  margin: 0;
+  max-height: min(12rem, 40dvh);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  color: var(--secondary);
+}

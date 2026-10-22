@@ -9,6 +9,7 @@ import type {
   TerminalBackupEligibility,
 } from '../../../packages/contracts/src/terminal-maintenance';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './terminal-maintenance.css';
 const endpoint = '/terminal/control/maintenance';
 const size = (bytes: number) =>
   bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
@@ -39,6 +40,17 @@ export function TerminalDataMaintenance({
     historyStarted = useRef(false),
     pendingPlanCancellation = useRef(new Set<string>()),
     planCancellation = useRef<Promise<void> | null>(null);
+  const selectedBackup = backups.find((backup) => backup.id === backupId);
+  const planHeading = useRef<HTMLHeadingElement>(null);
+  const errorElement = useRef<HTMLParagraphElement>(null);
+  const [feedbackFocus, setFeedbackFocus] = useState<{ target: 'plan' | 'error'; origin: Element | null }>();
+  useEffect(() => {
+    if (!feedbackFocus) return;
+    if (document.activeElement !== document.body && document.activeElement !== feedbackFocus.origin) return;
+    const target = feedbackFocus.target === 'plan' ? planHeading.current : errorElement.current;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [feedbackFocus]);
   useEffect(() => {
     planRef.current = plan;
   }, [plan]);
@@ -197,7 +209,8 @@ export function TerminalDataMaintenance({
     );
     return controller;
   }
-  async function load(signal?: AbortSignal) {
+  async function load(signal?: AbortSignal, focusFeedback = false) {
+    const origin = document.activeElement;
     const controller = beginScan(),
       abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
@@ -214,7 +227,9 @@ export function TerminalDataMaintenance({
       setOverview(next.overview!);
       setRuns(conversations.runs);
     } catch (issue) {
+      const showFeedback = focusFeedback && !controller.signal.aborted;
       failedScan(controller, issue, '无法读取数据占用');
+      if (showFeedback) setFeedbackFocus({ target: 'error', origin });
     } finally {
       signal?.removeEventListener('abort', abort);
       if (controllerRef.current === controller) controllerRef.current = null;
@@ -250,10 +265,12 @@ export function TerminalDataMaintenance({
     kind: TerminalMaintenancePlan['kind'],
     retry?: TerminalMaintenanceOverview['pendingCleanup'][number],
   ) {
+    const origin = document.activeElement;
     try {
       await clearPlan();
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : '无法取消旧计划，请刷新后重试');
+      setFeedbackFocus({ target: 'error', origin });
       return;
     }
     const controller = beginScan();
@@ -276,9 +293,12 @@ export function TerminalDataMaintenance({
       if (!controller.signal.aborted) {
         planRef.current = result.plan!;
         setPlan(result.plan!);
+        setFeedbackFocus({ target: 'plan', origin });
       }
     } catch (issue) {
+      const showFeedback = !controller.signal.aborted;
       failedScan(controller, issue, '无法生成维护计划');
+      if (showFeedback) setFeedbackFocus({ target: 'error', origin });
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
     }
@@ -313,7 +333,11 @@ export function TerminalDataMaintenance({
           <h3>终端数据维护</h3>
           <p>只操作本入口的已停止会话。工作区、冻结镜像及未知数据不参与清理。</p>
         </div>
-        <button className="secondary" disabled={disabled || scanning} onClick={() => void load()}>
+        <button
+          className="secondary"
+          disabled={disabled || scanning}
+          onClick={() => void load(undefined, true)}
+        >
           刷新占用
         </button>
       </div>
@@ -342,7 +366,13 @@ export function TerminalDataMaintenance({
         </div>
       )}
       {error && (
-        <p role="alert" className="cli-app-error">
+        <p
+          ref={errorElement}
+          role="alert"
+          className="terminal-maintenance-error"
+          aria-label="终端数据维护错误"
+          tabIndex={0}
+        >
           {error}
         </p>
       )}
@@ -370,7 +400,16 @@ export function TerminalDataMaintenance({
                       : '未计入'}
                   {group.coverage !== 'unknown' ? ' · ' + group.files + ' 个文件' : ''}
                 </small>
-                {group.measurementReason && <small>{group.measurementReason}</small>}
+                {group.measurementReason && (
+                  <small
+                    className="terminal-maintenance-reading"
+                    role="region"
+                    aria-label={`${group.label}占用说明`}
+                    tabIndex={0}
+                  >
+                    {group.measurementReason}
+                  </small>
+                )}
               </div>
             ))}
           </div>
@@ -394,7 +433,14 @@ export function TerminalDataMaintenance({
                   <p>
                     {new Date(item.createdAt).toLocaleString()} · {item.items} 项 · {size(item.bytes)}
                   </p>
-                  <p className="field-help">{item.message}</p>
+                  <p
+                    className="terminal-maintenance-reading"
+                    role="region"
+                    aria-label="暂存清理完整说明"
+                    tabIndex={0}
+                  >
+                    {item.message}
+                  </p>
                   <button
                     className="secondary"
                     type="button"
@@ -409,181 +455,229 @@ export function TerminalDataMaintenance({
           )}
           <details className="terminal-data-references">
             <summary>会话归属与保留原因（{overview.sessions.length}）</summary>
-            {overview.sessions.map((session) => (
-              <p key={session.taskId}>
-                <strong>
-                  {runs.find((r) => r.id === session.runId)?.title ||
-                    runs.find((r) => r.id === session.runId)?.objective ||
-                    session.taskId}
-                </strong>
-                <span>
-                  {session.coverage === 'unknown'
-                    ? '占用未知'
-                    : (session.coverage === 'partial' ? '至少 ' : '') + size(session.bytes)}{' '}
-                  · {session.reason}
-                </span>
-              </p>
-            ))}
-            {overview.preserved.map((item) => (
-              <p key={item.path}>
-                <code>{item.path}</code>
-                <span>{item.reason}</span>
-              </p>
-            ))}
+            <div
+              className="terminal-maintenance-reading"
+              role="region"
+              aria-label="会话归属与保留原因全文"
+              tabIndex={0}
+            >
+              {overview.sessions.map((session) => (
+                <p key={session.taskId}>
+                  <strong>
+                    {runs.find((r) => r.id === session.runId)?.title ||
+                      runs.find((r) => r.id === session.runId)?.objective ||
+                      session.taskId}
+                  </strong>
+                  <span>
+                    {session.coverage === 'unknown'
+                      ? '占用未知'
+                      : (session.coverage === 'partial' ? '至少 ' : '') + size(session.bytes)}{' '}
+                    · {session.reason}
+                  </span>
+                </p>
+              ))}
+              {overview.preserved.map((item) => (
+                <p key={item.path}>
+                  <code>{item.path}</code>
+                  <span>{item.reason}</span>
+                </p>
+              ))}
+            </div>
           </details>
           <div className="terminal-data-backups">
-            <h4>选定会话快照</h4>
+            <h4>会话快照</h4>
             <p className="field-help">
               含私有 CLI 会话与业务文件；不含密钥库、CLI
               认证配置、环境文件和镜像。业务文件内自行嵌入的秘密无法识别。仅同机、同任务与当前最新轮次可恢复，普通数据库备份不能恢复
               CLI 会话。
             </p>
-            <label>
-              已停止的可靠 Codex 会话
-              <select
-                aria-label="备份终端会话"
-                value={runId}
-                disabled={disabled || scanning}
-                onChange={(e) => {
-                  setRunId(e.target.value);
-                  void clearPlan().catch((issue) =>
-                    setError(issue instanceof Error ? issue.message : '取消计划失败'),
-                  );
-                }}
+            <section className="terminal-backup-section" aria-label="创建会话快照">
+              <h5>创建快照</h5>
+              <label>
+                已停止的可靠 Codex 会话
+                <select
+                  aria-label="备份终端会话"
+                  value={runId}
+                  disabled={disabled || scanning}
+                  onChange={(e) => {
+                    setRunId(e.target.value);
+                    void clearPlan().catch((issue) =>
+                      setError(issue instanceof Error ? issue.message : '取消计划失败'),
+                    );
+                  }}
+                >
+                  <option value="">选择会话…</option>
+                  {overview.sessions
+                    .filter((s) => s.backupEligible && s.runId)
+                    .map((s) => (
+                      <option key={s.taskId} value={s.runId!}>
+                        {runs.find((r) => r.id === s.runId)?.title ||
+                          runs.find((r) => r.id === s.runId)?.objective ||
+                          s.taskId}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {runId && (
+                <p className="terminal-maintenance-selected-title">
+                  已选会话：
+                  {runs.find((run) => run.id === runId)?.title ||
+                    runs.find((run) => run.id === runId)?.objective ||
+                    overview.sessions.find((session) => session.runId === runId)?.taskId}
+                </p>
+              )}
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled || scanning || !runId}
+                onClick={() => void preview('backup')}
               >
-                <option value="">选择会话…</option>
-                {overview.sessions
-                  .filter((s) => s.backupEligible && s.runId)
-                  .map((s) => (
-                    <option key={s.taskId} value={s.runId!}>
-                      {runs.find((r) => r.id === s.runId)?.title ||
-                        runs.find((r) => r.id === s.runId)?.objective ||
-                        s.taskId}
+                预览备份
+              </button>
+            </section>
+            <section className="terminal-backup-section" aria-label="恢复与删除会话快照">
+              <h5>快照历史</h5>
+              <label>
+                快照历史搜索
+                <input
+                  aria-label="搜索快照历史"
+                  maxLength={200}
+                  value={historyQuery}
+                  disabled={disabled || scanning}
+                  placeholder="标题、任务或快照 ID"
+                  onChange={(event) => {
+                    setHistoryQuery(event.target.value);
+                    setHistoryCursor(undefined);
+                    setHistoryTrail([]);
+                    setBackupId('');
+                    cancelPlanForChange();
+                  }}
+                />
+              </label>
+              <p className="field-help">
+                {historyBusy
+                  ? '正在读取快照历史…'
+                  : `共 ${historyPage?.total ?? 0} 份，当前页 ${backups.length} 份`}
+              </p>
+              <nav className="terminal-backup-pages" aria-label="快照历史分页">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={disabled || scanning || historyBusy || !historyTrail.length}
+                  onClick={() => {
+                    setHistoryCursor(historyTrail.at(-1));
+                    setHistoryTrail((values) => values.slice(0, -1));
+                    setBackupId('');
+                    cancelPlanForChange();
+                  }}
+                >
+                  较新快照
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={disabled || scanning || historyBusy || !historyPage?.page.hasMore}
+                  onClick={() => {
+                    setHistoryTrail((values) => [...values, historyCursor]);
+                    setHistoryCursor(historyPage?.page.nextCursor ?? undefined);
+                    setBackupId('');
+                    cancelPlanForChange();
+                  }}
+                >
+                  更早快照
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={disabled || scanning || historyBusy || !historyTrail.length}
+                  onClick={() => {
+                    setHistoryCursor(undefined);
+                    setHistoryTrail([]);
+                    setBackupId('');
+                    cancelPlanForChange();
+                  }}
+                >
+                  返回最新
+                </button>
+              </nav>
+              <label>
+                同机快照
+                <select
+                  aria-label="恢复终端快照"
+                  value={backupId}
+                  disabled={disabled || scanning}
+                  onChange={(e) => {
+                    setBackupId(e.target.value);
+                    void clearPlan().catch((issue) =>
+                      setError(issue instanceof Error ? issue.message : '取消计划失败'),
+                    );
+                  }}
+                >
+                  <option value="">选择快照…</option>
+                  {backups.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {new Date(b.createdAt).toLocaleString()} · {b.title || b.taskId} · {size(b.bytes)}
+                      {b.consistent ? '' : ' · 恢复前保全（不可续接）'}
                     </option>
                   ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="secondary"
-              disabled={disabled || scanning || !runId}
-              onClick={() => void preview('backup')}
-            >
-              预览备份
-            </button>
-            <label>
-              快照历史搜索
-              <input
-                aria-label="搜索快照历史"
-                maxLength={200}
-                value={historyQuery}
-                disabled={disabled || scanning}
-                placeholder="标题、任务或快照 ID"
-                onChange={(event) => {
-                  setHistoryQuery(event.target.value);
-                  setHistoryCursor(undefined);
-                  setHistoryTrail([]);
-                  setBackupId('');
-                  cancelPlanForChange();
-                }}
-              />
-            </label>
-            <p className="field-help">
-              {historyBusy
-                ? '正在读取快照历史…'
-                : `共 ${historyPage?.total ?? 0} 份，当前页 ${backups.length} 份`}
-            </p>
-            <div className="terminal-backup-pages" aria-label="快照历史分页">
+                </select>
+              </label>
+              {selectedBackup && (
+                <div className="terminal-backup-selection" aria-label="选定快照详情">
+                  <strong>{selectedBackup.title || selectedBackup.taskId}</strong>
+                  <dl>
+                    <div>
+                      <dt>创建时间</dt>
+                      <dd>{new Date(selectedBackup.createdAt).toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>文件占用</dt>
+                      <dd>
+                        {size(selectedBackup.bytes)} · {selectedBackup.files} 个文件
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>快照类型</dt>
+                      <dd>{selectedBackup.consistent ? '一致会话快照' : '恢复前保全（不可续接）'}</dd>
+                    </div>
+                    <div>
+                      <dt>快照 ID</dt>
+                      <dd>
+                        <code>{selectedBackup.id}</code>
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
               <button
                 type="button"
                 className="secondary"
-                disabled={disabled || scanning || historyBusy || !historyTrail.length}
-                onClick={() => {
-                  setHistoryCursor(historyTrail.at(-1));
-                  setHistoryTrail((values) => values.slice(0, -1));
-                  setBackupId('');
-                  cancelPlanForChange();
-                }}
+                disabled={disabled || scanning || historyBusy || !eligibility?.canRestore}
+                onClick={() => void preview('restore')}
               >
-                更新快照
+                预览恢复
               </button>
+              {backupId && (
+                <div className="terminal-backup-eligibility" role="status" aria-label="当前快照恢复资格">
+                  <p>{eligibility?.message ?? '正在检查当前恢复资格…'}</p>
+                  {eligibility && <small>{eligibility.deleteReason}</small>}
+                </div>
+              )}
               <button
                 type="button"
-                className="secondary"
-                disabled={disabled || scanning || historyBusy || !historyPage?.page.hasMore}
-                onClick={() => {
-                  setHistoryTrail((values) => [...values, historyCursor]);
-                  setHistoryCursor(historyPage?.page.nextCursor ?? undefined);
-                  setBackupId('');
-                  cancelPlanForChange();
-                }}
+                className="secondary danger"
+                disabled={disabled || scanning || historyBusy || !eligibility?.canDelete}
+                onClick={() => void preview('delete')}
               >
-                更早快照
+                预览删除快照
               </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={disabled || scanning || historyBusy || !historyTrail.length}
-                onClick={() => {
-                  setHistoryCursor(undefined);
-                  setHistoryTrail([]);
-                  setBackupId('');
-                  cancelPlanForChange();
-                }}
-              >
-                返回最新
-              </button>
-            </div>
-            <label>
-              同机快照
-              <select
-                aria-label="恢复终端快照"
-                value={backupId}
-                disabled={disabled || scanning}
-                onChange={(e) => {
-                  setBackupId(e.target.value);
-                  void clearPlan().catch((issue) =>
-                    setError(issue instanceof Error ? issue.message : '取消计划失败'),
-                  );
-                }}
-              >
-                <option value="">选择快照…</option>
-                {backups.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {new Date(b.createdAt).toLocaleString()} · {b.title || b.taskId} · {size(b.bytes)}
-                    {b.consistent ? '' : ' · 恢复前保全（不可续接）'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="secondary"
-              disabled={disabled || scanning || historyBusy || !eligibility?.canRestore}
-              onClick={() => void preview('restore')}
-            >
-              预览恢复
-            </button>
-            {backupId && (
-              <div className="terminal-backup-eligibility" role="status" aria-label="当前快照恢复资格">
-                <p>{eligibility?.message ?? '正在检查当前恢复资格…'}</p>
-                {eligibility && <small>{eligibility.deleteReason}</small>}
-              </div>
-            )}
-            <button
-              type="button"
-              className="secondary danger"
-              disabled={disabled || scanning || historyBusy || !eligibility?.canDelete}
-              onClick={() => void preview('delete')}
-            >
-              预览删除快照
-            </button>
+            </section>
           </div>
         </>
       )}
       {plan && (
         <div className="terminal-maintenance-plan" role="region" aria-label="维护计划预览">
-          <h4>
+          <h4 ref={planHeading} tabIndex={-1}>
             {plan.kind === 'cleanup'
               ? plan.retryId
                 ? '暂存重试计划'
@@ -593,20 +687,38 @@ export function TerminalDataMaintenance({
                 : plan.kind === 'delete'
                   ? '快照删除计划'
                   : '恢复计划'}{' '}
-            · {size(plan.bytes)}
+            <span>
+              {plan.items.length} 项 · {size(plan.bytes)}
+            </span>
           </h4>
-          {plan.items.map((item) => (
-            <p key={item.kind + item.ref}>
-              <code>{item.ref}</code>
-              <span>{size(item.bytes)}</span>
-            </p>
-          ))}
-          {!plan.items.length && <p>没有可证明孤立的数据。</p>}
-          {plan.warnings.map((warning) => (
-            <p className="field-help" key={warning}>
-              {warning}
-            </p>
-          ))}
+          <div
+            className="terminal-maintenance-reading terminal-maintenance-items"
+            role="region"
+            aria-label="维护计划完整文件清单"
+            tabIndex={0}
+          >
+            {plan.items.map((item) => (
+              <p key={item.kind + item.ref}>
+                <code>{item.ref}</code>
+                <span>{size(item.bytes)}</span>
+              </p>
+            ))}
+            {!plan.items.length && <p>没有可证明孤立的数据。</p>}
+          </div>
+          {plan.warnings.length > 0 && (
+            <div
+              className="terminal-maintenance-reading terminal-maintenance-warnings"
+              role="region"
+              aria-label="维护计划完整注意事项"
+              tabIndex={0}
+            >
+              {plan.warnings.map((warning) => (
+                <p className="field-help" key={warning}>
+                  {warning}
+                </p>
+              ))}
+            </div>
+          )}
           <div className="terminal-control-form-actions">
             <button
               className="secondary"
@@ -621,7 +733,7 @@ export function TerminalDataMaintenance({
               取消计划
             </button>
             <button
-              className="primary"
+              className={'primary' + (['cleanup', 'delete'].includes(plan.kind) ? ' danger-confirm' : '')}
               type="button"
               disabled={disabled || scanning || (!plan.items.length && plan.kind === 'cleanup')}
               onClick={() => void apply()}

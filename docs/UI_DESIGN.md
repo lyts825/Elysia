@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.5 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.6 · 2026-10-22。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -49,6 +49,11 @@ v1.19.5 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 - 终端连接与模板导航使用有界纵向列表，选择后定位编辑字段或标题；模型目录同时呈现名称与ID。未保存确认进入可滚动内容，短窗口允许整体滚动，避免确认栏或底部动作挤占编辑区。
 - 诊断的配置来源、阶段状态、完整消息和修复入口分开；安装历史区分版本、状态、时间与恢复目标。长消息支持具名键盘阅读，动作置于正文之外；分页失败明确保留旧记录，不能显示尚未读取的页码。
 
+- 维护计划按摘要、完整文件清单、注意事项和确认动作分区；确认操作置于阅读区之外。快照选择后显示完整名称、时间、占用、类型和标识，恢复与删除仍受当前资格约束。
+- 续接消息使用简短选择标签，并单独提供具名正文阅读区；选择状态同时用文字和颜色表示。会话能力、读取失败和失效选择分别呈现，保留正文、原请求重试与消息数量限制。
+
+- 通信消息将完整来源标题与简短导航动作分开。显式分页、搜索或重试完成后定位结果或错误，空结果也有可读焦点；用户已移焦、点击其他位置或离开窗口时放弃待执行的焦点移动。关闭处置草稿返回原入口，取消与迟到响应不能覆盖当前内容。
+
 ## 页面覆盖
 
 | 范围 | 样式文件（apps/web/src） |
@@ -56,7 +61,7 @@ v1.19.5 · 2026-10-21。原生 API 与 Agent 终端使用同一套视觉语言�
 | 基础、主页、入口与启动 | style、motion、home、surface、Startup |
 | 预览与文档 | preview、preview-dock、markdown、file-content、file-page |
 | 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning |
-| 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-communication、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
+| 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-files、project-usage、project-intelligence、project-schedules、project-schedule-history |
 | 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、readiness、task-center、delivery-read-progress、workbench-persistence |
 

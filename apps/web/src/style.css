@@ -2440,18 +2440,6 @@ a {
   color: var(--muted);
   font-size: var(--font-sm);
 }
-.terminal-continuation {
-  margin-top: var(--space-3);
-}
-.terminal-continuation summary {
-  font-size: var(--font-md);
-  cursor: pointer;
-}
-.terminal-continuation label {
-  display: grid;
-  gap: 6px;
-  margin: 10px 0;
-}
 .detail-read-notice {
   flex-shrink: 0;
   margin: var(--space-3) var(--space-5);
