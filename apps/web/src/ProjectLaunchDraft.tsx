@@ -73,13 +73,20 @@ export function ProjectLaunchDraft({
       <header className="project-launch-heading">
         <h3 id={headingId}>交付项创建草稿</h3>
         <span className="project-launch-state">
-          {!item || parseError ? '草稿待核对' : needsMerge ? '需核对计划变更' : '已对齐计划版本'}
+          {!item || parseError
+            ? '草稿待核对'
+            : needsMerge
+              ? '需核对计划变更'
+              : retained
+                ? '依据已对齐 · 保留自定义要求'
+                : '依据版本已对齐'}
         </span>
       </header>
       <p className="field-help">待创建任务</p>
       <p
         className="project-launch-reading project-launch-title"
         role="region"
+        id={`${headingId}-title`}
         tabIndex={0}
         aria-label="创建草稿完整任务名称"
       >
@@ -243,16 +250,26 @@ export function ProjectLaunchDraft({
         </details>
       )}
       {board.archived && <p className="field-help">项目已归档，当前草稿仍保留；无法继续创建或应用对照。</p>}
+      <p className="project-launch-next-step" id={`${headingId}-next-step`}>
+        继续只打开任务配置表单，核对后仍需明确创建任务。移除只清除此创建草稿，不会修改项目计划或历史任务。
+      </p>
       <div className="project-actions project-launch-actions">
         <button
           type="button"
           className="primary"
+          aria-describedby={`${headingId}-title ${headingId}-next-step`}
           disabled={busy || board.archived || needsMerge || !item || !!parseError}
           onClick={launch}
         >
-          继续创建草稿
+          继续填写创建配置
         </button>
-        <button type="button" className="secondary danger" disabled={busy} onClick={remove}>
+        <button
+          type="button"
+          className="secondary danger"
+          disabled={busy}
+          aria-describedby={`${headingId}-title ${headingId}-next-step`}
+          onClick={remove}
+        >
           移除此创建草稿
         </button>
       </div>

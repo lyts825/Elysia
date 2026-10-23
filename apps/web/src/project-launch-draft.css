@@ -46,7 +46,7 @@
 }
 .project-launch-versions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: var(--space-3);
   padding: var(--space-3);
   margin: var(--space-3) 0;
@@ -77,6 +77,12 @@
   padding-top: var(--space-3);
   margin-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+.project-launch-draft .project-launch-next-step {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .project-launch-draft button {
   max-width: 100%;
