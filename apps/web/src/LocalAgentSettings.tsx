@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { MarkdownDocument } from './MarkdownDocument';
 import './local-agents.css';
+import './local-agent-settings.css';
 import type {
   LocalAgentKind,
   LocalAgentCandidate,
@@ -33,6 +34,7 @@ const tabs: [Kind, string, string][] = [
 
 export function LocalAgentSettings({ close }: { close: () => void }) {
   const { api } = useSurfaceClient();
+  const identity = useId();
   const mutate = <T,>(path: string, body: Record<string, unknown>, signal: AbortSignal) =>
     api<T>(path, { commandId: crypto.randomUUID(), ...body }, 'POST', signal);
   const [overview, setOverview] = useState<Overview>();
@@ -153,7 +155,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       subtitle="同步本机 Agent 的能力与经验"
       close={close}
       wide
-      className="local-agent-modal"
+      className="local-agent-modal local-capability-settings"
       busy={!!busy && busy !== '读取'}
     >
       <div className="local-agent-body">
@@ -338,26 +340,54 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                     aria-label="待同步条目列表"
                     tabIndex={0}
                   >
-                    {scan.candidates.map((entry) => (
-                      <label key={entry.id}>
-                        <input
-                          type="checkbox"
-                          disabled={!!busy}
-                          checked={selected.includes(entry.id)}
-                          onChange={(event) =>
-                            setSelected((old) =>
-                              event.target.checked ? [...old, entry.id] : old.filter((id) => id !== entry.id),
-                            )
-                          }
-                        />
-                        <span>
-                          <strong>{entry.name}</strong>
-                          <small>
-                            {tabs.find(([key]) => key === entry.kind)?.[1]} · {entry.path}
-                          </small>
-                          {entry.description && <small>{entry.description}</small>}
-                        </span>
-                      </label>
+                    {scan.candidates.map((entry, index) => (
+                      <article className="local-capability-candidate" key={entry.id}>
+                        <h4
+                          className="local-capability-reading"
+                          tabIndex={0}
+                          aria-label={`第 ${index + 1} 个候选完整名称`}
+                          id={`${identity}-candidate-${index}`}
+                        >
+                          {entry.name}
+                        </h4>
+                        <label>
+                          <input
+                            type="checkbox"
+                            disabled={!!busy}
+                            checked={selected.includes(entry.id)}
+                            aria-describedby={`${identity}-candidate-${index}`}
+                            onChange={(event) =>
+                              setSelected((old) =>
+                                event.target.checked
+                                  ? [...old, entry.id]
+                                  : old.filter((id) => id !== entry.id),
+                              )
+                            }
+                          />
+                          同步此条目
+                        </label>
+                        <dl
+                          className="local-capability-identity local-capability-reading"
+                          role="region"
+                          tabIndex={0}
+                          aria-label={`第 ${index + 1} 个候选完整来源与说明`}
+                        >
+                          <div>
+                            <dt>类型</dt>
+                            <dd>{tabs.find(([key]) => key === entry.kind)?.[1]}</dd>
+                          </div>
+                          <div>
+                            <dt>完整路径</dt>
+                            <dd>{entry.path}</dd>
+                          </div>
+                          {entry.description && (
+                            <div>
+                              <dt>说明</dt>
+                              <dd>{entry.description}</dd>
+                            </div>
+                          )}
+                        </dl>
+                      </article>
                     ))}
                   </div>
                   <button
@@ -415,7 +445,13 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </button>
         </div>
         {error && (
-          <p ref={operationError} className="inline-warning local-agent-error" role="alert" tabIndex={-1}>
+          <p
+            ref={operationError}
+            className="inline-warning local-agent-error local-capability-reading"
+            role="alert"
+            tabIndex={0}
+            aria-label="本机能力操作失败全文"
+          >
             {error}
           </p>
         )}
@@ -426,10 +462,28 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
         )}
         {!overview && !error && <p role="status">正在读取本机能力…</p>}
         {overview && (
-          <div className="local-agent-section-heading">
-            <h3>已同步{currentTab[1] === 'Skills' ? ' Skills' : currentTab[1]}</h3>
-            <span>{search ? `${rows.length} / ${total}` : total}</span>
-          </div>
+          <>
+            <dl className="local-capability-summary" aria-label="已读本机能力目录状态">
+              <div>
+                <dt>已读目录版本</dt>
+                <dd>{overview.revision}</dd>
+              </div>
+              <div>
+                <dt>当前分类</dt>
+                <dd>
+                  {currentTab[1]} · 已显示 {rows.length} / {total} 项
+                </dd>
+              </div>
+              <div>
+                <dt>来源文件</dt>
+                <dd>只读同步，修改保存在 Elysia</dd>
+              </div>
+            </dl>
+            <div className="local-agent-section-heading">
+              <h3>已同步{currentTab[1] === 'Skills' ? ' Skills' : currentTab[1]}</h3>
+              <span>{search ? `${rows.length} / ${total}` : total}</span>
+            </div>
+          </>
         )}
         {overview && !rows.length && (
           <div className="local-agent-empty">
@@ -441,7 +495,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </div>
         )}
         <ul className="local-agent-list">
-          {rows.map((entry) => (
+          {rows.map((entry, index) => (
             <li
               key={entry.id}
               data-previewing={view?.item.id === entry.id || tools?.id === entry.id || undefined}
@@ -450,32 +504,69 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
                 <span className="local-agent-entry-icon">
                   <Icon name={tabs.find(([key]) => key === entry.kind)?.[2] || 'file'} size={18} />
                 </span>
-                <button
-                  ref={(node) => {
-                    if (node) contentTriggers.current.set(entry.id, node);
-                    else contentTriggers.current.delete(entry.id);
-                  }}
-                  className="local-agent-title"
-                  disabled={!!busy}
-                  title={entry.path}
-                  aria-expanded={view?.item.id === entry.id}
-                  onClick={() => inspect(entry)}
-                >
-                  <strong>{entry.name}</strong>
-                  <span>{entry.description || entry.path || ''}</span>
-                  <small>
+                <div className="local-capability-entry-content">
+                  <h4
+                    id={`${identity}-entry-${index}`}
+                    className="local-capability-reading"
+                    tabIndex={0}
+                    aria-label={`已同步第 ${index + 1} 项完整名称`}
+                  >
+                    {entry.name}
+                  </h4>
+                  <p className="local-capability-entry-state">
                     <span>{sources.find(([key]) => key === entry.sourceKind)?.[1] || '本机'}</span>
                     <span className="local-agent-state" data-enabled={!!entry.enabled}>
                       {entry.enabled ? '已启用' : '已关闭'}
                     </span>
                     {entry.kind === 'skill' && entry.modelInvocable === false && <span>禁止模型调用</span>}
-                  </small>
-                </button>
+                  </p>
+                  <details className="local-capability-source">
+                    <summary>说明与完整来源</summary>
+                    <dl
+                      className="local-capability-identity local-capability-reading"
+                      role="region"
+                      tabIndex={0}
+                      aria-label={`已同步第 ${index + 1} 项完整来源与说明`}
+                    >
+                      <div>
+                        <dt>条目标识</dt>
+                        <dd>{entry.id}</dd>
+                      </div>
+                      <div>
+                        <dt>来源</dt>
+                        <dd>{sources.find(([key]) => key === entry.sourceKind)?.[1] || '本机'}</dd>
+                      </div>
+                      <div>
+                        <dt>完整路径</dt>
+                        <dd>{entry.path}</dd>
+                      </div>
+                      <div>
+                        <dt>说明</dt>
+                        <dd>{entry.description || '未提供说明'}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                  <button
+                    ref={(node) => {
+                      if (node) contentTriggers.current.set(entry.id, node);
+                      else contentTriggers.current.delete(entry.id);
+                    }}
+                    className="text-button local-capability-preview"
+                    disabled={!!busy}
+                    title={entry.path}
+                    aria-expanded={view?.item.id === entry.id}
+                    aria-describedby={`${identity}-entry-${index}`}
+                    onClick={() => inspect(entry)}
+                  >
+                    读取内容
+                  </button>
+                </div>
               </div>
               <div className="local-agent-actions">
                 <button
                   className="secondary"
                   disabled={!!busy}
+                  aria-describedby={`${identity}-entry-${index}`}
                   onClick={() =>
                     void act('保存', async (signal) => {
                       const value = await mutate<Overview>(
@@ -656,7 +747,9 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
             <header>
               <div>
                 <small>内容预览</small>
-                <strong>{view.item.name}</strong>
+                <strong className="local-capability-reading" tabIndex={0} aria-label="内容预览完整条目名称">
+                  {view.item.name}
+                </strong>
               </div>
               <button
                 className="quiet-button"

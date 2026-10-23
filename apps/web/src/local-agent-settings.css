@@ -1,0 +1,113 @@
+.local-capability-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.local-capability-summary > div,
+.local-capability-identity > div {
+  min-width: 0;
+}
+.local-capability-summary dt,
+.local-capability-identity dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.local-capability-summary dd,
+.local-capability-identity dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.local-capability-reading {
+  display: block;
+  min-width: 0;
+  max-height: min(14rem, 38dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.local-capability-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.local-capability-candidate {
+  min-width: 0;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.local-capability-candidate:last-child {
+  border-bottom: 0;
+}
+.local-capability-candidate > label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border: 0;
+  font-size: var(--font-sm);
+}
+.local-capability-candidate h4,
+.local-capability-entry-content h4 {
+  margin: 0;
+  font-size: var(--font-md);
+  color: var(--text);
+}
+.local-capability-identity {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.local-capability-entry-content {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: var(--space-2);
+}
+.local-capability-entry-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.local-capability-source {
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+.local-capability-source summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.local-capability-preview {
+  justify-self: start;
+}
+@media (max-height: 600px) {
+  .local-capability-settings {
+    overflow-y: auto;
+    scroll-padding-block: 6rem var(--space-4);
+  }
+  .local-capability-settings > header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+  }
+  .local-capability-settings .local-agent-body {
+    flex: none;
+    overflow: visible;
+  }
+}

@@ -263,6 +263,7 @@ export function StartupSettings({ close }: { close: () => void }) {
         <details
           className="startup-diagnostics"
           onToggle={(event) => {
+            if (event.target !== event.currentTarget) return;
             if (!event.currentTarget.open) return;
             setDiagnosticError('');
             void readStartupDiagnostics()

@@ -153,18 +153,6 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.local-agent-candidate-list span {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.local-agent-candidate-list small {
-  color: var(--muted);
-  overflow-wrap: anywhere;
-  font-size: var(--font-xs);
-  line-height: var(--leading-ui);
-}
 .local-agent-body input[type='checkbox'] {
   width: 18px;
   height: 18px;
@@ -220,37 +208,6 @@
   gap: var(--space-3);
   flex: 1 1 230px;
   min-width: 0;
-}
-.local-agent-title {
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: var(--space-1);
-  padding: 1px 0;
-  border: 0;
-  min-width: 0;
-  flex: 1;
-  background: transparent;
-  text-align: left;
-}
-.local-agent-title strong,
-.local-agent-title > span {
-  overflow-wrap: anywhere;
-}
-.local-agent-title:hover:not(:disabled) strong {
-  color: var(--accent-strong);
-}
-.local-agent-title > span,
-.local-agent-title small {
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
-.local-agent-title > span {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: var(--leading-ui);
 }
 .local-agent-actions {
   display: flex;
@@ -476,17 +433,6 @@
 .local-agent-list > li[data-previewing='true'] .local-agent-entry-icon {
   background: var(--surface-selected);
   color: var(--accent-strong);
-}
-.local-agent-title strong {
-  font-size: var(--font-md);
-  font-weight: 600;
-}
-.local-agent-title small {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-2);
-  font-size: var(--font-xs);
 }
 .local-agent-state {
   display: inline-flex;
