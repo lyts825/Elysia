@@ -80,69 +80,6 @@
 .composer-options .composer-model {
   max-width: 100%;
 }
-.composer-model {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 360px;
-  min-width: 0;
-  padding: 7px 9px;
-  min-height: 32px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--secondary);
-  font-size: var(--font-sm);
-}
-.composer-model > svg {
-  flex: none;
-}
-.composer-model > .brand-glyph {
-  color: var(--accent);
-}
-.composer-model > span {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.composer-model > svg:last-child {
-  transform: rotate(90deg);
-}
-.composer-model:hover:not(:disabled),
-.composer-model[aria-expanded='true'] {
-  background: var(--surface-hover);
-}
-.composer-model-panel {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-  color: var(--text);
-  overflow: auto;
-  box-shadow: var(--menu-shadow);
-  max-width: calc(100vw - 24px);
-  max-height: calc(100dvh - 24px);
-}
-.composer-model-heading,
-.composer-model-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.composer-model-heading {
-  margin-bottom: var(--space-3);
-  font-size: var(--font-md);
-}
-.composer-model-footer {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
 .reply-model-controls {
   display: flex;
   align-items: center;
@@ -217,8 +154,7 @@
   .reply-model-controls .reply-hint {
     display: none;
   }
-  .composer-actions .primary,
-  .composer-model {
+  .composer-actions .primary {
     min-height: var(--control-lg);
   }
 }
@@ -245,8 +181,5 @@
   }
   .composer-options {
     gap: 2px;
-  }
-  .composer-model {
-    padding-inline: 7px;
   }
 }

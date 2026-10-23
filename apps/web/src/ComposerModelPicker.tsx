@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { ModelPicker, type ModelChoice, type SelectableProvider } from './ModelPicker';
+import './composer-model-picker.css';
 
 export function ComposerModelPicker({
   providers,
@@ -94,10 +95,10 @@ export function ComposerModelPicker({
     <>
       <button
         type="button"
-        className="composer-model"
+        className="composer-model composer-picker-trigger"
         ref={trigger}
         disabled={disabled}
-        aria-label={`选择模型${selected ? `：${value.model || selected.label}` : ''}`}
+        aria-label={`选择模型${selected ? `：${selected.label} · ${value.model || selected.model}` : ''}`}
         aria-expanded={open}
         aria-controls={id}
         aria-haspopup="dialog"
@@ -107,12 +108,15 @@ export function ComposerModelPicker({
         onClick={position}
       >
         <Icon name="spark" size={16} />
-        <span>{selected ? value.model || selected.label : '选择模型'}</span>
+        <span className="composer-picker-label">
+          <span>{selected ? value.model || selected.label : '选择模型'}</span>
+          <small>{selected?.label || (value.providerId ? '原连接不可用' : '未选择连接')}</small>
+        </span>
         <Icon name="chevron" size={13} />
       </button>
       {createPortal(
         <div
-          className="composer-model-panel"
+          className="composer-model-panel composer-picker-panel"
           id={id}
           ref={panel}
           popover="auto"
@@ -120,7 +124,7 @@ export function ComposerModelPicker({
           aria-label="选择模型"
         >
           <div className="composer-model-heading">
-            <strong>选择模型</strong>
+            <h3>选择模型</h3>
             <button type="button" className="icon-button" aria-label="关闭模型选择" onClick={close}>
               <Icon name="close" size={16} />
             </button>

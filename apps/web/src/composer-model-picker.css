@@ -1,0 +1,97 @@
+.composer-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 22.5rem;
+  min-width: 0;
+  min-height: var(--control-lg);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+.composer-picker-trigger > svg {
+  flex: none;
+}
+.composer-picker-trigger > svg:last-child {
+  transform: rotate(90deg);
+}
+.composer-picker-trigger > .brand-glyph {
+  color: var(--accent);
+}
+.composer-picker-trigger .composer-picker-label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.composer-picker-label > span,
+.composer-picker-label > small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-picker-label > small {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.composer-picker-trigger:hover:not(:disabled),
+.composer-picker-trigger[aria-expanded='true'] {
+  background: var(--surface-hover);
+}
+.composer-picker-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: calc(var(--control-lg) + var(--space-3)) var(--space-3);
+  box-shadow: var(--shadow-popover);
+  max-width: calc(100vw - var(--space-6));
+  max-height: calc(100dvh - var(--space-6));
+}
+.composer-picker-panel .composer-model-heading,
+.composer-picker-panel .composer-model-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+.composer-picker-panel .composer-model-heading {
+  position: sticky;
+  top: calc(-1 * var(--space-3));
+  z-index: 1;
+  background: var(--surface);
+  margin-bottom: var(--space-3);
+  padding-block: var(--space-2);
+}
+.composer-picker-panel .composer-model-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+  line-height: var(--leading-ui);
+}
+.composer-picker-panel .composer-model-heading button {
+  flex: none;
+}
+.composer-picker-panel .composer-model-footer {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.composer-picker-panel .composer-model-footer button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
