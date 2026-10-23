@@ -30,6 +30,35 @@
   margin-top: var(--space-1);
 }
 
+.review-policy-editor .review-policy-current {
+  margin: 0;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+.review-policy-confirmation .review-policy-pending {
+  padding: var(--space-3);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+
+.review-policy-confirm-modal .review-policy-confirmation {
+  scroll-padding-block: var(--space-4);
+}
+
+.review-policy-confirm-modal .modal-footer button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .review-policy-confirmation section {
   display: grid;
   gap: var(--space-2);

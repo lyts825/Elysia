@@ -20,14 +20,14 @@ export function ReviewModelPolicy({
     pendingChanged(false);
   };
   return (
-    <section className="review-model-policy" aria-label="审计模型要求">
+    <section className="review-model-policy review-policy-editor" aria-label="审计模型要求">
       <label className="check-label">
         <input
           type="checkbox"
           role="switch"
           checked={allowed}
           disabled={disabled}
-          aria-describedby={helpId}
+          aria-describedby={`${helpId} ${helpId}-state`}
           onChange={(event) => {
             if (!event.target.checked) change(false);
             else {
@@ -36,16 +36,24 @@ export function ReviewModelPolicy({
             }
           }}
         />
-        允许审计与执行使用相同模型
+        允许同模型审计
       </label>
+      <p className="review-policy-current" id={`${helpId}-state`} role="status">
+        {confirming
+          ? '等待二次确认，尚未提交本次开启选择。'
+          : allowed
+            ? '本任务已确认允许同模型审计。'
+            : '本任务要求审计与执行使用不同型号。'}
+      </p>
       <p className="field-help" id={helpId}>
         {allowed
-          ? '已确认允许本任务使用相同模型。关闭后，后续审计与执行必须使用不同型号。'
-          : '默认关闭。审计须与总代理、执行子任务使用不同型号；换连接、账号或思考强度仍视为同一模型。'}
+          ? '关闭后，后续审计与执行必须使用不同型号。'
+          : '审计须与总代理、执行子任务使用不同型号；换连接、账号或思考强度仍视为同一模型。'}
       </p>
       {confirming && (
-        <Modal title="确认允许同模型审计" close={close}>
+        <Modal title="确认允许同模型审计" close={close} className="review-policy-confirm-modal">
           <div className="form-body review-policy-confirmation">
+            <p className="review-policy-pending">本次开启选择尚未确认。</p>
             <section aria-label="同模型审计的影响">
               <h3>审计独立性</h3>
               <p>相同模型可能重复执行时的判断偏差或遗漏，降低审计的独立性。</p>
