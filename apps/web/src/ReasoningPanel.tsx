@@ -188,6 +188,7 @@ function ReasoningRecord({
       >
         {text && (
           <div className="reasoning-tools">
+            <span className="reasoning-read-count">已显示 {text.length.toLocaleString()} 字符</span>
             <button
               type="button"
               data-testid="reasoning-copy"
@@ -217,6 +218,7 @@ function ReasoningRecord({
         <div
           ref={viewport}
           className="reasoning-viewport"
+          role="region"
           tabIndex={text ? 0 : undefined}
           aria-label={`${label}正文`}
           data-testid="reasoning-viewport"
@@ -247,7 +249,14 @@ function ReasoningRecord({
         )}
         {error && (
           <div className="reasoning-read-error" role="alert">
-            <p>{error}</p>
+            <p
+              className="reasoning-error-reading"
+              role="region"
+              aria-label={`${label}读取问题全文`}
+              tabIndex={0}
+            >
+              {error}
+            </p>
             {retry && (
               <button type="button" data-testid="reasoning-retry" disabled={loading} onClick={retry}>
                 重试读取
@@ -256,14 +265,14 @@ function ReasoningRecord({
           </div>
         )}
         {!loading && !error && text === undefined && (
-          <p className="reasoning-notice">
-            尚未读取思考内容。
+          <div className="reasoning-notice reasoning-unread">
+            <p>尚未读取思考内容。</p>
             {onLoad && (
               <button type="button" onClick={onLoad}>
                 读取内容
               </button>
             )}
-          </p>
+          </div>
         )}
         {!loading && !error && text === '' && (
           <p className="reasoning-notice">

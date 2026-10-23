@@ -11,7 +11,8 @@
   touch-action: manipulation;
 }
 .reasoning-toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
@@ -38,12 +39,15 @@
   color: var(--muted);
 }
 .reasoning-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--font-md);
   font-weight: 600;
   line-height: var(--leading-ui);
 }
 .reasoning-state {
-  margin-left: auto;
+  overflow-wrap: anywhere;
+  max-width: 9em;
   font-size: var(--font-xs);
   line-height: var(--leading-ui);
   color: var(--muted);
@@ -76,8 +80,25 @@
 }
 .reasoning-tools {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--space-1);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.reasoning-read-count {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.reasoning-panel[data-reasoning-state='streaming'] .reasoning-state {
+  color: var(--accent);
+}
+.reasoning-panel[data-reasoning-state='failed'] .reasoning-state {
+  color: var(--danger);
+}
+.reasoning-panel[data-reasoning-state='interrupted'] .reasoning-state {
+  color: var(--warning);
 }
 .reasoning-copy,
 .reasoning-more,
@@ -110,6 +131,7 @@
   background: var(--surface-selected);
 }
 .reasoning-viewport {
+  min-width: 0;
   max-height: min(26rem, 48vh);
   overflow: auto;
   overflow-anchor: none;
@@ -126,6 +148,10 @@
   overflow-wrap: anywhere;
   tab-size: 2;
 }
+.reasoning-viewport:focus-visible,
+.reasoning-error-reading:focus-visible {
+  outline-offset: -2px;
+}
 .reasoning-notice,
 .reasoning-error,
 .reasoning-read-error {
@@ -141,8 +167,23 @@
 .reasoning-read-error {
   color: var(--danger);
 }
-.reasoning-read-error button {
-  margin-top: var(--space-2);
+.reasoning-read-error,
+.reasoning-unread {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+.reasoning-read-error p,
+.reasoning-unread p {
+  margin: 0;
+}
+.reasoning-error-reading {
+  max-height: min(12rem, 36dvh);
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
 }
 .reasoning-more {
   margin-top: var(--space-2);
