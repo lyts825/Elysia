@@ -7,6 +7,7 @@ import type {
 } from '../../../packages/contracts/src/workflow';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './delivery-criteria.css';
 
 type Snapshot = Pick<DeliveryReview, 'runId' | 'runRevision' | 'rootRevision'>;
 const matches = (expected: Snapshot, actual: Snapshot) =>
@@ -70,15 +71,20 @@ export function DeliveryCriteria({
       setValue,
     );
   return (
-    <section aria-label="逐项验收">
-      <h3>逐项验收</h3>
+    <section className="delivery-criteria" aria-label="逐项验收">
+      <header className="delivery-criteria-heading">
+        <h3>逐项验收</h3>
+        <span className="field-help">
+          本页 {value.criteria.length} 项 · 共 {page.total} 项
+        </span>
+      </header>
       {stale && (
-        <p className="field-error" role="alert">
-          {changed}{' '}
+        <div className="workflow-read-error" role="alert">
+          <p>{changed}</p>
           <button className="text-button" onClick={reload}>
             重新读取交付
           </button>
-        </p>
+        </div>
       )}
       {value.criteria.map((criterion) => (
         <CriterionEvidence
@@ -91,33 +97,40 @@ export function DeliveryCriteria({
           note={criterionNote?.(criterion)}
         />
       ))}
-      <div className="workflow-actions" aria-label="验收项分页">
-        <span role="status">
+      <div className="workflow-pagination" aria-label="验收项分页">
+        <span className="workflow-pagination-summary" role="status">
           {page.total
             ? `验收项 ${page.offset + 1}–${page.offset + value.criteria.length} / ${page.total}`
             : '没有登记的验收项'}
         </span>
-        {page.offset > 0 && (
-          <button
-            className="secondary"
-            disabled={stale || reader.busy}
-            onClick={() => void load(Math.max(0, page.offset - page.limit))}
-          >
-            上一页验收项
-          </button>
-        )}
-        {page.hasMore && (
-          <button
-            className="secondary"
-            disabled={stale || reader.busy}
-            onClick={() => void load(page.nextOffset!)}
-          >
-            {reader.busy ? '正在读取…' : '下一页验收项'}
-          </button>
-        )}
+        <div className="workflow-pagination-actions">
+          {page.offset > 0 && (
+            <button
+              className="secondary"
+              disabled={stale || reader.busy}
+              onClick={() => void load(Math.max(0, page.offset - page.limit))}
+            >
+              上一页验收项
+            </button>
+          )}
+          {page.hasMore && (
+            <button
+              className="secondary"
+              disabled={stale || reader.busy}
+              onClick={() => void load(page.nextOffset!)}
+            >
+              {reader.busy ? '正在读取…' : '下一页验收项'}
+            </button>
+          )}
+        </div>
       </div>
       {reader.error && (
-        <p className="field-error" role="alert">
+        <p
+          className="workflow-read-error delivery-criteria-reading"
+          role="alert"
+          aria-label="验收项读取错误全文"
+          tabIndex={0}
+        >
           {reader.error} 请重试翻页，已读内容已保留。
         </p>
       )}
@@ -157,10 +170,19 @@ function CriterionEvidence({
       },
     );
   return (
-    <article className="workflow-criterion">
-      <h4>
-        {criterion.index + 1}. {criterion.text}
-      </h4>
+    <article
+      className="workflow-criterion delivery-criterion"
+      aria-label={`第 ${criterion.index + 1} 项验收`}
+    >
+      <h4>第 {criterion.index + 1} 项验收标准</h4>
+      <p
+        className="workflow-prose delivery-criteria-reading"
+        role="region"
+        aria-label={`第 ${criterion.index + 1} 项验收标准全文`}
+        tabIndex={0}
+      >
+        {criterion.text}
+      </p>
       {criterion.evidenceTotal === 0 ? (
         <p className="field-help">此项尚无关联证据，请结合产物复核。</p>
       ) : (
@@ -171,7 +193,16 @@ function CriterionEvidence({
           {!expanded && page.hasMore && ` · 还有 ${criterion.evidenceTotal - value.evidence.length} 条未展示`}
         </p>
       )}
-      {value.evidence.map(evidence)}
+      {!!value.evidence.length && (
+        <div
+          className="delivery-criterion-evidence"
+          role="region"
+          aria-label={`第 ${criterion.index + 1} 项已读证据全文`}
+          tabIndex={0}
+        >
+          {value.evidence.map(evidence)}
+        </div>
+      )}
       <div className="workflow-actions" aria-label={`第 ${criterion.index + 1} 项证据分页`}>
         {expanded && page.offset > 0 && (
           <button
@@ -193,7 +224,12 @@ function CriterionEvidence({
         )}
       </div>
       {reader.error && (
-        <p className="field-error" role="alert">
+        <p
+          className="workflow-read-error delivery-criteria-reading"
+          role="alert"
+          aria-label={`第 ${criterion.index + 1} 项证据读取错误全文`}
+          tabIndex={0}
+        >
           {reader.error} 请重试读取，已读内容已保留。
         </p>
       )}
