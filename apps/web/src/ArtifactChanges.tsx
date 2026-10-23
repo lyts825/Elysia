@@ -9,6 +9,7 @@ import { DeliveryChanges } from './DeliveryChanges';
 import { ArtifactRevisionEditor } from './ArtifactRevisionDraft';
 import { deferredPanel } from './DeferredPanel';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
+import './artifact-changes.css';
 
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
@@ -26,31 +27,58 @@ export function ArtifactChanges(props: Props) {
 }
 function Metadata({ label, value }: { label: string; value: DeliveryArtifactMetadata | null }) {
   return (
-    <div>
-      <strong>{label}</strong>
+    <section className="artifact-version" aria-label={`${label}产物元数据`}>
+      <h5>{label}</h5>
       {value ? (
         <>
-          <p className="workflow-prose">
-            {value.name} · v{value.version} · {value.mediaType}
+          <p
+            className="workflow-prose artifact-change-reading"
+            role="region"
+            aria-label={`${label}产物完整名称`}
+            tabIndex={0}
+          >
+            {value.name}
           </p>
-          <small>
-            {value.verified ? '结构证据已核验' : '未核验'} · SHA256 {value.hash.slice(0, 12)}
-          </small>
+          <dl className="artifact-version-facts">
+            <div>
+              <dt>版本</dt>
+              <dd>v{value.version}</dd>
+            </div>
+            <div>
+              <dt>格式</dt>
+              <dd>{value.mediaType}</dd>
+            </div>
+            <div>
+              <dt>结构证据</dt>
+              <dd>{value.verified ? '结构证据已核验' : '未核验'}</dd>
+            </div>
+            <div>
+              <dt>摘要</dt>
+              <dd>
+                <code>{value.hash.slice(0, 12)}</code>
+              </dd>
+            </div>
+          </dl>
           <details>
             <summary>完整产物标识</summary>
-            <small>
+            <div
+              className="artifact-change-reading artifact-identifiers"
+              role="region"
+              aria-label={`${label}完整产物标识`}
+              tabIndex={0}
+            >
               产物 {value.id}
               <br />
               任务 {value.taskId}
               <br />
               SHA256 {value.hash}
-            </small>
+            </div>
           </details>
         </>
       ) : (
         <p className="field-help">无此产物</p>
       )}
-    </div>
+    </section>
   );
 }
 function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = false }: Props) {
@@ -63,6 +91,7 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
     [error, setError] = useState(''),
     [conflict, setConflict] = useState(false);
   const [preview, setPreview] = useState<string>();
+  const previewTrigger = useRef<HTMLButtonElement | null>(null);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const readRequest = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -116,7 +145,10 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
   }, [api, runId, reviewId, fingerprint, offset, retry, open, reading]);
   const blocked = loading || reading || conflict;
   return (
-    <details className="workflow-source" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <details
+      className="workflow-source artifact-changes"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>产物变化明细</summary>
       {open && (
         <>
@@ -140,8 +172,16 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
             />
           )}
           {error && (
-            <p className="field-error" role="alert">
-              {error} {value ? '已读页面保留，尚未合并新的结果。' : ''}
+            <div className="workflow-read-error" role="alert">
+              <p
+                className="artifact-change-reading"
+                role="region"
+                aria-label="产物变化读取问题全文"
+                tabIndex={0}
+              >
+                {error}
+              </p>
+              {value && <p>已读页面保留，尚未合并新的结果。</p>}
               <button
                 type="button"
                 className="text-button"
@@ -150,30 +190,42 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
               >
                 {conflict ? '重新读取复核与交付' : '重试读取这一页'}
               </button>
-            </p>
+            </div>
           )}
           {value && !value.page && <DeliveryChanges value={value.changeSummary} />}
           {value?.page && (
             <>
               <p role="status">
                 {conflict ? '先前已读' : '已读取'} {value.items.length ? value.page.offset + 1 : 0}–
-                {value.page.offset + value.items.length} / 共 {value.page.total} 项产物变化
+                {value.items.length ? value.page.offset + value.items.length : 0} / 共 {value.page.total}{' '}
+                项产物变化
               </p>
               {!value.page.total && <p className="field-help">这份复核之后没有产物元数据变化。</p>}
               {value.items.map((item) => (
                 <section className="workflow-artifact-change" key={item.artifactId}>
-                  <h4>
-                    {{ added: '新增产物', removed: '移除产物', changed: '产物已变化' }[item.kind]} ·{' '}
+                  <h4>{{ added: '新增产物', removed: '移除产物', changed: '产物已变化' }[item.kind]}</h4>
+                  <p
+                    className="artifact-change-reading artifact-change-name"
+                    role="region"
+                    aria-label="变化产物完整名称"
+                    tabIndex={0}
+                  >
                     {item.after?.name ?? item.before?.name ?? item.artifactId}
-                  </h4>
-                  <Metadata label="复核时" value={item.before} />
-                  <Metadata label="本次读取时" value={item.after} />
+                  </p>
+                  <div className="artifact-change-versions">
+                    <Metadata label="复核时" value={item.before} />
+                    <Metadata label="本次读取时" value={item.after} />
+                  </div>
                   {item.currentArtifactId ? (
                     <button
                       type="button"
                       className="text-button"
                       disabled={blocked}
-                      onClick={() => setPreview(item.currentArtifactId!)}
+                      aria-expanded={preview === item.currentArtifactId}
+                      onClick={(event) => {
+                        previewTrigger.current = event.currentTarget;
+                        setPreview(item.currentArtifactId!);
+                      }}
                     >
                       预览当前产物
                     </button>
@@ -191,7 +243,14 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
                   )}
                   {preview && preview === item.currentArtifactId && !conflict && (
                     <section className="workflow-preview" aria-label="变化产物当前预览">
-                      <button type="button" className="text-button" onClick={() => setPreview(undefined)}>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setPreview(undefined);
+                          previewTrigger.current?.focus();
+                        }}
+                      >
                         收起当前预览
                       </button>
                       <FilePreview
@@ -204,24 +263,29 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
                   )}
                 </section>
               ))}
-              <div className="workflow-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={blocked || !value.page.offset}
-                  onClick={() => setOffset(Math.max(0, value.page!.offset - 20))}
-                >
-                  上一页产物变化
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={blocked || !value.page.hasMore}
-                  onClick={() => setOffset(value.page!.nextOffset!)}
-                >
-                  下一页产物变化
-                </button>
-              </div>
+              <nav className="workflow-pagination" aria-label="产物变化翻页">
+                <span className="workflow-pagination-summary">
+                  第 {Math.floor(value.page.offset / 20) + 1} 页 · 本页 {value.items.length} 项
+                </span>
+                <div className="workflow-pagination-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={blocked || !value.page.offset}
+                    onClick={() => setOffset(Math.max(0, value.page!.offset - 20))}
+                  >
+                    上一页产物变化
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={blocked || !value.page.hasMore}
+                    onClick={() => setOffset(value.page!.nextOffset!)}
+                  >
+                    下一页产物变化
+                  </button>
+                </div>
+              </nav>
             </>
           )}
         </>

@@ -1,0 +1,63 @@
+.artifact-changes {
+  color: var(--text);
+  background: var(--surface);
+}
+.artifact-change-versions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+.artifact-version {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.artifact-changes .artifact-version {
+  margin-top: 0;
+}
+.artifact-version h5 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.artifact-change-reading {
+  max-height: min(10rem, 40dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.artifact-change-name {
+  font-weight: 500;
+}
+.artifact-version-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+  font-size: var(--font-sm);
+}
+.artifact-version-facts > div {
+  display: grid;
+  grid-template-columns: 4em minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.artifact-version-facts dt {
+  color: var(--muted);
+}
+.artifact-version-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.artifact-identifiers {
+  margin-top: var(--space-2);
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.artifact-changes .workflow-read-error p {
+  width: 100%;
+  margin: 0;
+}
