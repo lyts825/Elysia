@@ -94,30 +94,53 @@ export function ProjectBoardItem({
           {readinessLabels[item.readiness]}
         </span>
       </div>
-      {item.description && <p className="project-prose">{item.description}</p>}
-      <div className="project-form-columns">
+      {item.description && (
+        <p
+          className="project-prose project-item-reading"
+          role="region"
+          aria-label="交付项完整说明"
+          tabIndex={0}
+        >
+          {item.description}
+        </p>
+      )}
+      <div className="project-form-columns project-item-requirements">
         <div>
-          <h3>交付物</h3>
-          <ol>
-            {item.deliverables.map((line, index) => (
-              <li key={index}>{line}</li>
-            ))}
-          </ol>
+          <h3>
+            交付物 <span className="project-item-count">{item.deliverables.length} 项</span>
+          </h3>
+          <div className="project-item-reading" role="region" aria-label="项目交付物全文" tabIndex={0}>
+            <ol>
+              {item.deliverables.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ol>
+          </div>
         </div>
         <div>
-          <h3>项目验收标准</h3>
-          <ol>
-            {item.acceptanceCriteria.map((line, index) => (
-              <li key={index}>{line}</li>
-            ))}
-          </ol>
+          <h3>
+            项目验收标准 <span className="project-item-count">{item.acceptanceCriteria.length} 项</span>
+          </h3>
+          <div className="project-item-reading" role="region" aria-label="项目验收标准全文" tabIndex={0}>
+            <ol>
+              {item.acceptanceCriteria.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ol>
+          </div>
         </div>
       </div>
       <div className="project-actions">
         <button type="button" className="primary" disabled={!writable} onClick={createRun}>
           从此交付项创建任务
         </button>
-        <button type="button" className="secondary" disabled={!writable} onClick={() => setLinking(!linking)}>
+        <button
+          type="button"
+          className="secondary"
+          aria-expanded={linking}
+          disabled={!writable}
+          onClick={() => setLinking(!linking)}
+        >
           {linking ? '收起关联选择' : '关联已有执行'}
         </button>
       </div>
@@ -141,7 +164,7 @@ export function ProjectBoardItem({
           <p>选择一次已关联执行作为当前候选，历史尝试会保留。</p>
         ) : (
           <>
-            <strong>{current.title}</strong>
+            <strong className="project-current-title">{current.title}</strong>
             <dl className="project-status-grid">
               <div>
                 <dt>执行</dt>
@@ -169,7 +192,16 @@ export function ProjectBoardItem({
                 </dd>
               </div>
             </dl>
-            {current.issue && <p className="field-error">{current.issue}</p>}
+            {current.issue && (
+              <p
+                className="field-error project-read-error"
+                role="alert"
+                aria-label="当前候选读取问题"
+                tabIndex={0}
+              >
+                {current.issue}
+              </p>
+            )}
             {item.confirmationStale && (
               <p className="field-error">
                 项目标准或当前交付已变化，原确认仍保留，不能据此判定当前候选可交付。
@@ -220,7 +252,14 @@ export function ProjectBoardItem({
             {item.confirmation?.note && (
               <details>
                 <summary>已保存的符合性说明</summary>
-                <p className="project-prose">{item.confirmation.note}</p>
+                <p
+                  className="project-prose project-item-reading"
+                  role="region"
+                  aria-label="已保存的符合性说明全文"
+                  tabIndex={0}
+                >
+                  {item.confirmation.note}
+                </p>
               </details>
             )}
           </>
@@ -229,10 +268,11 @@ export function ProjectBoardItem({
       <h3>关联执行 · {item.attemptCount} 次</h3>
       {loading && <p role="status">正在读取关联执行…</p>}
       {error && (
-        <p className="field-error" role="alert">
+        <p className="field-error project-read-error" role="alert" aria-label="关联执行读取问题" tabIndex={0}>
           {error}
         </p>
       )}
+      {attempts && !attempts.items.length && <p className="field-help">本页没有关联执行。</p>}
       {attempts?.items.map((attempt) => (
         <article className="project-run-row" key={attempt.runId}>
           <div>
@@ -260,42 +300,49 @@ export function ProjectBoardItem({
           </div>
         </article>
       ))}
-      <div className="project-actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading || !trail.length}
-          onClick={() => {
-            setBefore(trail.at(-1) || '');
-            setTrail(trail.slice(0, -1));
-          }}
-        >
-          上一页
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading || !attempts?.page.hasMore}
-          onClick={() => {
-            setTrail([...trail, before]);
-            setBefore(attempts?.page.nextBefore || '');
-          }}
-        >
-          下一页
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading}
-          onClick={() => {
-            setBefore('');
-            setTrail([]);
-            setRetry((n) => n + 1);
-          }}
-        >
-          重读关联执行
-        </button>
-      </div>
+      <nav className="project-run-pagination" aria-label="关联执行翻页">
+        {attempts && (
+          <p className="field-help">
+            第 {trail.length + 1} 页 · 本页 {attempts.items.length} 次
+          </p>
+        )}
+        <div className="project-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || !trail.length}
+            onClick={() => {
+              setBefore(trail.at(-1) || '');
+              setTrail(trail.slice(0, -1));
+            }}
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || !attempts?.page.hasMore}
+            onClick={() => {
+              setTrail([...trail, before]);
+              setBefore(attempts?.page.nextBefore || '');
+            }}
+          >
+            下一页
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading}
+            onClick={() => {
+              setBefore('');
+              setTrail([]);
+              setRetry((n) => n + 1);
+            }}
+          >
+            重读关联执行
+          </button>
+        </div>
+      </nav>
     </section>
   );
 }

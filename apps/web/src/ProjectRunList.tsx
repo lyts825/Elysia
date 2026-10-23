@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import { useSurfaceClient } from './SurfaceClientContext';
 export const executionLabel = (status: string | null) =>
@@ -34,6 +34,7 @@ export function ProjectRunList({
   busy?: boolean;
 }) {
   const { api } = useSurfaceClient();
+  const searchInput = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState<TaskCenterPage>(),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false);
@@ -67,7 +68,7 @@ export function ProjectRunList({
     <section className="project-run-list" aria-label={choose ? '关联已有项目任务' : '项目执行记录'}>
       <label>
         搜索项目任务
-        <input type="search" value={query} onChange={(e) => changeQuery(e.target.value)} />
+        <input ref={searchInput} type="search" value={query} onChange={(e) => changeQuery(e.target.value)} />
       </label>
       <p className="field-help">
         {choose
@@ -76,7 +77,7 @@ export function ProjectRunList({
       </p>
       {loading && <p role="status">正在读取项目任务…</p>}
       {error && (
-        <p className="field-error" role="alert">
+        <p className="field-error project-read-error" role="alert" aria-label="项目任务读取问题" tabIndex={0}>
           {error}
         </p>
       )}
@@ -130,32 +131,54 @@ export function ProjectRunList({
           </div>
         </article>
       ))}
-      {page && !page.items.length && <p className="field-help">当前范围没有任务。</p>}
-      <div className="project-actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={!trail.length || loading}
-          onClick={() => {
-            setBefore(trail.at(-1) || '');
-            setTrail(trail.slice(0, -1));
-          }}
-        >
-          上一页
-        </button>
-        <span>{page ? `共 ${page.page.total} 条` : ''}</span>
-        <button
-          type="button"
-          className="secondary"
-          disabled={!page?.page.hasMore || loading}
-          onClick={() => {
-            setTrail([...trail, before]);
-            setBefore(page?.page.nextBefore || '');
-          }}
-        >
-          下一页
-        </button>
-      </div>
+      {page && !page.items.length && (
+        <div className="project-run-empty">
+          <p className="field-help">{query.trim() ? '没有符合搜索条件的任务。' : '当前范围没有任务。'}</p>
+          {query.trim() && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                changeQuery('');
+                searchInput.current?.focus();
+              }}
+            >
+              清除搜索
+            </button>
+          )}
+        </div>
+      )}
+      <nav className="project-run-pagination" aria-label="项目执行记录翻页">
+        {page && (
+          <p className="field-help">
+            第 {trail.length + 1} 页 · 本页 {page.items.length} 条 · 共 {page.page.total} 条
+          </p>
+        )}
+        <div className="project-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={!trail.length || loading}
+            onClick={() => {
+              setBefore(trail.at(-1) || '');
+              setTrail(trail.slice(0, -1));
+            }}
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!page?.page.hasMore || loading}
+            onClick={() => {
+              setTrail([...trail, before]);
+              setBefore(page?.page.nextBefore || '');
+            }}
+          >
+            下一页
+          </button>
+        </div>
+      </nav>
     </section>
   );
 }

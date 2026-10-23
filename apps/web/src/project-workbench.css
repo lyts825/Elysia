@@ -274,6 +274,59 @@
   margin: var(--space-6) 0;
   padding-top: var(--space-3);
 }
+.project-current-title {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.project-item-requirements {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-4);
+  margin-block: var(--space-4);
+}
+.project-item-requirements > div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-item-count {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+.project-item-reading,
+.project-read-error {
+  max-height: min(16rem, 45dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.project-item-reading ol {
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+.project-item-reading li + li {
+  margin-top: var(--space-3);
+}
+.project-run-pagination {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-run-pagination p {
+  margin: 0;
+}
+.project-run-empty {
+  padding-block: var(--space-4);
+}
 .project-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
