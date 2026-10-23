@@ -60,10 +60,12 @@ export function ArtifactRevisionSummary({
   items,
   embedded = false,
   showRequirement = true,
+  afterLabel = '对照版本',
 }: {
   items: (Pick<ArtifactRevisionEntry, 'change' | 'requirement'> | SourceArtifactChange)[];
   embedded?: boolean;
   showRequirement?: boolean;
+  afterLabel?: string;
 }) {
   return (
     <section className="handoff-artifact-summary" aria-label="修改清单">
@@ -89,7 +91,7 @@ export function ArtifactRevisionSummary({
                 <dd>{item.before ? `v${item.before.version} · ${item.before.hash.slice(0, 12)}` : '无'}</dd>
               </div>
               <div>
-                <dt>选定时版本</dt>
+                <dt>{afterLabel}</dt>
                 <dd>{item.after ? `v${item.after.version} · ${item.after.hash.slice(0, 12)}` : '已移除'}</dd>
               </div>
             </dl>
@@ -102,7 +104,7 @@ export function ArtifactRevisionSummary({
                 aria-label={`差异 ${index + 1} 完整版本元数据`}
               >
                 <RevisionMetadata label="原版本" value={item.before} />
-                <RevisionMetadata label="选定时版本" value={item.after} />
+                <RevisionMetadata label={afterLabel} value={item.after} />
                 <dl className="revision-selection-reference">
                   <div>
                     <dt>差异产物标识</dt>
@@ -319,6 +321,7 @@ export function ArtifactRevisionSelection({
                       items={[{ change: current.change, requirement: entry.requirement }]}
                       embedded
                       showRequirement={false}
+                      afterLabel="本次读取版本"
                     />
                     <button
                       type="button"
