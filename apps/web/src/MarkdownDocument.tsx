@@ -84,10 +84,22 @@ function CodeBlock({ children }: { children: ReactNode }) {
             }
           }}
         >
-          {copied ? '已复制' : failed ? '复制失败，可选中文字复制' : '复制'}
+          {copied ? '已复制' : '复制'}
         </button>
       </div>
-      <pre>{children}</pre>
+      {failed && (
+        <p className="markdown-code-feedback" role="alert">
+          复制失败，可选中文字手动复制。
+        </p>
+      )}
+      {copied && (
+        <p className="markdown-code-feedback" role="status">
+          已复制代码。
+        </p>
+      )}
+      <pre role="region" aria-label={language ? `代码块 · ${language}` : '代码块'}>
+        {children}
+      </pre>
     </div>
   );
 }
@@ -261,6 +273,7 @@ export const MarkdownDocument = memo(function MarkdownDocument({
                   title={props.title || href}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={plainText(children) ? `${plainText(children)}（在新窗口打开）` : undefined}
                 >
                   {children}
                 </a>

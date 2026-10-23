@@ -63,7 +63,8 @@
 }
 .markdown-document a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 .markdown-document a:hover {
   text-decoration: underline;
@@ -115,6 +116,12 @@
   color: var(--muted);
   font-size: var(--font-xs);
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.markdown-document .markdown-code-toolbar > span {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .markdown-document .markdown-code-toolbar button {
   width: auto;
@@ -125,6 +132,18 @@
   color: inherit;
   background: transparent;
   font-size: var(--font-xs);
+  flex: none;
+}
+.markdown-document .markdown-code-feedback {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  color: var(--secondary);
+  border-bottom: 1px solid var(--border);
+}
+.markdown-document .markdown-code-feedback[role='alert'] {
+  color: var(--danger);
 }
 .markdown-document .markdown-code-toolbar button:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -134,13 +153,17 @@
   margin: 0;
   padding: var(--space-3) 14px;
   overflow: auto;
-  max-height: 460px;
+  max-height: max(8rem, min(28rem, 65dvh));
   border: 0;
   border-radius: 0;
   white-space: pre;
   background: transparent;
   color: inherit;
   line-height: 1.65;
+}
+.markdown-document .markdown-code-block pre:focus-visible,
+.markdown-document .markdown-table-scroll:focus-visible {
+  outline-offset: -2px;
 }
 .markdown-document .markdown-code-block code {
   padding: 0;
@@ -167,6 +190,7 @@
   border-bottom: 1px solid var(--border);
   padding: 7px var(--space-3);
   max-width: 400px;
+  vertical-align: top;
 }
 .markdown-document :is(th, td):last-child {
   border-right: 0;
