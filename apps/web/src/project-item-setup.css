@@ -1,0 +1,72 @@
+.project-item-setup,
+.project-item-setup-error {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-item-setup {
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.project-item-setup-reading {
+  min-width: 0;
+  max-height: min(14rem, 42dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+  border-radius: var(--radius-sm);
+}
+.project-item-setup-title {
+  max-height: min(8rem, 30dvh);
+  margin: var(--space-1) 0 var(--space-3);
+  font-weight: 600;
+}
+.project-item-setup-versions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.project-item-setup-versions > div {
+  min-width: 0;
+}
+.project-item-setup-versions dt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.project-item-setup-versions dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+.project-item-setup-restored {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-item-setup .project-item-setup-objective {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  min-width: 0;
+}
+.project-item-setup-objective textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: 7rem;
+  max-height: min(20rem, 50dvh);
+  resize: vertical;
+  line-height: var(--leading-body);
+}
+.project-item-setup-counter {
+  margin: 0;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { ContextPolicy } from '../../../packages/contracts/src/index';
 import { RunModal } from './RunSetupModal';
 import { readRunSetupDraft, writeRunSetupDraft, type RunSetupDraft } from './RunSetupDraft';
@@ -11,6 +11,7 @@ import {
 } from './ProjectBoardDraft';
 import type { WorkbenchCache } from './WorkbenchCache';
 import { Modal } from './Modal';
+import './project-item-setup.css';
 
 export function ProjectItemSetup({
   projectId,
@@ -35,6 +36,8 @@ export function ProjectItemSetup({
   settings: () => void;
   submit: (body: Record<string, unknown>, launch: NonNullable<ProjectBoardDraft['launch']>) => void;
 }) {
+  const headingId = useId(),
+    objectiveHelpId = useId();
   const [error, setError] = useState('');
   const first = useRef<
     { launch?: ProjectBoardDraft['launch']; initial?: RunSetupDraft; error?: string } | undefined
@@ -73,7 +76,16 @@ export function ProjectItemSetup({
   if (first.current.error || !launch)
     return (
       <Modal title="从交付项创建任务" close={close}>
-        <p className="field-error">{first.current.error || '没有可用的交付项创建草稿，请返回项目工作台。'}</p>
+        <div className="form-body project-item-setup-error">
+          <p
+            className="field-error project-item-setup-reading"
+            role="alert"
+            tabIndex={0}
+            aria-label="交付项创建草稿读取错误全文"
+          >
+            {first.current.error || '没有可用的交付项创建草稿，请返回项目工作台。'}
+          </p>
+        </div>
       </Modal>
     );
   return (
@@ -97,24 +109,42 @@ export function ProjectItemSetup({
       }}
       submitDisabled={!objective.trim() || !!error}
       beforeForm={
-        <section className="project-item-setup">
-          <p>
-            交付项：<strong>{launch.title}</strong> · 项目标准版本 {launch.itemRevision}
+        <section className="project-item-setup" aria-labelledby={headingId}>
+          <h3 id={headingId}>从交付项创建</h3>
+          <p className="field-help">来源交付项</p>
+          <p
+            className="project-item-setup-reading project-item-setup-title"
+            role="region"
+            tabIndex={0}
+            aria-label="来源交付项完整名称"
+          >
+            {launch.title}
           </p>
+          <dl className="project-item-setup-versions">
+            <div>
+              <dt>来源项目计划</dt>
+              <dd>版本 {launch.expectedRevision}</dd>
+            </div>
+            <div>
+              <dt>来源交付项标准</dt>
+              <dd>版本 {launch.itemRevision}</dd>
+            </div>
+          </dl>
           <p className="field-help">
             核对目标、交付物、权限与预算后明确创建。允许调整本次执行要求；创建只关联为候选，不代表已符合项目标准。
           </p>
           {first.current.initial && (
-            <p className="field-help">
+            <p className="field-help project-item-setup-restored" role="status">
               已恢复上次保存的创建配置。本次交付物和验收标准采用下方表单中的保留值，可继续编辑；不会自动替换为项目标准。
             </p>
           )}
-          <label>
+          <label className="project-item-setup-objective">
             本次任务目标
             <textarea
               value={objective}
               maxLength={20000}
               rows={5}
+              aria-describedby={objectiveHelpId}
               onChange={(e) => {
                 const value = e.target.value;
                 setObjective(value);
@@ -127,8 +157,16 @@ export function ProjectItemSetup({
               }}
             />
           </label>
+          <p className="field-help project-item-setup-counter" id={objectiveHelpId}>
+            {objective.length} / 20000 字符
+          </p>
           {error && (
-            <p className="field-error" role="alert">
+            <p
+              className="field-error project-item-setup-reading"
+              role="alert"
+              tabIndex={0}
+              aria-label="交付项创建草稿保存错误全文"
+            >
               {error}
             </p>
           )}
