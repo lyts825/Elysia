@@ -7,6 +7,7 @@ import { Modal } from './Modal';
 import { TerminalSetup, terminalPreset } from './TerminalSetup';
 import './surface.css';
 import './terminal-control.css';
+import './terminal-profile-settings.css';
 
 export function TerminalSettings({
   initial,
@@ -58,6 +59,9 @@ export function TerminalSettings({
   const editorTitle = useRef<HTMLHeadingElement>(null);
   const focusEditor = useRef(false);
   const selected = profiles.find((profile) => profile.id === selectedId);
+  const selectedConnection = selected?.connectionId
+    ? connectionOptions?.[selected.agent]?.find((connection) => connection.id === selected.connectionId)
+    : undefined;
   function revealEditor() {
     editorTitle.current?.scrollIntoView({ block: 'start' });
     editorTitle.current?.focus({ preventScroll: true });
@@ -124,6 +128,7 @@ export function TerminalSettings({
   };
   const form = (
     <form
+      className="terminal-profile-settings"
       onSubmit={async (event) => {
         event.preventDefault();
         if (submitting.current || !valid || !changed) return;
@@ -162,6 +167,20 @@ export function TerminalSettings({
       }}
     >
       <div className="form-body">
+        <dl className="terminal-template-summary" aria-label="模板编辑状态">
+          <div>
+            <dt>模板</dt>
+            <dd>{profiles.length} / 20</dd>
+          </div>
+          <div>
+            <dt>编辑依据</dt>
+            <dd>版本 {baseline.revision}</dd>
+          </div>
+          <div>
+            <dt>当前草稿</dt>
+            <dd>{changed ? '有未保存修改' : '与已读版本一致'}</dd>
+          </div>
+        </dl>
         {pendingFocus && (
           <div className="terminal-control-confirm" role="group" aria-label="诊断模板定位确认">
             <span>当前模板修改已保留。是否切换到指定模板？</span>
@@ -204,14 +223,16 @@ export function TerminalSettings({
         )}
         {latest.revision !== baseline.revision && (
           <div className="terminal-control-conflict" role="status">
-            <span>模板已更新；载入最新将替换当前修改。</span>
+            <span>
+              已读最新版本 {latest.revision}，当前编辑依据为版本 {baseline.revision}；载入最新将替换当前修改。
+            </span>
             <button type="button" className="secondary" disabled={busy} onClick={() => adopt(latest)}>
               载入最新模板
             </button>
           </div>
         )}
         {error && (
-          <p className="inline-warning" role="alert">
+          <p className="terminal-profile-error" role="alert" aria-label="终端模板保存失败详情" tabIndex={0}>
             {error}
           </p>
         )}
@@ -233,7 +254,13 @@ export function TerminalSettings({
                     setSelectedId(profile.id);
                   }}
                 >
-                  <span>{profile.label || '未命名模板'}</span>
+                  <span>
+                    <strong>{profile.label || '未命名模板'}</strong>
+                    <small>
+                      {profile.agent} · {profile.id === selectedId ? '当前编辑' : '可选择'}
+                      {profile.id === defaultProfileId ? ' · 新任务默认' : ''}
+                    </small>
+                  </span>
                   {profile.id === defaultProfileId && <Icon name="check" size={15} />}
                 </button>
               ))}
@@ -263,9 +290,68 @@ export function TerminalSettings({
           </div>
           {selected && (
             <div className="terminal-settings-editor">
-              <h3 className="terminal-settings-title" ref={editorTitle} tabIndex={-1}>
+              <h3
+                className="terminal-settings-title"
+                ref={editorTitle}
+                tabIndex={0}
+                aria-label="当前模板完整名称"
+              >
                 {selected.label || '未命名模板'}
               </h3>
+              <details className="terminal-profile-identity">
+                <summary>模板标识与连接选择</summary>
+                <dl
+                  className="terminal-template-reading"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="当前模板完整标识与连接信息"
+                >
+                  <div>
+                    <dt>模板标识</dt>
+                    <dd>{selected.id}</dd>
+                  </div>
+                  <div>
+                    <dt>Agent</dt>
+                    <dd>{selected.agent}</dd>
+                  </div>
+                  <div>
+                    <dt>连接来源</dt>
+                    <dd>
+                      {selected.connectionId === undefined
+                        ? '跟随项目与应用默认'
+                        : selected.connectionId === null
+                          ? '只使用模板环境变量'
+                          : selectedConnection
+                            ? '模板指定连接'
+                            : connectionOptions
+                              ? '指定连接已失效或不兼容，请重选'
+                              : '模板指定连接（当前未提供连接目录）'}
+                    </dd>
+                  </div>
+                  {selected.connectionId && (
+                    <div>
+                      <dt>连接标识</dt>
+                      <dd>{selected.connectionId}</dd>
+                    </div>
+                  )}
+                  {selectedConnection && (
+                    <>
+                      <div>
+                        <dt>完整连接名称</dt>
+                        <dd>{selectedConnection.name}</dd>
+                      </div>
+                      <div>
+                        <dt>模型</dt>
+                        <dd>{selectedConnection.model}</dd>
+                      </div>
+                      <div>
+                        <dt>连接版本</dt>
+                        <dd>{selectedConnection.revision}</dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+              </details>
               <div className="terminal-settings-actions">
                 <label className="check-label">
                   <input

@@ -1,0 +1,84 @@
+.terminal-template-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.terminal-template-summary > div,
+.terminal-template-reading > div {
+  min-width: 0;
+}
+.terminal-template-summary dt,
+.terminal-template-reading dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-template-summary dd,
+.terminal-template-reading dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.terminal-profile-settings .terminal-settings-profiles strong,
+.terminal-profile-settings .terminal-settings-profiles small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.terminal-profile-settings .terminal-settings-profiles strong {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.terminal-profile-settings .terminal-settings-profiles small {
+  margin-top: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.terminal-profile-settings .terminal-settings-title {
+  max-height: clamp(5rem, 25dvh, 10rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.terminal-profile-identity {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+  font-size: var(--font-sm);
+}
+.terminal-profile-identity > summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-weight: 600;
+}
+.terminal-template-reading {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  max-height: clamp(8rem, 35dvh, 18rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-profile-error {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: clamp(8rem, 30dvh, 16rem);
+  overflow: auto;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.terminal-template-reading:focus-visible,
+.terminal-profile-error:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
