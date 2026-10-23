@@ -1,0 +1,100 @@
+.project-board-item.project-item-detail {
+  margin-top: 0;
+}
+.project-board-item .project-current {
+  border-top: 1px solid var(--border);
+  margin: var(--space-6) 0;
+  padding-top: var(--space-3);
+}
+.project-board-item .project-current-title {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.project-board-item .project-item-requirements {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-4);
+  margin-block: var(--space-4);
+}
+.project-board-item .project-item-requirements > div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-board-item .project-item-count {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+.project-board-item .project-item-reading {
+  max-height: min(16rem, 45dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.project-board-item .project-item-reading ol {
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+.project-board-item .project-item-reading li + li {
+  margin-top: var(--space-3);
+}
+.project-board-item .project-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
+}
+.project-board-item .project-status-grid dt {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.project-board-item .project-status-grid dd {
+  margin: var(--space-2) 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .project-board-item .project-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.project-board-item .project-item-origin {
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+.project-board-item .project-item-origin summary {
+  color: var(--secondary);
+}
+.project-board-item .project-item-origin dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.project-board-item .project-item-origin dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.project-board-item .project-item-origin dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.project-board-item > .project-item-attempt {
+  flex-wrap: wrap;
+}
+.project-board-item > .project-item-attempt > .project-item-attempt-info {
+  flex: 1 1 20rem;
+}
+.project-board-item > .project-item-attempt > .project-actions {
+  flex: 0 1 auto;
+}
+.project-board-item > .project-item-attempt .field-error {
+  color: var(--danger);
+}

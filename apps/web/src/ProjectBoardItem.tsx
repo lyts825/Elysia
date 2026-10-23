@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type {
   ProjectDeliveryBoard,
   ProjectDeliveryItem,
@@ -7,6 +7,7 @@ import type {
 } from '../../../packages/contracts/src/project-delivery';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectRunList, reviewLabels, executionLabel } from './ProjectRunList';
+import './project-board-item.css';
 export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
   unlinked: '尚未关联执行',
   unconfirmed: '待确认符合项目标准',
@@ -42,6 +43,7 @@ export function ProjectBoardItem({
   action: (path: string, body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const { api } = useSurfaceClient();
+  const identity = useId();
   const [linking, setLinking] = useState(false),
     [attempts, setAttempts] = useState<ProjectDeliveryAttempts>(),
     [error, setError] = useState('');
@@ -82,10 +84,10 @@ export function ProjectBoardItem({
   const current = item.current;
   const writable = !busy && !board.archived;
   return (
-    <section className="project-item-detail" aria-label="交付项详情">
+    <section className="project-item-detail project-board-item" aria-label="交付项详情">
       <div className="project-section-heading">
         <div>
-          <h2>{item.title}</h2>
+          <h2 id={`${identity}-item`}>{item.title}</h2>
           <p>
             {item.required ? '必需交付项' : '可选交付项'} · 标准版本 {item.itemRevision}
           </p>
@@ -131,7 +133,13 @@ export function ProjectBoardItem({
         </div>
       </div>
       <div className="project-actions">
-        <button type="button" className="primary" disabled={!writable} onClick={createRun}>
+        <button
+          type="button"
+          className="primary"
+          disabled={!writable}
+          aria-describedby={`${identity}-item`}
+          onClick={createRun}
+        >
           从此交付项创建任务
         </button>
         <button
@@ -164,7 +172,9 @@ export function ProjectBoardItem({
           <p>选择一次已关联执行作为当前候选，历史尝试会保留。</p>
         ) : (
           <>
-            <strong className="project-current-title">{current.title}</strong>
+            <strong className="project-current-title" id={`${identity}-current`}>
+              {current.title}
+            </strong>
             <dl className="project-status-grid">
               <div>
                 <dt>执行</dt>
@@ -192,6 +202,29 @@ export function ProjectBoardItem({
                 </dd>
               </div>
             </dl>
+            <details className="project-item-origin">
+              <summary>候选完整标识与版本</summary>
+              <dl>
+                <div>
+                  <dt>任务标识</dt>
+                  <dd>{current.runId}</dd>
+                </div>
+                <div>
+                  <dt>已读执行版本 / 根任务版本</dt>
+                  <dd>
+                    {current.runRevision ?? '未提供'} / {current.rootRevision ?? '未提供'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>交付指纹</dt>
+                  <dd>{current.fingerprint || '未提供'}</dd>
+                </div>
+                <div>
+                  <dt>人工复核标识</dt>
+                  <dd>{current.reviewId || '未提供'}</dd>
+                </div>
+              </dl>
+            </details>
             {current.issue && (
               <p
                 className="field-error project-read-error"
@@ -209,10 +242,20 @@ export function ProjectBoardItem({
             )}
             {!current.missing && (
               <div className="project-actions">
-                <button type="button" className="secondary" onClick={() => openRun(current.runId)}>
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-describedby={`${identity}-current`}
+                  onClick={() => openRun(current.runId)}
+                >
                   查看执行
                 </button>
-                <button type="button" className="secondary" onClick={() => openRun(current.runId, true)}>
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-describedby={`${identity}-current`}
+                  onClick={() => openRun(current.runId, true)}
+                >
                   检查交付与原意见复验
                 </button>
               </div>
@@ -222,18 +265,23 @@ export function ProjectBoardItem({
                 <label>
                   符合性确认说明
                   <textarea
+                    aria-describedby={`${identity}-note-count`}
                     value={note}
                     maxLength={1000}
                     onChange={(e) => changeNote(e.target.value)}
                     placeholder="说明当前交付如何覆盖此处的项目标准（可选）"
                   />
                 </label>
+                <p className="field-help" id={`${identity}-note-count`}>
+                  本机确认说明草稿 · {note.length} / 1000 字符，确认后保存至项目符合性记录
+                </p>
                 <p className="field-help">
                   请对照上方项目标准和任务原交付确认。此操作绑定当前交付指纹与项目标准版本，不会修改任务复核。
                 </p>
                 <button
                   type="button"
                   className="primary"
+                  aria-describedby={`${identity}-current`}
                   disabled={!writable || !!current.issue || current.missing || !!current.executionHold}
                   onClick={() =>
                     void action(base + '/confirm', {
@@ -273,25 +321,60 @@ export function ProjectBoardItem({
         </p>
       )}
       {attempts && !attempts.items.length && <p className="field-help">本页没有关联执行。</p>}
-      {attempts?.items.map((attempt) => (
-        <article className="project-run-row" key={attempt.runId}>
-          <div>
-            <strong>{attempt.title}</strong>
+      {attempts?.items.map((attempt, index) => (
+        <article className="project-run-row project-item-attempt" key={attempt.runId}>
+          <div className="project-item-attempt-info">
+            <strong id={`${identity}-attempt-${index}`}>{attempt.title}</strong>
             <p>
               {attempt.missing ? '源任务已删除' : executionLabel(attempt.status)} ·{' '}
               {attempt.reviewStatus ? reviewLabels[attempt.reviewStatus] : '未复核'}
               {attempt.current && ' · 当前候选'}
             </p>
+            <details className="project-item-origin">
+              <summary>本页尝试 {index + 1} · 完整标识与关联时间</summary>
+              <dl>
+                <div>
+                  <dt>任务标识</dt>
+                  <dd>{attempt.runId}</dd>
+                </div>
+                <div>
+                  <dt>关联时间（原始记录）</dt>
+                  <dd>{attempt.linkedAt}</dd>
+                </div>
+                <div>
+                  <dt>已读执行版本 / 根任务版本</dt>
+                  <dd>
+                    {attempt.runRevision ?? '未提供'} / {attempt.rootRevision ?? '未提供'}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+            {attempt.issue && (
+              <p
+                className="field-error project-read-error"
+                role="alert"
+                aria-label={`本页尝试 ${index + 1} 读取问题全文`}
+                tabIndex={0}
+              >
+                {attempt.issue}
+              </p>
+            )}
           </div>
           <div className="project-actions">
             {!attempt.missing && (
-              <button type="button" className="secondary" onClick={() => openRun(attempt.runId)}>
+              <button
+                type="button"
+                className="secondary"
+                aria-describedby={`${identity}-attempt-${index}`}
+                onClick={() => openRun(attempt.runId)}
+              >
                 打开
               </button>
             )}
             <button
               type="button"
               className="secondary"
+              aria-describedby={`${identity}-attempt-${index}`}
               disabled={!writable || attempt.current || attempt.missing || !!attempt.issue}
               onClick={() => void action(base + '/current', { runId: attempt.runId })}
             >
@@ -303,7 +386,7 @@ export function ProjectBoardItem({
       <nav className="project-run-pagination" aria-label="关联执行翻页">
         {attempts && (
           <p className="field-help">
-            第 {trail.length + 1} 页 · 本页 {attempts.items.length} 次
+            第 {trail.length + 1} 页 · 本页 {attempts.items.length} 次 · 已读计划版本 {attempts.boardRevision}
           </p>
         )}
         <div className="project-actions">
