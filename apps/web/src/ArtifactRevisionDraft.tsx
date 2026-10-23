@@ -1,9 +1,10 @@
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import {
   artifactChangeTextByteLength,
   type DeliveryArtifactChange,
 } from '../../../packages/contracts/src/workflow';
+import './artifact-revision-draft.css';
 
 const metadata = z.object({
   id: z.string(),
@@ -127,7 +128,12 @@ export function ArtifactRevisionProvider({
       }
     >
       {(error || invalid || !entries) && (
-        <p role="alert" className="field-error">
+        <p
+          role="alert"
+          className="field-error revision-draft-reading revision-draft-error"
+          tabIndex={0}
+          aria-label="修订草稿保存或读取问题全文"
+        >
           {error || '修订草稿无法读取，已保留原稿；暂不能加入差异。'}
         </p>
       )}
@@ -149,6 +155,7 @@ export function ArtifactRevisionEditor({
   disabled: boolean;
 }) {
   const context = useContext(Context);
+  const helpId = useId();
   if (!context || context.runId !== runId) return null;
   const key = `${reviewId}:${item.artifactId}`,
     entry = context.entries.find((e) => artifactRevisionKey(e) === key);
@@ -157,11 +164,19 @@ export function ArtifactRevisionEditor({
   const next = context.entries.filter((e) => artifactRevisionKey(e) !== key);
   const issue = artifactRevisionIssue([...next, candidate]);
   return (
-    <section aria-label="差异修改要求">
+    <section className="revision-draft-editor" aria-label="差异修改要求">
+      <p className="revision-draft-state" role="status">
+        {entry?.added
+          ? entry.fingerprint === fingerprint
+            ? '已加入修改清单'
+            : '此前已加入；版本变化，请核对后重新加入'
+          : '当前为待加入草稿，填写后需明确加入。'}
+      </p>
       <label>
         此差异的具体修改要求
         <textarea
           aria-label={`修改要求：${item.after?.name ?? item.before?.name ?? item.artifactId}`}
+          aria-describedby={helpId}
           rows={2}
           value={requirement}
           maxLength={2000}
@@ -170,14 +185,47 @@ export function ArtifactRevisionEditor({
             context.change([...next, { ...candidate, requirement: event.target.value, added: false }])
           }
         />
+        <small className="revision-draft-count">
+          {requirement.length.toLocaleString()} / 2000 字 · 本项{' '}
+          {artifactChangeTextByteLength([{ requirement }]).toLocaleString()} 字节
+        </small>
       </label>
-      <p className="field-help">只加入差异说明；不会自动带入产物正文。输入会保留到修订草稿。</p>
-      {entry?.added && (
-        <p role="status">
-          {entry.fingerprint === fingerprint ? '已加入修改清单' : '此前已加入；版本变化，请核对后重新加入'}
-        </p>
-      )}
-      {issue && requirement && <p className="field-help">{issue}</p>}
+      <p className="field-help" id={helpId}>
+        只加入差异说明，不带入产物正文。输入保留到修订草稿；修改文字后需重新加入。
+      </p>
+      <details className="revision-draft-source">
+        <summary>核对修改目标与来源</summary>
+        <dl className="revision-draft-reading" role="region" aria-label="当前差异完整目标与来源" tabIndex={0}>
+          <div>
+            <dt>修改目标</dt>
+            <dd>{item.after?.name ?? item.before?.name ?? item.artifactId}</dd>
+          </div>
+          <div>
+            <dt>来源复核</dt>
+            <dd>{reviewId}</dd>
+          </div>
+          <div>
+            <dt>产物标识</dt>
+            <dd>{item.artifactId}</dd>
+          </div>
+          <div>
+            <dt>差异类型</dt>
+            <dd>{{ added: '新增', removed: '已移除', changed: '已变化' }[item.kind]}</dd>
+          </div>
+          <div>
+            <dt>版本对照</dt>
+            <dd>
+              {item.before ? `原版本 v${item.before.version}` : '原版本无'} →{' '}
+              {item.after ? `本次读取 v${item.after.version}` : '本次已移除'}
+            </dd>
+          </div>
+          <div>
+            <dt>当前交付指纹</dt>
+            <dd>{fingerprint}</dd>
+          </div>
+        </dl>
+      </details>
+      {issue && requirement && <p className="field-help revision-draft-issue">{issue}</p>}
       <button
         type="button"
         className="secondary"
