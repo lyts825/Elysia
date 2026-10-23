@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TerminalProfileDiagnostics } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
+import './terminal-diagnostics.css';
 
 type Readiness = {
   available: boolean;
@@ -123,24 +124,41 @@ export function TerminalDiagnostics({
     project: '编辑项目默认',
   };
   return (
-    <div className="terminal-diagnostics">
+    <div className="terminal-diagnosis-panel">
+      <p className="terminal-diagnosis-scope">
+        按当前模板{projectId ? '与项目配置' : ''}读取配置来源，并检查本地运行环境。
+      </p>
       <button type="button" className="secondary" disabled={disabled || busy} onClick={() => void check()}>
         {busy ? '检查中…' : '检查就绪'}
       </button>
       {error && (
-        <p className="terminal-diagnostic-error" role="alert" aria-label="就绪检查失败详情" tabIndex={0}>
+        <p className="terminal-diagnosis-error" role="alert" aria-label="就绪检查失败详情" tabIndex={0}>
           {error}
         </p>
       )}
       {result && (
-        <details className="terminal-diagnostic-result" open>
+        <details className="terminal-diagnosis-result" open>
           <summary>
             {result.configuration.ready && result.readiness.available ? '本地运行环境已就绪' : '就绪检查结果'}
           </summary>
-          <dl className="terminal-diagnostic-context">
+          <p className="terminal-diagnosis-overview" role="status">
+            {busy
+              ? '正在重新检查，以下保留上次结果。'
+              : error
+                ? '重新检查失败，以下保留上次结果。'
+                : `${result.readiness.stages ? `已返回 ${Object.keys(result.readiness.stages).length} 项阶段结果` : '未提供分阶段结果'} · ${result.configuration.issues.length} 项配置问题或提示`}
+          </p>
+          <dl className="terminal-diagnosis-context">
             <div>
               <dt>模板</dt>
-              <dd>{result.configuration.profileLabel}</dd>
+              <dd
+                className="terminal-diagnosis-reading"
+                role="region"
+                aria-label="诊断模板完整名称"
+                tabIndex={0}
+              >
+                {result.configuration.profileLabel}
+              </dd>
             </div>
             <div>
               <dt>配置来源</dt>
@@ -148,29 +166,114 @@ export function TerminalDiagnostics({
             </div>
             {result.configuration.connection && (
               <div>
-                <dt>连接与模型</dt>
-                <dd>
-                  {result.configuration.connection.name} / {result.configuration.connection.model}
+                <dt>连接</dt>
+                <dd
+                  className="terminal-diagnosis-reading"
+                  role="region"
+                  aria-label="诊断连接完整名称"
+                  tabIndex={0}
+                >
+                  {result.configuration.connection.name}
+                </dd>
+              </div>
+            )}
+            {result.configuration.connection && (
+              <div>
+                <dt>型号</dt>
+                <dd
+                  className="terminal-diagnosis-reading"
+                  role="region"
+                  aria-label="诊断完整型号"
+                  tabIndex={0}
+                >
+                  {result.configuration.connection.model}
                 </dd>
               </div>
             )}
           </dl>
+          <details className="terminal-diagnosis-source">
+            <summary>已读来源与版本</summary>
+            <dl
+              className="terminal-diagnosis-context terminal-diagnosis-reading"
+              role="region"
+              aria-label="诊断完整来源与版本"
+              tabIndex={0}
+            >
+              <div>
+                <dt>模板标识</dt>
+                <dd>{result.configuration.profileId}</dd>
+              </div>
+              <div>
+                <dt>应用</dt>
+                <dd>{result.configuration.appId}</dd>
+              </div>
+              <div>
+                <dt>镜像</dt>
+                <dd>{result.configuration.image}</dd>
+              </div>
+              <div>
+                <dt>模板配置版本</dt>
+                <dd>{result.configuration.settingsRevision}</dd>
+              </div>
+              <div>
+                <dt>应用配置版本</dt>
+                <dd>{result.configuration.appsRevision}</dd>
+              </div>
+              {result.configuration.projectId && (
+                <>
+                  <div>
+                    <dt>项目标识</dt>
+                    <dd>{result.configuration.projectId}</dd>
+                  </div>
+                  <div>
+                    <dt>项目配置版本</dt>
+                    <dd>{result.configuration.projectRevision ?? '未记录'}</dd>
+                  </div>
+                </>
+              )}
+              {result.configuration.connection && (
+                <>
+                  <div>
+                    <dt>连接标识</dt>
+                    <dd>{result.configuration.connection.id}</dd>
+                  </div>
+                  <div>
+                    <dt>连接版本</dt>
+                    <dd>{result.configuration.connection.revision}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          </details>
           {Object.entries(result.readiness.stages || {}).map(([key, stage]) => (
-            <div key={key} className="terminal-diagnostic-stage" data-status={stage.status}>
-              <div className="terminal-diagnostic-stage-heading">
+            <div key={key} className="terminal-diagnosis-stage" data-status={stage.status}>
+              <div className="terminal-diagnosis-stage-heading">
                 <strong>{stageLabels[key] || key}</strong>
-                <span className="terminal-diagnostic-status" data-status={stage.status}>
+                <span className="terminal-diagnosis-status" data-status={stage.status}>
                   {stage.status === 'ready' ? '已就绪' : stage.status === 'failed' ? '未通过' : '待确认'}
                 </span>
               </div>
               <p
-                className="terminal-diagnostic-message"
+                className="terminal-diagnosis-message"
                 role="region"
                 aria-label={`${stageLabels[key] || key}阶段完整诊断`}
                 tabIndex={0}
               >
                 {stage.message}
               </p>
+              {stage.code && (
+                <details className="terminal-diagnosis-source">
+                  <summary>诊断代码</summary>
+                  <p
+                    className="terminal-diagnosis-reading"
+                    role="region"
+                    aria-label={`${stageLabels[key] || key}阶段完整诊断代码`}
+                    tabIndex={0}
+                  >
+                    {stage.code}
+                  </p>
+                </details>
+              )}
               {repair && stage.status === 'failed' && key !== 'engine' && (
                 <button
                   type="button"
@@ -199,18 +302,51 @@ export function TerminalDiagnostics({
               )}
             </div>
           ))}
-          {!result.readiness.stages && <p className="field-help">{result.readiness.message}</p>}
+          {!result.readiness.stages && (
+            <p
+              className="terminal-diagnosis-message"
+              role="region"
+              aria-label="本地运行环境完整检查结果"
+              tabIndex={0}
+            >
+              {result.readiness.message}
+            </p>
+          )}
+          {result.readiness.code && (
+            <details className="terminal-diagnosis-source">
+              <summary>环境检查代码</summary>
+              <p
+                className="terminal-diagnosis-reading"
+                role="region"
+                aria-label="环境检查完整代码"
+                tabIndex={0}
+              >
+                {result.readiness.code}
+              </p>
+            </details>
+          )}
           {result.configuration.issues.map((issue) => (
-            <div className="terminal-diagnostic-issue" key={issue.code} data-severity={issue.severity}>
+            <div className="terminal-diagnosis-issue" key={issue.code} data-severity={issue.severity}>
               <strong>{issue.severity === 'error' ? '配置问题' : '配置提示'}</strong>
               <p
-                className="terminal-diagnostic-message"
+                className="terminal-diagnosis-message"
                 role="region"
                 aria-label={`配置${issue.severity === 'error' ? '问题' : '提示'}：${issue.code}`}
                 tabIndex={0}
               >
                 {issue.message}
               </p>
+              <details className="terminal-diagnosis-source">
+                <summary>配置诊断代码</summary>
+                <p
+                  className="terminal-diagnosis-reading"
+                  role="region"
+                  aria-label="配置完整诊断代码"
+                  tabIndex={0}
+                >
+                  {issue.code}
+                </p>
+              </details>
               {repair && (
                 <button
                   type="button"

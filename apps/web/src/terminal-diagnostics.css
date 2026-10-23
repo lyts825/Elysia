@@ -1,0 +1,135 @@
+.terminal-diagnosis-panel {
+  min-width: 0;
+  margin-top: var(--space-3);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.terminal-diagnosis-panel button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.terminal-diagnosis-panel .terminal-diagnosis-scope,
+.terminal-diagnosis-panel .terminal-diagnosis-overview {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+}
+.terminal-diagnosis-result {
+  margin-top: var(--space-3);
+}
+.terminal-diagnosis-result > summary {
+  margin-bottom: var(--space-2);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.terminal-diagnosis-context {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.terminal-diagnosis-context > div {
+  min-width: 0;
+}
+.terminal-diagnosis-context dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-diagnosis-context dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+}
+.terminal-diagnosis-source {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-diagnosis-source > summary {
+  cursor: pointer;
+}
+.terminal-diagnosis-source > .terminal-diagnosis-context {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.terminal-diagnosis-stage,
+.terminal-diagnosis-issue {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-diagnosis-stage-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.terminal-diagnosis-stage-heading strong {
+  min-width: 0;
+  color: var(--text);
+}
+.terminal-diagnosis-status {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: var(--font-xs);
+}
+.terminal-diagnosis-status[data-status='ready'] {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+.terminal-diagnosis-status[data-status='failed'] {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.terminal-diagnosis-panel .terminal-diagnosis-message,
+.terminal-diagnosis-panel .terminal-diagnosis-reading {
+  margin: 0;
+  max-height: min(12rem, 36dvh);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.terminal-diagnosis-stage > button,
+.terminal-diagnosis-issue > button {
+  justify-self: start;
+}
+.terminal-diagnosis-issue {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.terminal-diagnosis-issue[data-severity='error'] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.terminal-diagnosis-error {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  max-height: min(12rem, 36dvh);
+  overflow: auto;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.terminal-diagnosis-panel :is([tabindex='0'], summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
