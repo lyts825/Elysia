@@ -28,13 +28,30 @@ export function ComposerModelPicker({
   const position = () => {
     if (!trigger.current || !panel.current) return;
     const anchor = trigger.current.getBoundingClientRect();
+    const node = panel.current;
+    const margin = 16;
+    const gap = 8;
     const width = Math.min(360, window.innerWidth - 32);
-    const left = Math.max(16, Math.min(anchor.left, window.innerWidth - width - 16));
-    Object.assign(panel.current.style, {
-      width: `${width}px`,
+    const left = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
+    node.style.width = `${width}px`;
+    const viewportHeight = Math.max(0, window.innerHeight - margin * 2);
+    const desiredHeight = Math.min(node.scrollHeight + 2, viewportHeight);
+    const above = Math.max(0, Math.min(anchor.top - gap - margin, viewportHeight));
+    const below = Math.max(0, Math.min(window.innerHeight - anchor.bottom - gap - margin, viewportHeight));
+    let height = viewportHeight;
+    let top = margin;
+    if (desiredHeight <= above || (above >= below && above >= 120)) {
+      height = Math.min(desiredHeight, above);
+      top = Math.min(window.innerHeight - margin - height, Math.max(margin, anchor.top - gap - height));
+    } else if (desiredHeight <= below || below >= 120) {
+      height = Math.min(desiredHeight, below);
+      top = Math.min(window.innerHeight - margin - height, Math.max(margin, anchor.bottom + gap));
+    }
+    Object.assign(node.style, {
       left: `${left}px`,
-      bottom: `${Math.max(16, window.innerHeight - anchor.top + 8)}px`,
-      maxHeight: `${Math.max(120, anchor.top - 24)}px`,
+      top: `${top}px`,
+      bottom: 'auto',
+      maxHeight: `${height}px`,
     });
   };
   useEffect(() => {
@@ -56,9 +73,12 @@ export function ComposerModelPicker({
   }, []);
   useEffect(() => {
     if (!open) return;
+    const observer = new ResizeObserver(position);
+    if (panel.current) observer.observe(panel.current);
     window.addEventListener('resize', position);
     document.addEventListener('scroll', position, true);
     return () => {
+      observer.disconnect();
       window.removeEventListener('resize', position);
       document.removeEventListener('scroll', position, true);
     };

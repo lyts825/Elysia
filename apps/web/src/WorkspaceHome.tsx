@@ -46,6 +46,7 @@ export function WorkspaceHome({
   openProject?: () => void;
 }) {
   const connected = providers.some((p) => p.keyConfigured && p.checkedRevision === p.revision);
+  const selectedTerminal = terminalProfiles.find((profile) => profile.id === terminalProfileId);
   return (
     <div className="welcome">
       <div className="welcome-content">
@@ -150,6 +151,16 @@ export function WorkspaceHome({
                 </button>
               </div>
             </div>
+            {terminal && selectedTerminal && (
+              <p
+                className="home-terminal-template"
+                role="region"
+                aria-label="当前终端模板完整名称"
+                tabIndex={0}
+              >
+                当前模板：{selectedTerminal.label}
+              </p>
+            )}
           </section>
         )}
         {!terminal && !contextReady && (

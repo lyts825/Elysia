@@ -451,7 +451,7 @@ export function SessionSidebar({
           />
         </div>
         {clipboardError && (
-          <p className="sidebar-muted" role="alert">
+          <p className="session-error" role="alert" aria-label="会话操作失败详情" tabIndex={0}>
             {clipboardError}
           </p>
         )}
@@ -626,7 +626,11 @@ export function SessionSidebar({
                 ? '读取会话…'
                 : `${listDynamic ? '已载入' : '本页'} ${runs.length} / ${listReadCoverage && !listReadCoverage.complete ? '已知' : '共'} ${listPage.total} 个会话`}
             </span>
-            {listError && <span role="alert">{listError}</span>}
+            {listError && (
+              <span className="session-error" role="alert" aria-label="会话列表读取失败详情" tabIndex={0}>
+                {listError}
+              </span>
+            )}
             {listWindowLimited && <span>已达本段上限，可点击加载更早会话继续。</span>}
             <div>
               {!listDynamic && (
@@ -699,12 +703,13 @@ export function SessionSidebar({
       {dialog &&
         createPortal(
           <Modal
+            className="session-dialog"
             title={
               dialog.action === 'rename'
                 ? `重命名${dialog.target.kind === 'project' ? '项目' : '对话'}`
                 : dialog.action === 'move'
                   ? '移动项目空间'
-                  : `永久删除「${title(dialog.target)}」？`
+                  : `永久删除${dialog.target.kind === 'project' ? '项目' : '对话'}？`
             }
             close={closeDialog}
             busy={busy}
@@ -740,12 +745,20 @@ export function SessionSidebar({
             >
               <div className="form-body">
                 {error && (
-                  <p className="inline-warning" role="alert">
+                  <p className="session-error" role="alert" aria-label="保存失败详情" tabIndex={0}>
                     {error}
                   </p>
                 )}
+                {dialog.action !== 'rename' && (
+                  <div className="session-dialog-target">
+                    <span>{dialog.target.kind === 'project' ? '项目名称' : '对话名称'}</span>
+                    <p role="region" aria-label="完整操作对象名称" tabIndex={0}>
+                      {title(dialog.target)}
+                    </p>
+                  </div>
+                )}
                 {dialog.action === 'rename' && (
-                  <label>
+                  <label className="session-dialog-field">
                     名称
                     <input
                       autoFocus
@@ -757,25 +770,37 @@ export function SessionSidebar({
                   </label>
                 )}
                 {dialog.action === 'move' && (
-                  <label>
-                    目标空间
-                    <select
-                      value={dialog.value}
-                      disabled={busy}
-                      onChange={(e) => changeDialogValue(dialog, e.target.value)}
-                    >
-                      {!spaces.some((space) => space.id === dialog.value) && (
-                        <option value={dialog.value} disabled>
-                          原目标空间已不存在，请重新选择
-                        </option>
-                      )}
-                      {spaces.map((space) => (
-                        <option key={space.id} value={space.id}>
-                          {space.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <>
+                    <label className="session-dialog-field">
+                      目标空间
+                      <select
+                        value={dialog.value}
+                        disabled={busy}
+                        onChange={(e) => changeDialogValue(dialog, e.target.value)}
+                      >
+                        {!spaces.some((space) => space.id === dialog.value) && (
+                          <option value={dialog.value} disabled>
+                            原目标空间已不存在，请重新选择
+                          </option>
+                        )}
+                        {spaces.map((space) => (
+                          <option key={space.id} value={space.id}>
+                            {space.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {spaces.some((space) => space.id === dialog.value) && (
+                      <p
+                        className="field-help session-space-name"
+                        role="region"
+                        aria-label="已选空间完整名称"
+                        tabIndex={0}
+                      >
+                        已选空间：{spaces.find((space) => space.id === dialog.value)?.name}
+                      </p>
+                    )}
+                  </>
                 )}
                 {dialog.action === 'delete' && (
                   <>
@@ -799,7 +824,7 @@ export function SessionSidebar({
                   </>
                 )}
               </div>
-              <footer>
+              <footer className="modal-footer">
                 <button type="button" className="secondary" disabled={busy} onClick={closeDialog}>
                   {dialog.action === 'delete' ? '保留' : '取消'}
                 </button>

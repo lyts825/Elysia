@@ -185,6 +185,18 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+.home-terminal-template {
+  margin: 0 var(--space-4) var(--space-4);
+  max-height: min(8rem, 30dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.home-terminal-template:focus-visible {
+  outline-offset: -2px;
+}
 @media (max-width: 760px) {
   .welcome-content {
     padding: var(--space-6) var(--space-4) var(--space-8);

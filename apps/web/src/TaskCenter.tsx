@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow';
@@ -50,11 +50,39 @@ export function TaskCenter({
   const retryReviews = useRef(false);
   const retryProjections = useRef(false);
   const [opening, setOpening] = useState('');
+  const [openingError, setOpeningError] = useState<{ id: string; message: string }>();
+  const openingErrorRef = useRef<HTMLParagraphElement>(null);
+  const openingFocus = useRef<{
+    origin: HTMLButtonElement;
+    active: boolean;
+    controller: AbortController;
+  }>(undefined);
   const [notifications, setNotifications] = useState<boolean>();
   const [notifySupported, setNotifySupported] = useState(false);
   const [notificationError, setNotificationError] = useState('');
   const [notificationHealth, setNotificationHealth] = useState(() => readNotificationHealth(client));
   const [savingNotifications, setSavingNotifications] = useState(false);
+  useEffect(
+    () => () => {
+      openingFocus.current?.controller.abort();
+      openingFocus.current = undefined;
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    if (!openingError) return;
+    const request = openingFocus.current;
+    if (
+      request?.active &&
+      request.origin.isConnected &&
+      (document.activeElement === document.body || document.activeElement === request.origin)
+    ) {
+      openingErrorRef.current?.focus();
+      openingErrorRef.current?.scrollIntoView({ block: 'nearest' });
+    }
+    request?.controller.abort();
+    openingFocus.current = undefined;
+  }, [openingError]);
   useEffect(() => {
     let live = true;
     void readTaskNotificationSettings(surface)
@@ -83,6 +111,9 @@ export function TaskCenter({
     const controller = new AbortController();
     let pending = false;
     setResult(undefined);
+    openingFocus.current?.controller.abort();
+    openingFocus.current = undefined;
+    setOpeningError(undefined);
     const read = async () => {
       if (pending || controller.signal.aborted) return;
       pending = true;
@@ -173,36 +204,49 @@ export function TaskCenter({
           </label>
         )}
         <div className="task-center-search">
-          <input
-            type="search"
-            aria-label="搜索任务"
-            placeholder="搜索任务…"
-            maxLength={200}
-            value={state.query || ''}
-            onChange={(event) => changeState({ ...state, query: event.target.value, before: '', trail: [] })}
-          />
-          <select
-            aria-label="筛选任务项目"
-            value={state.projectId || ''}
-            onChange={(event) =>
-              changeState({ ...state, projectId: event.target.value, before: '', trail: [] })
-            }
-          >
-            <option value="">全部项目</option>
-            {!!state.projectId && !projects.some((project) => project.id === state.projectId) && (
-              <option value={state.projectId} disabled>
-                原项目不可用
-              </option>
-            )}
-            {projects
-              .filter((project) => !project.archived)
-              .map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
+          <label>
+            搜索任务
+            <input
+              type="search"
+              aria-label="搜索任务"
+              placeholder="搜索任务…"
+              maxLength={200}
+              value={state.query || ''}
+              onChange={(event) =>
+                changeState({ ...state, query: event.target.value, before: '', trail: [] })
+              }
+            />
+          </label>
+          <label>
+            所属项目
+            <select
+              aria-label="筛选任务项目"
+              value={state.projectId || ''}
+              onChange={(event) =>
+                changeState({ ...state, projectId: event.target.value, before: '', trail: [] })
+              }
+            >
+              <option value="">全部项目</option>
+              {!!state.projectId && !projects.some((project) => project.id === state.projectId) && (
+                <option value={state.projectId} disabled>
+                  原项目不可用
                 </option>
-              ))}
-          </select>
+              )}
+              {projects
+                .filter((project) => !project.archived)
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+            </select>
+          </label>
         </div>
+        {state.projectId && (
+          <p className="task-center-project-summary">
+            当前项目：{projects.find((project) => project.id === state.projectId)?.name || '原项目不可用'}
+          </p>
+        )}
         <div className="task-center-options">
           <label>
             <input
@@ -253,7 +297,9 @@ export function TaskCenter({
         )}
         {error && (
           <div role="alert" className="task-center-error">
-            <span>{error}</span>
+            <p className="task-center-error-detail" role="region" aria-label="任务读取失败详情" tabIndex={0}>
+              {error}
+            </p>
             <button className="secondary" disabled={loading} onClick={() => setRetry((value) => value + 1)}>
               重试
             </button>
@@ -266,7 +312,7 @@ export function TaskCenter({
               当前筛选、搜索与总数可能不完整，健康记录仍可使用。
             </p>
             <button
-              className="text-button"
+              className="secondary"
               disabled={loading}
               onClick={() => {
                 retryProjections.current = true;
@@ -286,7 +332,7 @@ export function TaskCenter({
                 : '任务记录仍可打开，暂不归入任何复核状态。'}
             </p>
             <button
-              className="text-button"
+              className="secondary"
               disabled={loading}
               onClick={() => {
                 retryReviews.current = true;
@@ -301,42 +347,105 @@ export function TaskCenter({
           {result?.items.map((item) => {
             const presentation = taskCenterPresentation(item);
             return (
-              <button
-                key={item.id}
-                className="task-center-row"
-                aria-label={`${item.title}，${presentation.status}，${presentation.action}`}
-                disabled={!!opening}
-                onClick={() => {
-                  setOpening(item.id);
-                  void openRun(item.id, presentation.target)
-                    .catch((issue) => setError(issue instanceof Error ? issue.message : '无法打开对话。'))
-                    .finally(() => setOpening(''));
-                }}
-              >
-                <span className={'task-center-status ' + item.category}>{presentation.status}</span>
-                <span className="task-center-description">
-                  <strong title={item.title}>{item.title}</strong>
-                  <small>
-                    {projects.find((project) => project.id === item.projectId)?.name ||
-                      (item.kind === 'chat' ? '独立对话' : '项目任务')}
-                  </small>
-                  {item.readIssue ? (
-                    <small className="field-error">{item.readIssue.message}</small>
-                  ) : presentation.review && item.reviewIssue ? (
-                    <small className="field-error">用户复核：暂不可读 · {item.reviewIssue.message}</small>
-                  ) : (
-                    presentation.review &&
-                    item.reviewStatus && (
+              <div key={item.id} className="task-center-item">
+                <button
+                  className="task-center-row"
+                  aria-label={`${item.title}，${presentation.status}，${presentation.action}`}
+                  disabled={!!opening}
+                  onClick={(event) => {
+                    openingFocus.current?.controller.abort();
+                    const focus = {
+                      origin: event.currentTarget,
+                      active: true,
+                      controller: new AbortController(),
+                    };
+                    openingFocus.current = focus;
+                    const options = { signal: focus.controller.signal, capture: true };
+                    document.addEventListener(
+                      'focusin',
+                      (event) => {
+                        if (event.target !== focus.origin && event.target !== document.body)
+                          focus.active = false;
+                      },
+                      options,
+                    );
+                    document.addEventListener(
+                      'pointerdown',
+                      (event) => {
+                        if (!focus.origin.contains(event.target as Node)) focus.active = false;
+                      },
+                      options,
+                    );
+                    window.addEventListener(
+                      'blur',
+                      (event) => {
+                        if (event.target === window) focus.active = false;
+                      },
+                      options,
+                    );
+                    setOpening(item.id);
+                    setOpeningError(undefined);
+                    void openRun(item.id, presentation.target)
+                      .then(() => {
+                        focus.controller.abort();
+                        if (openingFocus.current === focus) openingFocus.current = undefined;
+                      })
+                      .catch((issue) => {
+                        if (openingFocus.current !== focus) return;
+                        setOpeningError({
+                          id: item.id,
+                          message: issue instanceof Error ? issue.message : '无法打开对话。',
+                        });
+                      })
+                      .finally(() => setOpening(''));
+                  }}
+                >
+                  <span className={'task-center-status ' + item.category}>{presentation.status}</span>
+                  <span className="task-center-description">
+                    <strong title={item.title}>{item.title}</strong>
+                    <small>
+                      {projects.find((project) => project.id === item.projectId)?.name ||
+                        (item.kind === 'chat' ? '独立对话' : '项目任务')}
+                    </small>
+                    {!item.readIssue && !item.reviewIssue && presentation.review && item.reviewStatus && (
                       <small className="task-center-review-status">
                         用户复核：{reviewStatusLabels[item.reviewStatus]}
                       </small>
-                    )
-                  )}
-                  {presentation.hint && <small>{presentation.hint}</small>}
-                </span>
-                <span className="task-center-action">{presentation.action}</span>
-                <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
-              </button>
+                    )}
+                    {presentation.hint && <small>{presentation.hint}</small>}
+                  </span>
+                  <span className="task-center-action" role={opening === item.id ? 'status' : undefined}>
+                    {opening === item.id ? '正在打开…' : presentation.action}
+                  </span>
+                  <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
+                </button>
+                {(item.readIssue || (presentation.review && item.reviewIssue)) && (
+                  <p
+                    className="task-center-item-issue"
+                    role="region"
+                    aria-label={`${item.title}的读取问题`}
+                    tabIndex={0}
+                  >
+                    {item.readIssue
+                      ? item.readIssue.message
+                      : `用户复核：暂不可读 · ${item.reviewIssue!.message}`}
+                  </p>
+                )}
+                {openingError?.id === item.id && (
+                  <div className="task-center-open-error" role="alert">
+                    <strong>无法打开此任务，请重试上方入口。</strong>
+                    <p
+                      ref={openingErrorRef}
+                      className="task-center-error-detail"
+                      role="region"
+                      aria-label="任务打开失败详情"
+                      tabIndex={0}
+                    >
+                      {openingError.message}
+                    </p>
+                  </div>
+                )}
+              </div>
             );
           })}
           {!result?.items.length && (
@@ -351,25 +460,36 @@ export function TaskCenter({
           {result
             ? `${result.projectionCoverage && !result.projectionCoverage.complete ? '当前可列出' : state.reviewFilter && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
             : '每页最多 40 项'}
+          {result && (
+            <small>
+              第 {state.trail.length + 1} 页 · 本页 {result.items.length} 项
+            </small>
+          )}
         </span>
-        <button
-          className="secondary"
-          disabled={loading || !state.trail.length}
-          onClick={() =>
-            changeState({ ...state, before: state.trail.at(-1)!, trail: state.trail.slice(0, -1) })
-          }
-        >
-          上一页
-        </button>
-        <button
-          className="secondary"
-          disabled={loading || !result?.page.nextBefore}
-          onClick={() =>
-            changeState({ ...state, before: result!.page.nextBefore!, trail: [...state.trail, state.before] })
-          }
-        >
-          下一页
-        </button>
+        <div className="task-center-page-actions">
+          <button
+            className="secondary"
+            disabled={loading || !state.trail.length}
+            onClick={() =>
+              changeState({ ...state, before: state.trail.at(-1)!, trail: state.trail.slice(0, -1) })
+            }
+          >
+            上一页
+          </button>
+          <button
+            className="secondary"
+            disabled={loading || !result?.page.nextBefore}
+            onClick={() =>
+              changeState({
+                ...state,
+                before: result!.page.nextBefore!,
+                trail: [...state.trail, state.before],
+              })
+            }
+          >
+            下一页
+          </button>
+        </div>
       </footer>
     </Modal>
   );

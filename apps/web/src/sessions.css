@@ -1,5 +1,6 @@
 .session-navigation {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -299,10 +300,16 @@
 }
 .session-pagination {
   display: grid;
+  grid-auto-rows: max-content;
+  flex: none;
+  min-width: 0;
+  max-height: min(18rem, 45dvh);
+  overflow: auto;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-2);
   font-size: var(--font-xs);
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .session-pagination > div:empty {
   display: none;
@@ -324,4 +331,91 @@
 .session-pagination button:disabled {
   color: var(--muted);
   opacity: 0.6;
+}
+.session-error {
+  display: block;
+  min-width: 0;
+  max-height: min(10rem, 25dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.session-error:focus-visible,
+.session-dialog-target p:focus-visible {
+  outline-offset: -2px;
+}
+.session-dialog .form-body {
+  overflow-wrap: anywhere;
+}
+.session-dialog .session-dialog-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.session-dialog-field input,
+.session-dialog-field select,
+.session-dialog-field .field-help {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 0;
+}
+.session-space-name {
+  margin-bottom: var(--space-4);
+  max-height: min(10rem, 25dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.overlay:has(> .session-dialog) {
+  z-index: 1100;
+}
+.session-dialog-target {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.session-dialog-target > span {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.session-dialog-target p {
+  margin: 0;
+  max-height: min(10rem, 25dvh);
+  overflow: auto;
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
+  color: var(--text);
+}
+.session-dialog .modal-footer button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-height: 560px) {
+  .session-dialog {
+    overflow-y: auto;
+    scroll-padding-top: 6rem;
+  }
+  .session-dialog > header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+  }
+  .session-dialog form,
+  .session-dialog .form-body {
+    overflow: visible;
+    flex: none;
+  }
 }
