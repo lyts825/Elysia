@@ -1,4 +1,26 @@
 import React, { Component, Suspense, type ComponentType, type ReactNode } from 'react';
+import './deferred-panel.css';
+
+function PanelFeedback({ label, failed = false }: { label: string; failed?: boolean }) {
+  return (
+    <section
+      className="deferred-panel-feedback"
+      data-state={failed ? 'failed' : 'loading'}
+      role={failed ? 'alert' : 'status'}
+    >
+      <div className="deferred-panel-message">
+        <p className="deferred-panel-state">{failed ? '面板加载失败' : '正在准备面板'}</p>
+        <h3>{label}</h3>
+        {failed && <p>重新加载会更新整个界面。</p>}
+      </div>
+      {failed && (
+        <button type="button" className="secondary" onClick={() => location.reload()}>
+          重新加载整个界面
+        </button>
+      )}
+    </section>
+  );
+}
 
 class PanelBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean }> {
   state = { failed: false };
@@ -6,15 +28,7 @@ class PanelBoundary extends Component<{ children: ReactNode; label: string }, { 
     return { failed: true };
   }
   render() {
-    if (this.state.failed)
-      return (
-        <div role="alert" className="field-help">
-          {this.props.label}加载失败。
-          <button className="quiet-button" onClick={() => location.reload()}>
-            重新加载界面
-          </button>
-        </div>
-      );
+    if (this.state.failed) return <PanelFeedback label={this.props.label} failed />;
     return this.props.children;
   }
 }
@@ -24,13 +38,7 @@ export function deferredPanel<P extends object>(load: () => Promise<ComponentTyp
   return function DeferredPanel(props: P) {
     return (
       <PanelBoundary label={label}>
-        <Suspense
-          fallback={
-            <p className="field-help" role="status">
-              正在准备{label}…
-            </p>
-          }
-        >
+        <Suspense fallback={<PanelFeedback label={label} />}>
           <View {...props} />
         </Suspense>
       </PanelBoundary>

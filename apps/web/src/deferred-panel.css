@@ -1,0 +1,46 @@
+.deferred-panel-feedback {
+  min-width: 0;
+  max-width: 100%;
+  margin: var(--space-3);
+  padding: var(--space-4);
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.deferred-panel-message {
+  min-width: 0;
+  max-width: 100%;
+}
+.deferred-panel-message h3 {
+  margin: var(--space-1) 0;
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.deferred-panel-message p {
+  margin: 0;
+  color: var(--secondary);
+}
+.deferred-panel-message .deferred-panel-state {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.deferred-panel-feedback[data-state='failed'] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.deferred-panel-feedback[data-state='failed'] .deferred-panel-state {
+  color: var(--danger);
+  font-weight: 600;
+}
+.deferred-panel-feedback > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
