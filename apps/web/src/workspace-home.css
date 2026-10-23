@@ -1,0 +1,86 @@
+.workspace-home {
+  min-width: 0;
+  container-type: inline-size;
+}
+.workspace-home .welcome-content,
+.workspace-home .composer,
+.workspace-home .composer-bottom,
+.workspace-home .composer-actions {
+  min-width: 0;
+}
+.workspace-home .home-heading > .home-project-reading {
+  max-height: min(9rem, 28dvh);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  color: var(--secondary);
+}
+.home-project-reading,
+.home-model-reading {
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.home-project-reading:focus-visible,
+.home-model-reading:focus-visible {
+  outline-offset: -2px;
+}
+.home-draft-label {
+  display: block;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) 0;
+  font-size: var(--font-sm);
+  color: var(--secondary);
+}
+.workspace-home .composer textarea {
+  padding-top: var(--space-2);
+}
+.workspace-home .composer-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+.workspace-home .composer-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.workspace-home .composer-options {
+  max-width: 100%;
+}
+.home-current-model {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.home-current-model summary {
+  padding: var(--space-3);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.home-model-reading {
+  max-height: min(16rem, 40dvh);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+}
+.home-model-reading > div + div {
+  margin-top: var(--space-3);
+}
+.home-model-reading dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.home-model-reading dd {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+}
+@container (max-width: 32rem) {
+  .workspace-home .composer-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

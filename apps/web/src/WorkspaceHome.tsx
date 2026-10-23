@@ -1,10 +1,11 @@
 import type { AgentTerminalProfile, Project } from '../../../packages/contracts/src/index';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import type { SelectableProvider } from './ModelPicker';
 import type { ModelChoice } from './ModelPicker';
 import { ComposerModelPicker } from './ComposerModelPicker';
 import { Icon } from './Icon';
 import './home.css';
+import './workspace-home.css';
 
 export function WorkspaceHome({
   project,
@@ -47,18 +48,25 @@ export function WorkspaceHome({
 }) {
   const connected = providers.some((p) => p.keyConfigured && p.checkedRevision === p.revision);
   const selectedTerminal = terminalProfiles.find((profile) => profile.id === terminalProfileId);
+  const selectedProvider = providers.find((provider) => provider.id === modelChoice.providerId);
+  const id = useId();
   return (
-    <div className="welcome">
+    <div className="welcome workspace-home">
       <div className="welcome-content">
         <header className="home-heading">
           <h1>{project ? '新建任务' : terminal ? 'Agent 终端' : '新建对话'}</h1>
           <p>
             {project
-              ? `在 ${project.name} 中，把想法变成成果。`
+              ? '在当前项目中，把想法变成成果。'
               : terminal
                 ? '选择项目，让 DSH 或 Codex CLI 开始工作。'
                 : '从一个想法开始，一起把它完成。'}
           </p>
+          {project && (
+            <p className="home-project-reading" role="region" aria-label="当前项目完整名称" tabIndex={0}>
+              {project.name}
+            </p>
+          )}
         </header>
         {terminal && !project ? (
           <div className="terminal-start-empty">
@@ -71,7 +79,11 @@ export function WorkspaceHome({
           </div>
         ) : (
           <section className="composer" aria-label={project ? '创建项目任务' : '创建独立对话'}>
+            <label className="home-draft-label" htmlFor={`${id}-draft`}>
+              {project ? '任务目标' : '对话内容'}
+            </label>
             <textarea
+              id={`${id}-draft`}
               rows={2}
               aria-label={project ? '任务目标' : '对话内容'}
               placeholder={project ? '描述你要完成的任务…' : '有什么想聊的？'}
@@ -162,6 +174,35 @@ export function WorkspaceHome({
               </p>
             )}
           </section>
+        )}
+        {!terminal && (
+          <details className="home-current-model">
+            <summary>当前模型完整信息</summary>
+            <dl className="home-model-reading" role="region" aria-label="当前模型连接与型号" tabIndex={0}>
+              <div>
+                <dt>连接名称</dt>
+                <dd>{selectedProvider?.label || '未选择模型连接'}</dd>
+              </div>
+              <div>
+                <dt>连接标识</dt>
+                <dd>{modelChoice.providerId || '未选择'}</dd>
+              </div>
+              <div>
+                <dt>模型</dt>
+                <dd>{modelChoice.model || selectedProvider?.model || '未指定'}</dd>
+              </div>
+            </dl>
+          </details>
+        )}
+        {project?.archived && (
+          <p className="home-connection" role="status">
+            项目已归档，当前不能创建任务。
+          </p>
+        )}
+        {!terminal && connected && !modelReady && (
+          <p className="home-connection" role="status">
+            当前模型尚未就绪，请检查模型选择与连接。
+          </p>
         )}
         {!terminal && !contextReady && (
           <p className="home-connection" role="status">
