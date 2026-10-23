@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { PROJECT_BOARD_DRAFT_LIMIT, type ProjectBoardEdit } from './ProjectBoardDraft';
 import {
   PROJECT_PLAN_FILE_LIMIT,
@@ -31,6 +31,7 @@ export function ProjectPlanTransfer({
   exportOriginal: () => void;
   lifecycle: RefObject<PlanImportLifecycle | null>;
 }) {
+  const identity = useId();
   const [preview, setPreview] = useState<{ file: PlanFile; name: string }>();
   const [reading, setReading] = useState(false),
     [acknowledgedKey, setAcknowledgedKey] = useState(''),
@@ -175,7 +176,12 @@ export function ProjectPlanTransfer({
       </p>
       {reading && <p role="status">正在读取计划文件…</p>}
       {error && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error project-plan-reading"
+          role="alert"
+          aria-label="项目计划复用问题全文"
+          tabIndex={0}
+        >
           {error}
         </p>
       )}
@@ -191,7 +197,15 @@ export function ProjectPlanTransfer({
             <h4>导入计划预览</h4>
             <span>{preview.file.plan.items.length} 个交付项</span>
           </div>
-          <p className="project-plan-filename">{preview.name}</p>
+          <p
+            className="project-plan-filename project-plan-reading"
+            id={`${identity}-filename`}
+            role="region"
+            aria-label="本次导入计划完整文件名"
+            tabIndex={0}
+          >
+            {preview.name}
+          </p>
           <p className="field-help">
             应用后可在本项目编辑。全部交付项使用新编号；保存后仍需重新关联任务和确认，现有任务与历史交付清单不会迁移到新编号。核对后仍需点击“保存项目计划”。
           </p>
@@ -214,7 +228,12 @@ export function ProjectPlanTransfer({
               </>
             ) : (
               <>
-                <p className="field-error" role="alert">
+                <p
+                  className="field-error project-plan-reading"
+                  role="alert"
+                  aria-label="导入草稿容量问题全文"
+                  tabIndex={0}
+                >
                   {capacity?.error}
                 </p>
                 <p className="field-help">
@@ -304,6 +323,17 @@ export function ProjectPlanTransfer({
             </section>
           </div>
           <div className="project-plan-confirmation">
+            <p className="project-plan-confirmation-state" id={`${identity}-confirmation`} role="status">
+              {busy
+                ? '当前操作处理中，暂不可应用导入预览。'
+                : canRestore
+                  ? '已有导入前原稿，请先恢复原稿或保存项目计划。'
+                  : !canApply
+                    ? '当前导入检查未通过，尚不能替换编辑内容。'
+                    : acknowledgedKey === confirmationKey
+                      ? '已确认替换当前编辑内容，尚未应用。'
+                      : '请核对完整对照，并明确勾选替换确认。'}
+            </p>
             <label className="check-row">
               <input
                 type="checkbox"
@@ -317,6 +347,7 @@ export function ProjectPlanTransfer({
               <button
                 type="button"
                 className="primary"
+                aria-describedby={`${identity}-filename ${identity}-confirmation`}
                 disabled={busy || canRestore || !canApply || acknowledgedKey !== confirmationKey}
                 onClick={() => {
                   if (apply(preview.file)) {
@@ -325,6 +356,8 @@ export function ProjectPlanTransfer({
                     setAcknowledgedKey('');
                     setNotice('已应用到本项目编辑草稿。请调整并核对，再保存项目计划。');
                     setError('');
+                  } else {
+                    setNotice('应用未完成，导入预览仍保留。请核对工作台提示后重试。');
                   }
                 }}
               >

@@ -124,6 +124,28 @@
 .project-plan-confirmation .project-actions {
   margin-bottom: 0;
 }
+.project-plan-transfer .project-plan-reading {
+  min-width: 0;
+  max-height: min(12rem, 35dvh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.project-plan-transfer .project-plan-filename {
+  max-height: min(8rem, 25dvh);
+}
+.project-plan-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.project-plan-confirmation .project-plan-confirmation-state {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-sm);
+  color: var(--secondary);
+  line-height: var(--leading-body);
+}
 @container (max-width: 560px) {
   .project-plan-comparison-columns {
     grid-template-columns: minmax(0, 1fr);
