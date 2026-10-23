@@ -70,3 +70,14 @@
   text-align: end;
   font-variant-numeric: tabular-nums;
 }
+.project-item-setup .project-item-setup-state {
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-soft);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.project-item-setup-objective textarea[aria-invalid='true'] {
+  border-color: var(--danger-border);
+}

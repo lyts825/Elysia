@@ -133,6 +133,15 @@ export function ProjectItemSetup({
           <p className="field-help">
             核对目标、交付物、权限与预算后明确创建。允许调整本次执行要求；创建只关联为候选，不代表已符合项目标准。
           </p>
+          <p className="project-item-setup-state" id={`${objectiveHelpId}-state`} role="status">
+            {busy
+              ? '正在处理本次任务配置，请等待。'
+              : error
+                ? '本次表单尚未写回工作台草稿，请核对保存问题后重试。'
+                : !objective.trim()
+                  ? '目标尚未填写有效内容，暂不可创建任务。'
+                  : '目标已填写；仍需核对下方配置并明确创建任务。'}
+          </p>
           {first.current.initial && (
             <p className="field-help project-item-setup-restored" role="status">
               已恢复上次保存的创建配置。本次交付物和验收标准采用下方表单中的保留值，可继续编辑；不会自动替换为项目标准。
@@ -144,7 +153,8 @@ export function ProjectItemSetup({
               value={objective}
               maxLength={20000}
               rows={5}
-              aria-describedby={objectiveHelpId}
+              aria-describedby={`${objectiveHelpId} ${objectiveHelpId}-state`}
+              aria-invalid={!objective.trim() || undefined}
               onChange={(e) => {
                 const value = e.target.value;
                 setObjective(value);
@@ -159,6 +169,7 @@ export function ProjectItemSetup({
           </label>
           <p className="field-help project-item-setup-counter" id={objectiveHelpId}>
             {objective.length} / 20000 字符
+            {!objective.trim() && ' · 请填写非空白的任务目标'}
           </p>
           {error && (
             <p
