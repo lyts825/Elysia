@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { TextFilePage } from '../../../packages/contracts/src/files';
 import { Icon } from './Icon';
 import './file-page.css';
@@ -27,6 +27,7 @@ export function FilePageControls({
   jump: (offset: number) => void;
   restart?: () => void;
 }) {
+  const positionHelpId = useId();
   const [percent, setPercent] = useState('0');
   useEffect(() => {
     setPercent(String(page.totalBytes ? Math.floor((page.offset / page.totalBytes) * 100) : 0));
@@ -43,6 +44,7 @@ export function FilePageControls({
         className="file-page-range"
         title={`字节 ${page.offset.toLocaleString()}–${page.endOffset.toLocaleString()} / ${page.totalBytes.toLocaleString()}`}
       >
+        <span className="file-page-range-label">当前片段</span>
         {formatFileBytes(page.offset)}–{formatFileBytes(page.endOffset)}
         <span> / {formatFileBytes(page.totalBytes)}</span>
       </span>
@@ -64,9 +66,11 @@ export function FilePageControls({
           <Icon name="chevron" size={13} />
         </button>
         <label className="file-page-jump">
+          <span>位置</span>
           <input
             aria-label="文件位置百分比"
             title="按位置读取；100% 查看末尾一页"
+            aria-describedby={positionHelpId}
             type="number"
             min={0}
             max={100}
@@ -91,6 +95,31 @@ export function FilePageControls({
           定位
         </button>
       </div>
+      <details className="file-page-detail">
+        <summary>精确字节与定位说明</summary>
+        <div
+          className="file-page-detail-reading"
+          tabIndex={0}
+          role="region"
+          aria-label="当前文件片段精确字节与定位说明"
+        >
+          <dl>
+            <div>
+              <dt>片段起点（含）</dt>
+              <dd>{page.offset.toLocaleString()} 字节</dd>
+            </div>
+            <div>
+              <dt>片段终点（不含）</dt>
+              <dd>{page.endOffset.toLocaleString()} 字节</dd>
+            </div>
+            <div>
+              <dt>文件大小</dt>
+              <dd>{page.totalBytes.toLocaleString()} 字节</dd>
+            </div>
+          </dl>
+          <p id={positionHelpId}>按文件字节位置读取。100% 查看末尾一页；实际片段起点会对齐文本编码边界。</p>
+        </div>
+      </details>
     </div>
   );
 }

@@ -3,7 +3,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px var(--space-3);
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -11,12 +12,19 @@
   font-size: var(--font-xs);
 }
 .file-page-range {
+  min-width: 0;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.file-page-range-label {
+  margin-right: var(--space-2);
+  color: var(--secondary);
 }
 .file-page-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
   gap: var(--space-1);
 }
 .file-page-actions button {
@@ -25,7 +33,7 @@
   justify-content: center;
   min-height: var(--control-sm);
   min-width: var(--control-sm);
-  padding: var(--space-1) 6px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -41,19 +49,58 @@
 .file-page-jump {
   display: flex;
   align-items: center;
-  gap: 3px;
-  margin-left: 3px;
+  gap: var(--space-1);
+  margin-left: var(--space-1);
 }
 .file-page-jump input {
-  width: 52px;
+  width: 4rem;
   min-height: var(--control-sm);
-  padding: 3px 5px;
+  padding: var(--space-1);
   border-radius: var(--radius-control);
   font-size: var(--font-xs);
 }
+.file-page-detail {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.file-page-detail > summary {
+  cursor: pointer;
+  color: var(--secondary);
+  line-height: var(--leading-body);
+}
+.file-page-detail-reading {
+  max-height: clamp(8rem, 30dvh, 16rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin-top: var(--space-2);
+  line-height: var(--leading-body);
+}
+.file-page-detail-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.file-page-detail dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+.file-page-detail dl > div {
+  min-width: 0;
+}
+.file-page-detail dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.file-page-detail p {
+  margin: var(--space-2) 0 0;
+}
 @media (max-width: 420px) {
   .file-page-controls {
-    padding-inline: 10px;
+    padding-inline: var(--space-3);
   }
   .file-page-actions {
     margin-left: auto;
