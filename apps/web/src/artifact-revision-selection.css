@@ -1,0 +1,85 @@
+.revision-selection-editor {
+  min-width: 0;
+}
+.revision-selection-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.revision-selection-counts > div {
+  min-width: 0;
+  flex: 1 1 6rem;
+}
+.revision-selection-counts dt,
+.revision-selection-metadata dt,
+.revision-selection-reference dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.revision-selection-counts dd,
+.revision-selection-metadata dd,
+.revision-selection-reference dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.revision-selection-source {
+  min-width: 0;
+  margin-block: var(--space-3);
+  font-size: var(--font-sm);
+}
+.revision-selection-source > summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.revision-selection-reading {
+  min-width: 0;
+  max-height: clamp(8rem, 35dvh, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.revision-selection-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.revision-selection-metadata h5 {
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.revision-selection-metadata + .revision-selection-metadata,
+.revision-selection-reading .revision-selection-reference {
+  margin-top: var(--space-4);
+}
+.revision-selection-metadata dl,
+.revision-selection-metadata p {
+  margin: 0;
+}
+.revision-selection-metadata dl > div + div,
+.revision-selection-reference > div + div {
+  margin-top: var(--space-2);
+}
+.revision-selection-editor .workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.revision-selection-editor .workflow-field textarea {
+  min-height: 6rem;
+  max-height: min(24rem, 60dvh);
+}

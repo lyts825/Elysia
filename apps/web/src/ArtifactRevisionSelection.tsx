@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChange,
   DeliveryArtifactChangePage,
@@ -12,6 +12,49 @@ import {
 } from './ArtifactRevisionDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './handoff-selection.css';
+import './artifact-revision-selection.css';
+
+function RevisionMetadata({ label, value }: { label: string; value: DeliveryArtifactChange['before'] }) {
+  return (
+    <section className="revision-selection-metadata">
+      <h5>{label}</h5>
+      {value ? (
+        <dl>
+          <div>
+            <dt>完整名称</dt>
+            <dd>{value.name}</dd>
+          </div>
+          <div>
+            <dt>版本</dt>
+            <dd>v{value.version}</dd>
+          </div>
+          <div>
+            <dt>完整哈希</dt>
+            <dd>{value.hash}</dd>
+          </div>
+          <div>
+            <dt>格式</dt>
+            <dd>{value.mediaType}</dd>
+          </div>
+          <div>
+            <dt>核验状态</dt>
+            <dd>{value.verified ? '已核验' : '未核验'}</dd>
+          </div>
+          <div>
+            <dt>产物标识</dt>
+            <dd>{value.id}</dd>
+          </div>
+          <div>
+            <dt>所属任务</dt>
+            <dd>{value.taskId}</dd>
+          </div>
+        </dl>
+      ) : (
+        <p>无此版本元数据</p>
+      )}
+    </section>
+  );
+}
 
 export function ArtifactRevisionSummary({
   items,
@@ -50,6 +93,28 @@ export function ArtifactRevisionSummary({
                 <dd>{item.after ? `v${item.after.version} · ${item.after.hash.slice(0, 12)}` : '已移除'}</dd>
               </div>
             </dl>
+            <details className="revision-selection-source">
+              <summary>完整版本与核对信息</summary>
+              <div
+                className="revision-selection-reading"
+                role="region"
+                tabIndex={0}
+                aria-label={`差异 ${index + 1} 完整版本元数据`}
+              >
+                <RevisionMetadata label="原版本" value={item.before} />
+                <RevisionMetadata label="选定时版本" value={item.after} />
+                <dl className="revision-selection-reference">
+                  <div>
+                    <dt>差异产物标识</dt>
+                    <dd>{item.artifactId}</dd>
+                  </div>
+                  <div>
+                    <dt>当前产物引用</dt>
+                    <dd>{item.currentArtifactId || '无当前产物引用'}</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
             {showRequirement && (
               <div
                 className="handoff-reading"
@@ -87,6 +152,7 @@ export function ArtifactRevisionSelection({
   reload: () => void;
 }) {
   const { api } = useSurfaceClient();
+  const identity = useId();
   const entries = readArtifactRevision(raw);
   const ref = useRef(entries);
   ref.current = entries;
@@ -148,7 +214,7 @@ export function ArtifactRevisionSelection({
   }
   if (!entries)
     return (
-      <section className="workflow-source handoff-artifacts">
+      <section className="workflow-source handoff-artifacts revision-selection-editor">
         <p role="alert">差异草稿无法读取，原文已保留。请先保留所需内容，再清除此部分选择。</p>
         <button type="button" className="secondary" disabled={disabled} onClick={() => change([])}>
           清除无法读取的差异选择
@@ -157,11 +223,25 @@ export function ArtifactRevisionSelection({
     );
   if (!entries.length) return null;
   return (
-    <section className="workflow-source handoff-artifacts" aria-label="调整修改清单">
-      <h3>
-        差异修改清单 · 已加入 {entries.filter((e) => e.added).length} 项 · 待加入{' '}
-        {entries.filter((e) => !e.added).length} 项
-      </h3>
+    <section
+      className="workflow-source handoff-artifacts revision-selection-editor"
+      aria-label="调整修改清单"
+    >
+      <h3>差异修改清单</h3>
+      <dl className="revision-selection-counts" aria-label="差异修改清单数量">
+        <div>
+          <dt>草稿条目</dt>
+          <dd>{entries.length} / 40</dd>
+        </div>
+        <div>
+          <dt>已加入</dt>
+          <dd>{entries.filter((e) => e.added).length} / 20</dd>
+        </div>
+        <div>
+          <dt>待加入</dt>
+          <dd>{entries.filter((e) => !e.added).length}</dd>
+        </div>
+      </dl>
       <p className="field-help">清单包含差异元数据与修改要求；需要文件正文时请单独选择产物。</p>
       {entries.map((entry, index) => {
         const key = artifactRevisionKey(entry),
@@ -177,6 +257,28 @@ export function ArtifactRevisionSelection({
             <p className="handoff-state">
               第 {index + 1} 项 · {entry.added ? '已加入' : '待加入'}
             </p>
+            <details className="revision-selection-source">
+              <summary>来源复核与交付版本</summary>
+              <dl
+                className="revision-selection-reading revision-selection-reference"
+                role="region"
+                tabIndex={0}
+                aria-label={`第 ${index + 1} 项差异复核来源`}
+              >
+                <div>
+                  <dt>来源复核</dt>
+                  <dd>{entry.reviewId}</dd>
+                </div>
+                <div>
+                  <dt>选择时指纹</dt>
+                  <dd>{entry.fingerprint}</dd>
+                </div>
+                <div>
+                  <dt>当前交付指纹</dt>
+                  <dd>{fingerprint || '尚未读取'}</dd>
+                </div>
+              </dl>
+            </details>
             <ArtifactRevisionSummary items={[entry]} embedded showRequirement={false} />
             <label className="workflow-field">
               具体修改要求
@@ -186,9 +288,12 @@ export function ArtifactRevisionSelection({
                 rows={2}
                 maxLength={2000}
                 disabled={disabled || busy}
+                aria-describedby={`${identity}-requirement-${index}`}
                 onChange={(event) => patch({ requirement: event.target.value, added: false })}
               />
-              <span className="field-help handoff-character-count">{entry.requirement.length} / 2000 字</span>
+              <span className="field-help handoff-character-count" id={`${identity}-requirement-${index}`}>
+                {entry.requirement.length} / 2000 字 · 修改后需重新加入。
+              </span>
             </label>
             {stale && (
               <p className="inline-warning">
