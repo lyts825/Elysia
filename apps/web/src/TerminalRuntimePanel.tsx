@@ -30,6 +30,14 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'terminal-capacity': '规格超出 Docker 容量，请增加 Docker 资源或新建较小规格任务',
   'terminal-engine': '等待 Docker 引擎',
 };
+function runtimeTime(timestamp: number) {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? (
+    <span>时间无法格式化（原值：{String(timestamp)}）</span>
+  ) : (
+    <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>
+  );
+}
 export function TerminalRuntimePanel({
   snapshot,
   tasks,
@@ -59,12 +67,16 @@ export function TerminalRuntimePanel({
   return (
     <details className="terminal-activity terminal-runtime">
       <summary>
-        终端状态 ·{' '}
-        {snapshot.executor.queue.length
-          ? `${snapshot.executor.queue.length} 项排队`
-          : snapshot.terminal.tasks.length
-            ? phases[snapshot.terminal.tasks.at(-1)!.phase]
-            : '空闲'}
+        <span>终端状态</span>
+        <span className="terminal-runtime-summary-state">
+          {snapshot.executor.queue.length ? `${snapshot.executor.queue.length} 项排队 · ` : ''}
+          {snapshot.terminal.tasks.length
+            ? `${snapshot.terminal.tasks.length} 项运行记录`
+            : snapshot.executor.queue.length
+              ? '暂无运行记录'
+              : '空闲'}
+          {held.length > 0 && ` · ${held.length} 项资源暂留`}
+        </span>
       </summary>
       <div className="terminal-runtime-body">
         {snapshot.executor.queue.length > 0 && (
@@ -76,15 +88,47 @@ export function TerminalRuntimePanel({
               {snapshot.executor.queue.map((item) => (
                 <article className="terminal-runtime-item" key={item.taskId}>
                   <div className="terminal-runtime-item-heading">
-                    <strong>{names.get(item.taskId) || '终端任务'}</strong>
+                    <strong
+                      className="terminal-runtime-reading"
+                      role="region"
+                      aria-label="排队任务完整名称"
+                      tabIndex={0}
+                    >
+                      {names.get(item.taskId) || '终端任务'}
+                    </strong>
                     <span className="terminal-runtime-state">队列第 {item.position} 位</span>
                   </div>
-                  <p>{reasons[item.reason]}</p>
+                  <p
+                    className="terminal-runtime-reading"
+                    role="region"
+                    aria-label="完整排队原因"
+                    tabIndex={0}
+                  >
+                    {reasons[item.reason]}
+                  </p>
                   {item.resourcePreset && (
                     <p className="field-help">
                       资源规格：{{ light: '轻量', standard: '标准', large: '大型' }[item.resourcePreset]}
                     </p>
                   )}
+                  <details className="terminal-runtime-source">
+                    <summary>队列标识</summary>
+                    <dl
+                      className="terminal-runtime-reading"
+                      role="region"
+                      aria-label="排队任务完整标识"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>对话</dt>
+                        <dd>{item.runId}</dd>
+                      </div>
+                      <div>
+                        <dt>任务</dt>
+                        <dd>{item.taskId}</dd>
+                      </div>
+                    </dl>
+                  </details>
                 </article>
               ))}
             </div>
@@ -99,7 +143,14 @@ export function TerminalRuntimePanel({
               {snapshot.terminal.tasks.map((item) => (
                 <article className="terminal-runtime-item" key={item.taskId}>
                   <div className="terminal-runtime-item-heading" aria-live="polite">
-                    <strong>{names.get(item.taskId) || '终端任务'}</strong>
+                    <strong
+                      className="terminal-runtime-reading"
+                      role="region"
+                      aria-label="运行任务完整名称"
+                      tabIndex={0}
+                    >
+                      {names.get(item.taskId) || '终端任务'}
+                    </strong>
                     <span className="terminal-runtime-state" data-phase={item.phase}>
                       {phases[item.phase]}
                     </span>
@@ -110,6 +161,44 @@ export function TerminalRuntimePanel({
                     )}
                     {item.lastPublicActivityAt && <span>最近输出 {age(item.lastPublicActivityAt)}前</span>}
                   </div>
+                  <details className="terminal-runtime-source">
+                    <summary>阶段时间与标识</summary>
+                    <dl
+                      className="terminal-runtime-reading"
+                      role="region"
+                      aria-label="运行阶段完整时间与标识"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>阶段开始</dt>
+                        <dd>{runtimeTime(item.phaseStartedAt)}</dd>
+                      </div>
+                      {item.lastPublicActivityAt && (
+                        <div>
+                          <dt>最近公开输出</dt>
+                          <dd>{runtimeTime(item.lastPublicActivityAt)}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>对话</dt>
+                        <dd>{item.runId}</dd>
+                      </div>
+                      <div>
+                        <dt>任务</dt>
+                        <dd>{item.taskId}</dd>
+                      </div>
+                      {item.operationId && (
+                        <div>
+                          <dt>操作</dt>
+                          <dd>{item.operationId}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>运行记录版本</dt>
+                        <dd>{item.revision}</dd>
+                      </div>
+                    </dl>
+                  </details>
                 </article>
               ))}
             </div>
@@ -119,6 +208,14 @@ export function TerminalRuntimePanel({
           <h4>
             终端资源 <span>已预留 / 容量</span>
           </h4>
+          <p className="terminal-runtime-resource-state" role="status">
+            {resource.status === 'ready'
+              ? '资源已就绪'
+              : resource.status === 'unknown'
+                ? '资源容量待核实'
+                : '资源暂不可用'}
+            {` · ${resource.waitingInstallations} 项安装等待 · ${resource.waitingProbes} 项检测等待`}
+          </p>
           <dl className="terminal-runtime-resources">
             <div>
               <dt>终端会话</dt>
@@ -142,10 +239,37 @@ export function TerminalRuntimePanel({
             </div>
           </dl>
           {resource.status !== 'ready' && (
-            <p className="field-help" role="status">
+            <p
+              className="field-help terminal-runtime-reading"
+              role="status"
+              aria-label="终端资源完整说明"
+              tabIndex={0}
+            >
               {resource.message}
             </p>
           )}
+          <details className="terminal-runtime-source">
+            <summary>快照版本</summary>
+            <dl
+              className="terminal-runtime-reading"
+              role="region"
+              aria-label="终端运行完整快照版本"
+              tabIndex={0}
+            >
+              <div>
+                <dt>执行队列</dt>
+                <dd>{snapshot.executor.revision}</dd>
+              </div>
+              <div>
+                <dt>终端运行</dt>
+                <dd>{snapshot.terminal.revision}</dd>
+              </div>
+              <div>
+                <dt>终端资源</dt>
+                <dd>{resource.revision}</dd>
+              </div>
+            </dl>
+          </details>
         </section>
         {held.length > 0 && (
           <section aria-label="暂时保留的资源">
@@ -156,17 +280,66 @@ export function TerminalRuntimePanel({
               {held.map((item) => (
                 <article className="terminal-runtime-item terminal-runtime-held" key={item.id}>
                   {item.owner && (
-                    <div className="terminal-runtime-owner">
+                    <div
+                      className="terminal-runtime-owner terminal-runtime-reading"
+                      role="region"
+                      aria-label="暂留资源所属对话与任务全文"
+                      tabIndex={0}
+                    >
                       <strong>{item.owner.runTitle}</strong>
                       <span>{item.owner.taskTitle}</span>
                     </div>
                   )}
-                  <p>
+                  <p
+                    className="terminal-runtime-reading"
+                    role="region"
+                    aria-label="资源暂留完整原因"
+                    tabIndex={0}
+                  >
                     {item.owner ? item.owner.reason : item.reason || '终端停止状态尚待核验，资源暂时保留。'}
                   </p>
                   {item.kind === 'probe' && (
                     <p className="field-help">请在终端管理中重新检测，以核验并清理已知检测容器。</p>
                   )}
+                  <details className="terminal-runtime-source">
+                    <summary>资源标识与占用</summary>
+                    <dl
+                      className="terminal-runtime-reading"
+                      role="region"
+                      aria-label="暂留资源完整标识与占用"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>资源标识</dt>
+                        <dd>{item.id}</dd>
+                      </div>
+                      <div>
+                        <dt>占用</dt>
+                        <dd>
+                          {item.resources.sessions} 个会话 · {item.resources.cpus} CPU ·{' '}
+                          {item.resources.memoryMiB} MiB
+                        </dd>
+                      </div>
+                      {item.owner && (
+                        <>
+                          <div>
+                            <dt>对话</dt>
+                            <dd>{item.owner.runId}</dd>
+                          </div>
+                          <div>
+                            <dt>任务</dt>
+                            <dd>{item.owner.taskId}</dd>
+                          </div>
+                          {item.owner.operationId && (
+                            <div>
+                              <dt>操作</dt>
+                              <dd>{item.owner.operationId}</dd>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </dl>
+                  </details>
                   {item.owner && onNavigate && (
                     <button
                       className="secondary"
