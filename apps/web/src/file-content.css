@@ -1,24 +1,68 @@
 .file-content-view {
   min-width: 0;
 }
+.file-content-info {
+  min-width: 0;
+  margin-bottom: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.file-content-info > summary {
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--secondary);
+  line-height: var(--leading-body);
+}
+.file-content-info-reading {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  max-height: clamp(8rem, 30dvh, 16rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  white-space: pre-wrap;
+}
+.file-content-info-reading > div {
+  min-width: 0;
+}
+.file-content-info dt {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.file-content-info dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.file-content-info-reading:focus-visible,
+.file-document-scroll:focus-visible,
+.file-source-scroll:focus-visible {
+  outline-offset: -2px;
+}
 .file-content-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   padding: var(--space-2) 0;
-  min-height: 40px;
+  min-height: var(--control-md);
 }
 .file-content-tabs {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-1);
+  padding: var(--space-1);
   background: var(--surface-hover);
   border-radius: var(--radius-sm);
 }
 .file-content-tabs button {
   min-height: var(--control-sm);
-  padding: 3px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   font-size: var(--font-sm);
   border: 0;
   border-radius: var(--radius-sm);
@@ -28,10 +72,13 @@
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
+.file-content-tabs button:hover:not(:disabled):not([aria-pressed='true']) {
+  background: var(--surface-hover);
+}
 .file-wrap-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: var(--font-sm);
   color: var(--muted);
 }
@@ -44,27 +91,32 @@
   margin-left: auto;
   font-size: var(--font-xs);
   color: var(--muted);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .file-fragment-note {
   font-size: var(--font-sm);
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-2);
+  line-height: var(--leading-body);
   color: var(--muted);
 }
 .file-document-scroll {
-  max-height: min(60vh, 640px);
+  min-width: 0;
+  max-height: min(60dvh, 40rem);
   overflow: auto;
-  padding: 18px var(--space-5);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface);
   overscroll-behavior: contain;
 }
 .file-source-scroll {
-  max-height: 60vh;
-  min-height: 120px;
+  min-width: 0;
+  max-height: max(7.5rem, 60dvh);
+  min-height: 7.5rem;
   overflow: auto;
   margin: 0;
-  padding: 14px var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-soft);
@@ -79,11 +131,12 @@
   overflow-wrap: anywhere;
 }
 .file-image-scroll {
-  max-height: 60vh;
+  min-width: 0;
+  max-height: max(8rem, 60dvh);
   overflow: auto;
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 8rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   padding: var(--space-4);
@@ -94,14 +147,16 @@
 }
 .file-pdf-view {
   width: 100%;
-  height: 60vh;
+  height: max(12rem, 60dvh);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
 .file-content-empty {
   text-align: center;
-  padding: 50px var(--space-5);
+  padding: var(--space-6) var(--space-5);
   color: var(--muted);
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
 }
 .file-content-empty strong {
   font-size: var(--font-md);

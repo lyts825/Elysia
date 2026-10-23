@@ -70,8 +70,55 @@ export function FileContentView({
     }
   }, [highlight?.requestId, range]);
   const markdown = file.kind === 'markdown' || /\.(?:md|markdown)$/i.test(file.path);
+  const encodingSource =
+    file.encodingSource === 'bom'
+      ? 'BOM 识别'
+      : file.encodingSource === 'manual'
+        ? '手动选择'
+        : file.encodingSource === 'default'
+          ? '默认编码'
+          : '来源未提供';
   return (
     <div className="file-content-view">
+      <details className="file-content-info">
+        <summary>
+          文件信息{file.text !== null ? ` · 已显示 ${file.text.length.toLocaleString()} 字符` : ''}
+        </summary>
+        <dl
+          className="file-content-info-reading"
+          tabIndex={0}
+          role="region"
+          aria-label="当前文件完整路径与读取信息"
+        >
+          <div>
+            <dt>文件路径</dt>
+            <dd>{file.path}</dd>
+          </div>
+          {file.mediaType && (
+            <div>
+              <dt>内容类型</dt>
+              <dd>{file.mediaType}</dd>
+            </div>
+          )}
+          {file.encoding && (
+            <div>
+              <dt>文本编码</dt>
+              <dd>
+                {file.encoding.toUpperCase()} · {encodingSource}
+              </dd>
+            </div>
+          )}
+          {file.text !== null && (
+            <div>
+              <dt>显示范围</dt>
+              <dd>
+                {file.page?.paged ? '当前读取片段' : '当前已读内容'} · {file.text.length.toLocaleString()}{' '}
+                字符；字符数不等于文件字节数。
+              </dd>
+            </div>
+          )}
+        </dl>
+      </details>
       {file.text !== null && (
         <div className="file-content-tools">
           {markdown && (
@@ -92,8 +139,7 @@ export function FileContentView({
           )}
           {file.encoding && (
             <span className="file-content-encoding">
-              {file.encoding.toUpperCase()}
-              {file.encodingSource === 'bom' ? ' · BOM' : ''}
+              {file.encoding.toUpperCase()} · {encodingSource}
             </span>
           )}
         </div>

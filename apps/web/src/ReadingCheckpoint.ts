@@ -338,20 +338,32 @@ export function useReadingScroll<T extends HTMLElement = HTMLDivElement>(
   ready: boolean,
 ) {
   const ref = useRef<T>(null);
-  const restored = useRef('');
+  const restored = useRef<{ client: SurfaceClient; key: string; node: T } | undefined>(undefined);
   useLayoutEffect(() => {
     const node = ref.current;
-    if (!ready || !node || restored.current === key) return;
+    if (
+      !ready ||
+      !node ||
+      (restored.current?.client === client && restored.current.key === key && restored.current.node === node)
+    )
+      return;
     const saved = readingCheckpoint<{ top: number; left: number }>(client, key);
     node.scrollTop = saved?.top || 0;
     node.scrollLeft = saved?.left || 0;
-    restored.current = key;
+    restored.current = { client, key, node };
   }, [client, key, ready]);
   return {
     ref,
     onScroll: () => {
       const node = ref.current;
-      if (!ready || !node || restored.current !== key) return;
+      if (
+        !ready ||
+        !node ||
+        restored.current?.client !== client ||
+        restored.current.key !== key ||
+        restored.current.node !== node
+      )
+        return;
       saveReadingCheckpoint(client, key, { top: node.scrollTop, left: node.scrollLeft });
     },
   };
