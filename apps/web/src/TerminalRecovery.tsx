@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import './terminal-operation-notices.css';
+import './terminal-recovery.css';
 
 export function TerminalRecovery({
   disabled,
@@ -12,9 +12,11 @@ export function TerminalRecovery({
   changeNote: (value: string) => void;
   submit: (outcome: 'confirmed' | 'not_applied', note: string) => void;
 }) {
-  const noteHelpId = useId();
+  const noteHelpId = useId(),
+    confirmedHelpId = useId(),
+    pausedHelpId = useId();
   return (
-    <div className="terminal-activity terminal-operation-recovery">
+    <div className="terminal-activity terminal-recovery-panel">
       <h4>核验中断的终端操作</h4>
       <p className="field-help">先检查任务日志和任务目录。提交核验结果时，系统会先核对并停止本任务容器。</p>
       <label>
@@ -29,30 +31,43 @@ export function TerminalRecovery({
           placeholder="说明已检查的文件、日志与执行结果"
         />
         <small className="field-help" id={noteHelpId}>
-          {note.length.toLocaleString()} / 60,000 字；填写实际核验说明后可确认结果。
+          {note.length.toLocaleString()} / 60,000 字符；提交时去除说明首尾空白。
         </small>
       </label>
-      <div className="terminal-operation-outcomes">
-        <p>已发生：保留当前产物并进入验收。未发生：保持暂停，之后选择恢复。</p>
-        {disabled && <p>当前只读或操作处理中，暂不可提交核验结果。</p>}
-      </div>
-      <div className="terminal-operation-actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={disabled || !note.trim()}
-          onClick={() => submit('confirmed', note.trim())}
-        >
-          确认已发生，审阅产物
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={disabled || !note.trim()}
-          onClick={() => submit('not_applied', note.trim())}
-        >
-          确认未发生，保持暂停
-        </button>
+      <p className="terminal-recovery-state" role="status">
+        {disabled
+          ? '当前只读或操作处理中，暂不可提交核验结果。'
+          : note.trim()
+            ? '说明已填写，请选择核验结果。'
+            : '填写实际核验说明后，再选择核验结果。'}
+      </p>
+      <div className="terminal-recovery-options" role="group" aria-label="选择终端核验结果">
+        <div className="terminal-recovery-option">
+          <h5>操作已发生</h5>
+          <p id={confirmedHelpId}>保留当前产物并进入验收。</p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || !note.trim()}
+            aria-describedby={`${confirmedHelpId} ${noteHelpId}`}
+            onClick={() => submit('confirmed', note.trim())}
+          >
+            确认已发生
+          </button>
+        </div>
+        <div className="terminal-recovery-option">
+          <h5>操作未发生</h5>
+          <p id={pausedHelpId}>保持暂停，之后选择恢复。</p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || !note.trim()}
+            aria-describedby={`${pausedHelpId} ${noteHelpId}`}
+            onClick={() => submit('not_applied', note.trim())}
+          >
+            确认未发生
+          </button>
+        </div>
       </div>
     </div>
   );

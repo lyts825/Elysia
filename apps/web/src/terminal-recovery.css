@@ -1,0 +1,70 @@
+.terminal-recovery-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-recovery-panel h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-lg);
+  line-height: var(--leading-ui);
+}
+.terminal-recovery-panel > .field-help,
+.terminal-recovery-panel label > .field-help {
+  margin: 0;
+}
+.terminal-recovery-panel label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+}
+.terminal-recovery-panel textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 6rem;
+  max-height: min(24rem, 60dvh);
+  resize: vertical;
+}
+.terminal-recovery-panel .terminal-recovery-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-recovery-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+.terminal-recovery-option {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-recovery-option h5 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.terminal-recovery-option p {
+  margin: 0;
+}
+.terminal-recovery-option button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

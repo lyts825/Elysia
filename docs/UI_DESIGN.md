@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.87 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.88 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -209,6 +209,8 @@ v1.19.87 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 
 - 终端模板所选连接的完整名称与型号在选择框附近可核对，标识和版本另行展开。保存反馈直接依据原有效性及修改状态，不改变冲突和未保存确认。
 
+- 中断操作核验的结果、后果说明和确认按钮一一对应，短动作关联完整说明。字符数量按原值显示，提交时的首尾去空白与原禁用条件就近说明。
+
 ## 页面覆盖
 
 | 范围 | 样式文件（apps/web/src） |
@@ -216,7 +218,7 @@ v1.19.87 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 | 基础、主页、入口与启动 | style、motion、home、workspace-home、surface、surface-switcher、deferred-panel、Startup、startup-settings |
 | 预览与文档 | preview、preview-dock、markdown、file-content、file-page、artifact-file-preview |
 | 模型、上下文和会话 | providers、subscription-settings、codex-connection、model-picker、context-window、context-policy-editor、composer-model-control、composer-model-picker、conversation-search、sessions、reasoning、execution-config、model-switch |
-| 执行与终端 | local-agents、local-agent-settings、terminal-control、terminal-connection-checks、terminal-diagnostics、terminal-install-history、terminal-operation-notices、terminal-profile-form、terminal-profile-settings、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、task-graph、task-recovery、record-history、detail-read-notice、plan-alignment-loader、features/plan-alignment/plan-alignment |
+| 执行与终端 | local-agents、local-agent-settings、terminal-control、terminal-connection-checks、terminal-diagnostics、terminal-install-history、terminal-operation-notices、terminal-recovery、terminal-profile-form、terminal-profile-settings、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、task-graph、task-recovery、record-history、detail-read-notice、plan-alignment-loader、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-board-editor、project-board-item、project-run-list、project-todos、project-manifests、project-launch-draft、project-item-setup、project-files、project-usage、project-usage-details、project-intelligence、project-model-routing、project-schedules、project-schedule-history |
 | 交付与工作流 | workspace-manager、project-delivery-bundle、project-delivery-archive、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、run-setup、run-confirmation、delivery-criteria、delivery-user-review、delivery-overview、delivery-status-card、delivery-changes、original-review、review-source-notes、workflow-policy-confirmation、artifact-changes、artifact-revision-draft、artifact-revision-selection、review-history、review-record、review-note-linking、unlinked-review-notes、current-criterion-picker、handoff-selection、resolution-evidence、source-note-resolutions、native-project-defaults、readiness、task-center、delivery-read-progress、workbench-persistence |
 
