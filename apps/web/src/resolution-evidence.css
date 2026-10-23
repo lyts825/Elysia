@@ -1,0 +1,64 @@
+.resolution-evidence {
+  min-width: 0;
+  padding: 0;
+  margin: var(--space-4) 0;
+  border: 0;
+}
+.resolution-evidence legend {
+  font-size: var(--font-md);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+.resolution-evidence-item {
+  min-width: 0;
+  padding: var(--space-3);
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.resolution-evidence-list {
+  max-height: min(32rem, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-1);
+}
+.resolution-evidence-item:has(input:checked) {
+  background: var(--accent-pale);
+  border-color: var(--accent);
+}
+.resolution-evidence-item h5 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.resolution-evidence-item .workflow-note-choice {
+  margin: var(--space-2) 0;
+}
+.resolution-evidence-reading {
+  max-height: min(12rem, 40dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.resolution-evidence-ref {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+}
+.resolution-evidence-item summary {
+  cursor: pointer;
+}
+.resolution-evidence-item dt {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.resolution-evidence-item dd {
+  margin: var(--space-1) 0 var(--space-3);
+}
+.resolution-evidence .workflow-read-error > p {
+  margin: 0;
+  width: 100%;
+}

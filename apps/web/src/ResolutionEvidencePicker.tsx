@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type {
   DeliveryEvidence,
   DeliveryEvidencePage,
   DeliveryReview,
 } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './resolution-evidence.css';
 export type ChosenEvidence = DeliveryEvidence & { index: number };
 export function ResolutionEvidencePicker({
   delivery,
@@ -20,6 +21,7 @@ export function ResolutionEvidencePicker({
   disabled: boolean;
 }) {
   const { api } = useSurfaceClient();
+  const id = useId();
   const [page, setPage] = useState<DeliveryEvidencePage>(),
     [offset, setOffset] = useState(0),
     [retry, setRetry] = useState(0);
@@ -56,34 +58,106 @@ export function ResolutionEvidencePicker({
     return () => controller.abort();
   }, [api, delivery.runId, delivery.rootRevision, delivery.runRevision, criterion, offset, retry]);
   return (
-    <fieldset disabled={disabled || busy}>
+    <fieldset className="resolution-evidence" disabled={disabled || busy}>
       <legend>手动选择已登记证据（最多 10 条）</legend>
-      {page?.evidence.map((item, i) => {
-        const index = page.page.offset + i,
-          checked = selected.some((e) => e.index === index);
-        return (
-          <label className="workflow-note-choice" key={index}>
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={!!error || (!checked && selected.length >= 10)}
-              onChange={() =>
-                change(
-                  checked ? selected.filter((e) => e.index !== index) : [...selected, { ...item, index }],
-                )
-              }
-            />
-            <span>
-              {item.type} · {item.note || item.ref}
-              <br />
-              <small>
-                {item.ref}
-                {item.hash ? ` · SHA256 ${item.hash.slice(0, 12)}` : ''}
-              </small>
-            </span>
-          </label>
-        );
-      })}
+      <p className="field-help" id={id + '-count'}>
+        已手选 {selected.length} / 10 条；保存时核对并冻结证据引用。
+      </p>
+      {!!page?.evidence.length && (
+        <div className="resolution-evidence-list" role="region" aria-label="本页登记证据" tabIndex={0}>
+          {page.evidence.map((item, i) => {
+            const index = page.page.offset + i,
+              checked = selected.some((e) => e.index === index);
+            return (
+              <section className="resolution-evidence-item" key={index}>
+                <h5>
+                  证据 {index + 1} ·{' '}
+                  {{ file: '文件证据', artifact: '产物证据', command: '命令证据' }[item.type]}
+                </h5>
+                <label className="workflow-note-choice">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    aria-label={`选择第 ${index + 1} 条登记证据`}
+                    aria-describedby={id + '-count'}
+                    disabled={!!error || (!checked && selected.length >= 10)}
+                    onChange={() =>
+                      change(
+                        checked
+                          ? selected.filter((e) => e.index !== index)
+                          : [...selected, { ...item, index }],
+                      )
+                    }
+                  />
+                  <span>用于本次复验</span>
+                </label>
+                <p className="field-help">证据说明</p>
+                <p
+                  className="workflow-prose resolution-evidence-reading"
+                  role="region"
+                  aria-label={`证据 ${index + 1} 完整说明`}
+                  tabIndex={0}
+                >
+                  {item.note || '未附说明'}
+                </p>
+                <p className="field-help">登记引用</p>
+                <p
+                  className="resolution-evidence-reading resolution-evidence-ref"
+                  role="region"
+                  aria-label={`证据 ${index + 1} 完整引用`}
+                  tabIndex={0}
+                >
+                  {item.ref}
+                </p>
+                {(item.hash || item.artifact) && (
+                  <details>
+                    <summary>完整核对信息</summary>
+                    <dl
+                      className="resolution-evidence-reading"
+                      role="region"
+                      aria-label={`证据 ${index + 1} 完整核对信息`}
+                      tabIndex={0}
+                    >
+                      {item.hash && (
+                        <div>
+                          <dt>SHA256</dt>
+                          <dd>{item.hash}</dd>
+                        </div>
+                      )}
+                      {item.artifact && (
+                        <>
+                          <div>
+                            <dt>产物名称</dt>
+                            <dd>{item.artifact.name}</dd>
+                          </div>
+                          <div>
+                            <dt>版本与格式</dt>
+                            <dd>
+                              v{item.artifact.version} · {item.artifact.mediaType}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>产物标识</dt>
+                            <dd>{item.artifact.id}</dd>
+                          </div>
+                          <div>
+                            <dt>产物 SHA256</dt>
+                            <dd>{item.artifact.hash}</dd>
+                          </div>
+                          <div>
+                            <dt>核验状态</dt>
+                            <dd>{item.artifact.verified ? '已核验' : '未核验'}</dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  </details>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
       {page && !page.page.total && (
         <p className="field-help">当前验收项尚无登记证据；可保留待复验或说明判断依据。</p>
       )}
@@ -117,15 +191,19 @@ export function ResolutionEvidencePicker({
       )}
       {busy && <p role="status">正在读取证据…</p>}
       {error && (
-        <p role="alert" className="field-error workflow-read-error">
-          {error}{' '}
+        <div role="alert" className="workflow-read-error">
+          <p
+            className="resolution-evidence-reading"
+            role="region"
+            aria-label="登记证据读取问题全文"
+            tabIndex={0}
+          >
+            {error}
+          </p>
           <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试证据
           </button>
-        </p>
-      )}
-      {!!selected.length && (
-        <p className="field-help">已手选 {selected.length} 条；保存时将核对并冻结证据引用。</p>
+        </div>
       )}
     </fieldset>
   );
