@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectScheduleHistory as HistoryPage } from '../../../packages/contracts/src/project-schedules';
 import { executionLabel } from './ProjectRunList';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -23,6 +23,7 @@ export function ProjectScheduleHistory(props: Props) {
 
 function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props) {
   const { api } = useSurfaceClient();
+  const identity = useId();
   const [display, setDisplay] = useState<Display>();
   const [phase, setPhase] = useState<'loading' | 'ready' | 'failed' | 'cancelled'>('loading');
   const [readError, setReadError] = useState(''),
@@ -133,20 +134,20 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
       </div>
       {loading && <p role="status">正在读取创建历史…{display ? '暂时显示上次成功页。' : ''}</p>}
       {readError && (
-        <p className="field-error schedule-history-error" role="alert">
-          {readError}
+        <p className="field-error schedule-history-error" role="alert" aria-label="创建历史读取问题全文">
+          历史读取问题：{readError}
         </p>
       )}
       {openError && (
-        <p className="field-error schedule-history-error" role="alert">
-          {openError}
+        <p className="field-error schedule-history-error" role="alert" aria-label="历史任务打开失败详情">
+          打开任务失败：{openError}
         </p>
       )}
       {display && page && (
         <>
           <p className="field-help">
             {phase === 'ready' ? '读取于' : '上次成功读取于'} {new Date(display.receivedAt).toLocaleString()}{' '}
-            · 第 {position.trail.length + 1} 页
+            · 第 {position.trail.length + 1} 页 · 已读定时任务版本 {page.scheduleRevision}
           </p>
           <dl className="schedule-history-summary">
             <div>
@@ -176,14 +177,16 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
             <p>{page.createdCount ? '当前页没有现存创建记录。' : '尚未通过此定时任务创建任务。'}</p>
           )}
           <ol className="schedule-history-items">
-            {page.items.map((item) => (
+            {page.items.map((item, index) => (
               <li key={item.dispatchId} data-unavailable={!item.run || undefined}>
                 <p className="field-help">
                   调度时段：{item.dueAt ? new Date(item.dueAt).toLocaleString() : '无法读取'}
                 </p>
                 {item.run ? (
                   <>
-                    <strong className="schedule-history-title">{item.run.title}</strong>
+                    <strong className="schedule-history-title" id={`${identity}-run-${index}`}>
+                      {item.run.title}
+                    </strong>
                     <p className="schedule-history-status" data-state={item.run.status}>
                       {executionLabel(item.run.status)}
                       {item.run.reason === 'paused' ? ' · 已暂停' : ''}
@@ -193,6 +196,7 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
                       type="button"
                       className="secondary"
                       disabled={!!opening}
+                      aria-describedby={`${identity}-run-${index}`}
                       onClick={() => void navigate(item.run!.id)}
                     >
                       {opening === item.run.id ? '正在打开任务…' : '打开历史任务'}
@@ -202,6 +206,31 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
                   <p>此条记录暂时无法定位任务。</p>
                 )}
                 {item.issue && <p className="schedule-history-issue">{item.issue.message}</p>}
+                <details className="schedule-history-origin">
+                  <summary>创建记录完整标识与时间</summary>
+                  <dl>
+                    <div>
+                      <dt>调度记录</dt>
+                      <dd>{item.dispatchId}</dd>
+                    </div>
+                    <div>
+                      <dt>调度时间原值</dt>
+                      <dd>{item.dueAt || '未记录'}</dd>
+                    </div>
+                    {item.run && (
+                      <>
+                        <div>
+                          <dt>任务标识</dt>
+                          <dd>{item.run.id}</dd>
+                        </div>
+                        <div>
+                          <dt>任务创建时间原值</dt>
+                          <dd>{item.run.createdAt}</dd>
+                        </div>
+                      </>
+                    )}
+                  </dl>
+                </details>
               </li>
             ))}
           </ol>
