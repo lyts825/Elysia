@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryCriterion,
   DeliveryReview,
@@ -11,6 +11,7 @@ import { CurrentCriterionPicker } from './CurrentCriterionPicker';
 import { ResolutionEvidencePicker, type ChosenEvidence } from './ResolutionEvidencePicker';
 import { ApiError } from './api';
 import { z } from 'zod';
+import './source-note-resolutions.css';
 
 type RowDraft = {
   sourceHash: string;
@@ -87,6 +88,7 @@ export function SourceNoteResolutions({
   activity: (busy: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const id = useId();
   const [value, setValue] = useState<View>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -230,20 +232,25 @@ export function SourceNoteResolutions({
   }
   if (!reading && !error && !current?.items.length && !Object.keys(draft?.items || {}).length) return null;
   return (
-    <section className="workflow-source" aria-label="来源意见逐条复验">
+    <section className="workflow-source source-note-resolutions" aria-label="来源意见逐条复验">
       <h3>来源意见逐条复验</h3>
       <p className="field-help">
         逐条对照当前标准和证据，由你登记处理结果。执行完成或采纳交付不会自动解决原意见。
       </p>
       {reading && <p role="status">正在读取来源意见复验…</p>}
+      {!reading && current && !current.writable && (
+        <p className="source-resolution-notice">当前来源意见仅供阅读，暂不能保存复验。</p>
+      )}
       {!draft && (
         <p className="field-error" role="alert">
           复验草稿格式无法读取，原文已保留；请先保留所需内容。
         </p>
       )}
       {error && (
-        <p className="field-error workflow-read-error" role="alert">
-          {error}{' '}
+        <div className="field-error workflow-read-error" role="alert">
+          <p className="source-resolution-reading" role="region" aria-label="来源复验问题全文" tabIndex={0}>
+            {error}
+          </p>
           <button
             type="button"
             className="secondary"
@@ -252,9 +259,13 @@ export function SourceNoteResolutions({
           >
             重新读取，保留输入
           </button>
+        </div>
+      )}
+      {notice && (
+        <p className="source-resolution-notice" role="status">
+          {notice}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
       {current?.items.map((row) => {
         const key = `${current.sourceHash}:${row.noteIndex}`,
           item = draft?.items[key],
@@ -274,22 +285,111 @@ export function SourceNoteResolutions({
             evidence: saved && !saved.stale ? saved.evidence : [],
           });
         return (
-          <section className="workflow-selection" key={key} aria-label={`原意见 ${row.noteIndex + 1}`}>
-            <h4>
-              原意见 {row.noteIndex + 1} · {saved?.stale ? '需重新复验' : labels[saved?.status || 'pending']}
-            </h4>
-            <ReviewSourceNoteBody note={row.sourceNote} compact />
+          <section
+            className="workflow-selection source-resolution-card"
+            key={key}
+            aria-label={`原意见 ${row.noteIndex + 1}`}
+          >
+            <div className="source-resolution-heading">
+              <h4>原意见 {row.noteIndex + 1}</h4>
+              <span
+                className="source-resolution-state"
+                data-state={saved?.stale ? 'stale' : saved?.status || 'pending'}
+              >
+                {saved?.stale ? '需重新复验' : labels[saved?.status || 'pending']}
+              </span>
+            </div>
+            <div
+              className="source-resolution-reading source-resolution-original"
+              role="region"
+              aria-label={`原意见 ${row.noteIndex + 1} 完整内容`}
+              tabIndex={0}
+            >
+              <ReviewSourceNoteBody note={row.sourceNote} compact />
+            </div>
             {saved && (
-              <details>
+              <details className="source-resolution-saved">
                 <summary>已保存处理记录{saved.stale ? '（旧交付版本）' : ''}</summary>
-                <p className="workflow-prose">
-                  {labels[saved.status]}：{saved.note}
+                <p className="field-help">
+                  {labels[saved.status]} · 记录版本 {saved.revision}
                 </p>
-                <p>关联标准：{saved.criterionText ?? '整体意见'}</p>
+                <h5>处理说明</h5>
+                <p
+                  className="workflow-prose source-resolution-reading"
+                  role="region"
+                  aria-label={`意见 ${row.noteIndex + 1} 已保存处理说明`}
+                  tabIndex={0}
+                >
+                  {saved.note || '未附处理说明'}
+                </p>
+                <h5>已保存关联标准</h5>
+                <p
+                  className="workflow-prose source-resolution-reading"
+                  role="region"
+                  aria-label={`意见 ${row.noteIndex + 1} 已保存关联标准`}
+                  tabIndex={0}
+                >
+                  {saved.criterionText ?? '整体意见'}
+                </p>
+                <h5>已保存证据 · {saved.evidence.length} 条</h5>
+                {!saved.evidence.length && <p className="field-help">本条未登记证据引用。</p>}
                 {saved.evidence.map((e) => (
-                  <p key={e.index} className="workflow-prose">
-                    {e.type} · {e.note || e.ref}
-                  </p>
+                  <section
+                    className="source-resolution-saved-evidence"
+                    key={e.index}
+                    aria-label={`意见 ${row.noteIndex + 1} 已保存证据 ${e.index + 1}`}
+                  >
+                    <h6>
+                      证据 {e.index + 1} · {{ file: '文件', artifact: '产物', command: '命令' }[e.type]}
+                    </h6>
+                    <dl
+                      className="source-resolution-reading"
+                      role="region"
+                      aria-label={`意见 ${row.noteIndex + 1} 已保存证据 ${e.index + 1} 全文`}
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>说明</dt>
+                        <dd>{e.note || '未附说明'}</dd>
+                      </div>
+                      <div>
+                        <dt>引用</dt>
+                        <dd>{e.ref}</dd>
+                      </div>
+                      {e.hash && (
+                        <div>
+                          <dt>SHA256</dt>
+                          <dd>{e.hash}</dd>
+                        </div>
+                      )}
+                      {e.artifact && (
+                        <>
+                          <div>
+                            <dt>产物名称</dt>
+                            <dd>{e.artifact.name}</dd>
+                          </div>
+                          <div>
+                            <dt>版本与格式</dt>
+                            <dd>
+                              v{e.artifact.version} · {e.artifact.mediaType}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>产物标识</dt>
+                            <dd>{e.artifact.id}</dd>
+                          </div>
+                          <div>
+                            <dt>产物 SHA256</dt>
+                            <dd>{e.artifact.hash}</dd>
+                          </div>
+                          <div>
+                            <dt>产物核验</dt>
+                            <dd>{e.artifact.verified ? '已核验' : '未核验'}</dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  </section>
                 ))}
               </details>
             )}
@@ -298,7 +398,13 @@ export function SourceNoteResolutions({
                 编辑本条复验
               </button>
             ) : (
-              <>
+              <div
+                className="source-resolution-editor"
+                role="group"
+                aria-label={`意见 ${row.noteIndex + 1} 当前复验草稿`}
+              >
+                <h5>当前复验草稿</h5>
+                <p className="field-help">手选当前关联标准后保存；已解决或仍需修改时须填写处理说明。</p>
                 {(stale || concurrent) && (
                   <div className="inline-warning">
                     <p>
@@ -346,12 +452,19 @@ export function SourceNoteResolutions({
                   处理说明
                   <textarea
                     aria-label={`意见 ${row.noteIndex + 1} 处理说明`}
+                    aria-describedby={`${id}-note-${row.noteIndex}`}
                     value={item.note}
                     maxLength={1000}
                     rows={2}
                     disabled={locked}
                     onChange={(e) => patch(key, { ...item, note: e.target.value })}
                   />
+                  <span
+                    className="field-help source-resolution-field-help"
+                    id={`${id}-note-${row.noteIndex}`}
+                  >
+                    {item.note.length} / 1000 字 · 待复验时可暂不填写。
+                  </span>
                 </label>
                 {!stale && (
                   <CurrentCriterionPicker
@@ -372,7 +485,18 @@ export function SourceNoteResolutions({
                   />
                 )}
                 {item.selected && (
-                  <p className="workflow-prose">本次关联：{item.criterionText ?? '整体意见'}</p>
+                  <div className="source-resolution-association">
+                    <h5>本次关联</h5>
+                    <p
+                      className="workflow-prose source-resolution-reading"
+                      role="region"
+                      aria-label={`意见 ${row.noteIndex + 1} 本次关联标准全文`}
+                      tabIndex={0}
+                    >
+                      {item.criterionText ?? '整体意见'}
+                    </p>
+                    <p className="field-help">本次手选证据 {item.evidence.length} 条</p>
+                  </div>
                 )}
                 {!stale && item.criterionIndex !== null && (
                   <ResolutionEvidencePicker
@@ -384,7 +508,7 @@ export function SourceNoteResolutions({
                     change={(evidence) => patch(key, { ...item, evidence })}
                   />
                 )}
-                <div className="workflow-actions">
+                <div className="workflow-actions source-resolution-actions">
                   <button
                     type="button"
                     className="primary"
@@ -412,7 +536,7 @@ export function SourceNoteResolutions({
                     放弃本条未保存修改
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </section>
         );
@@ -421,15 +545,25 @@ export function SourceNoteResolutions({
         Object.entries(draft.items).some(
           ([key]) => !current?.items.some((row) => key === `${current.sourceHash}:${row.noteIndex}`),
         ) && (
-          <details>
+          <details className="source-resolution-other">
             <summary>其他来源版本的未保存草稿</summary>
             {Object.entries(draft.items)
               .filter(
                 ([key]) => !current?.items.some((row) => key === `${current.sourceHash}:${row.noteIndex}`),
               )
-              .map(([key, item]) => (
-                <div key={key}>
-                  <p className="workflow-prose">{item.note}</p>
+              .map(([key, item], index) => (
+                <div className="source-resolution-saved-evidence" key={key}>
+                  <h4>
+                    保留草稿 {index + 1} · {labels[item.status]}
+                  </h4>
+                  <p
+                    className="workflow-prose source-resolution-reading"
+                    role="region"
+                    aria-label={`其他来源保留草稿 ${index + 1} 全文`}
+                    tabIndex={0}
+                  >
+                    {item.note || '未填写处理说明'}
+                  </p>
                   <p className="field-help">来源已变化或暂不可读，不会按序号套用。</p>
                 </div>
               ))}
