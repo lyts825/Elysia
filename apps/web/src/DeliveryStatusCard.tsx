@@ -5,6 +5,7 @@ import { reviewStatusLabels } from './ReviewStatus';
 import { Icon } from './Icon';
 import './workflow.css';
 import './delivery-overview.css';
+import './delivery-status-card.css';
 
 export function DeliveryStatusCard({
   runId,
@@ -60,22 +61,35 @@ export function DeliveryStatusCard({
   }, [api, runId, version, retry]);
   return (
     <div
-      className="delivery-card delivery-overview-status"
+      className="delivery-card delivery-overview-status delivery-status-panel"
       data-review-status={readIssue ? 'unknown' : value?.reviewStatus || 'unknown'}
       aria-label="交付复核状态"
     >
       <Icon name="check" size={24} />
       <div className="delivery-status-content">
         <h3>执行已完成</h3>
-        <p className="delivery-status-conclusion">
-          {readIssue
-            ? '复核状态暂不可读'
-            : value?.reviewStatus
-              ? `用户复核：${reviewStatusLabels[value.reviewStatus]}`
-              : value
-                ? '当前任务不适用人工复核'
-                : '正在读取复核状态…'}
-        </p>
+        <div className="delivery-status-review">
+          <p className="delivery-status-label">用户复核状态</p>
+          <p className="delivery-status-conclusion">
+            {readIssue
+              ? '复核状态暂不可读'
+              : value?.reviewStatus
+                ? `用户复核：${reviewStatusLabels[value.reviewStatus]}`
+                : value
+                  ? '当前任务不适用人工复核'
+                  : '正在读取复核状态…'}
+          </p>
+          {value?.reviewedAt && (
+            <dl className="delivery-status-time">
+              <div>
+                <dt>复核记录时间</dt>
+                <dd className="delivery-status-time-reading" tabIndex={0} aria-label="交付复核记录完整时间">
+                  {value.reviewedAt}
+                </dd>
+              </div>
+            </dl>
+          )}
+        </div>
         <p>
           {value?.reviewStatus === 'stale'
             ? '交付内容已变化，原结论不再适用，请重新核对。'
@@ -92,7 +106,12 @@ export function DeliveryStatusCard({
             >
               {readIssue}
             </p>
+          </div>
+        )}
+        <div className="delivery-status-actions">
+          {readIssue && (
             <button
+              type="button"
               className="text-button"
               onClick={() => {
                 retrySummary.current = true;
@@ -101,11 +120,11 @@ export function DeliveryStatusCard({
             >
               重试读取复核状态
             </button>
-          </div>
-        )}
-        <button className="text-button" onClick={open}>
-          逐项查看交付与验收
-        </button>
+          )}
+          <button type="button" className="secondary" onClick={open}>
+            逐项查看交付与验收
+          </button>
+        </div>
       </div>
     </div>
   );
