@@ -1,0 +1,99 @@
+.handoff-confirmation {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.handoff-confirmation .field-help {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.handoff-confirmation .handoff-confirmation-choice {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
+}
+
+.handoff-confirmation-choice input {
+  flex: none;
+  width: auto;
+  margin-top: var(--space-1);
+}
+
+.handoff-confirmation h3 {
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.handoff-confirmation-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.handoff-confirmation-counts > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.handoff-confirmation-counts dt,
+.handoff-confirmation-counts dd span {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.handoff-confirmation-counts dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.handoff-confirmation-state {
+  margin: 0;
+  padding: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-soft);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.handoff-confirmation-state[data-scope='pending'] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.handoff-confirmation-decision {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.handoff-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.handoff-confirmation-actions .text-button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.handoff-confirmation-actions .handoff-confirmation-choice {
+  flex: 1 1 16rem;
+}

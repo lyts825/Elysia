@@ -1,5 +1,4 @@
 .review-model-policy,
-.handoff-confirmation,
 .review-policy-confirmation {
   display: grid;
   gap: var(--space-3);
@@ -7,14 +6,12 @@
 }
 
 .review-model-policy .field-help,
-.handoff-confirmation .field-help,
 .review-policy-confirmation p {
   margin: 0;
   overflow-wrap: anywhere;
 }
 
-.review-model-policy > .check-label,
-.handoff-confirmation .handoff-confirmation-choice {
+.review-model-policy > .check-label {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
@@ -23,8 +20,7 @@
   line-height: var(--leading-body);
 }
 
-.review-model-policy > .check-label input,
-.handoff-confirmation-choice input {
+.review-model-policy > .check-label input {
   flex: none;
   width: auto;
   margin-top: var(--space-1);
@@ -64,40 +60,8 @@
   gap: var(--space-2);
 }
 
-.review-policy-confirmation h3,
-.handoff-confirmation h3 {
+.review-policy-confirmation h3 {
   margin: 0;
   font-size: var(--font-lg);
   font-weight: 600;
-}
-
-.handoff-confirmation-counts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.handoff-confirmation-counts > div {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-  padding: var(--space-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.handoff-confirmation-counts dt,
-.handoff-confirmation-counts dd span {
-  color: var(--muted);
-  font-size: var(--font-sm);
-}
-
-.handoff-confirmation-counts dd {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-weight: 500;
 }
