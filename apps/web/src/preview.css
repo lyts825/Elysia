@@ -5,6 +5,7 @@
   min-width: 0;
 }
 .preview-panel {
+  container-type: inline-size;
   --preview-reading-height: min(16rem, 50dvh);
   width: 60%;
   flex: 1;
@@ -95,6 +96,30 @@
   font-weight: 500;
   color: var(--secondary);
   margin-left: auto;
+}
+.preview-selection-info {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.preview-selection-info summary {
+  cursor: pointer;
+}
+.preview-selection-info dl {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.preview-selection-info dt {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.preview-selection-info dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
 }
 .preview-tabs {
   display: flex;
@@ -448,6 +473,7 @@
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .preview-error button {
   white-space: nowrap;
@@ -456,9 +482,26 @@
   align-self: flex-start;
 }
 .preview-error > span {
+  flex: 1 1 14rem;
   min-width: 0;
   overflow-wrap: anywhere;
   line-height: 1.7;
+}
+.preview-error > span:focus-visible {
+  outline-offset: -2px;
+}
+.preview-error.preview-resource-warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+.preview-filter-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 .preview-error small {
   display: block;
@@ -512,11 +555,13 @@
 .preview-activity h3 {
   font-size: var(--font-xl);
   margin: var(--space-3) 0;
+  overflow-wrap: anywhere;
 }
 .preview-objective,
 .preview-muted {
   font-size: var(--font-sm);
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .preview-activity h4 {
   font-size: var(--font-sm);
@@ -557,6 +602,14 @@
 .preview-activity summary {
   font-size: var(--font-xs);
   cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+.preview-activity .op-status {
+  float: none;
 }
 .preview-activity details pre {
   font-size: var(--font-sm);
@@ -665,5 +718,21 @@
   }
   .preview-file-meta select {
     max-width: 130px;
+  }
+}
+@container (max-width: 28rem) {
+  .preview-tools,
+  .preview-file-bar,
+  .preview-file-meta {
+    flex-wrap: wrap;
+  }
+  .preview-file-bar > select {
+    flex-basis: 50%;
+  }
+  .preview-file-step {
+    margin-left: auto;
+  }
+  .preview-tools label {
+    white-space: nowrap;
   }
 }

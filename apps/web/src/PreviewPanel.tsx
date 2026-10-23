@@ -143,6 +143,7 @@ export function PreviewPanel({
     [snapshotError, setSnapshotError] = useState(''),
     [fileError, setFileError] = useState(''),
     [updated, setUpdated] = useState('');
+  const filterInput = useRef<HTMLInputElement>(null);
   const [viewport, setViewport] = useState(savedPreferences?.viewport || 'desktop'),
     [wide, setWide] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -702,6 +703,23 @@ export function PreviewPanel({
         <span>{agent?.providerBinding.model || task?.spec.providerId}</span>
         <strong>{labels[task?.status || '']}</strong>
       </div>
+      <details className="preview-selection-info">
+        <summary>当前代理与文件完整信息</summary>
+        <dl>
+          <div>
+            <dt>任务</dt>
+            <dd>{task?.spec.title || '尚无任务'}</dd>
+          </div>
+          <div>
+            <dt>模型</dt>
+            <dd>{agent?.providerBinding.model || '尚未读取模型绑定'}</dd>
+          </div>
+          <div>
+            <dt>文件</dt>
+            <dd>{selected || '尚未选择文件'}</dd>
+          </div>
+        </dl>
+      </details>
       <MotionTabs className="preview-tabs" label="预览视图" value={view}>
         {[
           ['page', '文档'],
@@ -741,7 +759,9 @@ export function PreviewPanel({
       </div>
       {snapshotError && (
         <div role="alert" className="preview-error">
-          <span>工作区同步失败：{snapshotError}</span>
+          <span role="region" aria-label="工作区同步失败详情" tabIndex={0}>
+            工作区同步失败：{snapshotError}
+          </span>
           <button className="quiet-button" onClick={() => setRefresh((n) => n + 1)}>
             重试
           </button>
@@ -749,7 +769,7 @@ export function PreviewPanel({
       )}
       {fileError && (
         <div role="alert" className="preview-error">
-          <span>
+          <span role="region" aria-label="预览文件读取失败详情" tabIndex={0}>
             文件读取失败：{fileError}
             <small>
               {fileRetryPending && auto
@@ -788,8 +808,8 @@ export function PreviewPanel({
         </p>
       )}
       {view === 'page' && selectedFile?.kind === 'html' && resourceIssueCount > 0 && (
-        <div role="status" className="preview-error">
-          <span>
+        <div role="status" className="preview-error preview-resource-warning">
+          <span role="region" aria-label="页面资源加载问题详情" tabIndex={0}>
             页面资源加载不完整，部分内容可能无法显示或交互。
             {resourceIssues.map((issue, index) => (
               <small key={issue.path || index}>
@@ -873,6 +893,7 @@ export function PreviewPanel({
             <label className="preview-file-search">
               <Icon name="search" size={14} />
               <input
+                ref={filterInput}
                 aria-label="筛选预览文件"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
@@ -911,6 +932,20 @@ export function PreviewPanel({
               </button>
             </div>
           </div>
+          {filter.trim() && !visible.length && (
+            <div className="preview-filter-empty" role="status">
+              <span>没有匹配的文件。{selected ? '当前文件预览仍保留。' : ''}</span>
+              <button
+                className="text-button"
+                onClick={() => {
+                  setFilter('');
+                  filterInput.current?.focus();
+                }}
+              >
+                清除筛选
+              </button>
+            </div>
+          )}
           {selectedEntry && (
             <div className="preview-file-meta">
               <span title={selected}>
