@@ -22,13 +22,14 @@ function Costs({ value }: { value: ProjectUsageTotals }) {
     </>
   );
 }
-function Totals({ value }: { value: ProjectUsageTotals }) {
+function Totals({ value, compact = false }: { value: ProjectUsageTotals; compact?: boolean }) {
   return (
-    <dl className="project-usage-totals">
+    <dl className={'project-usage-totals' + (compact ? ' project-usage-breakdown' : '')}>
       <div>
         <dt>请求次数</dt>
         <dd>
           {value.requestCount.toLocaleString()}
+          <small>可读请求记录 {value.readableCount.toLocaleString()} 条</small>
           <small>
             已结算 {value.statuses.settled} · 预留 {value.statuses.reserved} · 结果未知{' '}
             {value.statuses.unknown} · 已释放 {value.statuses.released}
@@ -224,7 +225,9 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
           )}
           <Totals value={value.totals} />
           <h3>请求当时的连接与模型 · {value.connections.length} 项</h3>
-          {!value.connections.length && <p>此项目尚无请求记录。</p>}
+          {!value.connections.length && (
+            <p>{value.totals.requestCount ? '本次统计没有可展示的连接汇总。' : '此项目尚无请求记录。'}</p>
+          )}
           <div className="project-usage-connections">
             {value.connections.map((connection, i) => (
               <article key={i}>
@@ -265,13 +268,13 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
                 </dl>
                 <details className="project-usage-connection-totals">
                   <summary>{connection.requestCount} 次请求 · 查看 Token 与费用明细</summary>
-                  <Totals value={connection} />
+                  <Totals value={connection} compact />
                 </details>
               </article>
             ))}
           </div>
           <h3>任务明细 · 本页 {value.runs.length} 条</h3>
-          {!value.runs.length && <p>尚无项目任务。</p>}
+          {!value.runs.length && <p>{value.runCount ? '本页没有任务明细。' : '当前统计没有项目任务。'}</p>}
           {value.runs.map((run, i) => (
             <article className="project-usage-run" key={run.runId}>
               <div className="project-section-heading">
@@ -303,9 +306,13 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
               {run.unavailableCount > 0 && (
                 <p className="field-error">{run.unavailableCount} 次请求无法读取</p>
               )}
+              <details className="project-usage-run-totals">
+                <summary>查看此任务完整结算与用量</summary>
+                <Totals value={run} compact />
+              </details>
             </article>
           ))}
-          <div className="project-actions">
+          <nav className="project-actions project-usage-pagination" aria-label="项目用量任务分页">
             <p className="field-help">
               第 {position.trail.length + 1} 页 · 本页 {value.runs.length} 条
               {value.page.hasMore ? ' · 还有更多任务' : ' · 已到最后一页'}
@@ -338,7 +345,7 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
             >
               下一页任务
             </button>
-          </div>
+          </nav>
         </>
       )}
     </section>

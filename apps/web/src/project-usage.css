@@ -29,6 +29,21 @@
   margin-top: var(--space-2);
   color: var(--muted);
 }
+.project-usage .project-usage-breakdown {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-usage .project-usage-breakdown > div {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.project-usage .project-usage-breakdown dd {
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
+}
 .project-usage-connections > article {
   border-bottom: 1px solid var(--border);
   padding: var(--space-3) 0;
