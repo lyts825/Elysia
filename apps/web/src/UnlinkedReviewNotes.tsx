@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import type { ReviewDraft } from './ReviewDraft';
 import { CurrentCriterionPicker } from './CurrentCriterionPicker';
+import './review-note-linking.css';
 
 export function UnlinkedReviewNotes({
   value,
@@ -14,9 +15,23 @@ export function UnlinkedReviewNotes({
   disabled: boolean;
   change: (patch: Partial<ReviewDraft>) => boolean;
 }) {
+  const panelId = useId();
   const [selected, setSelected] = useState<number>();
   const [target, setTarget] = useState<DeliveryCriterion | null>();
+  const editor = useRef<HTMLElement>(null);
+  const origin = useRef<HTMLButtonElement | null>(null);
   const item = selected === undefined ? undefined : draft.unlinked[selected];
+  useEffect(() => {
+    if (selected !== undefined) {
+      editor.current?.focus({ preventScroll: true });
+      editor.current?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selected]);
+  const returnToNote = () => {
+    setSelected(undefined);
+    setTarget(undefined);
+    if (origin.current?.isConnected) origin.current.focus();
+  };
   const addition = item
     ? `由旧备注手工关联（本次草稿）\n原标准：${item.unknownStandard ? '旧标准内容未记录' : item.text}\n${item.note}`
     : '';
@@ -34,28 +49,51 @@ export function UnlinkedReviewNotes({
             ? '合并后超出备注字数上限。原文不会截断，请取消后先调整现有备注，或选择整体备注。'
             : '';
   return (
-    <details open>
+    <details className="review-note-linking" open>
       <summary>尚未关联到当前标准的旧备注</summary>
       {draft.unlinked.map((note, index) => (
         <div key={index} className="workflow-selection">
-          <p className="workflow-prose">
-            {note.text}：{note.note}
-          </p>
-          <button
-            type="button"
-            className="text-button"
-            disabled={disabled}
-            onClick={() => {
-              setSelected(index);
-              setTarget(undefined);
-            }}
+          <h4>旧备注 {index + 1}</h4>
+          <p className="field-help">原标准</p>
+          <p
+            className="workflow-prose review-link-reading"
+            role="region"
+            aria-label={`旧备注 ${index + 1} 原标准全文`}
+            tabIndex={0}
           >
-            手动关联此旧备注
-          </button>
+            {note.unknownStandard ? '旧标准内容未记录' : note.text}
+          </p>
+          <p className="field-help">备注原文</p>
+          <p
+            className="workflow-prose review-link-reading"
+            role="region"
+            aria-label={`旧备注 ${index + 1} 原文全文`}
+            tabIndex={0}
+          >
+            {note.note}
+          </p>
+          <div className="workflow-actions">
+            <button
+              type="button"
+              className="text-button"
+              disabled={disabled}
+              aria-label={`手动关联旧备注 ${index + 1}`}
+              aria-expanded={selected === index}
+              aria-controls={selected === index ? panelId : undefined}
+              onClick={(event) => {
+                origin.current = event.currentTarget;
+                setSelected(index);
+                setTarget(undefined);
+              }}
+            >
+              手动关联此旧备注
+            </button>
+          </div>
           <button
             type="button"
             className="text-button"
             disabled={disabled || selected !== undefined}
+            aria-label={`移除旧备注 ${index + 1}`}
             onClick={() => change({ unlinked: draft.unlinked.filter((_, i) => i !== index) })}
           >
             移除此旧备注
@@ -63,7 +101,14 @@ export function UnlinkedReviewNotes({
         </div>
       ))}
       {item && (
-        <section aria-label="旧备注关联预览" className="workflow-source">
+        <section
+          ref={editor}
+          id={panelId}
+          tabIndex={-1}
+          aria-label="旧备注关联预览"
+          className="workflow-source review-link-editor"
+        >
+          <h4>关联旧备注 {selected! + 1}</h4>
           <CurrentCriterionPicker
             key={`${value.fingerprint}:${selected}`}
             initial={value}
@@ -75,21 +120,20 @@ export function UnlinkedReviewNotes({
           {target !== undefined && (
             <>
               <strong>合并预览 · {target === null ? '整体备注' : `当前第 ${target.index + 1} 项`}</strong>
-              <p className="workflow-prose">{merged}</p>
+              <p
+                className="workflow-prose review-link-reading"
+                role="region"
+                aria-label="旧备注合并预览全文"
+                tabIndex={0}
+              >
+                {merged}
+              </p>
             </>
           )}
           <p className="field-help">只修改本机草稿，追加完整旧备注并标记为本次手工关联，不改变原复核历史。</p>
           {issue && <p className="field-help">{issue}</p>}
           <div className="workflow-actions">
-            <button
-              type="button"
-              className="secondary"
-              disabled={disabled}
-              onClick={() => {
-                setSelected(undefined);
-                setTarget(undefined);
-              }}
-            >
+            <button type="button" className="secondary" disabled={disabled} onClick={returnToNote}>
               取消关联，保留原稿
             </button>
             <button
@@ -116,6 +160,7 @@ export function UnlinkedReviewNotes({
                 if (change(patch)) {
                   setSelected(undefined);
                   setTarget(undefined);
+                  editor.current?.parentElement?.querySelector<HTMLElement>('summary')?.focus();
                 }
               }}
             >

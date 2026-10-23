@@ -1,0 +1,45 @@
+.criterion-picker {
+  min-width: 0;
+  margin: var(--space-3) 0;
+  padding: 0;
+  border: 0;
+}
+.criterion-picker legend {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.criterion-picker-option {
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.criterion-picker-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-pale);
+}
+.criterion-picker-option .workflow-note-choice {
+  margin: 0 0 var(--space-2);
+}
+.review-link-reading {
+  max-height: min(14rem, 42dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.review-note-linking .workflow-selection h4 {
+  margin: 0 0 var(--space-3);
+}
+.review-link-editor {
+  scroll-margin-block: var(--space-4);
+  color: var(--text);
+  background: var(--surface);
+}
+.criterion-picker .workflow-read-error p {
+  margin: 0;
+  width: 100%;
+}

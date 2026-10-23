@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './review-note-linking.css';
 
 export function CurrentCriterionPicker({
   initial,
@@ -16,6 +17,7 @@ export function CurrentCriterionPicker({
   overall?: boolean;
 }) {
   const { api } = useSurfaceClient();
+  const group = useId();
   const [page, setPage] = useState(initial),
     [offset, setOffset] = useState(initial.criteriaPage.offset);
   const [busy, setBusy] = useState(false),
@@ -57,26 +59,35 @@ export function CurrentCriterionPicker({
     return () => controller.abort();
   }, [api, initial, offset, retry]);
   return (
-    <fieldset disabled={disabled || busy}>
+    <fieldset className="criterion-picker" disabled={disabled || busy}>
       <legend>手动选择当前验收项</legend>
       {overall && (
         <label className="workflow-note-choice">
-          <input type="radio" checked={selected === null} onChange={() => select(null)} />
+          <input type="radio" name={group} checked={selected === null} onChange={() => select(null)} />
           <span>整体备注（不关联单项）</span>
         </label>
       )}
       {page.criteria.map((item) => (
-        <label className="workflow-note-choice" key={item.index}>
-          <input
-            type="radio"
-            checked={selected === item.index}
-            disabled={!!error}
-            onChange={() => select(item)}
-          />
-          <span>
-            第 {item.index + 1} 项 · {item.text}
-          </span>
-        </label>
+        <section className="criterion-picker-option" key={item.index}>
+          <label className="workflow-note-choice">
+            <input
+              type="radio"
+              name={group}
+              checked={selected === item.index}
+              disabled={!!error}
+              onChange={() => select(item)}
+            />
+            <span>第 {item.index + 1} 项</span>
+          </label>
+          <p
+            className="workflow-prose review-link-reading"
+            role="region"
+            aria-label={`当前第 ${item.index + 1} 项标准全文`}
+            tabIndex={0}
+          >
+            {item.text}
+          </p>
+        </section>
       ))}
       <nav className="workflow-pagination" aria-label="当前验收项分页">
         <span className="workflow-pagination-summary">
@@ -106,12 +117,14 @@ export function CurrentCriterionPicker({
       </nav>
       {busy && <p role="status">正在读取验收项…</p>}
       {error && (
-        <p role="alert" className="field-error workflow-read-error">
-          {error}{' '}
+        <div role="alert" className="workflow-read-error">
+          <p className="review-link-reading" role="region" aria-label="当前标准读取问题全文" tabIndex={0}>
+            {error}
+          </p>
           <button type="button" className="secondary" onClick={() => setRetry((n) => n + 1)}>
             重试这一页
           </button>
-        </p>
+        </div>
       )}
     </fieldset>
   );
