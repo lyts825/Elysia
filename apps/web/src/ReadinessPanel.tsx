@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   ReadinessSnapshot,
   type ReadinessAction,
@@ -35,6 +35,7 @@ export function ReadinessPanel(props: ReadinessPanelProps) {
 }
 function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
   const { api, surface } = useSurfaceClient();
+  const identity = useId();
   const [snapshot, setSnapshot] = useState<ReadinessSnapshot>();
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
@@ -128,15 +129,19 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
           {snapshot && (
             <span role="status">
               {stale
-                ? '上次读取记录'
-                : needsAttention
-                  ? `${needsAttention} 项需要配置或核对`
-                  : '请按需核对未检测项'}
+                ? `保留上次已读 ${snapshot.checks.length} 项记录`
+                : `本次已读 ${snapshot.checks.length} 项记录 · ${needsAttention} 项需要配置或核对`}
             </span>
           )}
         </div>
         {error && (
-          <p className="readiness-error" role="alert" ref={errorRef} tabIndex={0}>
+          <p
+            className="readiness-error"
+            role="alert"
+            aria-label="使用前检查问题全文"
+            ref={errorRef}
+            tabIndex={0}
+          >
             {error}
           </p>
         )}
@@ -144,18 +149,81 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
         {snapshot && (
           <>
             <p className="readiness-time">
-              读取于 {new Date(snapshot.checkedAt).toLocaleString()} · v{snapshot.appVersion}
+              {stale ? '上次记录生成于' : '检查记录生成于'} {new Date(snapshot.checkedAt).toLocaleString()} ·
+              v{snapshot.appVersion}
             </p>
+            <details className="readiness-origin">
+              <summary>检查范围与记录来源</summary>
+              <dl
+                className="readiness-record-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="使用前检查完整范围与来源"
+              >
+                <div>
+                  <dt>所属入口</dt>
+                  <dd>{snapshot.surface === 'terminal' ? 'Agent 终端' : 'Elysia 原生'}</dd>
+                </div>
+                <div>
+                  <dt>项目范围</dt>
+                  <dd>{snapshot.projectId || '未指定项目，按当前入口整理记录'}</dd>
+                </div>
+                <div>
+                  <dt>生成时间原值</dt>
+                  <dd>{snapshot.checkedAt}</dd>
+                </div>
+                <div>
+                  <dt>程序版本</dt>
+                  <dd>{snapshot.appVersion}</dd>
+                </div>
+              </dl>
+            </details>
             <ul className="readiness-list">
-              {snapshot.checks.map((check) => (
+              {snapshot.checks.map((check, index) => (
                 <li key={check.id} data-status={check.status}>
                   <div className="readiness-row-head">
-                    <strong>{check.title}</strong>
+                    <h3 id={`${identity}-check-${index}`}>{check.title}</h3>
                     <span className="readiness-badge">{statuses[check.status]}</span>
                   </div>
-                  <p>{check.detail}</p>
+                  <p
+                    className="readiness-record-reading"
+                    role="region"
+                    tabIndex={0}
+                    aria-label={`${check.title}完整检查说明`}
+                  >
+                    {check.detail}
+                  </p>
+                  <details className="readiness-origin">
+                    <summary>检查条目标识与管理目标</summary>
+                    <dl
+                      className="readiness-record-reading"
+                      role="region"
+                      tabIndex={0}
+                      aria-label={`${check.title}完整检查来源`}
+                    >
+                      <div>
+                        <dt>检查条目标识</dt>
+                        <dd>{check.id}</dd>
+                      </div>
+                      <div>
+                        <dt>管理入口</dt>
+                        <dd>{check.action ? actions[check.action.kind] : '当前记录未提供管理入口'}</dd>
+                      </div>
+                      {check.action && (
+                        <div>
+                          <dt>目标标识</dt>
+                          <dd>{check.action.targetId || '未指定具体条目'}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </details>
                   {check.action && (
-                    <button type="button" className="text-button" onClick={() => follow(check.action!)}>
+                    <button
+                      type="button"
+                      className="text-button"
+                      aria-describedby={`${identity}-check-${index}`}
+                      onClick={() => follow(check.action!)}
+                    >
                       {actions[check.action.kind]}
                     </button>
                   )}
