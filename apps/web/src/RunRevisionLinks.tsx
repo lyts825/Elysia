@@ -104,7 +104,14 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
           <p className="field-help">
             各修订独立执行，分支之间不会自动替代。已删除来源仍保留当前任务的来源快照。
           </p>
-          <h4>来源链</h4>
+          {loading && (
+            <p className="run-revision-read-state" role="status">
+              {lineage || revisions ? '正在重新读取关系，已读列表暂时保留。' : '正在读取任务关系…'}
+            </p>
+          )}
+          <h4 className="run-revision-heading">
+            来源链 {lineage && <span>已读 {lineage.ancestors.length} 级</span>}
+          </h4>
           {!!lineage?.ancestors.length && (
             <div className="run-revision-list" role="region" aria-label="来源链已读列表" tabIndex={0}>
               <ul>
@@ -126,7 +133,7 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
                     ) : (
                       <>
                         <p className="run-revision-meta">
-                          {statuses[item.status || ''] || item.status}
+                          {statuses[item.status || ''] || item.status || '执行状态未提供'}
                           {item.archived ? ' · 已归档' : ''}
                         </p>
                         <button
@@ -154,7 +161,9 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
               来源记录存在循环，已停止继续展开。
             </p>
           )}
-          <h4>直接后续修订</h4>
+          <h4 className="run-revision-heading">
+            直接后续修订 {revisions && <span>本页 {revisions.items.length} 条</span>}
+          </h4>
           {revisions && readPage.before !== before && (
             <p className="field-help">所选页尚未读取成功，下方保留上次已读修订。</p>
           )}
@@ -179,7 +188,7 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
                         {statuses[item.status] || item.status}
                         {item.archived ? ' · 已归档' : ''}
                       </span>
-                      <span>{item.createdAt}</span>
+                      <span>创建时间：{item.createdAt}</span>
                     </p>
                     <button
                       type="button"
@@ -195,8 +204,9 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
               </ul>
             </div>
           )}
-          {revisions && !revisions.items.length && <p className="field-help">尚无后续修订。</p>}
-          {loading && <p role="status">正在读取任务关系…</p>}
+          {revisions && !revisions.items.length && (
+            <p className="field-help">{readPage.before ? '此页没有后续修订。' : '尚无后续修订。'}</p>
+          )}
           {opening && <p role="status">正在打开所选任务…</p>}
           {Object.entries(errors).map(([key, message]) => (
             <div key={key} role="alert" className="run-revision-feedback">
