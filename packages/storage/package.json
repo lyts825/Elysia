@@ -1,6 +1,6 @@
 {
   "name": "@elysia/storage",
-  "version": "1.19.28",
+  "version": "1.19.29",
   "private": true,
   "type": "module"
 }

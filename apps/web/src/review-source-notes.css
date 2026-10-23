@@ -1,0 +1,66 @@
+.review-source-notes,
+.review-source-note-card,
+.review-source-note-body {
+  min-width: 0;
+}
+.review-source-note-body {
+  display: grid;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.review-source-note-origin {
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
+}
+.review-source-note-field > strong {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.review-source-note-field .workflow-prose,
+.review-source-note-text .workflow-prose {
+  margin: var(--space-1) 0 0;
+}
+.review-source-note-body > details {
+  margin: 0;
+}
+.review-source-note-body summary {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.review-source-note-body dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.review-source-note-body dt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.review-source-note-body dd {
+  margin: var(--space-1) 0 0;
+  font: var(--font-sm) / var(--leading-body) var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.review-source-note-reading {
+  min-width: 0;
+  max-height: min(22rem, 50dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-radius: var(--radius-sm);
+}
+.review-source-note-actions {
+  margin-top: var(--space-3);
+}
+.review-source-note-actions:empty {
+  display: none;
+}
+.review-source-note-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  scroll-margin-block: var(--space-3);
+}
