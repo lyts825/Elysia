@@ -155,22 +155,39 @@ function registeredWait(name: string, result: Record<string, unknown> | null): b
 }
 function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
   const value = record(outcome);
-  if (name !== 'exec' || !value) return <pre>{format(outcome)}</pre>;
+  if (name !== 'exec' || !value)
+    return (
+      <pre role="region" aria-label="工具返回结果全文">
+        {format(outcome)}
+      </pre>
+    );
   const outputKeys = new Set(['stdout', 'stderr']);
   const facts = Object.entries(value).filter(([key]) => !outputKeys.has(key));
   return (
     <>
-      {facts.length > 0 && <pre>{format(Object.fromEntries(facts))}</pre>}
+      {facts.length > 0 && (
+        <pre role="region" aria-label="命令返回元数据全文">
+          {format(Object.fromEntries(facts))}
+        </pre>
+      )}
       {(['stdout', 'stderr'] as const).map((key) =>
         typeof value[key] === 'string' ? (
           <div className="tool-activity-output" key={key}>
             <h5>
               {key === 'stdout' ? '标准输出' : '标准错误'} <code>{key}</code>
             </h5>
-            {value[key] ? <pre>{value[key]}</pre> : <p className="tool-activity-note">本次返回为空。</p>}
+            {value[key] ? (
+              <pre role="region" aria-label={key === 'stdout' ? '命令标准输出全文' : '命令标准错误全文'}>
+                {value[key]}
+              </pre>
+            ) : (
+              <p className="tool-activity-note">本次返回为空。</p>
+            )}
           </div>
         ) : value[key] !== undefined ? (
-          <pre key={key}>{format({ [key]: value[key] })}</pre>
+          <pre key={key} role="region" aria-label={`${key} 返回原文`}>
+            {format({ [key]: value[key] })}
+          </pre>
         ) : null,
       )}
     </>
@@ -433,6 +450,19 @@ export function ToolActivity({
         </span>
       </summary>
       <div className="tool-activity-body" data-testid="tool-activity-body" aria-busy={loading}>
+        {target && (
+          <section aria-label="完整工具作用目标">
+            <h4>完整作用目标</h4>
+            <p
+              className="tool-activity-target-reading"
+              role="region"
+              tabIndex={0}
+              aria-label="工具调用完整目标"
+            >
+              {target === '.' ? '当前目录（.）' : target}
+            </p>
+          </section>
+        )}
         {operation?.status === 'UNCERTAIN' && (
           <p className="tool-activity-note">操作可能已产生影响，结果尚待核验；请核对任务中的说明与证据。</p>
         )}
@@ -487,13 +517,17 @@ export function ToolActivity({
                     )}
                   </dt>
                   <dd>
-                    <pre>{format(value)}</pre>
+                    <pre role="region" aria-label={`${fieldNames[key] || key} 参数完整内容`}>
+                      {format(value)}
+                    </pre>
                   </dd>
                 </div>
               ))}
             </dl>
           ) : !operation && !record(parsed) ? (
-            <pre>{call.arguments}</pre>
+            <pre role="region" aria-label="工具原始输入全文">
+              {call.arguments}
+            </pre>
           ) : (
             <p className="tool-activity-note">没有额外参数。</p>
           )}
@@ -501,7 +535,9 @@ export function ToolActivity({
         {error && (
           <section className="tool-activity-error" aria-label="错误原因">
             <h4>错误原因</h4>
-            <pre>{error}</pre>
+            <pre role="region" aria-label="工具失败完整原因">
+              {error}
+            </pre>
           </section>
         )}
         {outcome !== undefined ? (
@@ -512,6 +548,66 @@ export function ToolActivity({
         ) : operation?.status === 'DONE' ? (
           <p className="tool-activity-note">当前记录未包含返回内容。</p>
         ) : null}
+        <section aria-label="工具记录来源与版本">
+          <h4>记录来源与版本</h4>
+          <dl
+            className="tool-activity-record-reading"
+            role="region"
+            tabIndex={0}
+            aria-label="工具调用完整记录来源"
+          >
+            <div>
+              <dt>记录依据</dt>
+              <dd>
+                {loaded
+                  ? '按需读回的完整操作记录'
+                  : summaryOperation
+                    ? omitted
+                      ? '摘要操作记录，可能省略内容'
+                      : '当前提供的操作记录'
+                    : toolResponse
+                      ? '工具返回消息'
+                      : '只有调用参数，暂无结果记录'}
+              </dd>
+            </div>
+            <div>
+              <dt>返回内容来源</dt>
+              <dd>
+                {operation?.result !== undefined
+                  ? '操作记录结果'
+                  : toolResponse
+                    ? '工具返回消息'
+                    : '尚无返回内容'}
+              </dd>
+            </div>
+            <div>
+              <dt>调用标识</dt>
+              <dd>{call.id}</dd>
+            </div>
+            {operation && (
+              <>
+                <div>
+                  <dt>操作标识</dt>
+                  <dd>{operation.id}</dd>
+                </div>
+                <div>
+                  <dt>操作版本</dt>
+                  <dd>{operation.revision ?? '未提供'}</dd>
+                </div>
+                <div>
+                  <dt>所属执行</dt>
+                  <dd>{operation.runId}</dd>
+                </div>
+              </>
+            )}
+            {toolResponse && (
+              <div>
+                <dt>返回消息标识</dt>
+                <dd>{toolResponse.id}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
       </div>
     </details>
   );
