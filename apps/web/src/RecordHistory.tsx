@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { RecordPage, ProjectionReadCoverage } from '../../../packages/contracts/src/run-reads';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './record-history.css';
 
 type HistoryPage = { items: any[]; page: RecordPage; readCoverage?: ProjectionReadCoverage };
 
@@ -58,66 +59,85 @@ export function RecordHistory({
   return (
     <details className="record-history" onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>
-        {label} · {total} 条
+        <span>{label}</span>
+        <small>共 {total} 条</small>
       </summary>
       {open && (
         <>
           {error && (
-            <p role="alert">
-              {error}{' '}
-              <button className="text-button" onClick={() => setRetry((value) => value + 1)}>
+            <div className="record-history-feedback" role="alert">
+              <p role="region" aria-label={label + '读取问题全文'} tabIndex={0}>
+                {error}
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setRetry((value) => value + 1)}
+              >
                 重试
               </button>
-            </p>
+            </div>
           )}
           {page?.readCoverage && !page.readCoverage.complete && (
             <p className="field-error" role="status">
               另有 {page.readCoverage.unavailable} 条记录暂不可读取。此页仅显示可读取记录，完整结果仍未知。
             </p>
           )}
-          <nav className="conversation-page-nav" aria-label={label + '分页'}>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || !trail.length}
-              onClick={() => {
-                const prior = [...trail];
-                setBefore(prior.pop()!);
-                setTrail(prior);
-              }}
-            >
-              更新记录
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || !page?.page.hasMore}
-              onClick={() => {
-                setTrail([...trail, before]);
-                setBefore(page!.page.nextBefore!);
-              }}
-            >
-              更早记录
-            </button>
-            <button
-              className="text-button"
-              type="button"
-              disabled={busy || !before}
-              onClick={() => {
-                setBefore('');
-                setTrail([]);
-              }}
-            >
-              返回最新
-            </button>
-            <span>{busy ? '读取中…' : `本页 ${page?.items.length ?? 0} 条`}</span>
+          <nav className="record-history-pagination" aria-label={label + '分页'}>
+            <p role="status">
+              第 {trail.length + 1} 页 · {busy ? '读取中…' : `本页 ${page?.items.length ?? 0} 条`}
+            </p>
+            <div>
+              <button
+                className="secondary"
+                type="button"
+                disabled={busy || !trail.length}
+                onClick={() => {
+                  const prior = [...trail];
+                  setBefore(prior.pop()!);
+                  setTrail(prior);
+                }}
+              >
+                更新记录
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                disabled={busy || !page?.page.hasMore}
+                onClick={() => {
+                  setTrail([...trail, before]);
+                  setBefore(page!.page.nextBefore!);
+                }}
+              >
+                更早记录
+              </button>
+              <button
+                className="text-button"
+                type="button"
+                disabled={busy || !before}
+                onClick={() => {
+                  setBefore('');
+                  setTrail([]);
+                }}
+              >
+                返回最新
+              </button>
+            </div>
           </nav>
-          {page?.items.map((record) =>
-            render ? (
-              <div key={record.id}>{render(record)}</div>
-            ) : (
-              <RecordItem key={record.id} runId={runId} kind={kind} record={record} />
-            ),
+          {page && !page.items.length && !busy && <p className="field-help">此页暂无可读取记录。</p>}
+          {!!page?.items.length && (
+            <div className="record-history-list" role="region" aria-label={label + '本页记录'} tabIndex={0}>
+              {page.items.map((record) =>
+                render ? (
+                  <div className="record-history-custom" key={record.id}>
+                    {render(record)}
+                  </div>
+                ) : (
+                  <RecordItem key={record.id} runId={runId} kind={kind} record={record} />
+                ),
+              )}
+            </div>
           )}
         </>
       )}
@@ -130,6 +150,7 @@ function RecordItem({ runId, kind, record }: { runId: string; kind: string; reco
     [error, setError] = useState('');
   const [open, setOpen] = useState(false),
     [retry, setRetry] = useState(0);
+  const title = record.providerBinding?.model || record.name || record.id;
   useEffect(() => {
     setValue(null);
   }, [record.id, record.revision]);
@@ -154,18 +175,29 @@ function RecordItem({ runId, kind, record }: { runId: string; kind: string; reco
       }}
     >
       <summary>
-        <span>{record.providerBinding?.model || record.name || record.id}</span>
+        <span className="record-history-name">{title}</span>
         <small>{record.status}</small>
       </summary>
+      <p className="record-history-identity" role="region" aria-label="记录完整标识" tabIndex={0}>
+        {title}
+        {title !== record.id && (
+          <>
+            <br />
+            {record.id}
+          </>
+        )}
+      </p>
       {error && (
-        <p role="alert">
-          {error}{' '}
-          <button className="text-button" onClick={() => setRetry((value) => value + 1)}>
+        <div className="record-history-feedback" role="alert">
+          <p role="region" aria-label="完整记录读取问题全文" tabIndex={0}>
+            {error}
+          </p>
+          <button type="button" className="secondary" onClick={() => setRetry((value) => value + 1)}>
             重试
           </button>
-        </p>
+        </div>
       )}
-      <pre>
+      <pre role="region" aria-label="完整记录正文" tabIndex={0}>
         {value
           ? JSON.stringify(
               kind === 'requests'

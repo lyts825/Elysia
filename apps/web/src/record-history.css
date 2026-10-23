@@ -1,0 +1,100 @@
+.record-history {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.record-history > summary {
+  line-height: var(--leading-ui);
+  cursor: pointer;
+}
+.record-history > summary small {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.record-history-pagination {
+  margin-block: var(--space-3);
+}
+.record-history-pagination p {
+  margin-block: 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.record-history-pagination > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.record-history-list {
+  max-height: min(32rem, 65dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-1);
+}
+.record-history .request-detail {
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface-soft);
+}
+.record-history .request-detail summary {
+  min-width: 0;
+  align-items: baseline;
+  line-height: var(--leading-ui);
+}
+.record-history .record-history-name {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.record-history .request-detail summary small {
+  flex: none;
+}
+.record-history-identity,
+.record-history-feedback > p {
+  max-height: min(10rem, 35dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+}
+.record-history-identity {
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.record-history-feedback {
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.record-history-feedback > p {
+  margin-block: 0 var(--space-3);
+}
+.record-history .request-detail pre {
+  max-width: 100%;
+  max-height: min(18rem, 45dvh);
+  padding: var(--space-3);
+  margin-block: var(--space-3) 0;
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--code-text);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.record-history-custom {
+  min-width: 0;
+}
