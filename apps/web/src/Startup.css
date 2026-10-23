@@ -225,14 +225,6 @@
 .startup-media-tools {
   flex-wrap: wrap;
 }
-.startup-media-tools span {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-sm);
-}
 .startup-settings-hint {
   font-size: var(--font-sm);
   color: var(--muted);
@@ -262,10 +254,6 @@
 }
 .startup-diagnostic-record {
   margin-top: 0.75rem;
-}
-.startup-diagnostic-record strong {
-  font-size: var(--font-xs);
-  font-weight: 500;
 }
 .startup-diagnostic-record dl {
   margin: 0.5rem 0;
