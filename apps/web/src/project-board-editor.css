@@ -1,0 +1,56 @@
+.plan-editor-index {
+  margin-block: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.plan-editor-index summary {
+  cursor: pointer;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.plan-editor-index-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: min(18rem, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin-top: var(--space-3);
+  padding: var(--space-1);
+}
+.plan-editor-index-list button {
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr);
+  gap: var(--space-2);
+  text-align: start;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.plan-editor-index-list button > :first-child {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.project-board-editor .project-editor-item {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+  scroll-margin-block: var(--space-4);
+}
+.project-board-editor .project-form-columns {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+.plan-editor-footer {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.plan-editor-footer p {
+  margin: 0;
+}

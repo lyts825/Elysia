@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   ProjectDeliveryBoardInput,
   type ProjectDeliveryBoard,
@@ -9,6 +9,7 @@ import { mergeProjectPlan, type MergeChoices } from './ProjectDraftMerge';
 import { ProjectDraftComparison } from './ProjectDraftComparison';
 import { ProjectPlanTransfer, type PlanImportLifecycle } from './ProjectPlanTransfer';
 import type { ProjectPlanTransfer as PlanFile, ProjectPlanImportPreflight } from './project-plan-transfer';
+import './project-board-editor.css';
 
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
@@ -50,6 +51,19 @@ export function ProjectBoardEditor({
   exportOriginal: () => void;
   planLifecycle: RefObject<PlanImportLifecycle | null>;
 }) {
+  const id = useId();
+  const names = useRef(new Map<string, HTMLInputElement>());
+  const addButton = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<string | null>(null);
+  useEffect(() => {
+    const target = pendingFocus.current;
+    pendingFocus.current = null;
+    if (target) {
+      const node = target === 'add' ? addButton.current : names.current.get(target);
+      node?.focus({ preventScroll: true });
+      node?.scrollIntoView({ block: 'center' });
+    }
+  }, [edit.items]);
   const current = boardSnapshot(board);
   const comparisonKey = JSON.stringify([board.revision, current, edit]);
   const [selection, setSelection] = useState<{ key: string; choices: MergeChoices }>({
@@ -135,6 +149,31 @@ export function ProjectBoardEditor({
           </p>
         </section>
       )}
+      <details className="plan-editor-index" open>
+        <summary>交付项索引 · {edit.items.length} / 40 项</summary>
+        {edit.items.length ? (
+          <nav className="plan-editor-index-list" aria-label="定位交付项" tabIndex={0}>
+            {edit.items.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                className="secondary"
+                disabled={busy}
+                aria-controls={`${id}-${item.id}`}
+                onClick={() => {
+                  names.current.get(item.id)?.focus({ preventScroll: true });
+                  names.current.get(item.id)?.scrollIntoView({ block: 'center' });
+                }}
+              >
+                <span>{index + 1}</span>
+                <span>{item.title || '未命名交付项'}</span>
+              </button>
+            ))}
+          </nav>
+        ) : (
+          <p className="field-help">当前没有交付项，可在下方添加。</p>
+        )}
+      </details>
       <fieldset disabled={busy}>
         <label>
           项目目标
@@ -164,13 +203,23 @@ export function ProjectBoardEditor({
           </label>
         </div>
         {edit.items.map((item, index) => (
-          <section className="project-editor-item" key={item.id} aria-label={`交付项 ${index + 1}`}>
+          <section
+            className="project-editor-item"
+            key={item.id}
+            id={`${id}-${item.id}`}
+            aria-label={`交付项 ${index + 1}`}
+          >
             <div className="project-section-heading">
               <h3>交付项 {index + 1}</h3>
               <button
                 type="button"
                 className="secondary danger"
-                onClick={() => change({ ...edit, items: edit.items.filter((entry) => entry.id !== item.id) })}
+                aria-label={`从计划移除交付项 ${index + 1}`}
+                onClick={() => {
+                  const items = edit.items.filter((entry) => entry.id !== item.id);
+                  pendingFocus.current = items[Math.min(index, items.length - 1)]?.id || 'add';
+                  change({ ...edit, items });
+                }}
               >
                 从计划移除
               </button>
@@ -178,6 +227,10 @@ export function ProjectBoardEditor({
             <label>
               交付项名称
               <input
+                ref={(node) => {
+                  if (node) names.current.set(item.id, node);
+                  else names.current.delete(item.id);
+                }}
                 maxLength={200}
                 value={item.title}
                 onChange={(e) =>
@@ -220,6 +273,7 @@ export function ProjectBoardEditor({
                     })
                   }
                 />
+                <span className="field-help">已填写 {boardLines(item.deliverables).length} / 20 项</span>
               </label>
               <label>
                 验收标准（每行一项，最多 40 项）
@@ -235,6 +289,9 @@ export function ProjectBoardEditor({
                     })
                   }
                 />
+                <span className="field-help">
+                  已填写 {boardLines(item.acceptanceCriteria).length} / 40 项
+                </span>
               </label>
             </div>
             <label className="check-row">
@@ -255,16 +312,19 @@ export function ProjectBoardEditor({
           </section>
         ))}
         <button
+          ref={addButton}
           type="button"
           className="secondary"
           disabled={edit.items.length >= 40}
-          onClick={() =>
+          onClick={() => {
+            const nextId = crypto.randomUUID();
+            pendingFocus.current = nextId;
             change({
               ...edit,
               items: [
                 ...edit.items,
                 {
-                  id: crypto.randomUUID(),
+                  id: nextId,
                   title: '',
                   description: '',
                   deliverables: '',
@@ -272,25 +332,27 @@ export function ProjectBoardEditor({
                   required: true,
                 },
               ],
-            })
-          }
+            });
+          }}
         >
           添加交付项
         </button>
       </fieldset>
-      {!valid.success && (
-        <p className="field-help">
-          每个交付项需名称、至少一项交付物和验收标准；各条最多 2000 字，范围和不做事项各最多 40 条。
-        </p>
-      )}
-      <button
-        type="button"
-        className="primary"
-        disabled={busy || !valid.success || needsMerge}
-        onClick={save}
-      >
-        {busy ? '正在保存…' : '保存项目计划'}
-      </button>
+      <footer className="plan-editor-footer">
+        {!valid.success && (
+          <p className="field-help">
+            每个交付项需名称、至少一项交付物和验收标准；各条最多 2000 字，范围和不做事项各最多 40 条。
+          </p>
+        )}
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !valid.success || needsMerge}
+          onClick={save}
+        >
+          {busy ? '正在保存…' : '保存项目计划'}
+        </button>
+      </footer>
     </section>
   );
 }

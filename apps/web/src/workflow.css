@@ -83,19 +83,6 @@
   color: var(--text);
   border-color: var(--border);
 }
-.workflow-revision-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  overflow-wrap: anywhere;
-}
-.workflow-revision-row span {
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
-.workflow-revision-row button {
-  text-align: left;
-}
 .workflow-requirements {
   margin-bottom: var(--space-4);
 }
