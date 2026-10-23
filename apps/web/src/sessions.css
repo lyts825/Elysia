@@ -117,7 +117,7 @@
   padding: var(--space-2) var(--space-1);
 }
 .project-row .project-item > span,
-.session-row .history-item > span:nth-child(2) {
+.session-row .history-item .session-run-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,12 +129,32 @@
   min-height: var(--control-md);
   font-size: var(--font-md);
 }
-.session-row .history-item > small {
+.session-run-meta small {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   flex: none;
   font-size: var(--font-xs);
   color: var(--muted);
 }
-.session-row.unread .history-item > span:nth-child(2) {
+.session-row .history-item > .session-run-label {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: var(--space-1);
+  overflow: visible;
+  white-space: normal;
+}
+.session-row .history-item .session-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  line-height: var(--leading-ui);
+  overflow: visible;
+  white-space: normal;
+}
+.session-row.unread .history-item .session-run-title {
   color: var(--text);
   font-weight: 600;
 }

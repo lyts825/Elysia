@@ -403,13 +403,39 @@ export function SessionSidebar({
           }
         }}
       >
-        <span className={'status-dot ' + run.status.toLowerCase()} />
-        <span>{run.title || run.objective}</span>
-        {readOnlyRun(run) && <small>旧终端 · 只读</small>}
-        {flag(`pinned:run:${run.id}`) && <Icon name="pin" size={12} />}
-        {typeof entries[`draft:run:${run.id}`]?.value === 'string' &&
-          entries[`draft:run:${run.id}`].value && <small>草稿</small>}
-        {flag(`unread:run:${run.id}`) && <i className="unread-dot" aria-label="未读" />}
+        <span className={'status-dot ' + run.status.toLowerCase()} aria-hidden="true" />
+        <span className="session-run-label">
+          <span className="session-run-title">{run.title || run.objective}</span>
+          <span className="session-run-meta">
+            <small>
+              {{
+                DRAFT: '待开始',
+                READY: '就绪',
+                RUNNING: '执行中',
+                WAITING: '等待',
+                VERIFYING: '待验收',
+                DONE: '已完成',
+                FAILED: '失败',
+                CANCELLED: '已取消',
+              }[run.status] || '状态未知'}
+            </small>
+            {readOnlyRun(run) && <small>旧终端 · 只读</small>}
+            {flag(`pinned:run:${run.id}`) && (
+              <small>
+                <Icon name="pin" size={12} />
+                置顶
+              </small>
+            )}
+            {typeof entries[`draft:run:${run.id}`]?.value === 'string' &&
+              entries[`draft:run:${run.id}`].value && <small>草稿</small>}
+            {flag(`unread:run:${run.id}`) && (
+              <small>
+                <i className="unread-dot" aria-hidden="true" />
+                未读
+              </small>
+            )}
+          </span>
+        </span>
       </button>
       <button
         className="session-more"
