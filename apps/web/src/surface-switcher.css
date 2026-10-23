@@ -4,6 +4,7 @@
   gap: var(--space-2);
   min-height: var(--control-lg);
   min-width: 0;
+  max-width: 100%;
   padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-card);
@@ -12,13 +13,19 @@
   font-size: var(--font-xl);
   font-weight: 650;
   text-align: left;
+  line-height: var(--leading-heading);
 }
 .surface-trigger:hover,
 .surface-trigger[aria-expanded='true'] {
   background: var(--surface-hover);
 }
 .surface-trigger > span {
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.surface-trigger > svg {
+  flex: none;
 }
 .surface-trigger > svg:last-child {
   transform: rotate(90deg);
@@ -36,6 +43,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  scroll-padding-block: var(--space-2);
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
@@ -78,6 +86,20 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.surface-menu .surface-option-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.surface-menu .surface-option-current {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-pale);
+  color: var(--accent-strong);
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
+}
 .surface-menu strong,
 .surface-menu small {
   display: block;
@@ -100,6 +122,13 @@
   margin-top: 0;
   color: var(--secondary);
   font-weight: 600;
+}
+.surface-menu .surface-menu-status {
+  margin: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
 }
 .sidebar-collapsed .surface-trigger > span,
 .sidebar-collapsed .surface-trigger > svg:last-child {

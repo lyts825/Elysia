@@ -24,6 +24,7 @@ export function SurfaceSwitcher({
   const surfaceRoot = useSurfaceRoot();
   const [open, setOpen] = useState(false);
   const menuId = useId();
+  const statusId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const selected = surfaces.find((surface) => surface.id === localSurface)!;
@@ -119,6 +120,11 @@ export function SurfaceSwitcher({
             <p className="surface-menu-heading" role="presentation">
               工作入口
             </p>
+            {(disabled || switching) && (
+              <p className="surface-menu-status" id={statusId} role="status">
+                {switching ? '正在切换入口…' : '当前操作完成后可切换入口'}
+              </p>
+            )}
             {surfaces.map((surface) => (
               <button
                 key={surface.id}
@@ -127,6 +133,7 @@ export function SurfaceSwitcher({
                 aria-checked={surface.id === localSurface}
                 tabIndex={surface.id === localSurface ? 0 : -1}
                 aria-disabled={disabled || switching}
+                aria-describedby={disabled || switching ? statusId : undefined}
                 onClick={() => {
                   if (disabled || switching) return;
                   dismiss();
@@ -135,15 +142,19 @@ export function SurfaceSwitcher({
               >
                 <Icon name={surface.icon} size={20} />
                 <span className="surface-option-label">
-                  <strong>{surface.label}</strong>
+                  <span className="surface-option-title">
+                    <strong>{surface.label}</strong>
+                    {surface.id === localSurface && (
+                      <span className="surface-option-current" aria-hidden="true">
+                        当前入口
+                      </span>
+                    )}
+                  </span>
                   <small>{surface.description}</small>
                 </span>
                 {surface.id === localSurface && <Icon name="check" size={18} />}
               </button>
             ))}
-            {(disabled || switching) && (
-              <p role="status">{switching ? '正在切换…' : '当前操作完成后可切换'}</p>
-            )}
           </div>,
           surfaceRoot?.current || document.body,
         )}
