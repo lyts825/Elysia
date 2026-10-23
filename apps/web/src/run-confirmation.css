@@ -1,0 +1,62 @@
+.run-review-confirmation {
+  min-width: 0;
+}
+.run-review-confirmation .run-review-fields {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.run-review-confirmation .run-review-fields > div {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 0.35fr) minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+.run-review-confirmation .run-review-fields dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.run-review-confirmation .run-review-fields dd {
+  margin: 0;
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+.run-review-confirmation .run-review-prose {
+  white-space: pre-wrap;
+}
+.run-review-confirmation .run-confirmation-grid dd > span {
+  display: block;
+}
+.run-review-confirmation .run-review-materials {
+  min-width: 0;
+  margin-top: var(--space-3);
+}
+.run-review-confirmation .run-review-materials summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.run-review-confirmation .run-review-materials p {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.run-review-confirmation .run-review-defaults {
+  padding-block: var(--space-3);
+  margin: var(--space-3) 0 0;
+  border-top: 1px solid var(--border);
+}
+.run-review-confirmation > .secondary {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

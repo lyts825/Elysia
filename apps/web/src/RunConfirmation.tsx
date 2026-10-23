@@ -2,6 +2,7 @@ import type { NativeProjectDefaults } from '../../../packages/contracts/src/work
 import type { RunSetupDraft } from './RunSetupModal';
 import { requirementLines } from './TaskRequirements';
 import './run-setup.css';
+import './run-confirmation.css';
 
 export function RunConfirmation({
   projectName,
@@ -30,8 +31,9 @@ export function RunConfirmation({
       '预算',
     value.concurrency !== defaults.concurrency && '并发',
   ].filter(Boolean);
+  const authorizedUrls = requirementLines(value.urls);
   return (
-    <section className="workflow-confirmation" aria-label="本次执行配置确认">
+    <section className="workflow-confirmation run-review-confirmation" aria-label="本次执行配置确认">
       <h3>确认本次执行</h3>
       <dl className="run-confirmation-grid">
         <div className="run-confirmation-wide">
@@ -54,9 +56,30 @@ export function RunConfirmation({
         </div>
         <div className="run-confirmation-wide">
           <dt>模型</dt>
-          <dd className="run-setup-reading" role="region" aria-label="本次模型完整配置" tabIndex={0}>
-            {providerLabel} · {value.choice.model}
-            {value.choice.reasoningEffort ? ` · ${value.choice.reasoningEffort}` : ''}
+          <dd>
+            <dl
+              className="run-review-fields run-setup-reading"
+              role="region"
+              aria-label="本次模型完整配置"
+              tabIndex={0}
+            >
+              <div>
+                <dt>连接名称</dt>
+                <dd>{providerLabel || '未提供连接名称'}</dd>
+              </div>
+              <div>
+                <dt>模型标识</dt>
+                <dd>{value.choice.model || '未指定'}</dd>
+              </div>
+              <div>
+                <dt>思考强度</dt>
+                <dd>{value.choice.reasoningEffort || '未指定'}</dd>
+              </div>
+              <div>
+                <dt>连接标识</dt>
+                <dd>{value.choice.providerId || '未指定'}</dd>
+              </div>
+            </dl>
           </dd>
         </div>
         <div>
@@ -71,20 +94,54 @@ export function RunConfirmation({
         </div>
         <div className="run-confirmation-wide">
           <dt>权限范围</dt>
-          <dd className="run-setup-reading" role="region" aria-label="本次权限完整范围" tabIndex={0}>
-            项目内读取；
-            {value.write
-              ? `任务目录写入：${requirementLines(value.writePaths).join('、') || '未指定'}`
-              : '不允许写入'}
-            ；{value.exec ? '允许命令执行（当前系统用户权限）' : '不允许命令执行'}；
-            {requirementLines(value.urls).length} 个授权网页
+          <dd>
+            <dl
+              className="run-review-fields run-setup-reading"
+              role="region"
+              aria-label="本次权限完整范围"
+              tabIndex={0}
+            >
+              <div>
+                <dt>读取</dt>
+                <dd>项目内读取</dd>
+              </div>
+              <div>
+                <dt>写入</dt>
+                <dd>
+                  {value.write
+                    ? `允许任务目录写入 · ${requirementLines(value.writePaths).length} 项范围`
+                    : '不允许写入'}
+                </dd>
+              </div>
+              {value.write && (
+                <div>
+                  <dt>完整写入范围</dt>
+                  <dd className="run-review-prose">
+                    {requirementLines(value.writePaths).join('\n') || '未指定'}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>命令执行</dt>
+                <dd>{value.exec ? '允许（当前系统用户权限）' : '不允许命令执行'}</dd>
+              </div>
+              <div>
+                <dt>网页授权</dt>
+                <dd>
+                  {authorizedUrls.length
+                    ? `${authorizedUrls.length} 个网页，完整范围见下方授权网页`
+                    : '0 个网页 · 未授权网页'}
+                </dd>
+              </div>
+            </dl>
           </dd>
         </div>
         <div>
           <dt>预算上限</dt>
           <dd>
-            {value.maxRequests} 次请求 · {value.maxTokens.toLocaleString()} Token
-            {value.maxCost == null ? ' · 未设金额上限' : ` · 金额 ${value.maxCost}`}
+            <span>{value.maxRequests} 次请求</span>
+            <span>{value.maxTokens.toLocaleString()} Token</span>
+            <span>{value.maxCost == null ? '未设金额上限' : `金额上限 ${value.maxCost}`}</span>
           </dd>
         </div>
         <div>
@@ -92,26 +149,38 @@ export function RunConfirmation({
           <dd>
             {value.contextPolicy.mode === 'managed'
               ? '托管'
-              : `${value.contextPolicy.windowTokens?.toLocaleString() || '未指定'} Token`}
+              : `手动 · ${value.contextPolicy.windowTokens?.toLocaleString() || '未指定'} Token`}
           </dd>
         </div>
       </dl>
-      {(value.inputs || value.urls) && (
-        <details>
-          <summary>补充资料与网页范围</summary>
+      {value.inputs.trim() && (
+        <details className="run-review-materials">
+          <summary>重点资料 · 已填写</summary>
           <p
             className="workflow-prose run-setup-reading"
             role="region"
-            aria-label="补充资料与网页完整范围"
+            aria-label="本次重点资料完整内容"
             tabIndex={0}
           >
-            {value.inputs || '未指定重点资料'}
-            {value.urls && `\n授权网页：\n${value.urls}`}
+            {value.inputs}
           </p>
         </details>
       )}
-      <p className="field-help">
-        {differences.length ? `本次调整：${differences.join('、')}。` : '执行参数来自项目默认。'}
+      <details className="run-review-materials">
+        <summary>授权网页 · {authorizedUrls.length} 项</summary>
+        <p
+          className="workflow-prose run-setup-reading"
+          role="region"
+          aria-label="本次授权网页完整范围"
+          tabIndex={0}
+        >
+          {authorizedUrls.length ? value.urls : '未授权网页'}
+        </p>
+      </details>
+      <p className="field-help run-review-defaults">
+        {differences.length
+          ? `与项目默认相比，本次调整：${differences.join('、')}。`
+          : '模型、计划模式、上下文、预算与并发沿用项目默认。'}
         权限仍由本次任务单独确认，点击底部按钮后才创建。
       </p>
       <button type="button" className="secondary" disabled={disabled} onClick={adjust}>
