@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './project-run-list.css';
 export const executionLabel = (status: string | null) =>
   ({
     DRAFT: '待开始',
@@ -34,6 +35,7 @@ export function ProjectRunList({
   busy?: boolean;
 }) {
   const { api } = useSurfaceClient();
+  const id = useId();
   const searchInput = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState<TaskCenterPage>(),
     [error, setError] = useState(''),
@@ -96,25 +98,71 @@ export function ProjectRunList({
       {page && (!page.reviewCoverage.complete || page.projectionCoverage?.complete === false) && (
         <p className="field-error">部分记录无法读取，数量与复核状态可能不完整。可在任务中心重试异常记录。</p>
       )}
-      {page?.items.map((item) => (
+      {page?.items.map((item, index) => (
         <article className="project-run-row" key={item.id}>
-          <div>
-            <strong>{item.title}</strong>
-            <p>
-              {executionLabel(item.status)} ·{' '}
-              {item.reviewIssue
-                ? '复核无法读取'
-                : item.reviewStatus
-                  ? reviewLabels[item.reviewStatus]
-                  : '尚无交付复核'}
+          <div className="project-run-description">
+            <p className="project-run-number">本页任务 {index + 1}</p>
+            <div
+              id={`${id}-title-${index}`}
+              className="project-run-reading"
+              role="region"
+              aria-label={`任务 ${index + 1} 完整名称`}
+              tabIndex={0}
+            >
+              <strong>{item.title}</strong>
+            </div>
+            <p className="project-run-status">
+              <span>{executionLabel(item.status)}</span>
+              <span>
+                {item.reviewIssue
+                  ? '复核无法读取'
+                  : item.reviewStatus
+                    ? reviewLabels[item.reviewStatus]
+                    : '尚无交付复核'}
+              </span>
             </p>
+            {(item.readIssue || item.reviewIssue) && (
+              <div className="project-run-issues">
+                {item.readIssue && (
+                  <p
+                    id={`${id}-issue-${index}`}
+                    className="project-run-reading field-error"
+                    role="region"
+                    aria-label={`任务 ${index + 1} 读取问题`}
+                    tabIndex={0}
+                  >
+                    任务记录暂不可读，不能关联此次执行。{item.readIssue.message}
+                  </p>
+                )}
+                {item.reviewIssue && (
+                  <p
+                    className="project-run-reading field-error"
+                    role="region"
+                    aria-label={`任务 ${index + 1} 复核读取问题`}
+                    tabIndex={0}
+                  >
+                    {item.reviewIssue.message}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="project-actions">
-            <button type="button" className="secondary" onClick={() => openRun(item.id)}>
+            <button
+              type="button"
+              className="secondary"
+              aria-describedby={`${id}-title-${index}`}
+              onClick={() => openRun(item.id)}
+            >
               查看任务
             </button>
             {item.reviewStatus && (
-              <button type="button" className="secondary" onClick={() => openRun(item.id, true)}>
+              <button
+                type="button"
+                className="secondary"
+                aria-describedby={`${id}-title-${index}`}
+                onClick={() => openRun(item.id, true)}
+              >
                 查看复核
               </button>
             )}
@@ -123,6 +171,7 @@ export function ProjectRunList({
                 type="button"
                 className="primary"
                 disabled={busy || !!item.readIssue}
+                aria-describedby={`${id}-title-${index}${item.readIssue ? ` ${id}-issue-${index}` : ''}`}
                 onClick={() => choose(item.id)}
               >
                 关联此次执行

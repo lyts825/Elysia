@@ -313,19 +313,6 @@
 .project-item-reading li + li {
   margin-top: var(--space-3);
 }
-.project-run-pagination {
-  display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-.project-run-pagination p {
-  margin: 0;
-}
-.project-run-empty {
-  padding-block: var(--space-4);
-}
 .project-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -339,24 +326,6 @@
 .project-status-grid dd {
   margin: var(--space-2) 0;
   overflow-wrap: anywhere;
-}
-.project-run-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-5);
-  border-top: 1px solid var(--border);
-  padding: var(--space-4) 0;
-}
-.project-run-row > div {
-  min-width: 0;
-}
-.project-run-row strong {
-  overflow-wrap: anywhere;
-}
-.project-run-row p {
-  font-size: var(--font-sm);
-  color: var(--muted);
 }
 .project-filter {
   max-width: 240px;
@@ -466,10 +435,6 @@
   .project-freeze-form,
   .project-manifest-detail {
     padding: var(--space-4);
-  }
-  .project-run-row {
-    flex-direction: column;
-    gap: var(--space-2);
   }
 }
 @media (max-width: 480px) {

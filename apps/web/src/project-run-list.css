@@ -1,0 +1,103 @@
+.project-run-pagination {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-run-pagination p {
+  margin: 0;
+}
+.project-run-empty {
+  padding-block: var(--space-4);
+}
+.project-run-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-5);
+  border-top: 1px solid var(--border);
+  padding: var(--space-4) 0;
+}
+.project-run-row > div {
+  min-width: 0;
+}
+.project-run-row strong {
+  overflow-wrap: anywhere;
+}
+.project-run-row p {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.project-run-list {
+  min-width: 0;
+  container-type: inline-size;
+}
+.project-run-list .project-run-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-4);
+}
+.project-run-description {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+.project-run-list .project-run-number {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.project-run-reading {
+  min-width: 0;
+  max-height: min(12rem, 38dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.project-run-reading:focus-visible {
+  outline-offset: -2px;
+}
+.project-run-list .project-run-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.project-run-status span {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.project-run-issues {
+  display: grid;
+  gap: var(--space-2);
+}
+.project-run-list .project-run-issues p {
+  margin: 0;
+  color: var(--danger);
+}
+.project-run-list .project-run-row > .project-actions {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .project-run-row {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}
+@container (max-width: 36rem) {
+  .project-run-list .project-run-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-run-list .project-run-row > .project-actions {
+    grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+  }
+}
