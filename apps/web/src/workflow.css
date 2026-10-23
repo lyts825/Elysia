@@ -6,9 +6,6 @@
   outline-offset: 2px;
   border-radius: var(--radius-card);
 }
-.task-recovery {
-  margin: var(--space-3) 0;
-}
 .workflow-confirmation,
 .workflow-user-review {
   border: 1px solid var(--border);
