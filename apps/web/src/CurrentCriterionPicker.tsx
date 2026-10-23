@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './review-note-linking.css';
+import './current-criterion-picker.css';
 
 export function CurrentCriterionPicker({
   initial,
@@ -59,16 +60,24 @@ export function CurrentCriterionPicker({
     return () => controller.abort();
   }, [api, initial, offset, retry]);
   return (
-    <fieldset className="criterion-picker" disabled={disabled || busy}>
+    <fieldset className="criterion-picker current-criterion-picker" disabled={disabled || busy}>
       <legend>手动选择当前验收项</legend>
+      <p className="current-criterion-selection" role="status">
+        当前草稿选择：
+        {selected === undefined
+          ? '尚未选择'
+          : selected === null
+            ? '整体备注（不关联单项）'
+            : `第 ${selected + 1} 项${page.criteria.some((item) => item.index === selected) ? '' : '（不在本页）'}`}
+      </p>
       {overall && (
-        <label className="workflow-note-choice">
+        <label className="workflow-note-choice current-criterion-overall" data-selected={selected === null}>
           <input type="radio" name={group} checked={selected === null} onChange={() => select(null)} />
           <span>整体备注（不关联单项）</span>
         </label>
       )}
       {page.criteria.map((item) => (
-        <section className="criterion-picker-option" key={item.index}>
+        <section className="criterion-picker-option" data-selected={selected === item.index} key={item.index}>
           <label className="workflow-note-choice">
             <input
               type="radio"
@@ -78,6 +87,7 @@ export function CurrentCriterionPicker({
               onChange={() => select(item)}
             />
             <span>第 {item.index + 1} 项</span>
+            {selected === item.index && <small className="current-criterion-chosen">已选择</small>}
           </label>
           <p
             className="workflow-prose review-link-reading"
@@ -89,8 +99,14 @@ export function CurrentCriterionPicker({
           </p>
         </section>
       ))}
+      {!page.criteria.length && (
+        <p className="current-criterion-empty">
+          {page.criteriaPage.total ? '本页没有验收项。' : '当前交付没有单项验收标准。'}
+        </p>
+      )}
       <nav className="workflow-pagination" aria-label="当前验收项分页">
         <span className="workflow-pagination-summary">
+          已读{' '}
           {page.criteria.length
             ? `${page.criteriaPage.offset + 1}–${page.criteriaPage.offset + page.criteria.length}`
             : '0'}{' '}
@@ -118,6 +134,7 @@ export function CurrentCriterionPicker({
       {busy && <p role="status">正在读取验收项…</p>}
       {error && (
         <div role="alert" className="workflow-read-error">
+          <p className="current-criterion-retained">当前仍显示上次已读标准，单项选择暂不可用。</p>
           <p className="review-link-reading" role="region" aria-label="当前标准读取问题全文" tabIndex={0}>
             {error}
           </p>

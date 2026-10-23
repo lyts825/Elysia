@@ -1,0 +1,44 @@
+.current-criterion-picker .current-criterion-selection {
+  margin: 0 0 var(--space-3);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.current-criterion-picker .current-criterion-overall {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.current-criterion-picker .current-criterion-overall[data-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-pale);
+}
+.current-criterion-picker .workflow-note-choice {
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.current-criterion-picker .workflow-note-choice > span {
+  flex: 1;
+}
+.current-criterion-chosen {
+  color: var(--accent-strong);
+  font-size: var(--font-xs);
+}
+.current-criterion-empty,
+.current-criterion-retained {
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.current-criterion-empty {
+  padding-block: var(--space-3);
+  color: var(--muted);
+}
+.current-criterion-picker .workflow-read-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
