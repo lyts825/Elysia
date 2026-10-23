@@ -1,0 +1,95 @@
+.project-launch-draft {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-launch-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.project-launch-heading h3 {
+  margin: 0;
+  font-size: var(--font-lg);
+  line-height: var(--leading-heading);
+}
+.project-launch-state {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
+}
+.project-launch-reading {
+  min-width: 0;
+  max-height: min(14rem, 42dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+  border-radius: var(--radius-sm);
+}
+.project-launch-title {
+  max-height: min(8rem, 30dvh);
+  margin: var(--space-1) 0 var(--space-3);
+  font-weight: 600;
+}
+.project-launch-versions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.project-launch-versions > div {
+  min-width: 0;
+}
+.project-launch-versions dt {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+.project-launch-versions dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+.project-launch-draft .project-retained-requirements > div {
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-launch-draft .project-retained-requirements > div strong {
+  font-size: var(--font-sm);
+}
+.project-launch-actions {
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-launch-draft button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  scroll-margin-block: var(--space-3);
+}
+@media (max-width: 480px) {
+  .project-launch-draft {
+    padding: var(--space-3);
+  }
+  .project-launch-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

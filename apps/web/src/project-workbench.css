@@ -361,12 +361,6 @@
 .project-filter {
   max-width: 240px;
 }
-.project-launch-draft {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--space-4);
-  margin: var(--space-4) 0;
-}
 .project-free-create {
   padding: var(--space-4);
   border: 1px solid var(--border);

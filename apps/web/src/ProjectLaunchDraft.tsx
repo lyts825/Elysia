@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import { itemLaunchContent, type ProjectBoardDraft, type ProjectLaunchContent } from './ProjectBoardDraft';
 import { readRunSetupDraft, writeRunSetupDraft, type RunSetupDraft } from './RunSetupDraft';
 import { mergeProjectLaunch, type MergeChoices } from './ProjectDraftMerge';
 import { ProjectDraftComparison } from './ProjectDraftComparison';
+import './project-launch-draft.css';
 
 type Launch = NonNullable<ProjectBoardDraft['launch']>;
 export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
@@ -30,6 +31,7 @@ export function ProjectLaunchDraft({
   launch: () => void;
   remove: () => void;
 }) {
+  const headingId = useId();
   const item = board.items.find((entry) => entry.id === draft.itemId);
   const current = item ? itemLaunchContent(board, item) : undefined;
   let setup: RunSetupDraft | undefined,
@@ -67,23 +69,62 @@ export function ProjectLaunchDraft({
       mine.deliverables !== current.deliverables ||
       mine.acceptanceCriteria !== current.acceptanceCriteria);
   return (
-    <section className="project-launch-draft" aria-label="交付项创建草稿">
-      <strong>待创建：{draft.title}</strong>
-      <p>
-        来源项目标准版本 {draft.itemRevision}，当前标准版本 {item?.itemRevision ?? '已移除'}。
+    <section className="project-launch-draft" aria-labelledby={headingId}>
+      <header className="project-launch-heading">
+        <h3 id={headingId}>交付项创建草稿</h3>
+        <span className="project-launch-state">
+          {!item || parseError ? '草稿待核对' : needsMerge ? '需核对计划变更' : '已对齐计划版本'}
+        </span>
+      </header>
+      <p className="field-help">待创建任务</p>
+      <p
+        className="project-launch-reading project-launch-title"
+        role="region"
+        tabIndex={0}
+        aria-label="创建草稿完整任务名称"
+      >
+        {draft.title}
       </p>
+      <dl className="project-launch-versions">
+        <div>
+          <dt>草稿依据计划</dt>
+          <dd>版本 {draft.expectedRevision}</dd>
+        </div>
+        <div>
+          <dt>当前项目计划</dt>
+          <dd>版本 {board.revision}</dd>
+        </div>
+        <div>
+          <dt>草稿依据标准</dt>
+          <dd>版本 {draft.itemRevision}</dd>
+        </div>
+        <div>
+          <dt>当前交付项标准</dt>
+          <dd>{item ? `版本 ${item.itemRevision}` : '已移除'}</dd>
+        </div>
+      </dl>
       {draft.baselineOmitted && (
         <p className="field-help" role="status">
           此草稿正文较大，原始基线因保存容量限制未保留；目标、要求和创建配置完整保留。创建仍校验计划版本，若计划变化，所有差异需逐项明确选择。
         </p>
       )}
       {parseError && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error project-launch-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="创建配置读取错误全文"
+        >
           {parseError}
         </p>
       )}
       {applyError && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error project-launch-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="创建草稿保存错误全文"
+        >
           {applyError}
         </p>
       )}
@@ -163,24 +204,46 @@ export function ProjectLaunchDraft({
           {mine.objective !== current!.objective && (
             <div>
               <strong>本次任务目标</strong>
-              <p className="project-prose">{mine.objective || '（空）'}</p>
+              <p
+                className="project-prose project-launch-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="本次保留的任务目标全文"
+              >
+                {mine.objective || '（空）'}
+              </p>
             </div>
           )}
           {mine.deliverables !== current!.deliverables && (
             <div>
               <strong>本次交付物</strong>
-              <p className="project-prose">{mine.deliverables || '（空）'}</p>
+              <p
+                className="project-prose project-launch-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="本次保留的交付物全文"
+              >
+                {mine.deliverables || '（空）'}
+              </p>
             </div>
           )}
           {mine.acceptanceCriteria !== current!.acceptanceCriteria && (
             <div>
               <strong>本次验收标准</strong>
-              <p className="project-prose">{mine.acceptanceCriteria || '（空）'}</p>
+              <p
+                className="project-prose project-launch-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="本次保留的验收标准全文"
+              >
+                {mine.acceptanceCriteria || '（空）'}
+              </p>
             </div>
           )}
         </details>
       )}
-      <div className="project-actions">
+      {board.archived && <p className="field-help">项目已归档，当前草稿仍保留；无法继续创建或应用对照。</p>}
+      <div className="project-actions project-launch-actions">
         <button
           type="button"
           className="primary"
