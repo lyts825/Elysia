@@ -604,6 +604,30 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       {fields && (
         <div className="schedule-editor">
           <h3>{fields.scheduleId ? '核对已保存的定时任务' : '创建定时任务草稿'}</h3>
+          <dl className="schedule-edit-summary" aria-label="当前定时任务编辑依据">
+            <div>
+              <dt>{current ? '本次已读记录' : '上次已读记录'}</dt>
+              <dd>
+                {selected
+                  ? `版本 ${selected.revision}`
+                  : fields.scheduleId
+                    ? '尚未读取到对应记录'
+                    : '无（新建草稿）'}
+              </dd>
+            </div>
+            <div>
+              <dt>当前输入</dt>
+              <dd>
+                {fields.scheduleId
+                  ? !selected
+                    ? '尚未取得对应记录，保留本机输入'
+                    : unchanged && selected.template.sourceRunId === fields.sourceRunId
+                      ? '与已保存设置一致'
+                      : '与已保存设置不同或尚不完整'
+                  : '新建草稿，尚未创建定时任务'}
+              </dd>
+            </div>
+          </dl>
           <fieldset disabled={locked}>
             <label>
               来源任务
@@ -615,7 +639,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                 <option value="">选择任务</option>
                 {fields.sourceRunId && !list?.sources.some((source) => source.id === fields.sourceRunId) && (
                   <option value={fields.sourceRunId}>
-                    {selected?.template.sourceTitle ?? fields.sourceRunId}（不在当前候选中）
+                    {selected?.template.sourceRunId === fields.sourceRunId
+                      ? selected.template.sourceTitle
+                      : fields.sourceRunId}
+                    （不在当前候选中）
                   </option>
                 )}
                 {list?.sources.map((source) => (
@@ -625,6 +652,27 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
                 ))}
               </select>
             </label>
+            {fields.sourceRunId && (
+              <details className="schedule-source-info">
+                <summary>来源任务完整信息</summary>
+                <dl>
+                  <div>
+                    <dt>名称</dt>
+                    <dd>
+                      {list?.sources.find((source) => source.id === fields.sourceRunId)?.title ||
+                        (selected?.template.sourceRunId === fields.sourceRunId
+                          ? selected.template.sourceTitle
+                          : '') ||
+                        '尚未读取来源名称'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>任务标识</dt>
+                    <dd>{fields.sourceRunId}</dd>
+                  </div>
+                </dl>
+              </details>
+            )}
             {list?.sourcesLimited && <p className="field-help">显示最近 50 条原生任务。</p>}
             <label>
               名称

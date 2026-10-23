@@ -138,6 +138,34 @@
   border-top: 1px solid var(--border);
   padding-top: var(--space-5);
 }
+.schedule-edit-summary,
+.schedule-source-info dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  min-width: 0;
+}
+.schedule-edit-summary dt,
+.schedule-source-info dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.schedule-edit-summary dd,
+.schedule-source-info dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.schedule-source-info {
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+.schedule-source-info summary {
+  color: var(--secondary);
+  cursor: pointer;
+}
 .schedule-editor fieldset {
   border: 0;
   padding: 0;
@@ -158,7 +186,7 @@
 }
 .schedule-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   gap: var(--space-3);
 }
 .project-schedules label.schedule-check {
