@@ -1,0 +1,55 @@
+.context-allocation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.context-allocation-metrics > div {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.context-allocation-metrics dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.context-allocation-metrics dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.context-allocation-state {
+  margin: 0;
+  color: var(--secondary);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.context-allocation-state[data-valid='false'] {
+  color: var(--warning);
+}
+.context-allocation-editor .context-preset-option {
+  display: grid;
+  align-content: center;
+  gap: var(--space-1);
+}
+.context-allocation-editor .context-preset-option small {
+  font-size: var(--font-xs);
+  line-height: var(--leading-ui);
+}
+.context-allocation-editor .context-preset-option:hover:not(:disabled):not([aria-pressed='true']) {
+  background: var(--surface-hover);
+}
+.context-allocation-editor .context-preset-option[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent-pale);
+}
+.context-allocation-editor .inline-warning {
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}

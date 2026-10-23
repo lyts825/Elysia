@@ -7,6 +7,7 @@ import {
 } from '../../../packages/contracts/src/index';
 import { contextWindowSizeLabel } from './ContextLabel';
 import './context-window.css';
+import './context-policy-editor.css';
 
 export function validContextPolicy(
   policy: ContextPolicy,
@@ -59,12 +60,40 @@ export function ContextPolicyEditor({
     value.windowTokens % CONTEXT_TOKEN_UNIT !== 0;
   const valid = validContextPolicy(value, minimumWindowTokens, providerLimit);
   return (
-    <div className="context-policy-editor">
+    <div className="context-policy-editor context-allocation-editor">
+      <dl className="context-allocation-metrics" aria-label="当前上下文分配范围">
+        <div>
+          <dt>当前草稿</dt>
+          <dd>
+            {value.mode === 'managed'
+              ? '托管分配'
+              : value.windowTokens === undefined
+                ? '手动 · 未填写'
+                : `手动 · ${value.windowTokens.toLocaleString()} Token`}
+          </dd>
+        </div>
+        <div>
+          <dt>任务最低容量</dt>
+          <dd>{minimumWindowTokens.toLocaleString()} Token</dd>
+        </div>
+        <div>
+          <dt>模型可用容量</dt>
+          <dd>{limit.toLocaleString()} Token</dd>
+        </div>
+      </dl>
+      <p className="context-allocation-state" id={id + '-state'} data-valid={valid}>
+        {disabled
+          ? '当前不可编辑，显示已有配置。'
+          : valid
+            ? '当前草稿在可用范围内；应用或保存后生效。'
+            : '当前草稿需要调整，具体原因见下方说明。'}
+      </p>
       <label htmlFor={id + '-mode'}>分配方式</label>
       <select
         id={id + '-mode'}
         value={value.mode}
         disabled={disabled}
+        aria-describedby={id + '-state'}
         onChange={(event) => {
           setCustomSelected(false);
           change(
@@ -106,7 +135,8 @@ export function ContextPolicyEditor({
                       change({ mode: 'manual', windowTokens: tokens });
                     }}
                   >
-                    {contextWindowSizeLabel(tokens)}
+                    <span>{contextWindowSizeLabel(tokens)}</span>
+                    {!available && <small>{tokens > limit ? '超出容量' : '低于最低'}</small>}
                   </button>
                 );
               })}
@@ -163,8 +193,6 @@ export function ContextPolicyEditor({
       )}
       {value.mode === 'managed' && (
         <div className="context-policy-hint">
-          <span>当前可用</span>
-          <strong>{contextWindowSizeLabel(limit)}</strong>
           <p className="field-help">
             {child
               ? `${value.windowTokens ? `上级已建议 ${contextWindowSizeLabel(value.windowTokens)}（${value.windowTokens.toLocaleString()} Token）。` : ''}直属上级按任务分配；手动设置后，上级不会覆盖。`
