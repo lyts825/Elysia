@@ -32,6 +32,31 @@
   min-width: 0;
   max-width: 100%;
 }
+.codex-connection .codex-catalog-status {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+.codex-login-progress {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
+.codex-login-progress h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.codex-login-progress[data-status='failed'] {
+  border-left-color: var(--danger-border);
+}
+.codex-login-progress[data-status='failed'] > p {
+  color: var(--danger);
+}
 .codex-identity {
   display: grid;
   gap: var(--space-2);

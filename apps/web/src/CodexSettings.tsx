@@ -151,7 +151,7 @@ export function CodexSettings({
       </div>
       <p className="codex-readiness" data-ready={valid} role="status">
         {busy
-          ? '正在读取连接与模型…'
+          ? '正在处理连接操作…'
           : pending
             ? '等待完成登录'
             : valid
@@ -184,11 +184,13 @@ export function CodexSettings({
         <span className={status?.connected ? 'passed' : ''}>
           2 · {status?.connected ? '账号已登录' : '连接账号'}
         </span>
-        <span className={models.some(supportsText) ? 'passed' : ''}>
+        <span className={catalogLoaded && !busy && models.some(supportsText) ? 'passed' : ''}>
           3 ·{' '}
-          {models.length
-            ? `${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`
-            : '读取模型'}
+          {busy
+            ? '正在处理连接操作…'
+            : catalogLoaded
+              ? `${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`
+              : '模型目录尚未读回'}
         </span>
       </div>
       {status && (
@@ -269,24 +271,47 @@ export function CodexSettings({
           </button>
         )}
       </div>
-      {pending && (
-        <div className="info-note codex-login-pending" role="status">
-          <p>请在授权页面完成登录，然后返回此窗口。</p>
-          {status?.attempt?.userCode && (
-            <p className="codex-reading" tabIndex={0} aria-label="完整登录设备码">
-              设备码：<strong className="device-code">{status.attempt.userCode}</strong>
+      {(pending || status?.attempt?.message) && (
+        <section
+          className="codex-login-progress"
+          data-status={status?.attempt?.status}
+          aria-label="Codex 登录进度"
+        >
+          <h4>
+            {pending ? '等待完成登录' : status?.attempt?.status === 'failed' ? '登录未完成' : '登录进度'}
+          </h4>
+          {pending && (
+            <div className="info-note codex-login-pending" role="status">
+              <p>请在授权页面完成登录，然后返回此窗口。</p>
+              {status?.attempt?.userCode && (
+                <p className="codex-reading" tabIndex={0} aria-label="完整登录设备码">
+                  设备码：<strong className="device-code">{status.attempt.userCode}</strong>
+                </p>
+              )}
+            </div>
+          )}
+          {status?.attempt?.message && (
+            <p
+              className="field-help codex-reading"
+              role={status.attempt.status === 'failed' ? 'alert' : 'status'}
+              tabIndex={0}
+              aria-label="Codex 登录进度全文"
+            >
+              {status.attempt.message}
             </p>
           )}
-        </div>
-      )}
-      {status?.attempt?.message && (
-        <p className="field-help codex-reading" tabIndex={0} aria-label="Codex 登录进度全文">
-          {status.attempt.message}
-        </p>
+        </section>
       )}
       <div className="form-columns connection-models">
         <label>
           可用模型
+          <small className="codex-catalog-status" role="status">
+            {busy
+              ? '正在处理连接操作…'
+              : catalogLoaded
+                ? `本次已读 ${models.length} 个型号`
+                : '目录尚未读回，暂不能判断型号数量。'}
+          </small>
           <select
             disabled={busy || !models.some(supportsText)}
             value={config.model}
@@ -296,7 +321,15 @@ export function CodexSettings({
               change({ model: m.id, reasoningEffort: initialEffort(m) });
             }}
           >
-            {!models.length && <option value={config.model}>{config.model || '连接账号后选择'}</option>}
+            {!models.length && (
+              <option value={config.model}>
+                {catalogLoaded
+                  ? '当前账号没有可用型号'
+                  : config.model
+                    ? `${config.model}（目录尚未读回）`
+                    : '连接账号后选择'}
+              </option>
+            )}
             {!!models.length && !selected && (
               <option value={config.model} disabled>
                 {config.model ? `${config.model}（已不可用，请重新选择）` : '请选择文字型号'}
@@ -351,7 +384,9 @@ export function CodexSettings({
           <dl className="codex-reading" tabIndex={0} role="region" aria-label="Codex 所选型号完整名称与标识">
             <div>
               <dt>名称</dt>
-              <dd>{selected?.name || selected?.id || '当前目录未找到'}</dd>
+              <dd>
+                {selected?.name || selected?.id || (catalogLoaded ? '当前目录未找到' : '尚未读取本次目录')}
+              </dd>
             </div>
             <div>
               <dt>型号标识</dt>
@@ -372,7 +407,7 @@ export function CodexSettings({
           )}
         </section>
       )}
-      {status?.connected && !busy && !error && catalogIssue(models, config.model) && (
+      {catalogLoaded && status?.connected && !busy && !error && catalogIssue(models, config.model) && (
         <p className="inline-warning" role="alert">
           {catalogIssue(models, config.model)}
         </p>
@@ -408,6 +443,11 @@ export function CodexSettings({
           管理订阅
         </button>
       </div>
+      {usage !== undefined && !buckets.length && (
+        <p className="field-help" role="status">
+          已读结果未提供额度窗口，剩余比例未知。
+        </p>
+      )}
       {!!buckets.length && (
         <div className="quota-grid">
           {buckets.map((bucket: any, i) => (
@@ -415,6 +455,7 @@ export function CodexSettings({
               <strong className="codex-reading" tabIndex={0} aria-label={`第 ${i + 1} 项额度完整名称`}>
                 {bucket.limitName || bucket.limitId || '订阅额度'}
               </strong>
+              {!bucket.primary && !bucket.secondary && <p>本项未提供额度窗口，剩余比例未知。</p>}
               {[bucket.primary, bucket.secondary].filter(Boolean).map((w: any, j) => (
                 <p key={j}>
                   {w.windowDurationMins
