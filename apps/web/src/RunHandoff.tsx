@@ -20,6 +20,42 @@ import { HandoffReviewConfirmation } from './HandoffReviewConfirmation';
 import { readArtifactRevision, artifactRevisionIssue } from './ArtifactRevisionDraft';
 import { ArtifactRevisionSelection, ArtifactRevisionSummary } from './ArtifactRevisionSelection';
 import './workflow.css';
+import './run-handoff.css';
+
+function HandoffArtifactDetails({ artifact }: { artifact: SourceArtifact }) {
+  return (
+    <details className="run-handoff-artifact-details">
+      <summary>产物完整信息 · v{artifact.version}</summary>
+      <dl
+        className="run-handoff-reading run-handoff-metadata"
+        role="region"
+        aria-label="带入产物完整信息"
+        tabIndex={0}
+      >
+        <div>
+          <dt>完整名称</dt>
+          <dd>{artifact.name}</dd>
+        </div>
+        <div>
+          <dt>产物标识</dt>
+          <dd>{artifact.id}</dd>
+        </div>
+        <div>
+          <dt>完整 SHA-256</dt>
+          <dd>{artifact.hash}</dd>
+        </div>
+        <div>
+          <dt>格式</dt>
+          <dd>{artifact.mediaType}</dd>
+        </div>
+        <div>
+          <dt>核验状态</dt>
+          <dd>{artifact.verified ? '证据已核验' : '未核验'}</dd>
+        </div>
+      </dl>
+    </details>
+  );
+}
 
 type HandoffDraft = {
   projectId: string;
@@ -93,29 +129,49 @@ export function SourceSummary({
   openSource?: () => void;
 }) {
   return (
-    <details className="workflow-source">
-      <summary>来源 · {source.title}</summary>
+    <details className="workflow-source run-handoff-source">
+      <summary>来源快照 · 任务修订 {source.runRevision}</summary>
+      <p className="run-handoff-reading" role="region" aria-label="快照来源完整标题" tabIndex={0}>
+        {source.title}
+      </p>
       {openSource && (
         <button type="button" className="text-button" onClick={openSource}>
           打开来源记录
         </button>
       )}
-      <p className="workflow-prose">{source.feedback}</p>
+      <p
+        className="workflow-prose run-handoff-reading"
+        role="region"
+        aria-label="来源说明完整内容"
+        tabIndex={0}
+      >
+        {source.feedback}
+      </p>
       <p>
         {source.messages.length} 条公开消息 · {source.artifacts.length} 个产物 · {source.capturedAt}
       </p>
-      {source.messages.map((message) => (
+      {source.messages.map((message, index) => (
         <details key={message.id}>
           <summary>
             {message.role === 'user' ? '用户' : '助手'} · {message.text.slice(0, 60)}
           </summary>
-          <p className="workflow-prose">{message.text}</p>
+          <p
+            className="workflow-prose run-handoff-reading"
+            role="region"
+            aria-label={`来源消息 ${index + 1} 完整正文`}
+            tabIndex={0}
+          >
+            {message.text}
+          </p>
         </details>
       ))}
       {source.artifacts.map((artifact) => (
-        <p key={artifact.id}>
-          {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
-        </p>
+        <div className="run-handoff-artifact" key={artifact.id}>
+          <p className="run-handoff-reading" role="region" aria-label="来源产物完整名称" tabIndex={0}>
+            {artifact.name}
+          </p>
+          <HandoffArtifactDetails artifact={artifact} />
+        </div>
       ))}
       {!!source.reviewNotes?.length && (
         <ReviewSourceNotes notes={source.reviewNotes} sourceRunId={source.runId} />
@@ -123,7 +179,9 @@ export function SourceSummary({
       {!!source.artifactChanges?.length && <ArtifactRevisionSummary items={source.artifactChanges} />}
       <details>
         <summary>来源快照校验信息</summary>
-        <small>SHA256 {source.hash}</small>
+        <p className="run-handoff-reading" role="region" aria-label="来源快照完整哈希" tabIndex={0}>
+          SHA256 {source.hash}
+        </p>
       </details>
     </details>
   );
@@ -255,26 +313,46 @@ export function RunHandoff({
     notesReady &&
     draft.messages.length + draft.artifacts.length + reviewNotes.length + differences.length > 0;
   const selectionPreview = (
-    <section className="workflow-source" aria-label="带入内容预览">
-      <strong>带入内容预览 · {run.title || run.objective}</strong>
-      <p className="workflow-prose">{draft.feedback}</p>
+    <section className="workflow-source run-handoff-source" aria-label="带入内容预览">
+      <strong>带入内容预览</strong>
+      <p className="run-handoff-reading" role="region" aria-label="交接来源完整标题" tabIndex={0}>
+        {run.title || run.objective}
+      </p>
+      <p
+        className="workflow-prose run-handoff-reading"
+        role="region"
+        aria-label="已选交接说明完整内容"
+        tabIndex={0}
+      >
+        {draft.feedback}
+      </p>
       <p>
         {draft.messages.length} 条公开消息 · {draft.artifacts.length} 个产物 · {reviewNotes.length} 条复核备注
       </p>
-      {draft.messages.map((message) => (
+      {draft.messages.map((message, index) => (
         <details key={message.id}>
           <summary>
             {message.role === 'user' ? '用户' : '助手'} · {message.text.slice(0, 70)}
           </summary>
-          <p className="workflow-prose">{message.text}</p>
+          <p
+            className="workflow-prose run-handoff-reading"
+            role="region"
+            aria-label={`已选消息 ${index + 1} 完整正文`}
+            tabIndex={0}
+          >
+            {message.text}
+          </p>
         </details>
       ))}
       {!!reviewNotes.length && <ReviewSourceNotes notes={reviewNotes} />}
       {!!differences.length && <ArtifactRevisionSummary items={differences} />}
       {draft.artifacts.map((artifact) => (
-        <p key={artifact.id}>
-          {artifact.name} · v{artifact.version} · SHA256 {artifact.hash.slice(0, 12)}
-        </p>
+        <div className="run-handoff-artifact" key={artifact.id}>
+          <p className="run-handoff-reading" role="region" aria-label="已选产物完整名称" tabIndex={0}>
+            {artifact.name}
+          </p>
+          <HandoffArtifactDetails artifact={artifact} />
+        </div>
       ))}
       <p className="field-help">按所选公开内容建立来源快照。请重新确认目标项目、本次权限与预算。</p>
     </section>
@@ -312,12 +390,19 @@ export function RunHandoff({
               {selectionPreview}
             </details>
             {error && (
-              <p className="field-error workflow-read-error" role="alert">
-                {error}{' '}
+              <div className="run-handoff-feedback" role="alert">
+                <p
+                  className="field-error workflow-read-error run-handoff-reading"
+                  role="region"
+                  aria-label="交接来源读取问题全文"
+                  tabIndex={0}
+                >
+                  {error}
+                </p>
                 <button type="button" className="secondary" onClick={() => setRetry((v) => v + 1)}>
                   重新读取来源
                 </button>
-              </p>
+              </div>
             )}
             {loading && <p role="status">正在核对来源记录…</p>}
             {draftIssue && (
@@ -406,7 +491,7 @@ export function RunHandoff({
       close={close}
       busy={busy}
       wide
-      className="workflow-modal"
+      className="workflow-modal run-handoff-modal"
     >
       <form
         className="workflow-form"
@@ -497,8 +582,15 @@ export function RunHandoff({
             字节（UTF-8，最多 16 KiB）。
           </p>
           {error && (
-            <p className="field-error workflow-read-error" role="alert">
-              {error}{' '}
+            <div className="run-handoff-feedback" role="alert">
+              <p
+                className="field-error workflow-read-error run-handoff-reading"
+                role="region"
+                aria-label="交接来源读取问题全文"
+                tabIndex={0}
+              >
+                {error}
+              </p>
               <button
                 type="button"
                 className="secondary"
@@ -507,7 +599,7 @@ export function RunHandoff({
               >
                 重新读取来源
               </button>
-            </p>
+            </div>
           )}
           {selectedBytes > sourceTextLimitBytes && (
             <p className="field-error" role="alert">
@@ -523,7 +615,7 @@ export function RunHandoff({
             <>
               <fieldset>
                 <legend>选择公开消息</legend>
-                {options.messages.map((message) => {
+                {options.messages.map((message, index) => {
                   const selected = draft.messages.some((item) => item.id === message.id);
                   return (
                     <div className="workflow-selection" key={message.id}>
@@ -547,7 +639,14 @@ export function RunHandoff({
                       </label>
                       <details>
                         <summary>预览消息</summary>
-                        <pre>{message.text}</pre>
+                        <pre
+                          className="run-handoff-reading"
+                          role="region"
+                          aria-label={`待选消息 ${index + 1} 完整正文`}
+                          tabIndex={0}
+                        >
+                          {message.text}
+                        </pre>
                         {message.truncated && (
                           <button
                             type="button"
@@ -649,6 +748,7 @@ export function RunHandoff({
                           <small>SHA256 {artifact.hash.slice(0, 12)}</small>
                         </span>
                       </label>
+                      <HandoffArtifactDetails artifact={artifact} />
                     </div>
                   );
                 })}
