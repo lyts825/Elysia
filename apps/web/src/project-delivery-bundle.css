@@ -105,48 +105,6 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.project-delivery-archives,
-.project-archive-save {
-  margin: var(--space-5) 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.project-delivery-bundle > .project-archive-save {
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
-  margin-bottom: 0;
-}
-.project-delivery-archive,
-.project-archive-confirm {
-  margin: var(--space-3) 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.project-archive-confirm {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-}
-.project-archive-delete-notice {
-  min-width: 0;
-}
-.project-archive-delete-notice .project-delivery-archives {
-  max-height: 48vh;
-  overflow: auto;
-  padding-right: var(--space-1);
-}
-.project-archive-delete-notice .check-row {
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-  margin: var(--space-4) 0;
-}
-.project-archive-delete-notice .check-row span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 @container (max-width: 440px) {
   .project-bundle-summary {
     grid-template-columns: minmax(0, 1fr);

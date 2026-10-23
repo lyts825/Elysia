@@ -1,0 +1,102 @@
+.project-delivery-archives,
+.project-archive-save {
+  margin: var(--space-5) 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-delivery-bundle > .project-archive-save {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.project-delivery-archive,
+.project-archive-confirm {
+  margin: var(--space-3) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-archive-confirm {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.archive-list-summary,
+.archive-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-3);
+}
+.archive-list-summary {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.archive-list-summary > div,
+.archive-facts > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.archive-list-summary dd,
+.archive-facts dd {
+  text-align: end;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.project-delivery-archives .project-section-heading h3 {
+  margin: 0;
+}
+:is(.archive-list-summary, .archive-facts, .archive-hashes) dt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+:is(.archive-list-summary, .archive-facts, .archive-hashes) dd {
+  margin: var(--space-1) 0 0;
+}
+.archive-state {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.archive-reading {
+  max-height: min(12rem, 40dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.archive-records {
+  max-height: min(36rem, 65dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-inline: var(--space-1);
+}
+.archive-hashes dd {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  margin-bottom: var(--space-3);
+}
+.project-archive-delete-notice,
+.archive-delete-consent {
+  min-width: 0;
+}
+.project-archive-delete-notice .check-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin: var(--space-4) 0;
+}
+.project-archive-delete-notice .check-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:is(.project-delivery-archives, .project-archive-save) button {
+  scroll-margin-block: var(--space-3);
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBundleJob,
   ProjectDeliveryManifest,
@@ -10,6 +10,7 @@ import type {
 } from '../../../packages/contracts/src/project-delivery-archive';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-delivery-bundle.css';
+import './project-delivery-archive.css';
 
 const sizeLabel = (bytes: number) =>
   bytes < 1024
@@ -49,6 +50,25 @@ async function downloadArchive(bytes: Uint8Array, archive: Archive, signal?: Abo
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function ArchiveFacts({ value }: { value: Archive }) {
+  return (
+    <dl className="archive-facts">
+      <div>
+        <dt>文件数量</dt>
+        <dd>{value.fileCount} 份</dd>
+      </div>
+      <div>
+        <dt>保存大小</dt>
+        <dd>{sizeLabel(value.size)}</dd>
+      </div>
+      <div>
+        <dt>保存时间</dt>
+        <dd>{new Date(value.savedAt).toLocaleString()}</dd>
+      </div>
+    </dl>
+  );
+}
+
 /** Durable records remain usable independently of current Run and Artifact availability. */
 export function ProjectDeliveryArchives({
   projectId,
@@ -66,6 +86,7 @@ export function ProjectDeliveryArchives({
   onOpenManifest?: (archive: Pick<Archive, 'projectId' | 'manifestId' | 'manifestHash'>) => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
+  const archiveId = useId();
   type Position = { before: string; trail: string[] };
   const firstPage = (): Position => ({ before: '', trail: [] });
   const [display, setDisplay] = useState<{ page: ProjectDeliveryArchiveList; position: Position }>();
@@ -245,14 +266,18 @@ export function ProjectDeliveryArchives({
         <p role="status">本次保存包读取已取消。已读页面保留，保存包集合尚未重新确认，可明确重试或重读。</p>
       )}
       {listRead.error && (
-        <p className="field-error" role="alert">
-          {listRead.error}
-        </p>
+        <div className="field-error" role="alert">
+          <p className="archive-reading" role="region" aria-label="保存包列表读取问题全文" tabIndex={0}>
+            {listRead.error}
+          </p>
+        </div>
       )}
       {operationError && (
-        <p className="field-error" role="alert">
-          {operationError}
-        </p>
+        <div className="field-error" role="alert">
+          <p className="archive-reading" role="region" aria-label="保存包操作问题全文" tabIndex={0}>
+            {operationError}
+          </p>
+        </div>
       )}
       {(listRead.status === 'failed' || listRead.status === 'cancelled') && (
         <button
@@ -271,62 +296,99 @@ export function ProjectDeliveryArchives({
       {notice && <p role="status">{notice}</p>}
       {page && (
         <>
-          <p>
-            项目已保存 {page.count} 个文件包 · 共 {sizeLabel(page.totalBytes)} · 保存包第{' '}
-            {position.trail.length + 1} 页
-          </p>
+          <dl className="archive-list-summary">
+            <div>
+              <dt>项目已保存</dt>
+              <dd>{page.count} 个文件包</dd>
+            </div>
+            <div>
+              <dt>总占用</dt>
+              <dd>{sizeLabel(page.totalBytes)}</dd>
+            </div>
+            <div>
+              <dt>当前页</dt>
+              <dd>
+                第 {position.trail.length + 1} 页 · 本页 {page.items.length} 个
+              </dd>
+            </div>
+          </dl>
           {listRead.status !== 'ready' && (
             <p className="field-help" role="status">
               上次读取：仍显示保存包第 {position.trail.length + 1} 页，当前列表和保存包集合尚未重新确认。
             </p>
           )}
           {!page.count && <p className="field-help">尚未保存文件包。临时检查和下载不会自动保存到项目。</p>}
-          {page.items.map((archive) => (
-            <article className="project-delivery-archive" key={archive.manifestId}>
-              <strong>{archive.title}</strong>
-              <p>
-                已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 · 保存于{' '}
-                {new Date(archive.savedAt).toLocaleString()}
-              </p>
-              <div className="project-actions">
-                {onOpenManifest && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!!busy || actionsUnavailable}
-                    onClick={() => onOpenManifest(archive)}
-                  >
-                    查看冻结依据
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!!busy || actionsUnavailable}
-                  onClick={() => void download(archive)}
-                >
-                  {busy === archive.manifestId ? '正在处理保存包…' : '下载已保存 ZIP'}
-                </button>
-                {canRemove && (
-                  <button
-                    type="button"
-                    className="secondary danger"
-                    disabled={!!busy || actionsUnavailable}
-                    onClick={() => {
-                      setRemoving(archive);
-                      setNotice('');
-                    }}
-                  >
-                    移除项目保存包
-                  </button>
-                )}
-              </div>
-              <details>
-                <summary>保存包校验信息</summary>
-                <small>{archive.objectHash}</small>
-              </details>
-            </article>
-          ))}
+          {!!page.items.length && (
+            <div className="archive-records" role="region" aria-label="本页已保存文件包" tabIndex={0}>
+              {page.items.map((archive) => (
+                <article className="project-delivery-archive" key={archive.manifestId}>
+                  <p className="archive-state">已保存到项目</p>
+                  <h4 className="archive-reading" id={`${archiveId}-${archive.manifestId}`} tabIndex={0}>
+                    {archive.title}
+                  </h4>
+                  <ArchiveFacts value={archive} />
+                  <div className="project-actions">
+                    {onOpenManifest && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        aria-describedby={`${archiveId}-${archive.manifestId}`}
+                        disabled={!!busy || actionsUnavailable}
+                        onClick={() => onOpenManifest(archive)}
+                      >
+                        查看冻结依据
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary"
+                      aria-describedby={`${archiveId}-${archive.manifestId}`}
+                      disabled={!!busy || actionsUnavailable}
+                      onClick={() => void download(archive)}
+                    >
+                      {busy === archive.manifestId ? '正在处理保存包…' : '下载已保存 ZIP'}
+                    </button>
+                    {canRemove && (
+                      <button
+                        type="button"
+                        className="secondary danger"
+                        aria-describedby={`${archiveId}-${archive.manifestId}`}
+                        disabled={!!busy || actionsUnavailable}
+                        onClick={() => {
+                          setRemoving(archive);
+                          setNotice('');
+                        }}
+                      >
+                        移除项目保存包
+                      </button>
+                    )}
+                  </div>
+                  <details>
+                    <summary>保存包校验信息</summary>
+                    <dl
+                      className="archive-reading archive-hashes"
+                      role="region"
+                      aria-label="保存包完整校验信息"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>文件包 SHA256</dt>
+                        <dd>{archive.objectHash}</dd>
+                      </div>
+                      <div>
+                        <dt>冻结清单 SHA256</dt>
+                        <dd>{archive.manifestHash}</dd>
+                      </div>
+                      <div>
+                        <dt>冻结清单标识</dt>
+                        <dd>{archive.manifestId}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                </article>
+              ))}
+            </div>
+          )}
           <div className="project-actions">
             <button
               type="button"
@@ -356,7 +418,11 @@ export function ProjectDeliveryArchives({
       )}
       {removing && (
         <div className="project-archive-confirm" role="alert">
-          <h4>移除「{removing.title}」的项目保存包？</h4>
+          <h4>移除项目保存包？</h4>
+          <p className="archive-reading" role="region" aria-label="待移除保存包完整名称" tabIndex={0}>
+            {removing.title}
+          </p>
+          <ArchiveFacts value={removing} />
           <p>项目中保存的完整 ZIP 将被移除，无法通过项目再次下载。冻结清单和你已下载的副本保留。</p>
           <div className="project-actions">
             <button
@@ -599,11 +665,12 @@ export function ProjectDeliveryArchive({
       </p>
       {loading && <p role="status">正在确认项目保存状态…</p>}
       {archive && (
-        <p>
-          {(loading || error) && '上次读取：'}
-          已保存 · {sizeLabel(archive.size)} · {archive.fileCount} 份文件 · 保存于{' '}
-          {new Date(archive.savedAt).toLocaleString()}。可从上方已保存文件包独立下载。
-        </p>
+        <div>
+          <p className="archive-state">
+            {(loading || error) && '上次读取：'}已保存到项目，可从已保存文件包独立下载。
+          </p>
+          <ArchiveFacts value={archive} />
+        </div>
       )}
       {archive === null && (
         <button
@@ -658,9 +725,11 @@ export function ProjectDeliveryArchive({
       )}
       {notice && <p role="status">{notice}</p>}
       {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
+        <div className="field-error" role="alert">
+          <p className="archive-reading" role="region" aria-label="项目保存状态问题全文" tabIndex={0}>
+            {error}
+          </p>
+        </div>
       )}
       {error && (
         <button
@@ -692,6 +761,7 @@ export function ProjectArchiveDeleteNotice({
 }) {
   const [snapshot, setSnapshot] = useState<ProjectDeliveryArchiveList>(),
     [accepted, setAccepted] = useState(false);
+  const consentId = useId();
   const previousHash = useRef('');
   const receive = useCallback(
     (value: ProjectDeliveryArchiveList | undefined) => {
@@ -713,20 +783,25 @@ export function ProjectArchiveDeleteNotice({
     <div className="project-archive-delete-notice">
       <ProjectDeliveryArchives projectId={projectId} canRemove={false} onSnapshot={receive} />
       {snapshot && snapshot.count > 0 && (
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={accepted}
-            disabled={disabled}
-            onChange={(event) => {
-              setAccepted(event.target.checked);
-              onConsent(event.target.checked ? { projectId, setHash: snapshot.setHash } : undefined);
-            }}
-          />
-          <span>
-            我已导出需要保留的文件包，或明确放弃项目中全部 {snapshot.count} 个已保存包；确认随项目一起删除。
-          </span>
-        </label>
+        <div className="archive-delete-consent">
+          <p className="field-help" id={consentId}>
+            删除项目会一并移除全部 {snapshot.count}{' '}
+            个项目保存包。请先导出需要保留的文件包，或明确放弃这些文件包。
+          </p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={accepted}
+              disabled={disabled}
+              aria-describedby={consentId}
+              onChange={(event) => {
+                setAccepted(event.target.checked);
+                onConsent(event.target.checked ? { projectId, setHash: snapshot.setHash } : undefined);
+              }}
+            />
+            <span>已处理保存包，确认随项目删除</span>
+          </label>
+        </div>
       )}
     </div>
   );
