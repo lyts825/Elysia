@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import { RoleRoutingPolicy, type RoleRoutingView } from '../../../packages/contracts/src/model-routing';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ApiError } from './api';
 import type { WorkbenchCache } from './WorkbenchCache';
+import './project-model-routing.css';
 
 const routingPayload = z
   .object({ expectedRevision: z.number().int().nonnegative(), policy: RoleRoutingPolicy })
@@ -14,6 +15,45 @@ export const routingDraftShape = routingPayload
 type RoutingDraft = z.infer<typeof routingDraftShape>;
 type Request = NonNullable<RoutingDraft['pending']>;
 const message = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，输入已保留。');
+
+function RoutingSelection({
+  selected,
+  providers,
+}: {
+  selected: string | null;
+  providers: RoleRoutingView['providers'] | undefined;
+}) {
+  if (!selected) return <p>每次创建任务时明确选择。</p>;
+  const provider = providers?.find((value) => value.id === selected);
+  return (
+    <dl className="routing-selection">
+      <div>
+        <dt>连接名称</dt>
+        <dd>{provider?.label ?? (providers ? '已失效的连接' : '连接信息尚未读取')}</dd>
+      </div>
+      <div>
+        <dt>连接标识</dt>
+        <dd>{selected}</dd>
+      </div>
+      {provider && (
+        <>
+          <div>
+            <dt>模型</dt>
+            <dd>{provider.model}</dd>
+          </div>
+          <div>
+            <dt>验证状态</dt>
+            <dd>{provider.verified ? '已验证' : '需验证'}</dd>
+          </div>
+          <div>
+            <dt>费用信息</dt>
+            <dd>{provider.priceKnown ? `${provider.currency}价格已知` : '费用未知'}</dd>
+          </div>
+        </>
+      )}
+    </dl>
+  );
+}
 
 export function ProjectModelRouting(props: { projectId: string; cache: WorkbenchCache; archived?: boolean }) {
   return <RoutingEditor key={props.projectId} {...props} />;
@@ -28,6 +68,7 @@ function RoutingEditor({
   archived?: boolean;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const fieldId = useId();
   const [record, setRecord] = useState<RoleRoutingView>();
   const [ready, setReady] = useState(false),
     [reading, setReading] = useState(false),
@@ -204,14 +245,17 @@ function RoutingEditor({
       if (live.current) setBusy(false);
     }
   }
-  const describe = (policy: z.infer<typeof RoleRoutingPolicy>) =>
-    `${policy.enabled ? '启用' : '关闭'}；执行：${record?.providers.find((value) => value.id === policy.worker)?.label ?? policy.worker ?? '每次明确选择'}；复核：${record?.providers.find((value) => value.id === policy.reviewer)?.label ?? policy.reviewer ?? '每次明确选择'}`;
   return (
-    <section className="intelligence-section" aria-label="项目角色模型">
+    <section className="intelligence-section project-model-routing" aria-label="项目角色模型">
       <h3>角色模型</h3>
       <p className="field-help">
         新任务冻结执行和复核模型；已有任务及累计预算保持。费用未知时无法承诺节省比例。
       </p>
+      {archived && (
+        <p className="routing-status" role="status">
+          项目已归档，角色模型仅供核对。
+        </p>
+      )}
       <div className="intelligence-read">
         <button type="button" className="secondary" disabled={busy || reading} onClick={() => void read()}>
           {reading ? '正在读取角色配置…' : '重新读取角色配置'}
@@ -232,15 +276,28 @@ function RoutingEditor({
         )}
         {record && !current && <span>当前配置尚未重新确认。</span>}
       </div>
-      {(readError || saveError || draftError || parseError) && (
-        <p className="field-error" role="alert">
-          {readError || saveError || draftError || parseError}
-          {!ready && (
-            <button type="button" className="text-button" onClick={() => setRetry((value) => value + 1)}>
-              重试角色草稿
-            </button>
-          )}
-        </p>
+      {(
+        [
+          ['配置读取失败', readError],
+          ['角色模型保存未完成', saveError],
+          ['本机草稿读写失败', draftError],
+          ['本机草稿格式无法读取', parseError],
+        ] as const
+      ).map(
+        ([title, detail]) =>
+          detail && (
+            <div className="routing-error" role="alert" key={title}>
+              <strong>{title}</strong>
+              <p className="routing-reading" role="region" aria-label={`${title}完整说明`} tabIndex={0}>
+                {detail}
+              </p>
+              {title === '本机草稿读写失败' && !ready && (
+                <button type="button" className="text-button" onClick={() => setRetry((value) => value + 1)}>
+                  重试角色草稿
+                </button>
+              )}
+            </div>
+          ),
       )}
       {notice && <p role="status">{notice}</p>}
       {pending && (
@@ -269,37 +326,80 @@ function RoutingEditor({
             />
             启用项目角色模型
           </label>
-          {(['worker', 'reviewer'] as const).map((role) => (
-            <label className="intelligence-search" key={role}>
-              {role === 'worker' ? '执行任务' : '复核任务'}
-              <select
-                disabled={locked}
-                value={draft.policy[role] ?? ''}
-                onChange={(event) => change({ [role]: event.target.value || null })}
-              >
-                <option value="">每次明确选择</option>
-                {draft.policy[role] &&
-                  !record?.providers.some((provider) => provider.id === draft.policy[role]) && (
-                    <option value={draft.policy[role]!}>已失效的连接</option>
-                  )}
-                {record?.providers.map((provider) => (
-                  <option key={provider.id} value={provider.id} disabled={!provider.verified}>
-                    {provider.label} · {provider.model} ·{' '}
-                    {provider.verified
-                      ? provider.priceKnown
-                        ? `${provider.currency}价格已知`
-                        : '费用未知'
-                      : '需验证'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          <div className="routing-roles">
+            {(['worker', 'reviewer'] as const).map((role) => (
+              <div className="routing-role" key={role}>
+                <label htmlFor={`${fieldId}-${role}`}>
+                  {role === 'worker' ? '执行任务' : '复核任务'}
+                  <select
+                    id={`${fieldId}-${role}`}
+                    aria-describedby={`${fieldId}-${role}-help`}
+                    disabled={locked}
+                    value={draft.policy[role] ?? ''}
+                    onChange={(event) => change({ [role]: event.target.value || null })}
+                  >
+                    <option value="">每次明确选择</option>
+                    {draft.policy[role] &&
+                      !record?.providers.some((provider) => provider.id === draft.policy[role]) && (
+                        <option value={draft.policy[role]!}>已失效的连接</option>
+                      )}
+                    {record?.providers.map((provider) => (
+                      <option key={provider.id} value={provider.id} disabled={!provider.verified}>
+                        {provider.label} · {provider.model} ·{' '}
+                        {provider.verified
+                          ? provider.priceKnown
+                            ? `${provider.currency}价格已知`
+                            : '费用未知'
+                          : '需验证'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="field-help" id={`${fieldId}-${role}-help`}>
+                  所选连接的完整信息见下方。
+                </p>
+                <div
+                  className="routing-reading"
+                  role="region"
+                  aria-label={`${role === 'worker' ? '执行任务' : '复核任务'}所选连接完整信息`}
+                  tabIndex={0}
+                >
+                  <RoutingSelection selected={draft.policy[role]} providers={record?.providers} />
+                </div>
+              </div>
+            ))}
+          </div>
           {stale && (
             <div className="intelligence-issue">
               <p>角色配置已变化，请比较后再保存。</p>
-              <p>当前配置：{describe(record!.policy)}</p>
-              <p>我的输入：{describe(draft.policy)}</p>
+              <div className="routing-comparison">
+                {(
+                  [
+                    ['当前配置', record!.revision, record!.policy],
+                    ['我的输入', draft.expectedRevision, draft.policy],
+                  ] as const
+                ).map(([title, revision, policy]) => (
+                  <section className="routing-comparison-card" key={title} aria-label={title}>
+                    <h4>{title}</h4>
+                    <p>
+                      版本 {revision} · {policy.enabled ? '启用' : '关闭'}
+                    </p>
+                    <div
+                      className="routing-reading"
+                      role="region"
+                      aria-label={`${title}角色选择完整信息`}
+                      tabIndex={0}
+                    >
+                      {(['worker', 'reviewer'] as const).map((role) => (
+                        <div key={role}>
+                          <h5>{role === 'worker' ? '执行任务' : '复核任务'}</h5>
+                          <RoutingSelection selected={policy[role]} providers={record?.providers} />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
               <button
                 type="button"
                 className="secondary"
@@ -325,7 +425,7 @@ function RoutingEditor({
                 })
               }
             >
-              保存角色模型
+              {busy ? '正在保存角色模型…' : '保存角色模型'}
             </button>
             {saved && !pending && (
               <button

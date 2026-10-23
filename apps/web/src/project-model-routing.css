@@ -1,0 +1,99 @@
+.project-model-routing {
+  container: project-model-routing / inline-size;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.project-model-routing .routing-roles,
+.project-model-routing .routing-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.project-model-routing .routing-role,
+.project-model-routing .routing-comparison-card {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.project-model-routing .routing-role > label {
+  margin: 0;
+  font-weight: 600;
+}
+.project-model-routing .routing-role select {
+  font-weight: 400;
+}
+.project-model-routing :is(button, select, input, .routing-reading) {
+  scroll-margin-block: var(--space-3);
+}
+.project-model-routing .routing-reading {
+  min-width: 0;
+  max-height: min(18rem, 45dvh);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-model-routing .routing-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.project-model-routing .routing-selection {
+  margin: 0;
+}
+.project-model-routing .routing-selection > div {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  min-width: 0;
+}
+.project-model-routing .routing-selection > div:last-child {
+  margin-bottom: 0;
+}
+.project-model-routing dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.project-model-routing dd {
+  margin: 0;
+  min-width: 0;
+}
+.project-model-routing h5 {
+  margin: var(--space-2) 0;
+  font-size: var(--font-sm);
+}
+.project-model-routing .routing-comparison-card h4 {
+  margin: 0;
+}
+.project-model-routing .routing-error {
+  min-width: 0;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-card);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.project-model-routing .routing-error .routing-reading {
+  color: var(--text);
+  border-color: var(--danger-border);
+  background: var(--surface);
+}
+.project-model-routing .routing-status {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+@container project-model-routing (max-width: 40rem) {
+  .project-model-routing .routing-roles,
+  .project-model-routing .routing-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
