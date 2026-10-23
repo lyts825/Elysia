@@ -3,6 +3,8 @@ import type {
   ProjectDeliveryItem,
 } from '../../../packages/contracts/src/project-delivery';
 import { executionLabel } from './ProjectRunList';
+import { useId } from 'react';
+import './project-todos.css';
 
 export const projectTodoLabels = {
   create: '待创建 / 关联',
@@ -110,23 +112,28 @@ export function ProjectTodos({
   onEditPlan: () => void;
   busy: boolean;
 }) {
+  const id = useId();
   const entries = board.items
     .map((item) => ({ item, todo: projectTodo(item) }))
     .filter((entry): entry is { item: ProjectDeliveryItem; todo: Todo } => !!entry.todo)
     .sort((a, b) => Number(b.item.required) - Number(a.item.required));
   return (
     <section className="project-todos" aria-label="项目待办">
-      <h2>项目待办</h2>
+      <header className="project-todo-heading">
+        <h2>项目待办</h2>
+        <span>{entries.length} 项交付待办</span>
+      </header>
       <p className="field-help">
         必需项优先，按每个交付项当前的首个阻塞条件引导下一步。完成一步后刷新查看后续条件。
       </p>
-      <div className="project-todo-counts">
+      <dl className="project-todo-counts" aria-label="待办分类计数">
         {Object.entries(projectTodoLabels).map(([key, label]) => (
-          <span key={key}>
-            {label} <b>{entries.filter(({ todo }) => todo.category === key).length}</b>
-          </span>
+          <div key={key} data-category={key}>
+            <dt>{label}</dt>
+            <dd>{entries.filter(({ todo }) => todo.category === key).length}</dd>
+          </div>
         ))}
-      </div>
+      </dl>
       {unavailable && (
         <p className="field-error" role="status">
           项目状态读取失败；以下为上次读取结果，当前完成情况未知。请刷新项目状态后再确认。
@@ -143,18 +150,24 @@ export function ProjectTodos({
           </button>
         </article>
       )}
-      {entries.map(({ item, todo }) => (
+      {entries.map(({ item, todo }, index) => (
         <article className="project-todo-row" key={item.id}>
-          <div>
-            <strong>
-              {item.required ? '必需' : '可选'} · {item.title}
-            </strong>
-            <span className="project-readiness">{projectTodoLabels[todo.category]}</span>
-            <p>{todo.reason}</p>
+          <div className="project-todo-content">
+            <div className="project-todo-meta">
+              <span>{item.required ? '必需' : '可选'}</span>
+              <span className="project-readiness">{projectTodoLabels[todo.category]}</span>
+            </div>
+            <div className="project-todo-reading" role="region" aria-label="待办交付项完整名称" tabIndex={0}>
+              <h3 id={`${id}-title-${index}`}>{item.title}</h3>
+            </div>
+            <div className="project-todo-reading" role="region" aria-label="待办原因全文" tabIndex={0}>
+              <p>{todo.reason}</p>
+            </div>
           </div>
           <button
             type="button"
-            className="secondary"
+            className="secondary project-todo-action"
+            aria-describedby={`${id}-title-${index}`}
             onClick={() => {
               if (todo.target === 'item' || !item.current || item.current.missing) selectItem(item.id);
               else openRun(item.id, item.current.runId, todo.target === 'review');

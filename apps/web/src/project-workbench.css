@@ -421,10 +421,6 @@
   font-size: var(--font-sm);
   color: var(--muted);
 }
-.project-todo-counts b {
-  color: var(--text);
-  margin-left: var(--space-1);
-}
 .project-todo-row {
   display: flex;
   align-items: flex-start;
