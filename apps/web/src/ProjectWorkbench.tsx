@@ -178,6 +178,12 @@ export function ProjectWorkbench({
     parseError = issue instanceof Error ? issue.message : '草稿无法读取';
   }
   const activeTab = draft?.usageOpen ? 'usage' : draft?.tab;
+  const visibleItems =
+    board?.items.filter(
+      (item) =>
+        draft?.filter === 'all' ||
+        (draft?.filter === 'ready' ? item.readiness === 'ready' : item.readiness !== 'ready'),
+    ) || [];
   const change = (update: (value: ProjectBoardDraft) => ProjectBoardDraft) => {
     try {
       writeProjectBoardDraft(cache, project.id, update);
@@ -418,7 +424,6 @@ export function ProjectWorkbench({
             <p className="field-help">项目已归档，可查看历史与草稿。恢复项目后才能修改交付计划。</p>
           )}
           <div className="project-counts">
-            {!!readError && <span role="status">以下为上次读取的统计，当前状态未知</span>}
             <span>
               <b>
                 {board.counts.requiredReady}/{board.counts.required}
@@ -432,8 +437,24 @@ export function ProjectWorkbench({
               全部交付项
             </span>
             {board.counts.unavailable > 0 && <span>有 {board.counts.unavailable} 项读取情况未知</span>}
-            <span>计划版本 {board.revision}</span>
           </div>
+          <dl className="project-workbench-basis" aria-label="工作台已读计划与本机草稿依据">
+            <div>
+              <dt>已读计划</dt>
+              <dd>版本 {board.revision}</dd>
+              <dd>
+                {loading
+                  ? '正在重读，保留已读内容'
+                  : readError
+                    ? '保留上次结果，当前状态尚未确认'
+                    : '显示已读内容'}
+              </dd>
+            </div>
+            <div>
+              <dt>本机计划草稿</dt>
+              <dd>{draft.edit ? `基于版本 ${draft.edit.basedOn}，尚未保存到项目计划` : '无计划编辑草稿'}</dd>
+            </div>
+          </dl>
           {draft.freeOpen && (
             <section className="project-free-create" aria-label="自由新建项目任务">
               <button
@@ -687,33 +708,34 @@ export function ProjectWorkbench({
                       <option value="ready">可交付</option>
                     </select>
                   </label>
+                  <p className="field-help project-item-range" role="status">
+                    当前筛选显示 {visibleItems.length} / {board.items.length} 个已读交付项。
+                    {board.items.some((item) => item.id === draft!.selected) &&
+                      !visibleItems.some((item) => item.id === draft!.selected) &&
+                      '当前详情不在筛选结果中，仍保留供核对。'}
+                  </p>
                   <div className="project-item-layout">
                     <nav aria-label="交付项选择">
-                      {board.items
-                        .filter(
-                          (item) =>
-                            draft!.filter === 'all' ||
-                            (draft!.filter === 'ready'
-                              ? item.readiness === 'ready'
-                              : item.readiness !== 'ready'),
-                        )
-                        .map((item) => (
-                          <button
-                            type="button"
-                            key={item.id}
-                            className={'project-item-link ' + (draft!.selected === item.id ? 'selected' : '')}
-                            aria-current={draft!.selected === item.id ? 'true' : undefined}
-                            onClick={() => change((value) => ({ ...value, selected: item.id }))}
-                          >
-                            <strong>{item.title}</strong>
-                            <span>
-                              {item.required ? '必需 · ' : ''}
-                              {readinessLabels[item.readiness]}
-                            </span>
-                            <small>{item.attemptCount} 次关联执行</small>
-                          </button>
-                        ))}
+                      {visibleItems.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          className={'project-item-link ' + (draft!.selected === item.id ? 'selected' : '')}
+                          aria-current={draft!.selected === item.id ? 'true' : undefined}
+                          onClick={() => change((value) => ({ ...value, selected: item.id }))}
+                        >
+                          <strong>{item.title}</strong>
+                          <span>
+                            {item.required ? '必需 · ' : ''}
+                            {readinessLabels[item.readiness]}
+                          </span>
+                          <small>{item.attemptCount} 次关联执行</small>
+                        </button>
+                      ))}
                       {!board.items.length && <p className="field-help">在项目计划中添加第一个交付项。</p>}
+                      {!!board.items.length && !visibleItems.length && (
+                        <p className="field-help">当前筛选没有交付项，可切换交付项范围继续查看。</p>
+                      )}
                     </nav>
                     <div>
                       {board.items.find((item) => item.id === draft!.selected) ? (

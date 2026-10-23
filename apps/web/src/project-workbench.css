@@ -330,6 +330,30 @@
 .project-filter {
   max-width: 240px;
 }
+.project-workbench-basis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  margin: var(--space-4) 0;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.project-workbench-basis > div {
+  min-width: 0;
+}
+.project-workbench-basis dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.project-workbench-basis dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.project-item-range {
+  margin-block: var(--space-3);
+}
 .project-free-create {
   padding: var(--space-4);
   border: 1px solid var(--border);
