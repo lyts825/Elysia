@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { TaskWorkingStateView } from '../../../packages/contracts/src/working-state';
 import type { WorkbenchCache } from './WorkbenchCache';
@@ -69,6 +69,7 @@ function WorkingStateEditor({
   cache: WorkbenchCache;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const editorId = useId();
   const [view, setView] = useState<TaskWorkingStateView>();
   const [requirements, setRequirements] = useState(''),
     [confirmed, setConfirmed] = useState(false);
@@ -234,7 +235,7 @@ function WorkingStateEditor({
   }
   return (
     <section className="task-working-state" aria-label="长任务工作状态">
-      <strong>长任务工作状态</strong>
+      <h3>长任务工作状态</h3>
       <p className="field-help">
         在安全检查点核对当前有效要求。明确保存后，较早历史可用此状态摘要替代；原始对话保留，之后的新消息仍逐条保留。权限与预算不变。
       </p>
@@ -259,18 +260,35 @@ function WorkingStateEditor({
       </div>
       {view && !current && <p role="status">显示上次读取结果，当前任务状态尚未确认。</p>}
       {readError && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error working-state-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="工作状态读取问题全文"
+        >
           {readError}
         </p>
       )}
       {saveError && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error working-state-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="工作状态保存问题全文"
+        >
           {saveError}
         </p>
       )}
       {draftError && (
-        <div className="field-error" role="alert">
-          <p>{draftError}</p>
+        <div className="field-error working-state-error-group">
+          <p
+            className="working-state-reading"
+            role="alert"
+            tabIndex={0}
+            aria-label="工作状态本机草稿问题全文"
+          >
+            {draftError}
+          </p>
           <button type="button" className="text-button" onClick={() => setDraftRetry((value) => value + 1)}>
             重新读取状态草稿
           </button>
@@ -290,10 +308,22 @@ function WorkingStateEditor({
             上次{pending.kind === 'approve' ? '批准' : '撤销'}
             结果待核对，保留原版本、内容与请求。此重试只核对原操作。
           </p>
+          <dl className="working-state-facts" aria-label="待核对原请求版本">
+            <div>
+              <dt>原状态版本</dt>
+              <dd>{pending.expectedRevision}</dd>
+            </div>
+            <div>
+              <dt>请求类型</dt>
+              <dd>{pending.kind === 'approve' ? '批准要求' : '撤销状态'}</dd>
+            </div>
+          </dl>
           {pending.kind === 'approve' && (
             <details>
               <summary>查看上次批准的完整要求</summary>
-              <p className="working-state-text">{pending.currentRequirements}</p>
+              <p className="working-state-text" role="region" tabIndex={0} aria-label="待核对原请求完整要求">
+                {pending.currentRequirements}
+              </p>
             </details>
           )}
           <button type="button" className="secondary" disabled={busy} onClick={() => void save(pending)}>
@@ -303,11 +333,37 @@ function WorkingStateEditor({
       )}
       {view && (
         <>
-          <p className="field-help">
-            核对范围：{view.draft.source.messageCount} 条消息 · 当前状态版本 {view.revision}。{view.reason}
-          </p>
+          <dl className="working-state-facts" aria-label="已读快照核对范围">
+            <div>
+              <dt>已读消息范围</dt>
+              <dd>{view.draft.source.messageCount} 条</dd>
+            </div>
+            <div>
+              <dt>工作状态版本</dt>
+              <dd>{view.revision}</dd>
+            </div>
+            <div>
+              <dt>本次读取</dt>
+              <dd>{current ? '已读取当前状态' : '保留上次结果，尚未确认'}</dd>
+            </div>
+          </dl>
+          {view.reason && (
+            <p
+              className="field-help working-state-reading"
+              role="region"
+              tabIndex={0}
+              aria-label="工作状态核对条件全文"
+            >
+              {view.reason}
+            </p>
+          )}
           {view.approved && (
-            <p role="status">
+            <p
+              role="status"
+              className="working-state-reading"
+              tabIndex={0}
+              aria-label="已保存工作状态适用情况"
+            >
               {view.approvedValid
                 ? '已有生效的工作状态。'
                 : `旧工作状态已失效：${view.approvedInvalidReason}`}
@@ -315,18 +371,75 @@ function WorkingStateEditor({
           )}
           <details>
             <summary>查看任务、子任务与证据</summary>
-            <pre>{JSON.stringify(view.draft.state, null, 2)}</pre>
+            <pre role="region" tabIndex={0} aria-label="工作状态任务子任务与证据完整快照">
+              {JSON.stringify(view.draft.state, null, 2)}
+            </pre>
           </details>
           {view.approved && (
             <details>
               <summary>查看上次确认的要求</summary>
-              <p className="working-state-text">{view.approved.currentRequirements}</p>
+              <p
+                className="working-state-text"
+                role="region"
+                tabIndex={0}
+                aria-label="已保存工作状态完整要求"
+              >
+                {view.approved.currentRequirements}
+              </p>
             </details>
           )}
+          <details>
+            <summary>本次快照与已批准来源</summary>
+            <dl
+              className="working-state-facts working-state-reading"
+              role="region"
+              tabIndex={0}
+              aria-label="工作状态快照与批准完整来源"
+            >
+              <div>
+                <dt>本次快照时间</dt>
+                <dd>{view.draft.capturedAt}</dd>
+              </div>
+              <div>
+                <dt>本次快照任务</dt>
+                <dd>{view.draft.source.taskId}</dd>
+              </div>
+              <div>
+                <dt>本次快照任务版本</dt>
+                <dd>{view.draft.source.taskRevision}</dd>
+              </div>
+              <div>
+                <dt>本次快照哈希</dt>
+                <dd>{view.draft.snapshotHash}</dd>
+              </div>
+              <div>
+                <dt>原始历史引用</dt>
+                <dd>{view.draft.source.originalRef}</dd>
+              </div>
+              {view.approved && (
+                <>
+                  <div>
+                    <dt>上次批准时间</dt>
+                    <dd>{view.approved.approval.approvedAt}</dd>
+                  </div>
+                  <div>
+                    <dt>上次批准哈希</dt>
+                    <dd>{view.approved.approval.approvedHash}</dd>
+                  </div>
+                  <div>
+                    <dt>上次批准的任务版本</dt>
+                    <dd>{view.approved.source.taskRevision}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          </details>
+          <p className="working-state-draft-label">当前编辑草稿 · 需勾选核对并明确保存，才成为已批准状态</p>
           <label className="working-state-editor">
             当前有效要求、已完成事项和下一步
             <textarea
               rows={6}
+              aria-describedby={`${editorId}-count`}
               value={requirements}
               disabled={locked}
               placeholder="核对原对话后填写；保留仍有效的约束、否定要求、未决问题和证据位置。不要仅填写‘继续’。"
@@ -339,7 +452,7 @@ function WorkingStateEditor({
               }}
             />
           </label>
-          <p className={tooLong ? 'field-error' : 'field-help'}>
+          <p id={`${editorId}-count`} className={tooLong ? 'field-error' : 'field-help'}>
             {requirements.length.toLocaleString()} / 16,000 字符
             {tooLong ? '，请缩短后再保存；原文没有截断。' : ''}
           </p>
