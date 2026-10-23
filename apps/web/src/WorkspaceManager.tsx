@@ -5,6 +5,23 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
+import './workspace-manager.css';
+
+function ManagementOrigin({ label, values }: { label: string; values: [string, string | number][] }) {
+  return (
+    <details className="workspace-manager-origin">
+      <summary>完整归属与版本</summary>
+      <dl className="workspace-manager-reading" role="region" tabIndex={0} aria-label={label}>
+        {values.map(([name, value]) => (
+          <div key={name}>
+            <dt>{name}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
 
 export function WorkspaceManager({
   spaces,
@@ -63,6 +80,7 @@ export function WorkspaceManager({
   const tabsRef = useRef<HTMLDivElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const confirmationRef = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!error) return;
     errorRef.current?.focus({ preventScroll: true });
@@ -134,11 +152,27 @@ export function WorkspaceManager({
           <Icon name="folder" size={15} />
           {p.name}
         </strong>
-        <small title={p.workspaceRoot}>{p.workspaceRoot}</small>
+        <small
+          className="workspace-manager-reading"
+          role="region"
+          tabIndex={0}
+          aria-label={`${p.name}完整资料目录`}
+        >
+          {p.workspaceRoot}
+        </small>
         <span>
           {projectCount(p.id) ?? '—'} 个对话 ·{' '}
-          {spaces.find((s) => s.id === p.spaceId)?.name || '初始项目空间'}
+          {spaces.find((s) => s.id === p.spaceId)?.name || '未读取到所属空间名称'}
         </span>
+        <ManagementOrigin
+          label={`${p.name}完整项目归属`}
+          values={[
+            ['项目标识', p.id],
+            ['已读版本', p.revision],
+            ['所属空间', spaces.find((s) => s.id === p.spaceId)?.name || '未读取到所属空间名称'],
+            ['空间标识', p.spaceId],
+          ]}
+        />
       </div>
       <div className="management-fields">
         <input
@@ -222,6 +256,16 @@ export function WorkspaceManager({
         {r.kind === 'task' && projects.find((p) => p.id === r.projectId)?.archived && (
           <small>所属项目已归档，恢复项目后可继续任务。</small>
         )}
+        <ManagementOrigin
+          label={`${r.title || r.objective}完整对话记录`}
+          values={[
+            ['对话标识', r.id],
+            ['已读版本', r.revision],
+            ['完整目标', r.objective],
+            ['项目标识', r.kind === 'chat' ? '独立对话，不绑定项目' : r.projectId || '未记录'],
+            ['创建时间原值', r.createdAt],
+          ]}
+        />
       </div>
       <div className="management-fields">
         <input
@@ -278,7 +322,14 @@ export function WorkspaceManager({
     </div>
   );
   return (
-    <Modal title="管理工作空间" subtitle="平级项目空间、项目归属和对话归档" close={close} wide busy={busy}>
+    <Modal
+      title="管理工作空间"
+      subtitle="平级项目空间、项目归属和对话归档"
+      close={close}
+      wide
+      busy={busy}
+      className="workspace-manager-modal"
+    >
       <div
         className="management-tabs"
         role="tablist"
@@ -335,7 +386,13 @@ export function WorkspaceManager({
         aria-labelledby={`${tabId}-${tab}`}
       >
         {error && (
-          <p className="management-error" role="alert" ref={errorRef} tabIndex={-1}>
+          <p
+            className="management-error"
+            role="alert"
+            aria-label="工作空间操作问题全文"
+            ref={errorRef}
+            tabIndex={-1}
+          >
             {error}
           </p>
         )}
@@ -384,19 +441,41 @@ export function WorkspaceManager({
         ) : (
           <>
             {tab !== 'spaces' && (
-              <input
-                type="search"
-                aria-label="搜索项目或对话"
-                maxLength={200}
-                placeholder="搜索名称或目标…"
-                value={searchValue}
-                onChange={(e) =>
-                  changeListQuery ? changeListQuery(e.target.value) : setSearch(e.target.value)
-                }
-              />
+              <div className="workspace-manager-search">
+                <label>
+                  筛选项目或对话
+                  <input
+                    ref={searchInput}
+                    type="search"
+                    aria-label="搜索项目或对话"
+                    maxLength={200}
+                    placeholder="搜索名称或目标…"
+                    value={searchValue}
+                    onChange={(e) =>
+                      changeListQuery ? changeListQuery(e.target.value) : setSearch(e.target.value)
+                    }
+                  />
+                </label>
+                {searchValue && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      if (changeListQuery) changeListQuery('');
+                      else setSearch('');
+                      searchInput.current?.focus();
+                    }}
+                  >
+                    清除筛选
+                  </button>
+                )}
+              </div>
             )}
             {tab === 'spaces' ? (
               <>
+                <p className="workspace-manager-scope">
+                  当前已读 {spaces.length} 个项目空间；各空间的项目数仅统计当前已读项目。
+                </p>
                 <form
                   className="new-space-row"
                   onSubmit={(e) => {
@@ -429,9 +508,16 @@ export function WorkspaceManager({
                         {s.name}
                       </strong>
                       <span>
-                        {projects.filter((p) => p.spaceId === s.id).length} 个项目
+                        {projects.filter((p) => p.spaceId === s.id).length} 个已读项目
                         {s.protected ? ' · 初始空间，保留固定入口' : ' · 平级空间'}
                       </span>
+                      <ManagementOrigin
+                        label={`${s.name}完整空间记录`}
+                        values={[
+                          ['空间标识', s.id],
+                          ['已读版本', s.revision],
+                        ]}
+                      />
                     </div>
                     {s.protected ? (
                       <p className="field-help">
@@ -479,6 +565,19 @@ export function WorkspaceManager({
                                 </option>
                               ))}
                           </select>
+                          <p
+                            className="workspace-manager-target workspace-manager-reading"
+                            role="region"
+                            tabIndex={0}
+                            aria-label={`${s.name}完整合并目标空间`}
+                          >
+                            合并目标：
+                            {spaces.find(
+                              (other) =>
+                                other.id ===
+                                (targets[s.id] || spaces.find((item) => item.protected)?.id || ''),
+                            )?.name || '尚未读取目标空间名称'}
+                          </p>
                           <button
                             className="secondary"
                             disabled={busy}
@@ -534,6 +633,9 @@ export function WorkspaceManager({
                 {(tab === 'projects' || tab === 'archive') && (
                   <>
                     <h3>{tab === 'archive' ? '已归档项目' : '项目'}</h3>
+                    <p className="workspace-manager-scope">
+                      当前已读{tab === 'archive' ? '归档' : ''}项目中显示 {filteredProjects.length} 项。
+                    </p>
                     {filteredProjects.map(projectRow)}
                     {!filteredProjects.length && (
                       <p className="muted small">没有{tab === 'archive' ? '已归档' : '匹配'}项目。</p>
@@ -543,6 +645,11 @@ export function WorkspaceManager({
                 {(tab === 'runs' || tab === 'archive') && (
                   <>
                     <h3>{tab === 'archive' ? '已归档对话' : '对话'}</h3>
+                    <p className="workspace-manager-scope">
+                      {listBusy ? '正在读取，以下保留已读内容。' : ''}
+                      当前已读{listPage ? '页' : '对话'}中显示 {filteredRuns.length} 个
+                      {tab === 'archive' ? '归档' : ''}对话。
+                    </p>
                     {filteredRuns.map(runRow)}
                     {!filteredRuns.length && (
                       <p className="muted small">没有{tab === 'archive' ? '已归档' : '匹配'}对话。</p>
