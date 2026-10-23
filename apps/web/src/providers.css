@@ -40,6 +40,43 @@
 .provider-editor summary {
   overflow-wrap: anywhere;
 }
+.provider-heading-reading,
+.provider-model-reading,
+.provider-feedback-reading {
+  min-width: 0;
+  max-height: min(14rem, 38dvh);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.provider-model-reading {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.provider-model-reading small {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.provider-model-reading code {
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.provider-heading-reading:focus-visible,
+.provider-model-reading:focus-visible,
+.provider-feedback-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
 .section-heading .field-help {
   margin: var(--space-1) 0 0;
 }

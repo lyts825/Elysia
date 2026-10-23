@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { CodexSettings } from './CodexSettings';
@@ -78,6 +78,8 @@ export function ProviderSettings({
   updated: () => Promise<unknown>;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const credentialHelpId = useId(),
+    storedHelpId = useId();
   const [config, setConfig] = useState<Provider | undefined>(
     initialProviderId
       ? providers.find((p) => p.id === initialProviderId && !p.archived)
@@ -413,7 +415,12 @@ export function ProviderSettings({
             <fieldset className="provider-fields" disabled={busy}>
               <div className="section-heading">
                 <div>
-                  <h3 ref={editorTitleRef} tabIndex={-1}>
+                  <h3
+                    ref={editorTitleRef}
+                    tabIndex={0}
+                    className="provider-heading-reading"
+                    aria-label="当前模型配置完整名称"
+                  >
                     {config.label || '新配置'}
                   </h3>
                   <p className="field-help">
@@ -421,7 +428,7 @@ export function ProviderSettings({
                       ? '新建配置'
                       : dirty
                         ? '有未保存的更改'
-                        : saved.checkedRevision === saved.revision
+                        : saved.checkedRevision === saved.revision && saved.keyConfigured
                           ? '当前配置已通过实际调用验证'
                           : '保存配置后验证连接'}
                   </p>
@@ -636,13 +643,14 @@ export function ProviderSettings({
                       <input
                         type="password"
                         autoComplete="new-password"
+                        aria-describedby={`${storedHelpId}${credentialHelp ? ' ' + credentialHelpId : ''}`}
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         placeholder={
                           config.credentialId ? '已保存；填写新值替换' : '输入服务商提供的 API Key'
                         }
                       />
-                      <span className="field-help">
+                      <span className="field-help" id={storedHelpId}>
                         系统加密保存，页面只保留凭据引用。更换密钥后需重新验证。
                       </span>
                     </label>
@@ -650,13 +658,14 @@ export function ProviderSettings({
                     <label>
                       环境变量名称
                       <input
+                        aria-describedby={credentialHelp ? credentialHelpId : undefined}
                         value={config.apiKeyEnv}
                         onChange={(e) => change({ apiKeyEnv: e.target.value.trim() })}
                       />
                     </label>
                   )}
                   {credentialHelp && (
-                    <p className="inline-warning" role="status">
+                    <p className="inline-warning" role="status" id={credentialHelpId}>
                       {credentialHelp}
                     </p>
                   )}
@@ -696,6 +705,20 @@ export function ProviderSettings({
                       读取模型目录
                     </button>
                   </div>
+                  {config.model && (
+                    <div
+                      className="provider-model-reading"
+                      role="region"
+                      tabIndex={0}
+                      aria-label="当前 API 型号完整名称与标识"
+                    >
+                      <strong>{selectedModel?.name || config.model}</strong>
+                      {selectedModel?.name && selectedModel.name !== config.model && (
+                        <code>{config.model}</code>
+                      )}
+                      <small>{selectedModel ? '来自已读模型目录' : '手动填写，尚未匹配目录条目'}</small>
+                    </div>
+                  )}
                   {deepSeek && (
                     <div className="form-columns deepseek-thinking">
                       <label>
@@ -869,12 +892,23 @@ export function ProviderSettings({
                 新任务选择已验证的配置。保存、复制和删除不会改变已启动任务的模型绑定。连接检查会发起一次短请求。
               </p>
               {error && (
-                <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
+                <p
+                  className="provider-error provider-feedback-reading"
+                  role="alert"
+                  ref={errorRef}
+                  tabIndex={0}
+                  aria-label="模型连接操作失败全文"
+                >
                   {error}
                 </p>
               )}
               {notice && (
-                <p className="connection-notice" role="status">
+                <p
+                  className="connection-notice provider-feedback-reading"
+                  role="status"
+                  tabIndex={0}
+                  aria-label="模型连接操作反馈全文"
+                >
                   {notice}
                 </p>
               )}
