@@ -1,0 +1,130 @@
+.terminal-profile-form {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.terminal-profile-form h5 {
+  margin: 0;
+  font-size: var(--font-md);
+  line-height: var(--leading-ui);
+}
+.terminal-profile-form > .field-help {
+  margin: 0;
+}
+.terminal-profile-section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.terminal-profile-section legend {
+  padding: 0 var(--space-2);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.terminal-profile-form label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+}
+.terminal-profile-form input,
+.terminal-profile-form select,
+.terminal-profile-form textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.terminal-profile-form textarea {
+  min-height: 5rem;
+  max-height: min(24rem, 60dvh);
+  resize: vertical;
+}
+.terminal-profile-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.terminal-profile-fields {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-top: var(--space-3);
+}
+.terminal-profile-form summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: var(--leading-body);
+}
+.terminal-profile-reading {
+  min-width: 0;
+  max-height: clamp(8rem, 30dvh, 18rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.terminal-profile-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.terminal-profile-summary dl {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.terminal-profile-summary dl > div + div {
+  margin-top: var(--space-3);
+}
+.terminal-profile-summary dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-profile-summary dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.terminal-profile-form code {
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.terminal-profile-check,
+.terminal-profile-feedback {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.terminal-profile-check > button {
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.terminal-profile-feedback {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-profile-feedback .field-help {
+  margin: 0;
+}

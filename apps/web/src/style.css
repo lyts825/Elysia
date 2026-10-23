@@ -2334,16 +2334,6 @@ a {
   color: var(--danger);
   overflow-wrap: anywhere;
 }
-.terminal-setup {
-  display: grid;
-  gap: 14px;
-}
-.terminal-setup details > label {
-  margin-top: var(--space-3);
-}
-.terminal-setup code {
-  overflow-wrap: anywhere;
-}
 .terminal-activity {
   margin: var(--space-4) 0;
   padding: var(--space-4);
