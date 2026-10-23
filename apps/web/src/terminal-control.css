@@ -799,15 +799,6 @@
   padding: var(--space-3) 0;
 }
 
-.terminal-connection-health p {
-  display: grid;
-  gap: var(--space-1);
-  margin: var(--space-3) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  overflow-wrap: anywhere;
-}
 .terminal-connection-error {
   color: var(--danger);
   font-size: var(--font-sm);
@@ -818,8 +809,4 @@
 .terminal-connection-error:focus-visible,
 .terminal-control-read-error [role='alert']:focus-visible {
   outline-offset: -2px;
-}
-.terminal-connection-health small {
-  color: var(--muted);
-  font-size: var(--font-sm);
 }

@@ -5,6 +5,7 @@ import type {
   TerminalConnectionView,
 } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './terminal-connection-checks.css';
 
 export function TerminalConnectionChecks({
   connection,
@@ -19,6 +20,7 @@ export function TerminalConnectionChecks({
   const [busy, setBusy] = useState<'check' | 'models' | null>(null);
   const [health, setHealth] = useState<TerminalConnectionHealth | undefined>(connection.health);
   const [catalog, setCatalog] = useState<TerminalConnectionProbeResult | null>(null);
+  const [selectedModel, setSelectedModel] = useState('');
   const [error, setError] = useState('');
   const [errorRequest, setErrorRequest] = useState(0);
   const controller = useRef<AbortController | null>(null);
@@ -34,6 +36,7 @@ export function TerminalConnectionChecks({
     controller.current?.abort();
     setHealth(connection.health);
     setCatalog(null);
+    setSelectedModel('');
     setError('');
     setBusy(null);
     focusError.current = false;
@@ -103,6 +106,7 @@ export function TerminalConnectionChecks({
   }
   return (
     <div className="terminal-connection-checks">
+      <h5>连接验证与模型目录</h5>
       <div className="terminal-control-form-actions">
         <button
           type="button"
@@ -126,18 +130,35 @@ export function TerminalConnectionChecks({
           ? '验证连接会发送一次小型模型请求，产生少量用量。模型目录不可用时可手填。'
           : '先保存当前修改，再验证连接或读取模型目录。'}
       </p>
-      <div className="terminal-connection-health" aria-label="已保存的连接验证状态">
+      <div className="terminal-check-results" aria-label="已保存的连接验证状态">
         {(['check', 'models'] as const).map((kind) => {
           const result = health?.[kind],
             current = enabled && result?.revision === connection.revision;
           return (
-            <p
+            <article
               key={kind}
               role="status"
-              className={current && result?.status === 'failed' ? 'cli-app-error' : 'field-help'}
+              className="terminal-check-result"
+              data-status={current ? result?.status : 'waiting'}
             >
-              <strong>{kind === 'check' ? '连接验证' : '模型目录'}</strong>
-              <span>
+              <header>
+                <strong>{kind === 'check' ? '连接验证' : '模型目录'}</strong>
+                <span className="terminal-check-state">
+                  {!current
+                    ? '待检查'
+                    : result?.status === 'passed'
+                      ? '已通过'
+                      : result?.status === 'failed'
+                        ? '未通过'
+                        : '不支持'}
+                </span>
+              </header>
+              <p
+                className="terminal-check-reading"
+                tabIndex={0}
+                role="region"
+                aria-label={kind === 'check' ? '连接验证完整说明' : '模型目录完整说明'}
+              >
                 {!enabled
                   ? '当前修改待保存'
                   : !result
@@ -145,7 +166,7 @@ export function TerminalConnectionChecks({
                     : !current
                       ? '配置已变化，待重新检查'
                       : result.message}
-              </span>
+              </p>
               {result && (
                 <small>
                   上次检查 {new Date(result.checkedAt).toLocaleString()}
@@ -155,33 +176,74 @@ export function TerminalConnectionChecks({
                     : ''}
                 </small>
               )}
-            </p>
+            </article>
           );
         })}
       </div>
       {enabled && error && (
-        <p role="alert" className="terminal-connection-error" ref={errorElement} tabIndex={-1}>
+        <p
+          role="alert"
+          className="terminal-connection-error terminal-check-reading"
+          aria-label="连接检查失败详情"
+          ref={errorElement}
+          tabIndex={0}
+        >
           {error}
         </p>
       )}
       {enabled && !!catalog?.models?.length && (
-        <label>
-          目录中的模型
-          <select
-            aria-label="选择目录模型"
-            defaultValue=""
-            onChange={(event) => {
-              if (event.target.value) chooseModel(event.target.value);
-            }}
-          >
-            <option value="">选择模型后保存…</option>
-            {catalog.models!.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="terminal-check-catalog">
+          <label>
+            目录中的模型
+            <select
+              aria-label="选择目录模型"
+              defaultValue=""
+              onChange={(event) => {
+                setSelectedModel(event.target.value);
+                if (event.target.value) chooseModel(event.target.value);
+              }}
+            >
+              <option value="">选择模型后保存…</option>
+              {catalog.models!.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedModel && (
+            <div
+              className="terminal-check-choice terminal-check-reading"
+              tabIndex={0}
+              role="region"
+              aria-label="所选目录模型完整名称与标识"
+            >
+              <strong>{catalog.models!.find((model) => model.id === selectedModel)?.name}</strong>
+              <code>{selectedModel}</code>
+              <small>已选入表单，保存后生效。</small>
+            </div>
+          )}
+          <details>
+            <summary>
+              查看本次读取的 {catalog.models!.length} 个模型{catalog.truncated ? '（目录已截取）' : ''}
+            </summary>
+            <div
+              className="terminal-check-reading"
+              tabIndex={0}
+              role="region"
+              aria-label="模型目录完整名称与标识"
+            >
+              <ul>
+                {catalog.models!.map((model) => (
+                  <li key={model.id}>
+                    <strong>{model.name}</strong>
+                    <code>{model.id}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
+        </div>
       )}
     </div>
   );
