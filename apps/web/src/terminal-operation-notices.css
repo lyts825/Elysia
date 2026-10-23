@@ -1,0 +1,97 @@
+.terminal-operation-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.terminal-operation-heading > span {
+  color: var(--danger);
+  font-size: var(--font-xs);
+}
+.terminal-install-failure-details {
+  min-width: 0;
+}
+.terminal-install-failure-details > summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.terminal-operation-reading {
+  min-width: 0;
+  max-height: clamp(8rem, 28dvh, 16rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  margin: var(--space-3) 0 0;
+  white-space: pre-wrap;
+}
+.terminal-operation-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.terminal-operation-reading > div + div {
+  margin-top: var(--space-3);
+}
+.terminal-operation-reading dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-operation-reading dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.terminal-operation-reading code {
+  font-size: var(--font-sm);
+}
+.terminal-operation-recovery {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-operation-recovery h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-lg);
+  line-height: var(--leading-ui);
+}
+.terminal-operation-recovery > .field-help {
+  margin: 0;
+}
+.terminal-operation-recovery label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-md);
+}
+.terminal-operation-recovery textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 6rem;
+  max-height: min(24rem, 60dvh);
+  resize: vertical;
+}
+.terminal-operation-outcomes {
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-operation-outcomes p {
+  margin: 0;
+}
+.terminal-operation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.terminal-operation-actions button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
