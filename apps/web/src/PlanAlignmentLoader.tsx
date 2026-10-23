@@ -2,6 +2,7 @@ import { Component, useEffect, useState, type ComponentType, type ReactNode, typ
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './features/plan-alignment/types';
 import entryUrl from 'virtual:elysia-plan-alignment';
 import './features/plan-alignment/plan-alignment.css';
+import './plan-alignment-loader.css';
 
 type Panel = ComponentType<PlanAlignmentProps>;
 let pending: Promise<Panel> | undefined;
@@ -27,22 +28,30 @@ function loadPanel(): Promise<Panel> {
     }));
 }
 
-class PanelBoundary extends Component<{ children: ReactNode; retry: () => void }, { failed: boolean }> {
+class PanelBoundary extends Component<
+  { children: ReactNode; retry: () => void; version: number },
+  { failed: boolean }
+> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   render() {
-    return this.state.failed ? <LoadFailure retry={this.props.retry} /> : this.props.children;
+    return this.state.failed ? (
+      <LoadFailure retry={this.props.retry} version={this.props.version} />
+    ) : (
+      this.props.children
+    );
   }
 }
-function LoadFailure({ retry }: { retry: () => void }) {
+function LoadFailure({ retry, version }: { retry: () => void; version: number }) {
   return (
-    <div className="plan-card" role="alert">
+    <div className="plan-card plan-module-feedback" data-state="failed" role="alert">
       <h3>计划模块加载失败</h3>
-      <p>计划记录已保留，请重试加载。</p>
-      <button className="secondary" onClick={retry}>
-        重试加载
+      <p className="plan-module-version">已读计划版本 {version}</p>
+      <p>计划记录仍保留，重试会重新加载此计划界面。</p>
+      <button type="button" className="secondary" onClick={retry}>
+        重新加载计划模块
       </button>
     </div>
   );
@@ -77,14 +86,20 @@ export function PlanAlignmentLoader(props: PlanAlignmentProps & { anchorRef?: Re
   return (
     <div ref={props.anchorRef} className="plan-module" tabIndex={-1} aria-label="计划确认">
       {failed ? (
-        <LoadFailure retry={retry} />
+        <LoadFailure retry={retry} version={plan.version} />
       ) : Panel ? (
-        <PanelBoundary key={generation + ':' + props.detail.run.id + ':' + plan.version} retry={retry}>
+        <PanelBoundary
+          key={generation + ':' + props.detail.run.id + ':' + plan.version}
+          retry={retry}
+          version={plan.version}
+        >
           <Panel {...props} />
         </PanelBoundary>
       ) : (
-        <div className="plan-card" role="status" aria-busy="true">
-          正在加载计划对齐…
+        <div className="plan-card plan-module-feedback" data-state="loading" role="status" aria-busy="true">
+          <h3>正在准备计划确认</h3>
+          <p className="plan-module-version">已读计划版本 {plan.version}</p>
+          <p>加载完成后可核对当前计划。</p>
         </div>
       )}
     </div>

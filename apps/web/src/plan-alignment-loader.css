@@ -1,0 +1,36 @@
+.plan-module-feedback {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.plan-module-feedback h3 {
+  margin: 0;
+  font-size: var(--font-lg);
+  line-height: var(--leading-heading);
+}
+.plan-module-feedback p {
+  margin: 0;
+  color: var(--secondary);
+}
+.plan-module-feedback .plan-module-version {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+.plan-module-feedback[data-state='failed'] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.plan-module-feedback[data-state='failed'] h3 {
+  color: var(--danger);
+}
+.plan-module-feedback > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

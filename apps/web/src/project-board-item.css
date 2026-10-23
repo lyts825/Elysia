@@ -59,6 +59,11 @@
   margin: var(--space-2) 0;
   overflow-wrap: anywhere;
 }
+@container (max-width: 680px) {
+  .project-board-item .project-item-requirements {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 480px) {
   .project-board-item .project-status-grid {
     grid-template-columns: 1fr;
