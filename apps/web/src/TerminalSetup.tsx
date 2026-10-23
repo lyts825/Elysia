@@ -21,6 +21,8 @@ export function TerminalSetup({
 }) {
   const resourceHelpId = useId(),
     commandHelpId = useId(),
+    commandIssueId = useId(),
+    environmentCountId = useId(),
     environmentHelpId = useId();
   const { api } = useSurfaceClient();
   const [argv, setArgv] = useState(() => JSON.stringify(value.command)),
@@ -28,6 +30,8 @@ export function TerminalSetup({
     [checking, setChecking] = useState(false),
     [status, setStatus] = useState('');
   const currentProfile = useRef('');
+  const commandField = useRef<HTMLTextAreaElement>(null),
+    advancedFields = useRef<HTMLDetailsElement>(null);
   currentProfile.current = JSON.stringify(value);
   function patch(next: Partial<AgentTerminalProfile>) {
     setStatus('');
@@ -109,7 +113,8 @@ export function TerminalSetup({
         </label>
       </fieldset>
       <details className="terminal-profile-summary">
-        <summary>查看当前模板配置摘要</summary>
+        <summary>查看当前配置值摘要</summary>
+        {issue && <p className="field-help">命令输入尚未通过解析，摘要展示当前配置值，请核对原始输入。</p>}
         <dl className="terminal-profile-reading" tabIndex={0} role="region" aria-label="当前终端模板配置摘要">
           <div>
             <dt>名称</dt>
@@ -130,7 +135,7 @@ export function TerminalSetup({
             </dd>
           </div>
           <div>
-            <dt>命令参数</dt>
+            <dt>命令参数（配置值）</dt>
             <dd>
               <code>{JSON.stringify(value.command, null, 2)}</code>
             </dd>
@@ -155,7 +160,7 @@ export function TerminalSetup({
           </div>
         </dl>
       </details>
-      <details className="terminal-profile-advanced">
+      <details className="terminal-profile-advanced" ref={advancedFields}>
         <summary>终端命令与连接配置</summary>
         <div className="terminal-profile-fields">
           <label>
@@ -169,7 +174,10 @@ export function TerminalSetup({
           <label>
             命令参数（JSON 数组）
             <textarea
+              ref={commandField}
               aria-describedby={commandHelpId}
+              aria-invalid={!!issue}
+              aria-errormessage={issue ? commandIssueId : undefined}
               rows={3}
               value={argv}
               disabled={disabled}
@@ -186,9 +194,25 @@ export function TerminalSetup({
               }}
             />
             <small className="field-help" id={commandHelpId}>
-              包含程序与参数的 JSON 数组；仅有效数组会用于终端配置。
+              {issue
+                ? '尚未形成有效命令数组。'
+                : value.command.length
+                  ? `${value.command.length} 项，含可执行程序。`
+                  : '尚未配置可执行程序。'}
+              仅有效 JSON 数组会用于终端配置。
             </small>
           </label>
+          {issue && (
+            <p
+              id={commandIssueId}
+              className="inline-warning terminal-profile-reading terminal-profile-command-issue"
+              role="alert"
+              tabIndex={0}
+              aria-label="终端配置输入问题"
+            >
+              {issue}
+            </p>
+          )}
           <label>
             输出协议
             <select
@@ -206,12 +230,15 @@ export function TerminalSetup({
           <label>
             凭据环境变量名称（逗号或换行分隔）
             <textarea
-              aria-describedby={environmentHelpId}
+              aria-describedby={`${environmentHelpId} ${environmentCountId}`}
               rows={2}
               value={value.environment.join(', ')}
               disabled={disabled}
               onChange={(e) => patch({ environment: e.target.value.split(/[,\s]+/).filter(Boolean) })}
             />
+            <small className="field-help" id={environmentCountId}>
+              {value.environment.length} / 12 个变量名
+            </small>
           </label>
           <p className="field-help" id={environmentHelpId}>
             未选择管理中心的 API 连接时，读取这里列出的服务环境变量；选择连接后使用该连接的配置。 不会映射宿主
@@ -243,16 +270,6 @@ export function TerminalSetup({
           </div>
         </div>
       </details>
-      {issue && (
-        <p
-          className="inline-warning terminal-profile-reading"
-          role="alert"
-          tabIndex={0}
-          aria-label="终端配置输入问题"
-        >
-          {issue}
-        </p>
-      )}
       {!issue && !validProfile && (
         <p
           className="inline-warning terminal-profile-reading"
@@ -285,6 +302,18 @@ export function TerminalSetup({
         >
           {checking ? '正在检查…' : '检查 Docker 与镜像'}
         </button>
+        {issue && (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              if (advancedFields.current) advancedFields.current.open = true;
+              commandField.current?.focus();
+            }}
+          >
+            定位命令参数
+          </button>
+        )}
         {status && (
           <div className="terminal-profile-feedback" role="status">
             <strong>环境检查反馈</strong>

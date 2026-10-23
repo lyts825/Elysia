@@ -60,6 +60,23 @@
   min-width: 0;
   margin-top: var(--space-3);
 }
+.terminal-profile-fields label > .field-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.terminal-profile-form .terminal-profile-command-issue {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.terminal-profile-form textarea[aria-invalid='true'] {
+  border-color: var(--warning-border);
+}
 .terminal-profile-form summary {
   cursor: pointer;
   color: var(--secondary);
@@ -86,6 +103,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-soft);
+}
+.terminal-profile-summary > .field-help {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .terminal-profile-summary dl > div + div {
   margin-top: var(--space-3);
