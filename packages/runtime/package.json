@@ -1,6 +1,6 @@
 {
   "name": "@elysia/runtime",
-  "version": "1.19.70",
+  "version": "1.19.71",
   "private": true,
   "type": "module"
 }

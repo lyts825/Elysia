@@ -1,0 +1,103 @@
+.unlinked-review-notes {
+  min-width: 0;
+}
+.unlinked-review-notes .unlinked-review-heading,
+.unlinked-review-notes .unlinked-review-reading-label,
+.unlinked-review-notes .unlinked-review-preview-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  overflow-wrap: anywhere;
+}
+.unlinked-review-notes > summary {
+  overflow-wrap: anywhere;
+}
+.unlinked-review-notes > summary small {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-weight: 400;
+}
+.unlinked-review-notes .unlinked-review-heading {
+  margin-bottom: var(--space-3);
+}
+.unlinked-review-notes .unlinked-review-heading h4 {
+  margin: 0;
+}
+.unlinked-review-notes .unlinked-review-heading small,
+.unlinked-review-notes .unlinked-review-reading-label small,
+.unlinked-review-notes .unlinked-review-preview-heading small,
+.unlinked-review-notes > summary small {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.unlinked-review-notes .unlinked-review-state {
+  line-height: var(--leading-body);
+}
+.unlinked-review-notes .unlinked-review-item,
+.unlinked-review-notes .review-link-editor {
+  min-width: 0;
+}
+.unlinked-review-notes .unlinked-review-source {
+  min-width: 0;
+  margin: var(--space-3) 0;
+}
+.unlinked-review-notes .unlinked-review-source > summary {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.unlinked-review-notes .unlinked-review-identity {
+  min-width: 0;
+  max-height: min(12rem, 36dvh);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.unlinked-review-notes .unlinked-review-identity dt {
+  color: var(--muted);
+}
+.unlinked-review-notes .unlinked-review-identity dd {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+}
+.unlinked-review-notes .unlinked-review-identity dd:last-child {
+  margin-bottom: 0;
+}
+.unlinked-review-notes .unlinked-review-identity:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.unlinked-review-notes .unlinked-review-preview-heading {
+  margin: var(--space-3) 0 var(--space-2);
+  line-height: var(--leading-body);
+}
+.unlinked-review-notes .unlinked-review-issue {
+  line-height: var(--leading-body);
+}
+.unlinked-review-notes .unlinked-review-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.unlinked-review-notes .unlinked-review-actions > button {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--control-sm);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.unlinked-review-notes .unlinked-review-remove {
+  color: var(--danger);
+}
