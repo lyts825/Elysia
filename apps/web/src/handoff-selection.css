@@ -1,0 +1,120 @@
+.handoff-review,
+.handoff-artifacts,
+.handoff-artifact-summary,
+.handoff-note-option {
+  min-width: 0;
+}
+.handoff-note-option {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+  background: var(--surface);
+}
+.handoff-note-option .workflow-note-choice {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+}
+.handoff-note-option .workflow-note-choice > input {
+  flex: none;
+  width: auto;
+  margin-top: var(--space-1);
+}
+.handoff-reading {
+  min-width: 0;
+  max-height: min(14rem, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+  border-radius: var(--radius-sm);
+  line-height: var(--leading-body);
+}
+.handoff-reading > :first-child {
+  margin-top: 0;
+}
+.handoff-reading > :last-child {
+  margin-bottom: 0;
+}
+.handoff-added-list {
+  max-height: min(28rem, 60dvh);
+  margin-top: var(--space-3);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.handoff-reading .workflow-note-provenance small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.handoff-review .workflow-selection,
+.handoff-artifacts > .workflow-selection {
+  min-width: 0;
+}
+.handoff-review .workflow-selection > button {
+  margin-top: var(--space-3);
+}
+.handoff-state {
+  display: block;
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-ui);
+}
+.handoff-artifact-summary .handoff-reading strong {
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.handoff-version-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.handoff-version-pair > div {
+  min-width: 0;
+}
+.handoff-version-pair dt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.handoff-version-pair dd {
+  margin: var(--space-1) 0 0;
+  color: var(--text);
+  font: var(--font-sm) / var(--leading-body) var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.handoff-artifacts textarea {
+  width: 100%;
+  max-width: 100%;
+  resize: vertical;
+}
+.handoff-character-count {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+.handoff-current-comparison {
+  background: var(--surface-soft);
+}
+.handoff-read-error > button {
+  margin-top: var(--space-3);
+}
+.handoff-review button,
+.handoff-artifacts button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  scroll-margin-block: var(--space-3);
+}
+@media (max-width: 480px) {
+  .handoff-version-pair {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+}

@@ -9,6 +9,7 @@ import {
 } from './ReviewSourceState';
 import { ReviewSourceNoteBody, ReviewSourceNotes } from './ReviewSourceNotes';
 import { ReviewHistory } from './ReviewHistory';
+import './handoff-selection.css';
 
 export function ReviewFeedbackSelection({
   runId,
@@ -34,8 +35,8 @@ export function ReviewFeedbackSelection({
   const state = readReviewSource(selection);
   if (!state)
     return (
-      <section className="workflow-source">
-        <p className="field-error">
+      <section className="workflow-source handoff-review">
+        <p className="field-error" role="alert">
           备注选择草稿格式无法读取，原草稿仍保留。请先保留需要的内容，再明确清除此部分选择。
         </p>
         <button
@@ -69,35 +70,43 @@ export function ReviewFeedbackSelection({
   }
   const choices = (candidates: ReviewCandidate[]) =>
     candidates.map((item) => (
-      <label className="workflow-note-choice" key={item.id}>
-        <input
-          type="checkbox"
-          checked={pendingKeys.has(reviewNoteKey(item.source))}
-          disabled={
-            locked ||
-            !!reviewNotesIssue([item.source]) ||
-            addedKeys.has(reviewNoteKey(item.source)) ||
-            (!pendingKeys.has(reviewNoteKey(item.source)) && state.pending.length >= 40)
-          }
-          onChange={() => toggle(item.source)}
-        />
-        <span>
-          <strong>
+      <article className="handoff-note-option" key={item.id}>
+        <label className="workflow-note-choice">
+          <input
+            type="checkbox"
+            checked={pendingKeys.has(reviewNoteKey(item.source))}
+            disabled={
+              locked ||
+              !!reviewNotesIssue([item.source]) ||
+              addedKeys.has(reviewNoteKey(item.source)) ||
+              (!pendingKeys.has(reviewNoteKey(item.source)) && state.pending.length >= 40)
+            }
+            onChange={() => toggle(item.source)}
+          />
+          <span>
             {item.origin} · {item.stale ? '旧版本' : '当前版本'} · {item.title}
-            {addedKeys.has(reviewNoteKey(item.source)) ? '（已加入）' : ''}
-          </strong>
+          </span>
+        </label>
+        {addedKeys.has(reviewNoteKey(item.source)) && <p className="handoff-state">已加入新任务来源</p>}
+        <div
+          className="handoff-reading"
+          role="region"
+          aria-label={`${item.title}原标准与备注全文`}
+          tabIndex={0}
+        >
           <ReviewSourceNoteBody note={item.source} compact showHeading={false} />
-          {reviewNotesIssue([item.source]) && (
-            <small className="field-error">{reviewNotesIssue([item.source])}</small>
-          )}
-        </span>
-      </label>
+        </div>
+        {reviewNotesIssue([item.source]) && <p className="field-error">{reviewNotesIssue([item.source])}</p>}
+      </article>
     ));
   const addition = state.pending.filter((note) => !addedKeys.has(reviewNoteKey(note)));
   const combined = [...state.added, ...addition];
   const issue = reviewNotesIssue(combined);
   return (
-    <details className="workflow-source" open={!!local || !!state.pending.length || !!state.added.length}>
+    <details
+      className="workflow-source handoff-review"
+      open={!!local || !!state.pending.length || !!state.added.length}
+    >
       <summary>选择复核备注（已保存／本机未保存／旧版本）</summary>
       <p className="field-help">
         勾选与已加入内容分别保留。只有明确加入的备注会成为新任务来源，不占修改意见的 4000
@@ -105,12 +114,14 @@ export function ReviewFeedbackSelection({
       </p>
       {reading && <p role="status">正在核对来源交付版本…</p>}
       {error && (
-        <p role="alert" className="field-error workflow-read-error">
-          {error} 选择及备注草稿仍保留。
+        <div role="alert" className="field-error workflow-read-error handoff-read-error">
+          <p className="handoff-reading" role="region" aria-label="备注读取错误全文" tabIndex={0}>
+            {error} 选择及备注草稿仍保留。
+          </p>
           <button type="button" className="secondary" onClick={retry} disabled={disabled || reading}>
             重试读取备注
           </button>
-        </p>
+        </div>
       )}
       {!reading && !error && !items.length && (
         <p className="field-help">当前没有可选择的复核备注，可查看历史。</p>
@@ -135,7 +146,14 @@ export function ReviewFeedbackSelection({
           <h4>待加入 {state.pending.length} 条（尚未带入新任务）</h4>
           {state.pending.map((note, index) => (
             <div className="workflow-selection" key={reviewNoteKey(note) + index}>
-              <ReviewSourceNoteBody note={note} compact />
+              <div
+                className="handoff-reading"
+                role="region"
+                aria-label={`待加入备注 ${index + 1} 全文`}
+                tabIndex={0}
+              >
+                <ReviewSourceNoteBody note={note} compact />
+              </div>
               <button
                 type="button"
                 className="text-button"
@@ -174,11 +192,13 @@ export function ReviewFeedbackSelection({
         确认加入所选备注
       </button>
       {!!state.added.length && (
-        <ReviewSourceNotes
-          notes={state.added}
-          disabled={disabled}
-          remove={(index) => change({ ...state, added: state.added.filter((_, i) => i !== index) })}
-        />
+        <div className="handoff-added-list" role="region" aria-label="已加入备注完整列表" tabIndex={0}>
+          <ReviewSourceNotes
+            notes={state.added}
+            disabled={disabled}
+            remove={(index) => change({ ...state, added: state.added.filter((_, i) => i !== index) })}
+          />
+        </div>
       )}
     </details>
   );

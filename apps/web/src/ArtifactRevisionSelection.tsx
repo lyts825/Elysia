@@ -11,30 +11,55 @@ import {
   type ArtifactRevisionEntry,
 } from './ArtifactRevisionDraft';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './handoff-selection.css';
 
 export function ArtifactRevisionSummary({
   items,
   embedded = false,
+  showRequirement = true,
 }: {
   items: (Pick<ArtifactRevisionEntry, 'change' | 'requirement'> | SourceArtifactChange)[];
   embedded?: boolean;
+  showRequirement?: boolean;
 }) {
   return (
-    <section aria-label="修改清单">
+    <section className="handoff-artifact-summary" aria-label="修改清单">
       {!embedded && <h4>修改清单 · {items.length} 项差异</h4>}
       {items.map((entry, index) => {
         const item = 'change' in entry ? entry.change : entry;
         return (
           <div key={index} className={embedded ? 'workflow-artifact-summary-item' : 'workflow-selection'}>
-            <strong>
-              {{ added: '新增', removed: '已移除', changed: '已变化' }[item.kind]} ·{' '}
-              {item.after?.name ?? item.before?.name ?? item.artifactId}
-            </strong>
-            <p className="field-help">
-              原版本 {item.before ? `v${item.before.version} · ${item.before.hash.slice(0, 12)}` : '无'} →
-              选定时 {item.after ? `v${item.after.version} · ${item.after.hash.slice(0, 12)}` : '已移除'}
-            </p>
-            <p className="workflow-prose">修改要求：{entry.requirement}</p>
+            <span className="handoff-state">
+              {{ added: '新增', removed: '已移除', changed: '已变化' }[item.kind]}
+            </span>
+            <div
+              className="handoff-reading"
+              role="region"
+              aria-label={`差异 ${index + 1} 产物完整名称`}
+              tabIndex={0}
+            >
+              <strong>{item.after?.name ?? item.before?.name ?? item.artifactId}</strong>
+            </div>
+            <dl className="handoff-version-pair">
+              <div>
+                <dt>原版本</dt>
+                <dd>{item.before ? `v${item.before.version} · ${item.before.hash.slice(0, 12)}` : '无'}</dd>
+              </div>
+              <div>
+                <dt>选定时版本</dt>
+                <dd>{item.after ? `v${item.after.version} · ${item.after.hash.slice(0, 12)}` : '已移除'}</dd>
+              </div>
+            </dl>
+            {showRequirement && (
+              <div
+                className="handoff-reading"
+                role="region"
+                aria-label={`差异 ${index + 1} 修改要求全文`}
+                tabIndex={0}
+              >
+                <p className="workflow-prose">修改要求：{entry.requirement}</p>
+              </div>
+            )}
           </div>
         );
       })}
@@ -123,7 +148,7 @@ export function ArtifactRevisionSelection({
   }
   if (!entries)
     return (
-      <section className="workflow-source">
+      <section className="workflow-source handoff-artifacts">
         <p role="alert">差异草稿无法读取，原文已保留。请先保留所需内容，再清除此部分选择。</p>
         <button type="button" className="secondary" disabled={disabled} onClick={() => change([])}>
           清除无法读取的差异选择
@@ -132,13 +157,13 @@ export function ArtifactRevisionSelection({
     );
   if (!entries.length) return null;
   return (
-    <section className="workflow-source" aria-label="调整修改清单">
+    <section className="workflow-source handoff-artifacts" aria-label="调整修改清单">
       <h3>
         差异修改清单 · 已加入 {entries.filter((e) => e.added).length} 项 · 待加入{' '}
         {entries.filter((e) => !e.added).length} 项
       </h3>
       <p className="field-help">清单包含差异元数据与修改要求；需要文件正文时请单独选择产物。</p>
-      {entries.map((entry) => {
+      {entries.map((entry, index) => {
         const key = artifactRevisionKey(entry),
           stale = entry.fingerprint !== fingerprint;
         const patch = (next: Partial<ArtifactRevisionEntry>) =>
@@ -148,18 +173,22 @@ export function ArtifactRevisionSelection({
           { ...entry, added: true },
         ]);
         return (
-          <div key={key} className="workflow-selection">
-            <ArtifactRevisionSummary items={[entry]} embedded />
+          <article key={key} className="workflow-selection" aria-label={`第 ${index + 1} 项差异修改`}>
+            <p className="handoff-state">
+              第 {index + 1} 项 · {entry.added ? '已加入' : '待加入'}
+            </p>
+            <ArtifactRevisionSummary items={[entry]} embedded showRequirement={false} />
             <label className="workflow-field">
               具体修改要求
               <textarea
-                aria-label={`清单修改要求：${entry.change.after?.name ?? entry.change.before?.name}`}
+                aria-label={`具体修改要求 · 第 ${index + 1} 项`}
                 value={entry.requirement}
                 rows={2}
                 maxLength={2000}
                 disabled={disabled || busy}
                 onChange={(event) => patch({ requirement: event.target.value, added: false })}
               />
+              <span className="field-help handoff-character-count">{entry.requirement.length} / 2000 字</span>
             </label>
             {stale && (
               <p className="inline-warning">
@@ -177,12 +206,14 @@ export function ArtifactRevisionSelection({
               </button>
             )}
             {current?.key === key && current.fingerprint === fingerprint && (
-              <section className="workflow-source">
+              <section className="workflow-source handoff-current-comparison" aria-label="本次读取的最新差异">
+                <h4>本次读取的最新差异</h4>
                 {current.change ? (
                   <>
                     <ArtifactRevisionSummary
                       items={[{ change: current.change, requirement: entry.requirement }]}
                       embedded
+                      showRequirement={false}
                     />
                     <button
                       type="button"
@@ -220,16 +251,18 @@ export function ArtifactRevisionSelection({
                 移除此差异选择
               </button>
             </div>
-          </div>
+          </article>
         );
       })}
       {error && (
-        <p className="field-error workflow-read-error" role="alert">
-          {error}{' '}
+        <div className="field-error workflow-read-error handoff-read-error" role="alert">
+          <p className="handoff-reading" role="region" aria-label="差异读取错误全文" tabIndex={0}>
+            {error}
+          </p>
           <button type="button" className="secondary" disabled={disabled || busy} onClick={reload}>
             重新读取来源
           </button>
-        </p>
+        </div>
       )}
     </section>
   );
