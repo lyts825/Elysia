@@ -54,3 +54,26 @@
 .plan-editor-footer p {
   margin: 0;
 }
+.project-board-editor .plan-editor-basis {
+  margin-block: var(--space-3);
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.plan-editor-validation {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--danger);
+  font-size: var(--font-sm);
+}
+.plan-editor-validation summary {
+  font-weight: 600;
+}
+.plan-editor-validation ul {
+  margin: var(--space-2) 0;
+  padding-inline-start: var(--space-6);
+  overflow-wrap: anywhere;
+}
+.project-board-editor :is(input, textarea)[aria-invalid='true'] {
+  border-color: var(--danger-border);
+}

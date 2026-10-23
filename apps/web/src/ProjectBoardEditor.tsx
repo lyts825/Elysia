@@ -80,6 +80,29 @@ export function ProjectBoardEditor({
     commandId: '00000000-0000-4000-8000-000000000000',
     ...boardEditPayload(edit),
   });
+  const issues = valid.success ? [] : valid.error.issues;
+  const invalidField = (...path: (string | number)[]) =>
+    issues.some((issue) => path.every((part, index) => issue.path[index] === part));
+  const fieldLabels: Record<string, string> = {
+    goal: '项目目标',
+    scope: '范围',
+    nonGoals: '不做事项',
+    items: '交付项数量',
+    title: '名称',
+    description: '说明',
+    deliverables: '交付物',
+    acceptanceCriteria: '验收标准',
+    id: '标识',
+  };
+  const invalidFields = [
+    ...new Set(
+      issues.map(({ path }) =>
+        path[0] === 'items' && typeof path[1] === 'number'
+          ? `交付项 ${path[1] + 1} · ${fieldLabels[String(path[2])] || '内容'}`
+          : fieldLabels[String(path[0])] || '计划内容',
+      ),
+    ),
+  ];
   return (
     <section className="project-board-editor" aria-label="编辑项目交付计划">
       <div className="project-section-heading">
@@ -91,6 +114,7 @@ export function ProjectBoardEditor({
       <p className="field-help">
         保存只更新项目说明和交付项，不会重写已创建任务。已有关联候选需按变更后的标准重新确认。
       </p>
+      <p className="plan-editor-basis">本机编辑草稿 · 基于计划版本 {edit.basedOn} · 尚未保存本次输入</p>
       <ProjectPlanTransfer
         key={board.projectId}
         projectId={board.projectId}
@@ -178,28 +202,43 @@ export function ProjectBoardEditor({
         <label>
           项目目标
           <textarea
+            aria-describedby={`${id}-goal-count`}
+            aria-invalid={invalidField('goal') || undefined}
             value={edit.goal}
             maxLength={4000}
             rows={3}
             onChange={(e) => change({ ...edit, goal: e.target.value })}
           />
+          <span className="field-help" id={`${id}-goal-count`}>
+            {edit.goal.length} / 4000 字符
+          </span>
         </label>
         <div className="project-form-columns">
           <label>
             范围（每行一项）
             <textarea
+              aria-describedby={`${id}-scope-count`}
+              aria-invalid={invalidField('scope') || undefined}
               value={edit.scope}
               rows={4}
               onChange={(e) => change({ ...edit, scope: e.target.value })}
             />
+            <span className="field-help" id={`${id}-scope-count`}>
+              已填写 {boardLines(edit.scope).length} / 40 项，每项最多 2000 字符
+            </span>
           </label>
           <label>
             不做事项（每行一项）
             <textarea
+              aria-describedby={`${id}-non-goals-count`}
+              aria-invalid={invalidField('nonGoals') || undefined}
               value={edit.nonGoals}
               rows={4}
               onChange={(e) => change({ ...edit, nonGoals: e.target.value })}
             />
+            <span className="field-help" id={`${id}-non-goals-count`}>
+              已填写 {boardLines(edit.nonGoals).length} / 40 项，每项最多 2000 字符
+            </span>
           </label>
         </div>
         {edit.items.map((item, index) => (
@@ -227,6 +266,8 @@ export function ProjectBoardEditor({
             <label>
               交付项名称
               <input
+                aria-describedby={`${id}-${item.id}-title-count`}
+                aria-invalid={invalidField('items', index, 'title') || undefined}
                 ref={(node) => {
                   if (node) names.current.set(item.id, node);
                   else names.current.delete(item.id);
@@ -242,10 +283,15 @@ export function ProjectBoardEditor({
                   })
                 }
               />
+              <span className="field-help" id={`${id}-${item.id}-title-count`}>
+                {item.title.length} / 200 字符，必填
+              </span>
             </label>
             <label>
               说明
               <textarea
+                aria-describedby={`${id}-${item.id}-description-count`}
+                aria-invalid={invalidField('items', index, 'description') || undefined}
                 maxLength={4000}
                 value={item.description}
                 onChange={(e) =>
@@ -257,11 +303,16 @@ export function ProjectBoardEditor({
                   })
                 }
               />
+              <span className="field-help" id={`${id}-${item.id}-description-count`}>
+                {item.description.length} / 4000 字符
+              </span>
             </label>
             <div className="project-form-columns">
               <label>
                 交付物（每行一项，最多 20 项）
                 <textarea
+                  aria-describedby={`${id}-${item.id}-deliverables-count`}
+                  aria-invalid={invalidField('items', index, 'deliverables') || undefined}
                   value={item.deliverables}
                   rows={3}
                   onChange={(e) =>
@@ -273,11 +324,15 @@ export function ProjectBoardEditor({
                     })
                   }
                 />
-                <span className="field-help">已填写 {boardLines(item.deliverables).length} / 20 项</span>
+                <span className="field-help" id={`${id}-${item.id}-deliverables-count`}>
+                  已填写 {boardLines(item.deliverables).length} / 20 项，至少 1 项，每项最多 2000 字符
+                </span>
               </label>
               <label>
                 验收标准（每行一项，最多 40 项）
                 <textarea
+                  aria-describedby={`${id}-${item.id}-criteria-count`}
+                  aria-invalid={invalidField('items', index, 'acceptanceCriteria') || undefined}
                   value={item.acceptanceCriteria}
                   rows={3}
                   onChange={(e) =>
@@ -289,8 +344,8 @@ export function ProjectBoardEditor({
                     })
                   }
                 />
-                <span className="field-help">
-                  已填写 {boardLines(item.acceptanceCriteria).length} / 40 项
+                <span className="field-help" id={`${id}-${item.id}-criteria-count`}>
+                  已填写 {boardLines(item.acceptanceCriteria).length} / 40 项，至少 1 项，每项最多 2000 字符
                 </span>
               </label>
             </div>
@@ -339,6 +394,16 @@ export function ProjectBoardEditor({
         </button>
       </fieldset>
       <footer className="plan-editor-footer">
+        {invalidFields.length > 0 && (
+          <details className="plan-editor-validation" open>
+            <summary>有 {invalidFields.length} 个字段需调整</summary>
+            <ul aria-label="计划待调整字段">
+              {invalidFields.map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          </details>
+        )}
         {!valid.success && (
           <p className="field-help">
             每个交付项需名称、至少一项交付物和验收标准；各条最多 2000 字，范围和不做事项各最多 40 条。
