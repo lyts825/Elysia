@@ -91,6 +91,7 @@ export function PreviewDock({
     listedArtifact || historical?.value || (!wantedArtifactId || !checkpointKey ? artifacts[0] : undefined);
   const artifactChoices =
     artifact && !artifacts.some((item) => item.id === artifact.id) ? [artifact, ...artifacts] : artifacts;
+  const artifactIndex = artifact ? artifacts.findIndex((item) => item.id === artifact.id) : -1;
   useEffect(() => {
     if (!checkpointKey || view !== 'artifacts' || !wantedArtifactId || listedArtifact || historical) return;
     const controller = new AbortController();
@@ -358,11 +359,17 @@ export function PreviewDock({
                     >
                       {artifactChoices.map((item) => (
                         <option key={item.id} value={item.id}>
+                          {!artifacts.some((listed) => listed.id === item.id) && '历史产物 · '}
                           {item.name} · v{item.version}
                         </option>
                       ))}
                     </select>
                   </div>
+                  <p className="preview-dock-selection-scope" role="status">
+                    {artifactIndex >= 0
+                      ? `当前列表第 ${artifactIndex + 1} / ${artifacts.length} 项`
+                      : `当前任务的历史产物 · 不在当前 ${artifacts.length} 项列表中`}
+                  </p>
                   <details className="preview-dock-identity">
                     <summary>所选产物完整信息</summary>
                     <dl
@@ -427,6 +434,11 @@ export function PreviewDock({
                         : '正在读取所选产物…'
                       : '产物将在这里交付'}
                   </h3>
+                  {wantedArtifactId && checkpointKey && (
+                    <p className="preview-dock-target" role="region" aria-label="所选产物标识" tabIndex={0}>
+                      所选产物：{wantedArtifactId}
+                    </p>
+                  )}
                   <p
                     className={historical?.error ? 'preview-dock-read-error' : undefined}
                     role={historical?.error ? 'alert' : undefined}
@@ -441,6 +453,7 @@ export function PreviewDock({
                   </p>
                   {historical?.error && (
                     <button
+                      type="button"
                       className="secondary"
                       onClick={() => {
                         setHistoricalArtifact(null);

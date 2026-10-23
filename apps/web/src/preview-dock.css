@@ -168,6 +168,30 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--font-sm);
 }
+.preview-dock .preview-dock-selection-scope {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.preview-dock .preview-empty .preview-dock-target {
+  min-width: 0;
+  max-height: min(8rem, 25dvh);
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-gutter: stable;
+  text-align: left;
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.preview-dock-target:focus-visible {
+  outline-offset: -2px;
+}
 .preview-dock-identity summary {
   cursor: pointer;
   color: var(--secondary);
