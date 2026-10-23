@@ -641,6 +641,7 @@ export function PreviewPanel({
     .filter((o) => o.taskId === taskId)
     .slice(-30)
     .reverse();
+  const agentArtifacts = artifacts.filter((artifact) => artifact.taskId === taskId);
   const taskError =
     task?.status === 'FAILED' && task.result && typeof task.result === 'object' && 'error' in task.result
       ? typeof task.result.error === 'string'
@@ -847,7 +848,12 @@ export function PreviewPanel({
             </article>
           )}
           <h4>
-            会话记录 <span>{liveMessages.length}</span>
+            会话记录{' '}
+            <span>
+              {liveMessages.length > 12
+                ? `最近 12 / 已读 ${liveMessages.length} 条`
+                : `${liveMessages.length} 条已读记录`}
+            </span>
           </h4>
           {liveMessages
             .slice(-12)
@@ -862,7 +868,7 @@ export function PreviewPanel({
             ))}
           {!liveMessages.length && <p className="preview-muted">此代理还没有会话记录。</p>}
           <h4>
-            工具操作 <span>{agentOperations.length}</span>
+            工具操作 <span>最近 {agentOperations.length} 条 · 最多 30 条</span>
           </h4>
           {agentOperations.map((o) => (
             <details key={o.id}>
@@ -870,22 +876,26 @@ export function PreviewPanel({
                 <code>{o.name}</code>
                 <span className={'op-status ' + o.status.toLowerCase()}>{o.status}</span>
               </summary>
-              <pre>{JSON.stringify({ arguments: o.args, result: o.result, error: o.error }, null, 2)}</pre>
+              <pre role="region" aria-label={`${o.name} 操作完整输入与结果`}>
+                {JSON.stringify({ arguments: o.args, result: o.result, error: o.error }, null, 2)}
+              </pre>
             </details>
           ))}
-          <h4>产物</h4>
-          {artifacts
-            .filter((a) => a.taskId === taskId)
-            .map((a) => (
-              <div className="preview-artifact" key={a.id}>
-                <span>
-                  <Icon name="file" size={15} /> {a.name}
-                </span>
-                <small>
-                  v{a.version} · {a.verified ? '已核验' : '待核验'}
-                </small>
-              </div>
-            ))}
+          {!agentOperations.length && <p className="preview-muted">当前代理尚无已读工具操作。</p>}
+          <h4>
+            产物 <span>当前代理 {agentArtifacts.length} 项</span>
+          </h4>
+          {agentArtifacts.map((a) => (
+            <div className="preview-artifact" key={a.id}>
+              <span>
+                <Icon name="file" size={15} /> {a.name}
+              </span>
+              <small>
+                v{a.version} · {a.verified ? '已核验' : '待核验'}
+              </small>
+            </div>
+          ))}
+          {!agentArtifacts.length && <p className="preview-muted">当前代理尚无已读产物。</p>}
         </MotionContent>
       ) : (
         <>
