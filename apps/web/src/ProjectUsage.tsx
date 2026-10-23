@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectUsageSummary, ProjectUsageTotals } from '../../../packages/contracts/src/project-usage';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-usage.css';
+import './project-usage-details.css';
 
 function Costs({ value }: { value: ProjectUsageTotals }) {
   return (
@@ -61,6 +62,7 @@ function Totals({ value }: { value: ProjectUsageTotals }) {
 }
 export function ProjectUsage({ projectId, openRun }: { projectId: string; openRun: (id: string) => void }) {
   const { api } = useSurfaceClient();
+  const identity = useId();
   type Position = { before: string; version: string; trail: string[] };
   const firstPage = (): Position => ({ before: '', version: '', trail: [] });
   const [display, setDisplay] = useState<{ value: ProjectUsageSummary; position: Position }>();
@@ -153,7 +155,12 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
         </p>
       )}
       {error && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error project-usage-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="项目用量读取失败全文"
+        >
           {error}
         </p>
       )}
@@ -173,10 +180,40 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
               下方为上次读取结果，仍显示第 {position.trail.length + 1} 页；当前统计尚未重新确认。
             </p>
           )}
-          <p className="field-help">
-            {value.runCount} 个任务/对话 · 第 {position.trail.length + 1} 页 · 更新于{' '}
-            {new Date(value.generatedAt).toLocaleString()}
-          </p>
+          <dl className="project-usage-meta" aria-label="已读项目用量范围">
+            <div>
+              <dt>项目任务/对话</dt>
+              <dd>{value.runCount}</dd>
+            </div>
+            <div>
+              <dt>已读任务明细</dt>
+              <dd>
+                第 {position.trail.length + 1} 页 · 本页 {value.runs.length} 条
+              </dd>
+            </div>
+            <div>
+              <dt>统计生成时间</dt>
+              <dd>{new Date(value.generatedAt).toLocaleString()}</dd>
+            </div>
+          </dl>
+          <details className="project-usage-version">
+            <summary>统计版本与项目标识</summary>
+            <dl
+              className="project-usage-identity project-usage-reading"
+              tabIndex={0}
+              role="region"
+              aria-label="项目用量完整统计版本与标识"
+            >
+              <div>
+                <dt>项目标识</dt>
+                <dd>{value.projectId}</dd>
+              </div>
+              <div>
+                <dt>统计版本</dt>
+                <dd>{value.version}</dd>
+              </div>
+            </dl>
+          </details>
           {!value.readCoverage.complete && (
             <p className="field-error">部分记录或项目归属无法读取，汇总不完整。可读部分仍单独保留。</p>
           )}
@@ -186,36 +223,73 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
             </p>
           )}
           <Totals value={value.totals} />
-          <h3>请求当时的连接与模型</h3>
+          <h3>请求当时的连接与模型 · {value.connections.length} 项</h3>
           {!value.connections.length && <p>此项目尚无请求记录。</p>}
           <div className="project-usage-connections">
             {value.connections.map((connection, i) => (
               <article key={i}>
-                <strong>
-                  {connection.label} · {connection.model || '模型未知'}
-                </strong>
-                <p>
-                  {connection.source === 'subscription'
-                    ? '订阅连接'
-                    : connection.source === 'api'
-                      ? 'API 连接'
-                      : '连接类型未知'}
-                  {connection.account && ` · ${connection.account}`}
-                </p>
-                <Totals value={connection} />
+                <div className="project-usage-connection-heading">
+                  <h4>连接 {i + 1}</h4>
+                  <span>
+                    {connection.source === 'subscription'
+                      ? '订阅连接'
+                      : connection.source === 'api'
+                        ? 'API 连接'
+                        : '连接类型未知'}
+                  </span>
+                </div>
+                <dl
+                  className="project-usage-identity project-usage-reading"
+                  tabIndex={0}
+                  role="region"
+                  aria-label={`第 ${i + 1} 项连接完整名称与模型`}
+                >
+                  <div>
+                    <dt>连接名称</dt>
+                    <dd>{connection.label}</dd>
+                  </div>
+                  <div>
+                    <dt>模型</dt>
+                    <dd>{connection.model || '模型未知'}</dd>
+                  </div>
+                  <div>
+                    <dt>连接标识</dt>
+                    <dd>{connection.providerId}</dd>
+                  </div>
+                  {connection.account && (
+                    <div>
+                      <dt>账号</dt>
+                      <dd>{connection.account}</dd>
+                    </div>
+                  )}
+                </dl>
+                <details className="project-usage-connection-totals">
+                  <summary>{connection.requestCount} 次请求 · 查看 Token 与费用明细</summary>
+                  <Totals value={connection} />
+                </details>
               </article>
             ))}
           </div>
-          <h3>任务明细</h3>
+          <h3>任务明细 · 本页 {value.runs.length} 条</h3>
           {!value.runs.length && <p>尚无项目任务。</p>}
-          {value.runs.map((run) => (
+          {value.runs.map((run, i) => (
             <article className="project-usage-run" key={run.runId}>
               <div className="project-section-heading">
-                <strong>
+                <h4
+                  id={`${identity}-run-${i}`}
+                  className="project-usage-reading"
+                  tabIndex={0}
+                  aria-label={`本页第 ${i + 1} 条任务完整名称`}
+                >
                   {run.title}
-                  {run.archived && '（已归档）'}
-                </strong>
-                <button type="button" className="secondary" onClick={() => openRun(run.runId)}>
+                </h4>
+                {run.archived && <span className="project-usage-archived">已归档</span>}
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-describedby={`${identity}-run-${i}`}
+                  onClick={() => openRun(run.runId)}
+                >
                   查看任务
                 </button>
               </div>
@@ -232,6 +306,10 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
             </article>
           ))}
           <div className="project-actions">
+            <p className="field-help">
+              第 {position.trail.length + 1} 页 · 本页 {value.runs.length} 条
+              {value.page.hasMore ? ' · 还有更多任务' : ' · 已到最后一页'}
+            </p>
             <button
               type="button"
               className="secondary"
