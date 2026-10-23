@@ -55,7 +55,3 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
-.review-record-origin {
-  font-size: var(--font-sm);
-  color: var(--muted);
-}
