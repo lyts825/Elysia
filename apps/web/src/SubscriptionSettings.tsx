@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { manageUsage } from './desktop';
 import { catalogIssue, initialTextModel, supportsText, type CatalogModel } from './ModelCatalog';
+import './subscription-settings.css';
 
 type Account = {
   id: string;
@@ -29,6 +30,8 @@ export function SubscriptionSettings({
   ready?: (valid: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const accountHelpId = useId(),
+    modelHelpId = useId();
   const [status, setStatus] = useState<State>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
@@ -149,15 +152,25 @@ export function SubscriptionSettings({
     });
   const waiting = ['pending', 'exchanging'].includes(status?.attempt?.status || '');
   return (
-    <section className="subscription-card">
-      <strong>使用 ChatGPT 订阅</strong>
+    <section className="subscription-card subscription-settings" aria-label="ChatGPT 订阅配置">
+      <header className="subscription-heading">
+        <h3>使用 ChatGPT 订阅</h3>
+        <span className="subscription-readiness" data-ready={valid} role="status">
+          {valid ? '模型可用' : busy ? '正在处理' : loading ? '正在读取模型' : '尚未就绪'}
+        </span>
+      </header>
       <p className="field-help">通过 OpenAI 官方授权使用账号可用的模型和额度。登录时会打开系统浏览器。</p>
-      {!status?.available && <p className="inline-warning">{status?.message || '正在读取系统加密凭据…'}</p>}
+      {!status?.available && (
+        <p className="inline-warning subscription-reading" tabIndex={0} aria-label="订阅可用性说明">
+          {status?.message || '正在读取系统加密凭据…'}
+        </p>
+      )}
       {!!status?.accounts.length && (
-        <label>
+        <label className="subscription-field">
           订阅账号
           <select
             value={accountId || ''}
+            aria-describedby={selected ? accountHelpId : undefined}
             onChange={(e) => change({ subscriptionAccountId: e.target.value, model: '' })}
           >
             <option value="">选择账号或添加账号</option>
@@ -169,6 +182,42 @@ export function SubscriptionSettings({
             ))}
           </select>
         </label>
+      )}
+      {selected && (
+        <section className="subscription-selected" aria-label="当前订阅账号">
+          <h4>当前账号</h4>
+          <dl
+            className="subscription-reading subscription-identity"
+            id={accountHelpId}
+            tabIndex={0}
+            aria-label="当前订阅账号完整名称与标识"
+          >
+            <div>
+              <dt>名称</dt>
+              <dd>{selected.label}</dd>
+            </div>
+            <div>
+              <dt>账号标识</dt>
+              <dd>
+                <code>{selected.id}</code>
+              </dd>
+            </div>
+          </dl>
+          <dl className="subscription-account-state">
+            <div>
+              <dt>连接</dt>
+              <dd>{selected.connected ? '已登录' : '已退出'}</dd>
+            </div>
+            <div>
+              <dt>订阅授权</dt>
+              <dd>{selected.planEnabled ? '已授权' : '未授权'}</dd>
+            </div>
+            <div>
+              <dt>额度</dt>
+              <dd>{selected.usageBlocked ? '受限，已暂停新请求' : '未标记受限'}</dd>
+            </div>
+          </dl>
+        </section>
       )}
       <div className="subscription-actions">
         <button
@@ -219,10 +268,11 @@ export function SubscriptionSettings({
               </button>
             </div>
           )}
-          <label>
+          <label className="subscription-field">
             账号可用模型
             <select
               value={model}
+              aria-describedby={model ? modelHelpId : undefined}
               disabled={loading || !models.some(supportsText)}
               onChange={(e) => {
                 const next = models.find((item) => item.id === e.target.value);
@@ -243,6 +293,38 @@ export function SubscriptionSettings({
               ))}
             </select>
           </label>
+          {model && (
+            <section className="subscription-selected" aria-label="当前订阅模型">
+              <h4>当前模型</h4>
+              <dl
+                className="subscription-reading subscription-identity"
+                id={modelHelpId}
+                tabIndex={0}
+                aria-label="当前订阅模型完整名称与标识"
+              >
+                {chosenModel?.name && (
+                  <div>
+                    <dt>名称</dt>
+                    <dd>{chosenModel.name}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>型号标识</dt>
+                  <dd>
+                    <code>{model}</code>
+                  </dd>
+                </div>
+              </dl>
+              {chosenModel?.description && (
+                <details>
+                  <summary>模型说明</summary>
+                  <p className="subscription-reading" tabIndex={0} aria-label="当前订阅模型完整说明">
+                    {chosenModel.description}
+                  </p>
+                </details>
+              )}
+            </section>
+          )}
           {!loading && !error && catalogIssue(models, model) && (
             <p className="inline-warning" role="alert">
               {catalogIssue(models, model)}
@@ -298,17 +380,28 @@ export function SubscriptionSettings({
         </button>
       )}
       {notice && (
-        <p className="field-help" role="status">
+        <p className="field-help subscription-reading" role="status" tabIndex={0} aria-label="订阅操作结果">
           {notice}
         </p>
       )}
       {status?.attempt?.status === 'failed' && (
-        <p className="inline-warning" role="alert">
+        <p
+          className="inline-warning subscription-reading"
+          role="alert"
+          tabIndex={0}
+          aria-label="订阅登录失败详情"
+        >
           {status.attempt.message}
         </p>
       )}
       {error && (
-        <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
+        <p
+          className="provider-error subscription-reading"
+          role="alert"
+          aria-label="订阅操作失败详情"
+          ref={errorRef}
+          tabIndex={0}
+        >
           {error}
         </p>
       )}

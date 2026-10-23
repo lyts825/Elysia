@@ -1,0 +1,132 @@
+.subscription-settings {
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.subscription-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.subscription-heading h3,
+.subscription-selected h4 {
+  margin: 0;
+  font-size: var(--font-lg);
+  line-height: var(--leading-heading);
+}
+
+.subscription-readiness {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.subscription-readiness[data-ready='true'] {
+  color: var(--success);
+}
+
+.subscription-settings .subscription-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.subscription-field select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.subscription-selected {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.subscription-selected h4 {
+  font-size: var(--font-md);
+}
+
+.subscription-reading {
+  max-height: min(14rem, 38dvh);
+  min-width: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+  scrollbar-gutter: stable;
+}
+
+.subscription-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.subscription-identity,
+.subscription-account-state {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.subscription-identity > div,
+.subscription-account-state > div {
+  min-width: 0;
+}
+
+.subscription-identity dt,
+.subscription-account-state dt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.subscription-identity dd,
+.subscription-account-state dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.subscription-account-state {
+  gap: var(--space-1);
+}
+
+.subscription-account-state > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.subscription-account-state dd {
+  text-align: end;
+}
+
+.subscription-settings .subscription-actions > button {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.subscription-selected details {
+  min-width: 0;
+}
+
+.subscription-selected summary {
+  color: var(--secondary);
+  cursor: pointer;
+  font-size: var(--font-sm);
+}
+
+.subscription-selected details[open] > p {
+  margin-top: var(--space-2);
+}
