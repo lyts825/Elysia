@@ -116,12 +116,6 @@
   color: var(--secondary);
   font-size: var(--font-sm);
 }
-.context-policy-hint strong {
-  color: var(--text);
-  font-size: var(--font-lg);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 .context-policy-hint .field-help {
   grid-column: 1 / -1;
 }

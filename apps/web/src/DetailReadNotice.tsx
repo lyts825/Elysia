@@ -1,6 +1,7 @@
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 import { useState } from 'react';
 import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
+import './detail-read-notice.css';
 
 export function DetailReadNotice({
   detail,
@@ -28,10 +29,10 @@ export function DetailReadNotice({
   const executionNotice = !!reason || detail.localExecutionStopped;
   if (!executionNotice && preview?.complete !== false) return null;
   return (
-    <>
+    <div className="detail-read-stack" role="region" aria-label="执行读取与调度提示" tabIndex={0}>
       {preview?.complete === false && (
         <section className="detail-read-notice" role="status" aria-label="近期进度读取不完整">
-          <strong>部分近期进度未能完整读取</strong>
+          <h3>部分近期进度未能完整读取</h3>
           <p>
             {preview.limited
               ? `${preview.unavailable} 条进度内容超出本次读取范围，其余记录仍可查看。`
@@ -49,21 +50,21 @@ export function DetailReadNotice({
       )}
       {executionNotice && (
         <section className="detail-read-notice" role="status" aria-label="详情读取不完整">
-          <strong>
+          <h3>
             {reason
               ? '部分执行记录无法读取'
               : detail.executionHold?.reason === 'recovery_unreadable'
                 ? '异常恢复已停止自动执行'
                 : '本机调度已停止'}
-          </strong>
-          <p>
+          </h3>
+          <p className="detail-read-prose">
             {reason ||
               (finished
                 ? '任务已结束，仍保留停止标记。核验后可明确解除标记；不会重新执行，也不会改变已完成或已取消状态。'
                 : '记录已可读取，但此次本机调度仍已停止。请核验待处理事项，再明确恢复执行。')}
           </p>
           {detail.executionHold && (
-            <p className="field-help">
+            <p className="field-help detail-read-prose">
               {finished
                 ? detail.executionHold.reason === 'recovery_unreadable'
                   ? '先前因记录无法核验而保存了停止调度标记。'
@@ -76,21 +77,27 @@ export function DetailReadNotice({
             <details>
               <summary>查看分区读取情况</summary>
               <p>已读消息和记录可继续查看，输入草稿仍保留；运行状态未更改。</p>
-              <ul>
+              <dl className="detail-read-coverage">
                 {(['tasks', 'requests', 'operations'] as const).map((key) => {
                   const coverage = detail.detailCoverage?.[key];
                   if (!coverage) return null;
                   return (
-                    <li key={key}>
-                      {{ tasks: '任务', requests: '请求', operations: '操作' }[key]}：
-                      {coverage.complete
-                        ? '已检查记录可读'
-                        : `${coverage.unavailable} 条暂不可读，完整情况未知`}
-                      {coverage.scope === 'selected' ? '（仅检查已加载记录）' : `（共 ${coverage.total} 条）`}
-                    </li>
+                    <div key={key}>
+                      <dt>{{ tasks: '任务', requests: '请求', operations: '操作' }[key]}</dt>
+                      <dd>
+                        <span>
+                          {coverage.complete
+                            ? '已检查记录可读'
+                            : `${coverage.unavailable} 条暂不可读，完整情况未知`}
+                        </span>
+                        <small>
+                          {coverage.scope === 'selected' ? '仅检查已加载记录' : `共 ${coverage.total} 条记录`}
+                        </small>
+                      </dd>
+                    </div>
                   );
                 })}
-              </ul>
+              </dl>
             </details>
           )}
           {reason && (
@@ -161,7 +168,12 @@ export function DetailReadNotice({
             </p>
           )}
           {stopped && (
-            <p className={stopped.interrupted ? 'field-help' : 'field-error'} role="status">
+            <p
+              className={'detail-read-result ' + (stopped.interrupted ? 'field-help' : 'field-error')}
+              role="status"
+              aria-label="停止请求完整结果"
+              tabIndex={0}
+            >
               {stopped.replayed
                 ? '这是先前停止请求的结果，本次未再次停止执行。'
                 : stopped.interrupted
@@ -172,12 +184,12 @@ export function DetailReadNotice({
             </p>
           )}
           {error && (
-            <p className="field-error" role="alert">
+            <p className="detail-read-error" role="alert" aria-label="读取或调度操作失败全文" tabIndex={0}>
               {error}
             </p>
           )}
         </section>
       )}
-    </>
+    </div>
   );
 }

@@ -2358,24 +2358,3 @@ a {
   color: var(--muted);
   font-size: var(--font-sm);
 }
-.detail-read-notice {
-  flex-shrink: 0;
-  margin: var(--space-3) var(--space-5);
-  padding: 14px var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--surface-soft);
-  overflow-wrap: anywhere;
-  max-height: 34vh;
-  overflow: auto;
-}
-.detail-read-notice p {
-  margin: 6px 0;
-}
-.detail-read-notice ul {
-  padding-left: var(--space-5);
-  margin: var(--space-2) 0 var(--space-3);
-}
-.detail-read-notice > button {
-  margin-top: var(--space-2);
-}

@@ -1,0 +1,90 @@
+.detail-read-stack {
+  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  max-height: clamp(8rem, 34dvh, 24rem);
+  overflow: auto;
+  margin: var(--space-3) var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: var(--space-2);
+}
+.detail-read-stack:focus-visible,
+.detail-read-result:focus-visible,
+.detail-read-error:focus-visible {
+  outline-offset: -2px;
+}
+.detail-read-notice {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.detail-read-notice h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.detail-read-notice p {
+  margin: var(--space-2) 0;
+}
+.detail-read-prose,
+.detail-read-result,
+.detail-read-error {
+  white-space: pre-wrap;
+}
+.detail-read-notice > button {
+  margin-top: var(--space-2);
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.detail-read-notice summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.detail-read-coverage {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.detail-read-coverage > div {
+  display: grid;
+  grid-template-columns: minmax(3rem, 0.25fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+.detail-read-coverage dt {
+  color: var(--secondary);
+  font-weight: 600;
+}
+.detail-read-coverage dd {
+  margin: 0;
+  min-width: 0;
+}
+.detail-read-coverage small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.detail-read-notice .detail-read-result,
+.detail-read-notice .detail-read-error {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+}
+.detail-read-result {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.detail-read-error {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
