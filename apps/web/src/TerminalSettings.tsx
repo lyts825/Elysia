@@ -62,6 +62,16 @@ export function TerminalSettings({
   const selectedConnection = selected?.connectionId
     ? connectionOptions?.[selected.agent]?.find((connection) => connection.id === selected.connectionId)
     : undefined;
+  const connectionSource =
+    selected?.connectionId === undefined
+      ? '跟随项目与应用默认'
+      : selected.connectionId === null
+        ? '只使用模板环境变量'
+        : selectedConnection
+          ? '模板指定连接'
+          : connectionOptions
+            ? '指定连接已失效或不兼容，请重选'
+            : '模板指定连接（当前未提供连接目录）';
   function revealEditor() {
     editorTitle.current?.scrollIntoView({ block: 'start' });
     editorTitle.current?.focus({ preventScroll: true });
@@ -179,6 +189,12 @@ export function TerminalSettings({
           <div>
             <dt>当前草稿</dt>
             <dd>{changed ? '有未保存修改' : '与已读版本一致'}</dd>
+          </div>
+          <div>
+            <dt>保存条件</dt>
+            <dd role="status">
+              {busy ? '正在保存' : !valid ? '请修正配置输入' : !changed ? '没有待保存修改' : '可提交保存'}
+            </dd>
           </div>
         </dl>
         {pendingFocus && (
@@ -299,7 +315,7 @@ export function TerminalSettings({
                 {selected.label || '未命名模板'}
               </h3>
               <details className="terminal-profile-identity">
-                <summary>模板标识与连接选择</summary>
+                <summary>模板标识与连接版本</summary>
                 <dl
                   className="terminal-template-reading"
                   tabIndex={0}
@@ -314,20 +330,6 @@ export function TerminalSettings({
                     <dt>Agent</dt>
                     <dd>{selected.agent}</dd>
                   </div>
-                  <div>
-                    <dt>连接来源</dt>
-                    <dd>
-                      {selected.connectionId === undefined
-                        ? '跟随项目与应用默认'
-                        : selected.connectionId === null
-                          ? '只使用模板环境变量'
-                          : selectedConnection
-                            ? '模板指定连接'
-                            : connectionOptions
-                              ? '指定连接已失效或不兼容，请重选'
-                              : '模板指定连接（当前未提供连接目录）'}
-                    </dd>
-                  </div>
                   {selected.connectionId && (
                     <div>
                       <dt>连接标识</dt>
@@ -336,14 +338,6 @@ export function TerminalSettings({
                   )}
                   {selectedConnection && (
                     <>
-                      <div>
-                        <dt>完整连接名称</dt>
-                        <dd>{selectedConnection.name}</dd>
-                      </div>
-                      <div>
-                        <dt>模型</dt>
-                        <dd>{selectedConnection.model}</dd>
-                      </div>
                       <div>
                         <dt>连接版本</dt>
                         <dd>{selectedConnection.revision}</dd>
@@ -426,6 +420,28 @@ export function TerminalSettings({
                   </select>
                   <small className="field-help">模板指定优先于项目和应用默认；保存仅用于新任务。</small>
                 </label>
+              )}
+              {(!connectionOptions || selected.connectionId) && (
+                <section className="terminal-template-connection-state" aria-label="当前模板连接选择">
+                  <p>{connectionSource}</p>
+                  {selectedConnection && (
+                    <dl
+                      className="terminal-template-connection-reading"
+                      role="region"
+                      aria-label="当前模板连接完整名称与型号"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>连接</dt>
+                        <dd>{selectedConnection.name}</dd>
+                      </div>
+                      <div>
+                        <dt>型号</dt>
+                        <dd>{selectedConnection.model}</dd>
+                      </div>
+                    </dl>
+                  )}
+                </section>
               )}
               <TerminalSetup
                 key={`${selected.id}:${baseline.revision}`}
