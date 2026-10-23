@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.11 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.12 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -62,6 +62,7 @@ v1.19.11 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 - 项目交付物与验收标准显示数量，正文使用独立键盘阅读区；候选确认与阅读内容分开。关联执行显示本页数量和页码，空搜索可清除并返回输入框。
 - 产物变化以前后版本卡片对照，名称、格式、核验状态与完整标识分区。变更明细使用中性底色，避免继承外层通过状态；长错误与重试操作分开，关闭当前预览返回原入口。
 - 历史复核标明当前已读记录；列表、完整备注、原标准和版本来源分别阅读。用户可主动定位已读详情，异步完成保留当前焦点；读取历史不改变当前交付结论。
+- 执行拓扑以阶段列表组织任务卡片，状态同时显示颜色和文字。任务全名及依赖清单可独立阅读，恢复入口关联对应任务；记录不完整时仅标明已读任务，不推断完整进度。
 
 ## 页面覆盖
 
@@ -70,7 +71,7 @@ v1.19.11 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 | 基础、主页、入口与启动 | style、motion、home、surface、Startup |
 | 预览与文档 | preview、preview-dock、markdown、file-content、file-page |
 | 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning |
-| 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
+| 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、task-graph、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-files、project-usage、project-intelligence、project-schedules、project-schedule-history |
 | 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、run-setup、artifact-changes、review-history、readiness、task-center、delivery-read-progress、workbench-persistence |
 

@@ -1,6 +1,8 @@
+import { useId } from 'react';
 import type { Run, Task } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
 import type { DetailReadState } from './DetailReadState';
+import './task-graph.css';
 
 const statusLabels: Record<Task['status'], string> = {
   DRAFT: '待开始',
@@ -43,6 +45,7 @@ export function TaskGraph({
   archived?: boolean;
   selectTask?: (id: string) => void;
 }) {
+  const id = useId();
   const tasks = detail.tasks.filter((task) => task.parentTaskId);
   const root = detail.tasks.find((task) => !task.parentTaskId);
   const incomplete = detail.detailCoverage?.tasks.complete === false;
@@ -85,12 +88,18 @@ export function TaskGraph({
           ? '总代理 · 执行与验收'
           : '总代理 · 集成与验收';
   return (
-    <div className="task-graph">
+    <section className="task-graph" aria-label="任务依赖与执行状态">
       <div className="graph-root" title={root ? `${rootLabel} · ${taskStatus(root)}` : rootLabel}>
-        <Icon name="spark" size={15} />
-        {rootLabel}
-        {root && <span>· {taskStatus(root)}</span>}
-        {!root && incomplete && <span>· 记录暂不可读</span>}
+        <span className="graph-root-label">
+          <Icon name="spark" size={15} />
+          {rootLabel}
+        </span>
+        {root && (
+          <span className="graph-status" data-status={root.status.toLowerCase()}>
+            {taskStatus(root)}
+          </span>
+        )}
+        {!root && incomplete && <span className="graph-status">记录暂不可读</span>}
       </div>
       {incomplete && (
         <p className="field-help">任务记录不完整，仅展示已读任务；完整依赖关系与完成数量仍未知。</p>
@@ -128,30 +137,69 @@ export function TaskGraph({
         : [...new Set(tasks.map((task) => ranks.get(task.id) || 0))]
             .sort((a, b) => a - b)
             .map((rank) => (
-              <div className="graph-level" key={rank}>
-                <span className="graph-rank">{incomplete ? '已读任务' : `阶段 ${rank + 1}`}</span>
-                {tasks
-                  .filter((task) => ranks.get(task.id) === rank)
-                  .map((task) => {
-                    const names = dependencies(task.id).map((dependency) => dependency.spec.title);
-                    const status = taskStatus(task);
-                    return (
-                      <div className="graph-node" key={task.id} title={`${task.spec.title} · ${status}`}>
-                        <span className={'status-dot ' + task.status.toLowerCase()} aria-hidden="true" />
-                        <span>{task.spec.title}</span>
-                        <span>{status}</span>
-                        {names.length > 0 && <small>依赖：{names.join('、')}</small>}
-                        {(selectTask && ['FAILED', 'CANCELLED'].includes(task.status)) ||
-                        (selectTask &&
-                          ['dependency_failed', 'no_progress'].includes(task.waitReason || '')) ? (
-                          <button className="text-button" onClick={() => selectTask?.(task.id)}>
-                            查看原因与恢复
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-              </div>
+              <section
+                className="graph-level"
+                key={rank}
+                aria-label={incomplete ? `已读任务分组 ${rank + 1}` : `阶段 ${rank + 1}`}
+              >
+                <h4 className="graph-rank">{incomplete ? '已读任务' : `阶段 ${rank + 1}`}</h4>
+                <ul className="graph-tasks">
+                  {tasks
+                    .filter((task) => ranks.get(task.id) === rank)
+                    .map((task) => {
+                      const names = dependencies(task.id).map((dependency) => dependency.spec.title);
+                      const status = taskStatus(task);
+                      return (
+                        <li className="graph-node" key={task.id}>
+                          <span className="graph-status" data-status={task.status.toLowerCase()}>
+                            <span className={'status-dot ' + task.status.toLowerCase()} aria-hidden="true" />
+                            {status}
+                          </span>
+                          <p
+                            className="graph-task-title"
+                            id={`${id}-${task.id}`}
+                            role="region"
+                            aria-label="任务完整名称"
+                            tabIndex={0}
+                          >
+                            {task.spec.title}
+                          </p>
+                          {names.length > 0 && (
+                            <details className="graph-dependencies">
+                              <summary>
+                                {incomplete ? '已读依赖' : '依赖'} {names.length} 项
+                              </summary>
+                              <div
+                                className="graph-dependency-reading"
+                                role="region"
+                                aria-label="依赖任务完整名称"
+                                tabIndex={0}
+                              >
+                                <ul>
+                                  {names.map((name, index) => (
+                                    <li key={index}>{name}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </details>
+                          )}
+                          {(selectTask && ['FAILED', 'CANCELLED'].includes(task.status)) ||
+                          (selectTask &&
+                            ['dependency_failed', 'no_progress'].includes(task.waitReason || '')) ? (
+                            <button
+                              type="button"
+                              className="text-button"
+                              aria-describedby={`${id}-${task.id}`}
+                              onClick={() => selectTask?.(task.id)}
+                            >
+                              查看原因与恢复
+                            </button>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                </ul>
+              </section>
             ))}
       <small className="graph-caption">
         {incomplete
@@ -164,6 +212,6 @@ export function TaskGraph({
                 ? '已保存任务依赖与状态记录'
                 : '任务按依赖顺序推进'}
       </small>
-    </div>
+    </section>
   );
 }
