@@ -3,6 +3,7 @@ import type { Contract } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
 import { ReviewModelPolicy } from './ReviewModelPolicy';
 import './execution-config.css';
+import './contract-modal.css';
 export function ContractModal({
   contract,
   planMode,
@@ -22,6 +23,8 @@ export function ContractModal({
   const [value, setValue] = useState(contract);
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [sameModelReviewConfirmed, setSameModelReviewConfirmed] = useState(false);
+  const edited = JSON.stringify(value) !== JSON.stringify(contract);
+  const versionChanged = value.version !== contract.version;
   const groups = [
     { title: '范围与资料', fields: { scope: '范围', nonGoals: '不包含', inputs: '输入资料' } },
     { title: '交付与验收', fields: { deliverables: '交付物', acceptanceCriteria: '验收项' } },
@@ -39,7 +42,7 @@ export function ContractModal({
       }
       busy={busy}
       close={close}
-      className="execution-config-modal"
+      className="execution-config-modal contract-editor-modal"
     >
       <form
         onSubmit={(e) => {
@@ -49,6 +52,21 @@ export function ContractModal({
         }}
       >
         <div className="form-body">
+          <p className="contract-editor-state" role="status">
+            <strong>
+              {busy
+                ? '正在保存约定'
+                : disabled
+                  ? '只读约定'
+                  : versionChanged
+                    ? '本机编辑保留'
+                    : edited
+                      ? '有未保存修改'
+                      : '当前已读约定'}
+            </strong>
+            <span>依据版本 v{value.version}</span>
+            {versionChanged && <span>当前已读约定 v{contract.version}，本机内容未被替换。</span>}
+          </p>
           <section className="execution-config-section" aria-labelledby={id + '-objective'}>
             <h3 id={id + '-objective'}>任务目标</h3>
             {disabled && (
@@ -109,6 +127,7 @@ export function ContractModal({
               }}
               pendingChanged={setReviewConfirmationPending}
             />
+            <p className="contract-editor-budget-note">当前已读预算，仅供查看 · v{contract.version}</p>
             <dl className="execution-config-budget">
               <div>
                 <dt>请求上限</dt>
@@ -117,6 +136,10 @@ export function ContractModal({
               <div>
                 <dt>Token 上限</dt>
                 <dd>{contract.budget.maxTokens}</dd>
+              </div>
+              <div>
+                <dt>金额上限</dt>
+                <dd>{contract.budget.maxCost == null ? '未设置' : contract.budget.maxCost}</dd>
               </div>
             </dl>
           </section>
