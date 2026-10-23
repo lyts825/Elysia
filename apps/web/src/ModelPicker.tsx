@@ -11,6 +11,7 @@ import {
   supportsText,
   type CatalogModel,
 } from './ModelCatalog';
+import './model-picker.css';
 
 export type ModelChoice = {
   providerId: string;
@@ -183,7 +184,7 @@ export function ModelPicker({
     preserveInvalid,
   ]);
   return (
-    <div className="model-picker">
+    <div className="model-picker model-selection-editor">
       <label htmlFor={id + '-provider'}>{label}</label>
       <select
         id={id + '-provider'}
@@ -201,9 +202,57 @@ export function ModelPicker({
           </option>
         ))}
       </select>
+      <p className="model-selection-state" data-ready={valid} role="status">
+        {valid
+          ? '当前选择可用'
+          : !selected
+            ? '尚未选择可用连接'
+            : !verified
+              ? '当前连接待验证'
+              : loading
+                ? '正在核对模型目录'
+                : '当前选择尚未就绪'}
+      </p>
+      {(selected || value.providerId) && (
+        <div
+          className="model-selection-identity model-selection-reading"
+          role="region"
+          aria-label="当前连接与型号完整名称"
+          tabIndex={0}
+        >
+          <strong>{selected?.label || '原连接不可用'}</strong>
+          {model?.name && model.name !== value.model && <span>{model.name}</span>}
+          <span>{value.model || '尚未选择型号'}</span>
+          {value.reasoningEffort && <small>推理强度 · {value.reasoningEffort}</small>}
+        </div>
+      )}
+      {selected && (
+        <details className="model-selection-source">
+          <summary>连接标识与版本</summary>
+          <dl
+            className="model-selection-reading"
+            role="region"
+            tabIndex={0}
+            aria-label="当前模型连接完整标识与版本"
+          >
+            <div>
+              <dt>连接标识</dt>
+              <dd>{selected.id}</dd>
+            </div>
+            <div>
+              <dt>配置版本</dt>
+              <dd>{selected.revision}</dd>
+            </div>
+            <div>
+              <dt>验证版本</dt>
+              <dd>{selected.checkedRevision ?? '尚未验证'}</dd>
+            </div>
+          </dl>
+        </details>
+      )}
       {preserveInvalid && selected && !usesCatalog && !apiBindingMatches && (
-        <p className="field-error" role="status">
-          保存的型号或思考强度已与当前连接不同，请确认后采用当前配置。
+        <div className="field-error model-selection-mismatch" role="status">
+          <p>保存的型号或思考强度已与当前连接不同，请确认后采用当前配置。</p>
           <button
             type="button"
             className="text-button"
@@ -212,7 +261,7 @@ export function ModelPicker({
           >
             采用当前连接配置
           </button>
-        </p>
+        </div>
       )}
       {retiredModelIssue && (
         <p className="inline-warning" role="alert">
@@ -225,7 +274,11 @@ export function ModelPicker({
             <span>
               {loading
                 ? '正在读取当前账号模型目录…'
-                : `当前账号模型目录 · ${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`}
+                : error
+                  ? '模型目录暂不可读'
+                  : !catalogReady
+                    ? '模型目录待读取'
+                    : `当前账号模型目录 · ${models.filter(supportsText).length} 个文字型号 / ${models.length} 个型号`}
             </span>
             <button
               type="button"
@@ -317,7 +370,12 @@ export function ModelPicker({
           </p>
         )}
       {error && (
-        <p className="inline-warning" role="alert">
+        <p
+          className="inline-warning model-selection-reading"
+          role="alert"
+          aria-label="模型目录读取失败全文"
+          tabIndex={0}
+        >
           {error}
         </p>
       )}

@@ -1,0 +1,99 @@
+.model-selection-editor {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-selection-editor > label {
+  display: block;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.model-selection-editor select {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 0;
+}
+.model-selection-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.model-selection-state[data-ready='true'] {
+  color: var(--success);
+}
+.model-selection-identity {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.model-selection-identity small {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.model-selection-reading {
+  min-width: 0;
+  max-height: clamp(7rem, 30dvh, 16rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.model-selection-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.model-selection-source {
+  min-width: 0;
+  font-size: var(--font-xs);
+}
+.model-selection-source summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.model-selection-source dl {
+  margin: var(--space-2) 0 0;
+}
+.model-selection-source dl > div + div {
+  margin-top: var(--space-2);
+}
+.model-selection-source dt {
+  color: var(--muted);
+}
+.model-selection-source dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+}
+.model-selection-mismatch {
+  display: grid;
+  gap: var(--space-2);
+}
+.model-selection-mismatch p {
+  margin: 0;
+}
+.model-selection-mismatch button {
+  justify-self: start;
+}
+.model-selection-editor .model-catalog-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.model-selection-editor button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

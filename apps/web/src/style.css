@@ -771,23 +771,6 @@ a {
 .archive-note {
   flex-wrap: wrap;
 }
-.model-picker {
-  display: grid;
-  gap: 7px;
-}
-.model-picker > label {
-  display: block;
-  font-weight: 600;
-  font-size: var(--font-sm);
-}
-.model-catalog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  font-size: var(--font-xs);
-  color: var(--muted);
-}
 .plan-row .model-picker {
   margin-top: 13px;
   padding: var(--space-3);
