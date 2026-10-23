@@ -1,0 +1,143 @@
+.project-manifests,
+.project-manifests :is(section, article, fieldset, .project-section-heading > div) {
+  min-width: 0;
+}
+.project-manifests :is(h3, h4, p, strong, legend) {
+  overflow-wrap: anywhere;
+}
+.project-manifests .manifest-reading {
+  max-height: min(12rem, 40dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.project-manifests .manifest-reading:focus-visible,
+.project-manifests .manifest-history-list:focus-visible,
+.project-manifests .manifest-artifact-options:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+.project-manifests .project-freeze-readiness {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-manifests .project-freeze-readiness h3 {
+  margin-top: 0;
+}
+.project-manifests .project-freeze-blockers {
+  max-height: min(28rem, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.project-manifests .project-freeze-blockers .project-todo-row {
+  gap: var(--space-3);
+}
+.project-manifests .project-freeze-blockers p {
+  flex: 1;
+}
+.project-manifests .project-freeze-blockers button {
+  flex-shrink: 0;
+}
+.project-manifests legend {
+  color: var(--secondary);
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.project-manifests .manifest-item-title,
+.project-manifests .manifest-detail-title {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  font-weight: 600;
+}
+.project-manifests .manifest-current-candidate {
+  margin-block: var(--space-3);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border-strong);
+}
+.project-manifests .project-artifact-selection {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.project-manifests .manifest-artifact-options {
+  display: grid;
+  gap: var(--space-3);
+  max-height: min(28rem, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.project-manifests .manifest-artifact-option {
+  min-width: 0;
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-manifests .manifest-artifact-option .check-row {
+  margin-top: 0;
+}
+.project-manifests .manifest-artifact-metadata {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--border);
+}
+.project-manifests .manifest-artifact-metadata p {
+  margin-top: 0;
+}
+.project-manifests .manifest-removed-selection {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+.project-manifests .manifest-history {
+  margin-block: var(--space-6);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-manifests .manifest-history-list {
+  max-height: min(28rem, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.project-manifests .project-manifest-link {
+  min-width: 0;
+}
+.project-manifests .manifest-frozen-item {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.project-manifests .manifest-frozen-item summary {
+  color: var(--secondary);
+  font-weight: 600;
+}
+.project-manifests ol.manifest-reading {
+  padding-inline-start: var(--space-6);
+}
+.project-manifests ol.manifest-reading li + li {
+  margin-top: var(--space-3);
+}
+.project-manifests .manifest-frozen-artifact {
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+@container (max-width: 680px) {
+  .project-manifests .project-freeze-blockers .project-todo-row {
+    flex-direction: column;
+  }
+  .project-manifests .project-freeze-blockers p {
+    flex: auto;
+    width: 100%;
+  }
+}

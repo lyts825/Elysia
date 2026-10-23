@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBoard,
   ProjectDeliveryItem,
@@ -11,6 +11,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectDeliveryBundle } from './ProjectDeliveryBundle';
 import { ProjectDeliveryArchives } from './ProjectDeliveryArchive';
 import { projectManifestReadiness, type ProjectManifestBlocker } from './project-manifest-readiness';
+import './project-manifests.css';
 
 function ArtifactSelection({
   item,
@@ -24,6 +25,7 @@ function ArtifactSelection({
   disabled: boolean;
 }) {
   const { api } = useSurfaceClient();
+  const selectionId = useId();
   type Position = { before: string; trail: string[] };
   const firstPage = (): Position => ({ before: '', trail: [] });
   const owner = `${item.current?.runId}:${item.current?.runRevision}`;
@@ -118,9 +120,16 @@ function ArtifactSelection({
             <p role="status">本次元数据读取已取消。已读页面和元数据选择保留，可明确重试或重读。</p>
           )}
           {error && (
-            <p className="field-error" role="alert">
-              {error}
-            </p>
+            <div className="field-error" role="alert">
+              <p
+                className="manifest-reading"
+                role="region"
+                aria-label="产物元数据读取错误完整内容"
+                tabIndex={0}
+              >
+                {error}
+              </p>
+            </div>
           )}
           {(read.status === 'failed' || read.status === 'cancelled') && (
             <button
@@ -137,31 +146,53 @@ function ArtifactSelection({
               {read.status !== 'ready' && '，当前元数据尚未重新确认。'}
             </p>
           )}
-          {page?.artifacts.map((artifact) => (
-            <label className="check-row" key={artifact.id}>
-              <input
-                type="checkbox"
-                checked={selected.includes(artifact.id)}
-                disabled={
-                  disabled ||
-                  read.status !== 'ready' ||
-                  (!selected.includes(artifact.id) && (!artifact.verified || selected.length >= 20))
-                }
-                onChange={(e) =>
-                  change(
-                    e.target.checked
-                      ? [...selected, artifact.id]
-                      : selected.filter((id) => id !== artifact.id),
-                  )
-                }
-              />
-              <span>
-                {artifact.name} · v{artifact.version}
-                {!artifact.verified && ' · 未核验，不能纳入交付'}
-                <small>{artifact.hash}</small>
-              </span>
-            </label>
-          ))}
+          {page && !page.artifacts.length && <p className="field-help">此页没有产物元数据。</p>}
+          {!!page?.artifacts.length && (
+            <div
+              className="manifest-artifact-options"
+              role="region"
+              aria-label="本页产物元数据候选"
+              tabIndex={0}
+            >
+              {page?.artifacts.map((artifact, index) => (
+                <article className="manifest-artifact-option" key={artifact.id}>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      aria-describedby={`${selectionId}-${artifact.id}`}
+                      checked={selected.includes(artifact.id)}
+                      disabled={
+                        disabled ||
+                        read.status !== 'ready' ||
+                        (!selected.includes(artifact.id) && (!artifact.verified || selected.length >= 20))
+                      }
+                      onChange={(e) =>
+                        change(
+                          e.target.checked
+                            ? [...selected, artifact.id]
+                            : selected.filter((id) => id !== artifact.id),
+                        )
+                      }
+                    />
+                    <span>
+                      产物 {index + 1} · v{artifact.version}
+                      {!artifact.verified && ' · 未核验，不能纳入交付'}
+                    </span>
+                  </label>
+                  <div
+                    id={`${selectionId}-${artifact.id}`}
+                    className="manifest-reading manifest-artifact-metadata"
+                    role="region"
+                    aria-label={`产物 ${index + 1} 完整名称与哈希`}
+                    tabIndex={0}
+                  >
+                    <p>{artifact.name}</p>
+                    <small>哈希：{artifact.hash}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
           {selected.length > 0 && (
             <button type="button" className="secondary" disabled={disabled} onClick={() => change([])}>
               清空此项的元数据选择
@@ -232,6 +263,7 @@ export function ProjectManifests({
   onRefreshBoard: () => void;
 }) {
   const { api, apiBytes } = useSurfaceClient();
+  const manifestId = useId();
   type Position = { before: string; trail: string[] };
   const firstPage = (): Position => ({ before: '', trail: [] });
   const [display, setDisplay] = useState<{ page: ProjectDeliveryManifestList; position: Position }>();
@@ -419,7 +451,7 @@ export function ProjectManifests({
     }
   };
   return (
-    <section aria-label="汇总交付清单">
+    <section className="project-manifests" aria-label="汇总交付清单">
       <div className="project-section-heading">
         <div>
           <h2>汇总交付</h2>
@@ -474,7 +506,14 @@ export function ProjectManifests({
                 <ul className="project-freeze-blockers">
                   {readiness.blockers.map((blocker) => (
                     <li className="project-todo-row" key={blocker.id}>
-                      <p>{blocker.reason}</p>
+                      <p
+                        className="manifest-reading"
+                        role="region"
+                        aria-label="冻结阻塞原因完整内容"
+                        tabIndex={0}
+                      >
+                        {blocker.reason}
+                      </p>
                       <button
                         type="button"
                         className="secondary"
@@ -505,8 +544,10 @@ export function ProjectManifests({
           {[...new Set(manifest.selected)]
             .filter((id) => !board.items.some((item) => item.id === id))
             .map((id) => (
-              <div key={id} className="field-error">
-                原选交付项已不在当前计划中：{id}
+              <div key={id} className="field-error manifest-removed-selection">
+                <p className="manifest-reading" role="region" aria-label="失效交付项完整标识" tabIndex={0}>
+                  原选交付项已不在当前计划中：{id}
+                </p>
                 <button
                   ref={(node) => {
                     if (node) removedSelections.current.set(id, node);
@@ -530,7 +571,10 @@ export function ProjectManifests({
               </div>
             ))}
           <fieldset ref={manifestSelection} tabIndex={-1} aria-label="纳入本次冻结的交付项">
-            {board.items.map((item) => (
+            <legend>
+              纳入本次冻结的交付项 · 已选 {manifest.selected.length}/{board.items.length}
+            </legend>
+            {board.items.map((item, index) => (
               <div className="project-freeze-item" key={item.id}>
                 <label className="check-row">
                   <input
@@ -539,6 +583,7 @@ export function ProjectManifests({
                       else itemSelections.current.delete(item.id);
                     }}
                     type="checkbox"
+                    aria-describedby={`${manifestId}-${item.id}`}
                     disabled={busy || unavailable}
                     checked={manifest.selected.includes(item.id)}
                     onChange={(e) =>
@@ -554,7 +599,7 @@ export function ProjectManifests({
                     }
                   />
                   <span>
-                    {item.title} {item.required ? '（必需）' : '（可选）'} ·{' '}
+                    交付项 {index + 1} {item.required ? '（必需）' : '（可选）'} ·{' '}
                     {unavailable
                       ? '当前交付条件未知'
                       : item.readiness === 'ready'
@@ -562,6 +607,31 @@ export function ProjectManifests({
                         : '尚未满足交付条件'}
                   </span>
                 </label>
+                <p
+                  id={`${manifestId}-${item.id}`}
+                  className="manifest-reading manifest-item-title"
+                  role="region"
+                  aria-label={`交付项 ${index + 1} 完整名称`}
+                  tabIndex={0}
+                >
+                  {item.title}
+                </p>
+                {manifest.selected.includes(item.id) && item.current && (
+                  <div className="manifest-current-candidate">
+                    <small>
+                      当前候选任务 · 标准版本 {item.itemRevision} · 任务版本{' '}
+                      {item.current.runRevision ?? '未知'}
+                    </small>
+                    <p
+                      className="manifest-reading"
+                      role="region"
+                      aria-label={`交付项 ${index + 1} 当前候选完整名称`}
+                      tabIndex={0}
+                    >
+                      {item.current.title}
+                    </p>
+                  </div>
+                )}
                 {manifest.selected.includes(item.id) && item.current && (
                   <ArtifactSelection
                     key={`${item.id}:${item.current.runId}`}
@@ -615,89 +685,103 @@ export function ProjectManifests({
           </button>
         </section>
       )}
-      <h3>已冻结清单</h3>
-      {loading && (
+      <section className="manifest-history" aria-label="已冻结清单历史">
+        <h3>已冻结清单</h3>
+        {loading && (
+          <div className="project-actions">
+            <p role="status">正在读取历史…</p>
+            <button type="button" className="secondary" onClick={cancelHistory}>
+              取消本次清单历史读取
+            </button>
+          </div>
+        )}
+        {listRead.status === 'cancelled' && (
+          <p role="status">本次冻结历史读取已取消。已读页面和清单选择保留，可明确重试或刷新。</p>
+        )}
+        {error && (
+          <div className="field-error" role="alert">
+            <p
+              className="manifest-reading"
+              role="region"
+              aria-label="冻结清单历史读取错误完整内容"
+              tabIndex={0}
+            >
+              {error}
+            </p>
+          </div>
+        )}
+        {(listRead.status === 'failed' || listRead.status === 'cancelled') && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              requestHistory(intent?.projectId === board.projectId ? intent.position : firstPage())
+            }
+          >
+            重试本次清单历史读取
+          </button>
+        )}
+        {page && (
+          <p className="field-help" role={listRead.status !== 'ready' ? 'status' : undefined}>
+            {listRead.status !== 'ready' && '上次读取：'}冻结清单第 {position.trail.length + 1} 页
+            {listRead.status !== 'ready' && '，当前历史尚未重新确认。'}
+          </p>
+        )}
+        {!!page?.items.length && (
+          <div className="manifest-history-list" role="group" aria-label="本页已冻结清单" tabIndex={0}>
+            {page?.items.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={'project-manifest-link ' + (draft.selectedManifest === item.id ? 'selected' : '')}
+                aria-pressed={draft.selectedManifest === item.id}
+                onClick={() => selectManifest(item.id, item.hash)}
+              >
+                <strong>{item.title}</strong>
+                <span>
+                  {new Date(item.createdAt).toLocaleString()} · {item.itemCount} 项
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {page && !page.items.length && <p className="field-help">尚未冻结交付清单。</p>}
         <div className="project-actions">
-          <p role="status">正在读取历史…</p>
-          <button type="button" className="secondary" onClick={cancelHistory}>
-            取消本次清单历史读取
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || !position.trail.length}
+            onClick={() => {
+              requestHistory({ before: position.trail.at(-1) || '', trail: position.trail.slice(0, -1) });
+            }}
+          >
+            上一页清单
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || !page?.page.hasMore}
+            onClick={() => {
+              requestHistory({
+                before: page?.page.nextBefore || '',
+                trail: [...position.trail, position.before],
+              });
+            }}
+          >
+            下一页清单
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading}
+            onClick={() => {
+              requestHistory(firstPage());
+            }}
+          >
+            刷新清单历史
           </button>
         </div>
-      )}
-      {listRead.status === 'cancelled' && (
-        <p role="status">本次冻结历史读取已取消。已读页面和清单选择保留，可明确重试或刷新。</p>
-      )}
-      {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
-      )}
-      {(listRead.status === 'failed' || listRead.status === 'cancelled') && (
-        <button
-          type="button"
-          className="secondary"
-          onClick={() =>
-            requestHistory(intent?.projectId === board.projectId ? intent.position : firstPage())
-          }
-        >
-          重试本次清单历史读取
-        </button>
-      )}
-      {page && (
-        <p className="field-help" role={listRead.status !== 'ready' ? 'status' : undefined}>
-          {listRead.status !== 'ready' && '上次读取：'}冻结清单第 {position.trail.length + 1} 页
-          {listRead.status !== 'ready' && '，当前历史尚未重新确认。'}
-        </p>
-      )}
-      {page?.items.map((item) => (
-        <button
-          type="button"
-          key={item.id}
-          className={'project-manifest-link ' + (draft.selectedManifest === item.id ? 'selected' : '')}
-          onClick={() => selectManifest(item.id, item.hash)}
-        >
-          <strong>{item.title}</strong>
-          <span>
-            {new Date(item.createdAt).toLocaleString()} · {item.itemCount} 项
-          </span>
-        </button>
-      ))}
-      {page && !page.items.length && <p className="field-help">尚未冻结交付清单。</p>}
-      <div className="project-actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading || !position.trail.length}
-          onClick={() => {
-            requestHistory({ before: position.trail.at(-1) || '', trail: position.trail.slice(0, -1) });
-          }}
-        >
-          上一页清单
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading || !page?.page.hasMore}
-          onClick={() => {
-            requestHistory({
-              before: page?.page.nextBefore || '',
-              trail: [...position.trail, position.before],
-            });
-          }}
-        >
-          下一页清单
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={loading}
-          onClick={() => {
-            requestHistory(firstPage());
-          }}
-        >
-          刷新清单历史
-        </button>
-      </div>
+      </section>
       {draft.selectedManifest && (
         <section
           ref={detailSection}
@@ -707,27 +791,52 @@ export function ProjectManifests({
         >
           {detailLoading && <p role="status">正在读取冻结依据与当前记录状态…</p>}
           {detailError && (
-            <p className="field-error" role="alert">
-              {detailError}
-              {detail && ' 下方保留该清单上次读取的冻结依据，原任务与产物的当前状态尚未确认。'}
-            </p>
+            <div className="field-error" role="alert">
+              <p
+                className="manifest-reading"
+                role="region"
+                aria-label="冻结清单详情读取错误完整内容"
+                tabIndex={0}
+              >
+                {detailError}
+                {detail && ' 下方保留该清单上次读取的冻结依据，原任务与产物的当前状态尚未确认。'}
+              </p>
+            </div>
           )}
           {downloadError && (
-            <p className="field-error" role="alert">
-              {downloadError}
-            </p>
+            <div className="field-error" role="alert">
+              <p className="manifest-reading" role="region" aria-label="清单下载错误完整内容" tabIndex={0}>
+                {downloadError}
+              </p>
+            </div>
           )}
           <button type="button" className="secondary" onClick={() => setDetailRetry((n) => n + 1)}>
             重读清单与当前记录状态
           </button>
           {detail && (
             <>
-              <h3>{detail.manifest.title}</h3>
+              <h3>所选冻结清单</h3>
+              <p
+                className="manifest-reading manifest-detail-title"
+                role="region"
+                aria-label="所选冻结清单完整名称"
+                tabIndex={0}
+              >
+                {detail.manifest.title}
+              </p>
               <p>
                 冻结于 {new Date(detail.manifest.createdAt).toLocaleString()} · 项目计划版本{' '}
                 {detail.manifest.boardRevision}
               </p>
-              <p className="project-prose">{detail.manifest.goal}</p>
+              <h4>冻结的项目目标</h4>
+              <p
+                className="project-prose manifest-reading"
+                role="region"
+                aria-label="冻结的项目目标完整内容"
+                tabIndex={0}
+              >
+                {detail.manifest.goal}
+              </p>
               <div className="project-actions">
                 <button
                   type="button"
@@ -753,25 +862,52 @@ export function ProjectManifests({
                 archiveRevision={archiveRevision}
                 onSaved={() => setArchiveRevision((value) => value + 1)}
               />
-              {detail.manifest.items.map((entry) => {
+              {detail.manifest.items.map((entry, index) => {
                 const availability = detail.availability.find((value) => value.itemId === entry.item.id);
                 return (
-                  <details key={entry.item.id}>
+                  <details className="manifest-frozen-item" key={entry.item.id}>
                     <summary>
-                      {entry.item.title} · 标准版本 {entry.item.itemRevision}
+                      交付项 {index + 1} · 标准版本 {entry.item.itemRevision}
                     </summary>
+                    <p
+                      className="manifest-reading manifest-item-title"
+                      role="region"
+                      aria-label={`冻结交付项 ${index + 1} 完整名称`}
+                      tabIndex={0}
+                    >
+                      {entry.item.title}
+                    </p>
                     <h4>冻结的项目标准</h4>
-                    <ol>
+                    <ol
+                      className="manifest-reading"
+                      role="region"
+                      aria-label={`冻结交付项 ${index + 1} 全部项目标准`}
+                      tabIndex={0}
+                    >
                       {entry.item.acceptanceCriteria.map((text, i) => (
                         <li key={i}>{text}</li>
                       ))}
                     </ol>
                     <h4>冻结的任务与复核</h4>
                     <p>
-                      {entry.run.title} · 已采纳 · {entry.sourceNotes.resolved}/{entry.sourceNotes.total}{' '}
-                      条原意见已解决
+                      已采纳 · {entry.sourceNotes.resolved}/{entry.sourceNotes.total} 条原意见已解决
                     </p>
-                    <p className="project-prose">{entry.review.note}</p>
+                    <p
+                      className="manifest-reading"
+                      role="region"
+                      aria-label={`冻结交付项 ${index + 1} 任务完整名称`}
+                      tabIndex={0}
+                    >
+                      {entry.run.title}
+                    </p>
+                    <p
+                      className="project-prose manifest-reading"
+                      role="region"
+                      aria-label={`冻结交付项 ${index + 1} 完整复核意见`}
+                      tabIndex={0}
+                    >
+                      {entry.review.note || '未填写复核意见。'}
+                    </p>
                     <p>
                       {detailLoading || detailError ? '上次读取时原任务：' : '原任务当前：'}
                       {
@@ -791,11 +927,18 @@ export function ProjectManifests({
                     <h4>冻结的产物元数据（不含正文）</h4>
                     {!entry.artifacts.length && <p>未选入产物元数据。</p>}
                     {entry.artifacts.map((artifact) => (
-                      <div key={artifact.id}>
-                        <strong>
-                          {artifact.name} · v{artifact.version}
-                        </strong>
-                        <small>{artifact.hash}</small>
+                      <div className="manifest-frozen-artifact" key={artifact.id}>
+                        <div
+                          className="manifest-reading"
+                          role="region"
+                          aria-label="冻结产物完整名称与哈希"
+                          tabIndex={0}
+                        >
+                          <strong>
+                            {artifact.name} · v{artifact.version}
+                          </strong>
+                          <small>哈希：{artifact.hash}</small>
+                        </div>
                         <p>
                           {detailLoading || detailError ? '上次读取时原产物记录：' : '原产物记录：'}
                           {
@@ -814,7 +957,12 @@ export function ProjectManifests({
                     ))}
                     <details>
                       <summary>查看全部冻结依据</summary>
-                      <pre>
+                      <pre
+                        className="manifest-reading"
+                        role="region"
+                        aria-label={`冻结交付项 ${index + 1} 全部冻结依据`}
+                        tabIndex={0}
+                      >
                         {JSON.stringify(
                           {
                             confirmation: entry.confirmation,
@@ -832,7 +980,9 @@ export function ProjectManifests({
               })}
               <details>
                 <summary>清单校验信息</summary>
-                <small>{detail.manifest.hash}</small>
+                <small className="manifest-reading" role="region" aria-label="清单完整校验哈希" tabIndex={0}>
+                  {detail.manifest.hash}
+                </small>
               </details>
             </>
           )}
