@@ -6,6 +6,7 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ReviewRecord } from './ReviewRecord';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
+import './review-history.css';
 
 export function ReviewHistory({
   runId,
@@ -27,6 +28,7 @@ export function ReviewHistory({
     [opening, setOpening] = useState(''),
     [error, setError] = useState('');
   const detailRequest = useRef<AbortController | null>(null);
+  const selectedDetail = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const visiblePage = page?.runId === runId ? page : undefined;
   const visibleDetail = detail?.runId === runId ? detail : undefined;
@@ -89,7 +91,10 @@ export function ReviewHistory({
     }
   }
   return (
-    <details className="workflow-source" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <details
+      className="workflow-source review-history"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>复核历史</summary>
       {open && (
         <>
@@ -102,24 +107,32 @@ export function ReviewHistory({
                 : ''}
             </p>
           )}
-          {visiblePage?.items.map((item) => (
-            <button
-              type="button"
-              className="workflow-history-row"
-              key={item.id}
-              disabled={!!opening}
-              onClick={() => void read(item.id)}
-            >
-              <strong>
-                {item.decision === 'accepted' ? '已采纳' : '需修改'} · {item.reviewedAt}
-              </strong>
-              <span>
-                {item.origin === 'legacy_snapshot' ? '旧版最后结论快照' : '已保存复核'} ·{' '}
-                {item.criteriaNotesCount} 条逐项备注
-              </span>
-              {!!item.notePreview && <span>{item.notePreview}</span>}
-            </button>
-          ))}
+          {!!visiblePage?.items.length && (
+            <div className="review-history-list" role="region" aria-label="复核历史列表" tabIndex={0}>
+              {visiblePage.items.map((item) => (
+                <button
+                  type="button"
+                  className="workflow-history-row"
+                  key={item.id}
+                  aria-current={visibleDetail?.item.id === item.id ? 'true' : undefined}
+                  disabled={!!opening}
+                  onClick={() => void read(item.id)}
+                >
+                  <strong>
+                    {item.decision === 'accepted' ? '已采纳' : '需修改'} · {item.reviewedAt}
+                  </strong>
+                  <span>
+                    {item.origin === 'legacy_snapshot' ? '旧版最后结论快照' : '已保存复核'} ·{' '}
+                    {item.criteriaNotesCount} 条逐项备注
+                  </span>
+                  {!!item.notePreview && <span>{item.notePreview}</span>}
+                  {visibleDetail?.item.id === item.id && (
+                    <span className="review-history-current">当前已读</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           {visiblePage && !visiblePage.items.length && <p className="field-help">暂无已保存复核历史。</p>}
           {loading && <p role="status">正在读取复核历史…</p>}
           {opening && (
@@ -139,57 +152,87 @@ export function ReviewHistory({
             <p className="field-help">下方保留上次读取的复核，所选记录尚未完成读取。</p>
           )}
           {error && (
-            <p role="alert" className="field-error">
+            <p
+              role="alert"
+              className="field-error review-history-error"
+              aria-label="复核历史读取问题全文"
+              tabIndex={0}
+            >
               {error}
             </p>
           )}
-          <div className="workflow-actions">
-            {!!trail.length && (
+          <nav className="workflow-pagination" aria-label="复核历史翻页">
+            {visiblePage && (
+              <span className="workflow-pagination-summary">已读列表 {visiblePage.items.length} 条</span>
+            )}
+            <div className="workflow-pagination-actions">
+              {!!trail.length && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading}
+                  onClick={() => {
+                    setBefore(trail.at(-1)!);
+                    setTrail((old) => old.slice(0, -1));
+                  }}
+                >
+                  上一页复核
+                </button>
+              )}
+              {visiblePage?.page.hasMore && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading}
+                  onClick={() => {
+                    setTrail((old) => [...old, before]);
+                    setBefore(visiblePage.page.nextBefore!);
+                  }}
+                >
+                  下一页复核
+                </button>
+              )}
               <button
                 type="button"
-                className="secondary"
+                className="text-button"
                 disabled={loading}
                 onClick={() => {
-                  setBefore(trail.at(-1)!);
-                  setTrail((old) => old.slice(0, -1));
+                  setBefore('');
+                  setTrail([]);
+                  setRetry((old) => old + 1);
                 }}
               >
-                上一页复核
+                刷新复核历史
               </button>
-            )}
-            {visiblePage?.page.hasMore && (
-              <button
-                type="button"
-                className="secondary"
-                disabled={loading}
-                onClick={() => {
-                  setTrail((old) => [...old, before]);
-                  setBefore(visiblePage.page.nextBefore!);
-                }}
-              >
-                下一页复核
-              </button>
-            )}
+            </div>
+          </nav>
+          {visibleDetail && (
             <button
               type="button"
-              className="text-button"
-              disabled={loading}
+              className="secondary review-history-jump"
               onClick={() => {
-                setBefore('');
-                setTrail([]);
-                setRetry((old) => old + 1);
+                selectedDetail.current?.focus({ preventScroll: true });
+                selectedDetail.current?.scrollIntoView({ block: 'start' });
               }}
             >
-              刷新复核历史
+              定位已读复核
             </button>
-          </div>
+          )}
           {visibleDetail && (
-            <ReviewRecord
-              value={visibleDetail}
-              renderNotes={renderNotes}
-              reload={() => void read(visibleDetail.item.id)}
-              reading={!!opening}
-            />
+            <div
+              className="review-history-selected"
+              ref={selectedDetail}
+              role="region"
+              aria-label="已读复核详情"
+              tabIndex={-1}
+            >
+              <ReviewRecord
+                value={visibleDetail}
+                renderNotes={renderNotes}
+                reload={() => void read(visibleDetail.item.id)}
+                reading={!!opening}
+              />
+            </div>
           )}
         </>
       )}
