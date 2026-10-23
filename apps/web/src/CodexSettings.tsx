@@ -9,6 +9,7 @@ import {
   supportsText,
   type CatalogModel,
 } from './ModelCatalog';
+import './codex-connection.css';
 
 type State = {
   available: boolean;
@@ -143,11 +144,20 @@ export function CodexSettings({
       ? [usage.rateLimits]
       : [];
   return (
-    <section className="connection-panel">
-      <div className="section-heading">
-        <strong>ChatGPT 订阅连接</strong>
+    <section className="connection-panel codex-connection">
+      <div className="section-heading codex-connection-heading">
+        <h3>ChatGPT 订阅连接</h3>
         <span className="provider-badge">Codex 官方通道</span>
       </div>
+      <p className="codex-readiness" data-ready={valid} role="status">
+        {busy
+          ? '正在读取连接与模型…'
+          : pending
+            ? '等待完成登录'
+            : valid
+              ? '账号与所选型号已就绪'
+              : '连接与型号尚未全部就绪'}
+      </p>
       <label>
         登录来源
         <select
@@ -169,10 +179,10 @@ export function CodexSettings({
       </p>
       <div className="connection-stages">
         <span className={status?.available ? 'passed' : ''}>
-          1 · {status?.available ? `Codex ${status.version || '已连接'}` : '检测 Codex'}
+          1 · {status?.available ? 'Codex 可用' : '检测 Codex'}
         </span>
         <span className={status?.connected ? 'passed' : ''}>
-          2 · {status?.connected ? `${status.plan || 'ChatGPT'} 已登录` : '连接账号'}
+          2 · {status?.connected ? '账号已登录' : '连接账号'}
         </span>
         <span className={models.some(supportsText) ? 'passed' : ''}>
           3 ·{' '}
@@ -181,8 +191,38 @@ export function CodexSettings({
             : '读取模型'}
         </span>
       </div>
-      {status?.label && <p className="account-label">{status.label}</p>}
-      {status?.message && <p className="inline-warning">{status.message}</p>}
+      {status && (
+        <section className="codex-identity">
+          <h4>当前读取的登录环境</h4>
+          <dl className="codex-reading" tabIndex={0} role="region" aria-label="Codex 登录环境完整信息">
+            <div>
+              <dt>来源</dt>
+              <dd>{source === 'local' ? '本机 Codex 登录' : 'Elysia 独立登录'}</dd>
+            </div>
+            <div>
+              <dt>Codex 版本</dt>
+              <dd>{status.version || '未提供'}</dd>
+            </div>
+            <div>
+              <dt>账号名称</dt>
+              <dd>{status.label || '未提供'}</dd>
+            </div>
+            <div>
+              <dt>账号标识</dt>
+              <dd>{status.accountId || '未提供'}</dd>
+            </div>
+            <div>
+              <dt>订阅方案</dt>
+              <dd>{status.plan || '未提供'}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
+      {status?.message && (
+        <p className="inline-warning codex-reading" tabIndex={0} aria-label="Codex 连接提示全文">
+          {status.message}
+        </p>
+      )}
       <div className="subscription-actions">
         <button className="secondary" disabled={busy || pending} onClick={() => void refresh(true)}>
           {busy ? '连接中…' : '重新连接 / 刷新模型'}
@@ -230,16 +270,20 @@ export function CodexSettings({
         )}
       </div>
       {pending && (
-        <p className="info-note">
-          请在授权页面完成登录，然后返回此窗口。
+        <div className="info-note codex-login-pending" role="status">
+          <p>请在授权页面完成登录，然后返回此窗口。</p>
           {status?.attempt?.userCode && (
-            <>
+            <p className="codex-reading" tabIndex={0} aria-label="完整登录设备码">
               设备码：<strong className="device-code">{status.attempt.userCode}</strong>
-            </>
+            </p>
           )}
+        </div>
+      )}
+      {status?.attempt?.message && (
+        <p className="field-help codex-reading" tabIndex={0} aria-label="Codex 登录进度全文">
+          {status.attempt.message}
         </p>
       )}
-      {status?.attempt?.message && <p className="field-help">{status.attempt.message}</p>}
       <div className="form-columns connection-models">
         <label>
           可用模型
@@ -301,6 +345,33 @@ export function CodexSettings({
           </label>
         )}
       </div>
+      {(selected || config.model) && (
+        <section className="codex-identity">
+          <h4>当前所选型号</h4>
+          <dl className="codex-reading" tabIndex={0} role="region" aria-label="Codex 所选型号完整名称与标识">
+            <div>
+              <dt>名称</dt>
+              <dd>{selected?.name || selected?.id || '当前目录未找到'}</dd>
+            </div>
+            <div>
+              <dt>型号标识</dt>
+              <dd>{config.model}</dd>
+            </div>
+            <div>
+              <dt>思考强度</dt>
+              <dd>{config.reasoningEffort || '未指定'}</dd>
+            </div>
+          </dl>
+          {selected?.description && (
+            <details>
+              <summary>型号说明</summary>
+              <p className="codex-reading" tabIndex={0} aria-label="Codex 型号完整说明">
+                {selected.description}
+              </p>
+            </details>
+          )}
+        </section>
+      )}
       {status?.connected && !busy && !error && catalogIssue(models, config.model) && (
         <p className="inline-warning" role="alert">
           {catalogIssue(models, config.model)}
@@ -317,7 +388,6 @@ export function CodexSettings({
             所选思考强度不在当前目录中，请重新选择。
           </p>
         )}
-      {selected && <p className="field-help">{selected.description}</p>}
       <div className="subscription-actions">
         <button
           className="secondary"
@@ -342,7 +412,9 @@ export function CodexSettings({
         <div className="quota-grid">
           {buckets.map((bucket: any, i) => (
             <div key={bucket.limitId || i}>
-              <strong>{bucket.limitName || bucket.limitId || '订阅额度'}</strong>
+              <strong className="codex-reading" tabIndex={0} aria-label={`第 ${i + 1} 项额度完整名称`}>
+                {bucket.limitName || bucket.limitId || '订阅额度'}
+              </strong>
               {[bucket.primary, bucket.secondary].filter(Boolean).map((w: any, j) => (
                 <p key={j}>
                   {w.windowDurationMins
@@ -358,7 +430,13 @@ export function CodexSettings({
         </div>
       )}
       {error && (
-        <p className="provider-error" role="alert" ref={errorRef} tabIndex={-1}>
+        <p
+          className="provider-error codex-reading"
+          role="alert"
+          aria-label="Codex 操作失败详情"
+          ref={errorRef}
+          tabIndex={0}
+        >
           {error}
         </p>
       )}
