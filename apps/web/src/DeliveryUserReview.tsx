@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryCriterion,
   DeliveryReview,
@@ -12,6 +12,7 @@ import { readReviewCriteria } from './ReviewCriteria';
 import { DeliveryChanges } from './DeliveryChanges';
 import { ArtifactChanges } from './ArtifactChanges';
 import { UnlinkedReviewNotes } from './UnlinkedReviewNotes';
+import './delivery-user-review.css';
 
 export function DeliveryUserReview({
   value,
@@ -37,6 +38,7 @@ export function DeliveryUserReview({
   children: (note: (criterion: DeliveryCriterion) => ReactNode) => ReactNode;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const descriptionId = useId();
   const draft = useMemo(() => readReviewDraft(rawDraft, value), [rawDraft, value]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -116,12 +118,13 @@ export function DeliveryUserReview({
     const current = draft.criteriaNotes.find((item) => item.index === criterion.index);
     return (
       <label className="workflow-review-note">
-        我的复核备注
+        <span>我的复核备注</span>
         {current?.unknownStandard && (
           <small className="field-help">此条旧备注未记录原标准，请核对当前验收项后保存。</small>
         )}
         <textarea
           aria-label={`第 ${criterion.index + 1} 项复核备注`}
+          aria-describedby={`${descriptionId}-criterion-${criterion.index}`}
           value={current?.note || ''}
           maxLength={1000}
           rows={2}
@@ -144,6 +147,13 @@ export function DeliveryUserReview({
             })
           }
         />
+        <small
+          className="field-help delivery-review-count"
+          id={`${descriptionId}-criterion-${criterion.index}`}
+        >
+          {(current?.note || '').length}/1000 字
+          {!current && draft.criteriaNotes.length >= 40 && ' · 已有 40 项备注，请先移除其他备注再新增。'}
+        </small>
       </label>
     );
   };
@@ -182,21 +192,34 @@ export function DeliveryUserReview({
   }
   return (
     <>
-      <section className="workflow-user-review" aria-label="用户复核">
-        <h3>
-          用户复核 ·{' '}
-          {value.userReview?.stale
-            ? '旧结论已失效'
-            : value.userReview?.decision === 'accepted'
-              ? '已采纳'
-              : value.userReview?.decision === 'changes_requested'
-                ? '需修改'
-                : '未复核'}
-        </h3>
+      <section className="workflow-user-review delivery-user-review" aria-label="用户复核">
+        <header className="delivery-review-heading">
+          <h3>用户复核</h3>
+          <span className="delivery-review-status">
+            {value.userReview?.stale
+              ? '旧结论已失效'
+              : value.userReview?.decision === 'accepted'
+                ? '已采纳'
+                : value.userReview?.decision === 'changes_requested'
+                  ? '需修改'
+                  : '未复核'}
+          </span>
+        </header>
         <p className="field-help">
           你的结论只针对当前交付版本，与执行完成和结构核验分别记录。未保存备注会保留为本机草稿。
         </p>
         {value.userReview && <p className="field-help">上次保存：{value.userReview.reviewedAt}</p>}
+        {readonly && (
+          <p className="field-help" role="status">
+            {busy
+              ? '正在保存复核，请稍候。'
+              : reconciling
+                ? '正在核对验收项，输入暂不可编辑。'
+                : reading
+                  ? '正在读取交付，当前输入保留。'
+                  : '当前为只读，备注与结论暂不可编辑。'}
+          </p>
+        )}
         <DeliveryChanges value={value.changeSummary} />
         {value.userReview?.reviewId && (
           <ArtifactChanges
@@ -235,13 +258,33 @@ export function DeliveryUserReview({
           </div>
         )}
         {changed && !!draft.criteriaNotes.length && (
-          <details open>
-            <summary>旧交付版本的逐项备注</summary>
-            {draft.criteriaNotes.map((item) => (
-              <p key={item.index} className="workflow-prose">
-                {item.text}：{item.note}
-              </p>
-            ))}
+          <details className="delivery-review-old-notes" open>
+            <summary>旧交付版本的逐项备注 · {draft.criteriaNotes.length} 项</summary>
+            <ol>
+              {draft.criteriaNotes.map((item) => (
+                <li key={item.index}>
+                  <h4>原第 {item.index + 1} 项</h4>
+                  <p className="field-help">原验收标准</p>
+                  <p
+                    className="workflow-prose delivery-review-reading"
+                    role="region"
+                    aria-label={`草稿原第 ${item.index + 1} 项标准全文`}
+                    tabIndex={0}
+                  >
+                    {item.text}
+                  </p>
+                  <p className="field-help">保留的复核备注</p>
+                  <p
+                    className="workflow-prose delivery-review-reading"
+                    role="region"
+                    aria-label={`草稿原第 ${item.index + 1} 项备注全文`}
+                    tabIndex={0}
+                  >
+                    {item.note}
+                  </p>
+                </li>
+              ))}
+            </ol>
           </details>
         )}
         {!!draft.unlinked.length && (
@@ -254,7 +297,7 @@ export function DeliveryUserReview({
           />
         )}
         <label>
-          复核结论
+          <span>复核结论</span>
           <select
             aria-label="用户复核结论"
             value={draft.decision}
@@ -267,30 +310,48 @@ export function DeliveryUserReview({
           </select>
         </label>
         <label>
-          整体备注
+          <span>整体备注</span>
           <textarea
             aria-label="整体复核备注"
+            aria-describedby={`${descriptionId}-overall`}
             rows={3}
             maxLength={4000}
             value={draft.note}
             disabled={readonly}
             onChange={(event) => patch({ note: event.target.value })}
           />
+          <small className="field-help delivery-review-count" id={`${descriptionId}-overall`}>
+            {draft.note.length}/4000 字
+          </small>
         </label>
+        <p className="field-help">
+          逐项备注已填写 {draft.criteriaNotes.length}/40 项；在下方验收标准中编辑。
+        </p>
         {error && (
-          <p className="field-error" role="alert">
+          <p
+            className="workflow-read-error delivery-review-reading"
+            role="alert"
+            aria-label="复核操作错误全文"
+            tabIndex={0}
+          >
             {error} 当前输入已保留。
           </p>
         )}
-        {notice && <p role="status">{notice}</p>}
-        <button
-          type="button"
-          className="primary"
-          disabled={readonly || changed || conflict || !draft.decision}
-          onClick={() => void save()}
-        >
-          {busy ? '正在保存…' : '保存复核结论'}
-        </button>
+        {notice && (
+          <p className="delivery-review-notice" role="status">
+            {notice}
+          </p>
+        )}
+        <div className="delivery-review-actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={readonly || changed || conflict || !draft.decision}
+            onClick={() => void save()}
+          >
+            {busy ? '正在保存…' : '保存复核结论'}
+          </button>
+        </div>
       </section>
       {children(noteEditor)}
     </>

@@ -1,0 +1,57 @@
+.delivery-user-review {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--surface);
+}
+.delivery-review-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.workflow-body .delivery-review-heading h3 {
+  margin: 0;
+}
+.delivery-review-status {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.delivery-review-reading {
+  max-height: min(16rem, 45dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.delivery-review-old-notes > ol {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+.delivery-review-old-notes li {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.delivery-review-count {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.delivery-review-notice {
+  color: var(--success);
+  line-height: var(--leading-body);
+}
+.delivery-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
