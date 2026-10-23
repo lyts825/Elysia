@@ -1,0 +1,24 @@
+.original-review-modal .workflow-body {
+  overflow-wrap: anywhere;
+}
+.original-review-snapshot,
+.original-review-error-reading {
+  min-width: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.original-review-snapshot {
+  max-height: min(24rem, 55dvh);
+  padding-inline: var(--space-1);
+  margin-top: var(--space-3);
+}
+.original-review-error-reading {
+  max-height: min(16rem, 45dvh);
+  margin: 0;
+}
+.original-review-error > button {
+  flex: none;
+}

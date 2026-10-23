@@ -6,6 +6,7 @@ import { Modal, ModalErrorContext } from './Modal';
 import { ApiError } from './api';
 import { ReviewRecord } from './ReviewRecord';
 import { ReviewSourceNoteBody } from './ReviewSourceNotes';
+import './original-review.css';
 
 export function OriginalReview({
   runId,
@@ -62,29 +63,51 @@ export function OriginalReview({
         subtitle="只读查看，不修改当前复核或草稿"
         close={close}
         wide
-        className="workflow-modal"
+        className="workflow-modal original-review-modal"
       >
         <div className="form-body workflow-body">
           <details className="workflow-source" open={!!error}>
             <summary>本任务保留的备注快照</summary>
-            <ReviewSourceNoteBody note={note} />
+            <p className="field-help">带入任务时保留的内容，可与下方原复核记录核对。</p>
+            <div
+              className="original-review-snapshot"
+              role="region"
+              aria-label="本任务保留的备注快照全文"
+              tabIndex={0}
+            >
+              <ReviewSourceNoteBody note={note} />
+            </div>
           </details>
-          {reading && <p role="status">正在读取原复核…</p>}
+          {reading && !visible && <p role="status">正在读取原复核…</p>}
           {error && (
-            <p className="field-error" role="alert">
-              {error} 已带入的原文仍保留。
+            <div className="workflow-read-error original-review-error" role="alert">
+              <p
+                className="original-review-error-reading"
+                role="region"
+                aria-label="原复核读取错误全文"
+                tabIndex={0}
+              >
+                {error} 已带入的原文仍保留。
+              </p>
               <button
                 type="button"
-                className="text-button"
+                className="secondary"
                 onClick={() => setRetry((n) => n + 1)}
                 disabled={reading}
               >
                 重试读取原复核
               </button>
-            </p>
+            </div>
           )}
           {visible && (
-            <ReviewRecord value={visible} reading={reading} reload={() => setRetry((n) => n + 1)} />
+            <>
+              <p className="field-help" role="status">
+                {reading
+                  ? '正在重读；上次读取的原复核仍保留。'
+                  : '原复核记录已读取，可展开版本与来源信息核对。'}
+              </p>
+              <ReviewRecord value={visible} reading={reading} reload={() => setRetry((n) => n + 1)} />
+            </>
           )}
         </div>
         <footer className="modal-footer">
