@@ -363,6 +363,38 @@ export function PreviewDock({
                       ))}
                     </select>
                   </div>
+                  <details className="preview-dock-identity">
+                    <summary>所选产物完整信息</summary>
+                    <dl
+                      className="preview-dock-identity-fields"
+                      role="region"
+                      aria-label="所选产物完整元数据"
+                      tabIndex={0}
+                    >
+                      <div>
+                        <dt>名称</dt>
+                        <dd>{artifact.name}</dd>
+                      </div>
+                      <div>
+                        <dt>格式与版本</dt>
+                        <dd>
+                          {artifact.mediaType} · v{artifact.version}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>核验状态</dt>
+                        <dd>{artifact.verified ? '证据已核验' : '待验收'}</dd>
+                      </div>
+                      <div>
+                        <dt>产物标识</dt>
+                        <dd>{artifact.id}</dd>
+                      </div>
+                      <div>
+                        <dt>哈希</dt>
+                        <dd>{artifact.hash}</dd>
+                      </div>
+                    </dl>
+                  </details>
                   <ArtifactFilePreview
                     key={artifact.id}
                     id={artifact.id}
@@ -374,7 +406,12 @@ export function PreviewDock({
                     <span>
                       {artifact.verified ? '证据已核验' : '待验收'} · v{artifact.version}
                     </span>
-                    <a className="secondary" href={apiUrl('/artifacts/' + artifact.id)} download>
+                    <a
+                      className="secondary"
+                      href={apiUrl('/artifacts/' + artifact.id)}
+                      download
+                      aria-label={`下载产物 ${artifact.name}`}
+                    >
                       下载产物
                       <Icon name="arrow" size={14} />
                     </a>
@@ -390,7 +427,12 @@ export function PreviewDock({
                         : '正在读取所选产物…'
                       : '产物将在这里交付'}
                   </h3>
-                  <p>
+                  <p
+                    className={historical?.error ? 'preview-dock-read-error' : undefined}
+                    role={historical?.error ? 'alert' : undefined}
+                    aria-label={historical?.error ? '所选产物读取失败详情' : undefined}
+                    tabIndex={historical?.error ? 0 : undefined}
+                  >
                     {wantedArtifactId && checkpointKey
                       ? historical?.error || '正在核对当前任务的历史产物。'
                       : workspaceAvailable

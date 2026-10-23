@@ -120,6 +120,9 @@
   flex: 1;
   border: 0;
 }
+.preview-dock-artifacts {
+  overflow: auto;
+}
 .preview-dock .preview-page,
 .preview-dock .preview-page iframe {
   min-height: 0;
@@ -156,6 +159,56 @@
 .preview-dock-footer {
   border-top: 1px solid var(--border);
   justify-content: space-between;
+  flex-wrap: wrap;
+}
+.preview-dock-identity {
+  flex: none;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-sm);
+}
+.preview-dock-identity summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.preview-dock-identity-fields {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.preview-dock-identity-fields dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.preview-dock-identity-fields dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.preview-dock .preview-empty .preview-dock-read-error {
+  max-height: min(12rem, 35dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--danger);
+  text-align: left;
+}
+.preview-dock-read-error:focus-visible {
+  outline-offset: -2px;
+}
+@media (max-height: 560px) {
+  .preview-dock {
+    overflow-y: auto;
+  }
+  .preview-dock-workspace,
+  .preview-dock-artifacts {
+    flex: 1 0 min(16rem, 50dvh);
+    overflow: visible;
+  }
+  .preview-dock-workspace > .preview-embedded {
+    min-height: min(24rem, 80dvh);
+  }
 }
 @container (max-width: 480px) {
   .preview-agent-info {
