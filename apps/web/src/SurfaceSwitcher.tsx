@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import { BrandIcon } from './Brand';
 import { Icon } from './Icon';
 import './surface.css';
+import './surface-switcher.css';
 
 const surfaces = [
   { id: 'native', label: 'Elysia', description: '原生 API · 协作与交付', icon: 'spark' },
@@ -22,6 +23,7 @@ export function SurfaceSwitcher({
   const { surface: localSurface } = useSurfaceClient();
   const surfaceRoot = useSurfaceRoot();
   const [open, setOpen] = useState(false);
+  const menuId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const selected = surfaces.find((surface) => surface.id === localSurface)!;
@@ -35,7 +37,9 @@ export function SurfaceSwitcher({
     const node = menu.current;
     node.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - node.offsetWidth - 8))}px`;
     node.style.top = `${Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - node.offsetHeight - 8))}px`;
-    node.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    const current = node.querySelector<HTMLButtonElement>('[aria-checked="true"]');
+    current?.focus({ preventScroll: true });
+    current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -43,7 +47,10 @@ export function SurfaceSwitcher({
       if (!menu.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node))
         dismiss();
     };
-    const moved = () => dismiss();
+    const moved = (event: Event) => {
+      if (event.target instanceof Node && menu.current?.contains(event.target)) return;
+      dismiss();
+    };
     document.addEventListener('pointerdown', outside);
     window.addEventListener('resize', moved);
     document.addEventListener('scroll', moved, true);
@@ -62,6 +69,7 @@ export function SurfaceSwitcher({
         aria-label={`切换入口 · ${selected.label}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         title={selected.label}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
@@ -79,13 +87,17 @@ export function SurfaceSwitcher({
         createPortal(
           <div
             ref={menu}
+            id={menuId}
             className="surface-menu"
             role="menu"
             aria-label="选择入口"
             onKeyDown={(event) => {
               if (event.key === 'Escape' || event.key === 'Tab') {
-                if (event.key === 'Escape') event.preventDefault();
-                dismiss(event.key === 'Escape');
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+                dismiss(true);
                 return;
               }
               const items = [
@@ -99,16 +111,21 @@ export function SurfaceSwitcher({
               if (event.key === 'End') next = items.length - 1;
               if (next !== undefined) {
                 event.preventDefault();
-                items[next]?.focus();
+                items[next]?.focus({ preventScroll: true });
+                items[next]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
               }
             }}
           >
+            <p className="surface-menu-heading" role="presentation">
+              工作入口
+            </p>
             {surfaces.map((surface) => (
               <button
                 key={surface.id}
                 type="button"
                 role="menuitemradio"
                 aria-checked={surface.id === localSurface}
+                tabIndex={surface.id === localSurface ? 0 : -1}
                 aria-disabled={disabled || switching}
                 onClick={() => {
                   if (disabled || switching) return;

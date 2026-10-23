@@ -1,0 +1,112 @@
+.surface-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-lg);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-xl);
+  font-weight: 650;
+  text-align: left;
+}
+.surface-trigger:hover,
+.surface-trigger[aria-expanded='true'] {
+  background: var(--surface-hover);
+}
+.surface-trigger > span {
+  white-space: nowrap;
+}
+.surface-trigger > svg:last-child {
+  transform: rotate(90deg);
+}
+.surface-trigger .brand-mark {
+  width: 25px;
+  height: 25px;
+}
+.surface-menu {
+  position: fixed;
+  z-index: 220;
+  width: 20rem;
+  max-width: calc(100vw - var(--space-4));
+  max-height: calc(100dvh - var(--space-4));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+.surface-menu > button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  scroll-margin-block: var(--space-2);
+}
+.surface-menu > button > svg {
+  flex: none;
+}
+.surface-menu > button:hover:not([aria-disabled='true']):not([aria-checked='true']) {
+  background: var(--surface-hover);
+}
+.surface-menu > button[aria-checked='true'] {
+  background: var(--surface-selected);
+  color: var(--accent-strong);
+}
+.surface-menu > button:focus-visible {
+  outline-offset: -2px;
+}
+.surface-menu > button[aria-disabled='true'] {
+  cursor: default;
+}
+.surface-menu .surface-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.surface-menu strong,
+.surface-menu small {
+  display: block;
+}
+.surface-menu strong {
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+.surface-menu small,
+.surface-menu > p {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.surface-menu > p {
+  margin: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+}
+.surface-menu .surface-menu-heading {
+  margin-top: 0;
+  color: var(--secondary);
+  font-weight: 600;
+}
+.sidebar-collapsed .surface-trigger > span,
+.sidebar-collapsed .surface-trigger > svg:last-child {
+  display: none;
+}
+.sidebar-collapsed .surface-trigger {
+  justify-content: center;
+  width: 100%;
+  padding-inline: 0;
+}
