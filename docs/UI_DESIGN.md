@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.7 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.8 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -60,6 +60,8 @@ v1.19.7 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 
 ## 页面覆盖
 
+- 任务配置的完整目标与项目名称独立呈现；长权限、资料和模型信息使用具名键盘阅读区。交付要求逐字段显示数量和超限说明，短窗口中的正文与底部操作可整体滚动。
+
 | 范围 | 样式文件（apps/web/src） |
 | --- | --- |
 | 基础、主页、入口与启动 | style、motion、home、surface、Startup |
@@ -67,7 +69,7 @@ v1.19.7 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 | 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning |
 | 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、features/plan-alignment/plan-alignment |
 | 项目 | project-workbench、project-files、project-usage、project-intelligence、project-schedules、project-schedule-history |
-| 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、readiness、task-center、delivery-read-progress、workbench-persistence |
+| 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、run-setup、readiness、task-center、delivery-read-progress、workbench-persistence |
 
 以上界面CSS统一引用共享规范。供应商标识保留独立brand变量；用户自定义启动颜色、进度宽度、任务深度、图形坐标和代码行定位属于内容或几何数据，允许动态计算。Startup.css独立导入tokens，便携包同时包含两份资源。桌面与Web默认启动色在各自配置中同步，已有偏好不迁移覆盖。
 

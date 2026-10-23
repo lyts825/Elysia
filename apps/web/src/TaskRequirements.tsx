@@ -24,6 +24,7 @@ export function TaskRequirements({
   required: boolean;
   disabled: boolean;
 }) {
+  const id = useId();
   return (
     <section className="workflow-requirements" aria-label="本次交付要求">
       <h3>本次交付要求</h3>
@@ -33,35 +34,46 @@ export function TaskRequirements({
           : '可先写明具体要求，未填写的内容会在计划阶段确认。'}
         每行一项，最多各 40 项。
       </p>
-      <label>
-        交付物
-        <textarea
-          aria-label="本次交付物"
-          rows={2}
-          value={deliverables}
-          disabled={disabled}
-          required={required}
-          placeholder="例如：含来源链接的研究报告.md"
-          onChange={(event) => change('deliverables', event.target.value)}
-        />
-      </label>
-      <label>
-        验收标准
-        <textarea
-          aria-label="本次验收标准"
-          rows={3}
-          value={criteria}
-          disabled={disabled}
-          required={required}
-          placeholder="例如：每项结论附原始来源；汇总金额与明细一致"
-          onChange={(event) => change('acceptanceCriteria', event.target.value)}
-        />
-      </label>
-      {!validRequirements(deliverables, criteria, false) && (
-        <p className="field-error" role="alert">
-          每类最多 40 项，每项最多 2000 字。
-        </p>
-      )}
+      {(
+        [
+          ['deliverables', '交付物', deliverables, '例如：含来源链接的研究报告.md'],
+          ['acceptanceCriteria', '验收标准', criteria, '例如：每项结论附原始来源；汇总金额与明细一致'],
+        ] as const
+      ).map(([field, label, value, placeholder]) => {
+        const lines = requirementLines(value);
+        const invalid = !validRequirements(value, '', false);
+        const helpId = `${id}-${field}-help`;
+        return (
+          <div className="requirement-field" key={field}>
+            <label htmlFor={`${id}-${field}`}>{label}</label>
+            <textarea
+              id={`${id}-${field}`}
+              aria-label={`本次${label}`}
+              aria-describedby={helpId}
+              aria-invalid={invalid || undefined}
+              rows={field === 'deliverables' ? 2 : 3}
+              value={value}
+              disabled={disabled}
+              required={required}
+              placeholder={placeholder}
+              onChange={(event) => change(field, event.target.value)}
+            />
+            <p
+              id={helpId}
+              className={invalid ? 'field-error' : 'field-help'}
+              role={invalid ? 'alert' : undefined}
+            >
+              已填写 {lines.length} / 40 项
+              {invalid
+                ? '；最多 40 项，每项最多 2000 字。'
+                : required && !lines.length
+                  ? '；直接执行前至少填写一项。'
+                  : '，每项最多 2000 字。'}
+            </p>
+          </div>
+        );
+      })}
     </section>
   );
 }
+import { useId } from 'react';

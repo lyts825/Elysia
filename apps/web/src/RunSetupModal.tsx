@@ -21,6 +21,7 @@ import { RunConfirmation } from './RunConfirmation';
 import { ReviewModelPolicy } from './ReviewModelPolicy';
 import { TaskRequirements, requirementLines, validRequirements } from './TaskRequirements';
 import './workflow.css';
+import './run-setup.css';
 import type { RunSetupDraft } from './RunSetupDraft';
 export type { RunSetupDraft } from './RunSetupDraft';
 const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
@@ -182,8 +183,9 @@ export function RunModal({
   };
   return (
     <Modal
+      className="run-setup-modal"
       title={chat ? '新建独立对话' : '新建项目任务'}
-      subtitle={(chat ? '归属：独立会话' : `归属：${projectName}`) + ' · ' + objective.slice(0, 80)}
+      subtitle={chat ? '核对会话目标与模型后开始。' : '核对任务目标、执行配置与本次交付要求。'}
       close={close}
       busy={busy || defaultsBusy}
     >
@@ -244,6 +246,28 @@ export function RunModal({
       >
         <div className="form-body">
           {beforeForm}
+          {!compact && (
+            <section className="run-setup-target" aria-label="本次任务目标">
+              <h3>{chat ? '会话目标' : '任务目标'}</h3>
+              {!chat && projectName && (
+                <>
+                  <p className="field-help">所属项目</p>
+                  <p className="run-setup-reading" role="region" aria-label="所属项目完整名称" tabIndex={0}>
+                    {projectName}
+                  </p>
+                </>
+              )}
+              <p className="field-help">目标全文</p>
+              <p
+                className="run-setup-reading workflow-prose"
+                role="region"
+                aria-label="本次执行目标"
+                tabIndex={0}
+              >
+                {objective}
+              </p>
+            </section>
+          )}
           {!permissionsValid && (
             <p className="field-error" role="alert">
               网页授权须为有效 URL，最多 40 项；请核对本次执行范围后创建。
