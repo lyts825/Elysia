@@ -4,6 +4,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { reviewStatusLabels } from './ReviewStatus';
 import { Icon } from './Icon';
 import './workflow.css';
+import './delivery-overview.css';
 
 export function DeliveryStatusCard({
   runId,
@@ -59,14 +60,14 @@ export function DeliveryStatusCard({
   }, [api, runId, version, retry]);
   return (
     <div
-      className="delivery-card"
+      className="delivery-card delivery-overview-status"
       data-review-status={readIssue ? 'unknown' : value?.reviewStatus || 'unknown'}
       aria-label="交付复核状态"
     >
       <Icon name="check" size={24} />
-      <div>
-        <h3>
-          执行已完成 ·{' '}
+      <div className="delivery-status-content">
+        <h3>执行已完成</h3>
+        <p className="delivery-status-conclusion">
           {readIssue
             ? '复核状态暂不可读'
             : value?.reviewStatus
@@ -74,7 +75,7 @@ export function DeliveryStatusCard({
               : value
                 ? '当前任务不适用人工复核'
                 : '正在读取复核状态…'}
-        </h3>
+        </p>
         <p>
           {value?.reviewStatus === 'stale'
             ? '交付内容已变化，原结论不再适用，请重新核对。'
@@ -83,8 +84,14 @@ export function DeliveryStatusCard({
               : '执行完成与用户采纳分别记录，请按验收项核对交付。'}
         </p>
         {readIssue && (
-          <p className="field-error" role="alert">
-            {readIssue}{' '}
+          <div className="delivery-overview-error" role="alert">
+            <p
+              className="field-error delivery-overview-reading"
+              tabIndex={0}
+              aria-label="交付复核状态读取失败详情"
+            >
+              {readIssue}
+            </p>
             <button
               className="text-button"
               onClick={() => {
@@ -94,7 +101,7 @@ export function DeliveryStatusCard({
             >
               重试读取复核状态
             </button>
-          </p>
+          </div>
         )}
         <button className="text-button" onClick={open}>
           逐项查看交付与验收

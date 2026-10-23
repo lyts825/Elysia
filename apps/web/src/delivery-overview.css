@@ -1,0 +1,141 @@
+.delivery-overview,
+.delivery-status-content {
+  min-width: 0;
+}
+
+.delivery-overview-status {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.delivery-overview-status > svg {
+  flex: none;
+}
+
+.delivery-status-content {
+  display: grid;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.delivery-status-content h3,
+.delivery-status-content p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.delivery-status-content .delivery-status-conclusion {
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--font-md);
+}
+
+.delivery-overview-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.delivery-overview .delivery-overview-heading h3 {
+  margin: 0;
+}
+
+.delivery-overview-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.delivery-overview-reading {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(24rem, 52dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+  scrollbar-gutter: stable;
+}
+
+.delivery-overview-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.delivery-overview-error > p {
+  margin: 0;
+}
+
+.delivery-overview .delivery-overview-file {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-block: var(--space-2);
+}
+
+.delivery-overview-file p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.delivery-file-name {
+  font-weight: 600;
+}
+
+.delivery-overview-fields {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.delivery-overview-fields > div {
+  min-width: 0;
+}
+
+.delivery-overview-fields dt {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.delivery-overview-fields dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.delivery-overview-evidence {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.delivery-overview-evidence code,
+.delivery-overview-file code {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.delivery-overview-evidence details,
+.delivery-overview-file details {
+  min-width: 0;
+}
+
+.delivery-overview-evidence summary,
+.delivery-overview-file summary {
+  color: var(--secondary);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.delivery-overview-file details[open] > dl {
+  margin-top: var(--space-3);
+}

@@ -1,6 +1,6 @@
 # Elysia 界面规范
 
-v1.19.34 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
+v1.19.35 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言：低饱和玫瑰色、清晰的文字层次、稳定的操作位置。功能模块通过共享样式变量接入规范，保留独立页面和业务边界。
 
 ## 唯一基础来源
 
@@ -103,16 +103,18 @@ v1.19.34 · 2026-10-23。原生 API 与 Agent 终端使用同一套视觉语言�
 
 - 订阅连接的原生选择框之外提供当前账号和型号的完整名称与标识，登录、订阅授权和额度状态分别说明。模型说明可展开，完整反馈可键盘阅读，显式失败沿用现有焦点策略。
 
+- 交付文件使用短预览和下载动作，并提供明确的完整名称及核验信息入口。嵌入证据的元数据复用证据阅读区；关闭预览仅在操作仍拥有焦点时返回可见入口，用户已移焦或入口不可用时放弃恢复。
+
 ## 页面覆盖
 
 | 范围 | 样式文件（apps/web/src） |
 | --- | --- |
 | 基础、主页、入口与启动 | style、motion、home、surface、Startup |
 | 预览与文档 | preview、preview-dock、markdown、file-content、file-page |
-| 模型、上下文和会话 | providers、context-window、composer-model-control、conversation-search、sessions、reasoning、execution-config |
+| 模型、上下文和会话 | providers、subscription-settings、context-window、composer-model-control、conversation-search、sessions、reasoning、execution-config |
 | 执行与终端 | local-agents、terminal-control、terminal-runtime、terminal-maintenance、terminal-communication、terminal-continuation、tool-activity、task-working-state、task-graph、task-recovery、record-history、features/plan-alignment/plan-alignment |
-| 项目 | project-workbench、project-board-editor、project-todos、project-manifests、project-files、project-usage、project-intelligence、project-model-routing、project-schedules、project-schedule-history |
-| 交付与工作流 | project-delivery-bundle、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、run-setup、artifact-changes、review-history、review-note-linking、run-revision-links、handoff-selection、resolution-evidence、source-note-resolutions、native-project-defaults、readiness、task-center、delivery-read-progress、workbench-persistence |
+| 项目 | project-workbench、project-board-editor、project-todos、project-manifests、project-launch-draft、project-item-setup、project-files、project-usage、project-intelligence、project-model-routing、project-schedules、project-schedule-history |
+| 交付与工作流 | project-delivery-bundle、project-delivery-archive、project-draft-backup、project-draft-comparison、project-plan-transfer、workflow、run-setup、delivery-criteria、delivery-user-review、delivery-overview、original-review、review-source-notes、workflow-policy-confirmation、artifact-changes、review-history、review-note-linking、run-revision-links、handoff-selection、resolution-evidence、source-note-resolutions、native-project-defaults、readiness、task-center、delivery-read-progress、workbench-persistence |
 
 以上界面CSS统一引用共享规范。供应商标识保留独立brand变量；用户自定义启动颜色、进度宽度、任务深度、图形坐标和代码行定位属于内容或几何数据，允许动态计算。Startup.css独立导入tokens，便携包同时包含两份资源。桌面与Web默认启动色在各自配置中同步，已有偏好不迁移覆盖。
 

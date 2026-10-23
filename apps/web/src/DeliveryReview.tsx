@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryReview as Delivery, SourceArtifact } from '../../../packages/contracts/src/workflow';
 import type { Artifact, Operation } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
@@ -13,6 +13,7 @@ import { ArtifactRevisionProvider } from './ArtifactRevisionDraft';
 import { SourceNoteResolutions } from './SourceNoteResolutions';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './workflow.css';
+import './delivery-overview.css';
 const FilePreview = deferredPanel(
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
   '产物预览',
@@ -56,6 +57,9 @@ export function DeliveryReview({
     [readVersion, setReadVersion] = useState(0);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const readRequest = useRef<AbortController | null>(null);
+  const previewOpener = useRef<HTMLButtonElement | null>(null);
+  const pendingPreviewFocus = useRef<(() => void) | null>(null);
+  useEffect(() => () => pendingPreviewFocus.current?.(), []);
   useEffect(() => {
     const controller = new AbortController();
     readRequest.current = controller;
@@ -83,18 +87,19 @@ export function DeliveryReview({
       });
     return () => controller.abort();
   }, [api, runId, retry]);
-  const file = (item: SourceArtifact) => (
-    <div className="workflow-file" key={item.id}>
-      <button type="button" className="text-button" onClick={() => setPreview(item)}>
-        {item.name} · v{item.version}
-      </button>
-      <span>
-        {item.verified ? '结构证据已核验' : '尚未核验'} · SHA256 {item.hash.slice(0, 12)}
-      </span>
-      <a href={apiUrl('/artifacts/' + item.id)} download>
-        下载
-      </a>
-    </div>
+  const file = (item: SourceArtifact, embedded = false) => (
+    <DeliveryFile
+      key={item.id}
+      item={item}
+      embedded={embedded}
+      href={apiUrl('/artifacts/' + item.id)}
+      preview={() => {
+        pendingPreviewFocus.current?.();
+        previewOpener.current =
+          document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+        setPreview(item);
+      }}
+    />
   );
   return (
     <ArtifactRevisionProvider
@@ -104,14 +109,16 @@ export function DeliveryReview({
       disabled={readOnly || !revise}
     >
       <Modal title="交付与验收" close={close} busy={reviewBusy} wide className="workflow-modal">
-        <div className="form-body workflow-body">
+        <div className="form-body workflow-body delivery-overview">
           {error && (
-            <p role="alert" className="field-error">
-              {error}{' '}
+            <div role="alert" className="delivery-overview-error">
+              <p className="field-error delivery-overview-reading" tabIndex={0} aria-label="交付读取失败详情">
+                {error}
+              </p>
               <button className="text-button" onClick={() => setRetry((v) => v + 1)}>
                 重试
               </button>
-            </p>
+            </div>
           )}
           {reading && value && <p role="status">正在重新读取，已读内容与备注保留…</p>}
           {reading && (
@@ -130,11 +137,19 @@ export function DeliveryReview({
           )}
           {value && (
             <>
-              <p className="field-help">{value.limitation}</p>
+              <p className="field-help delivery-overview-reading" tabIndex={0} aria-label="交付核验范围说明">
+                {value.limitation}
+              </p>
               {value.summary && (
                 <section aria-label="交付摘要">
                   <h3>交付摘要</h3>
-                  <p className="workflow-prose">{value.summary}</p>
+                  <p
+                    className="workflow-prose delivery-overview-reading"
+                    tabIndex={0}
+                    aria-label="交付摘要全文"
+                  >
+                    {value.summary}
+                  </p>
                 </section>
               )}
               <DeliveryUserReview
@@ -158,14 +173,30 @@ export function DeliveryReview({
                     reload={() => setRetry((v) => v + 1)}
                     criterionNote={criterionNote}
                     evidence={(evidence, index) => (
-                      <div className="workflow-evidence" key={index}>
+                      <div className="workflow-evidence delivery-overview-evidence" key={index}>
                         <strong>
-                          {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]}
+                          {{ artifact: '产物证据', file: '文件证据', command: '命令证据' }[evidence.type]} ·
+                          本页第 {index + 1} 条
                         </strong>
-                        <p className="workflow-prose">{evidence.note || evidence.ref}</p>
-                        <code>{evidence.ref}</code>
-                        {evidence.hash && <small>SHA256 {evidence.hash}</small>}
-                        {evidence.artifact && file(evidence.artifact)}
+                        <dl className="delivery-overview-fields">
+                          <div>
+                            <dt>证据说明</dt>
+                            <dd>{evidence.note || '未附说明'}</dd>
+                          </div>
+                          <div>
+                            <dt>完整引用</dt>
+                            <dd>
+                              <code>{evidence.ref}</code>
+                            </dd>
+                          </div>
+                        </dl>
+                        {evidence.hash && (
+                          <details>
+                            <summary>查看证据完整哈希</summary>
+                            <code>{evidence.hash}</code>
+                          </details>
+                        )}
+                        {evidence.artifact && file(evidence.artifact, true)}
                         {evidence.type === 'file' && openFile && (
                           <button
                             className="text-button"
@@ -196,8 +227,14 @@ export function DeliveryReview({
                 }}
               />
               <section aria-label="交付文件">
-                <h3>交付文件</h3>
-                {value.artifacts.map(file)}
+                <div className="delivery-overview-heading">
+                  <h3>交付文件</h3>
+                  <span className="field-help">
+                    本页 {value.artifacts.length} 份
+                    {value.artifactPage.total !== undefined && ` · 共 ${value.artifactPage.total} 份`}
+                  </span>
+                </div>
+                {value.artifacts.map((item) => file(item))}
                 {!value.artifacts.length && <p className="field-help">当前没有登记的交付文件。</p>}
                 {value.artifactPage.hasMore && (
                   <RecordHistory
@@ -212,9 +249,61 @@ export function DeliveryReview({
               </section>
               {preview && (
                 <section className="workflow-preview" aria-label="所选产物预览">
+                  <p className="delivery-overview-reading" tabIndex={0} aria-label="所选产物完整名称">
+                    {preview.name}
+                  </p>
                   <div className="workflow-actions">
-                    <strong>{preview.name}</strong>
-                    <button className="text-button" onClick={() => setPreview(undefined)}>
+                    <button
+                      className="text-button"
+                      onClick={(event) => {
+                        pendingPreviewFocus.current?.();
+                        const closer = event.currentTarget;
+                        const ownsFocus = document.activeElement === closer;
+                        setPreview(undefined);
+                        const target = previewOpener.current;
+                        if (!ownsFocus || !target) return;
+                        let cancelled = false;
+                        const cancel = () => {
+                          cancelled = true;
+                        };
+                        const focusChanged = (event: FocusEvent) => {
+                          if (event.target !== closer) cancel();
+                        };
+                        const cleanup = () => {
+                          document.removeEventListener('focusin', focusChanged);
+                          document.removeEventListener('pointerdown', cancel, true);
+                          document.removeEventListener('keydown', cancel, true);
+                          window.removeEventListener('blur', cancel);
+                          if (pendingPreviewFocus.current === stop) pendingPreviewFocus.current = null;
+                        };
+                        const frame = requestAnimationFrame(() => {
+                          cleanup();
+                          const active = document.activeElement;
+                          if (
+                            cancelled ||
+                            (active !== closer && active !== document.body) ||
+                            !document.hasFocus() ||
+                            !target.isConnected ||
+                            target.matches(':disabled') ||
+                            target.closest('[inert]') ||
+                            !target.getClientRects().length
+                          )
+                            return;
+                          target.focus({ preventScroll: true });
+                          target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                        });
+                        const stop = () => {
+                          cancel();
+                          cancelAnimationFrame(frame);
+                          cleanup();
+                        };
+                        pendingPreviewFocus.current = stop;
+                        document.addEventListener('focusin', focusChanged);
+                        document.addEventListener('pointerdown', cancel, true);
+                        document.addEventListener('keydown', cancel, true);
+                        window.addEventListener('blur', cancel);
+                      }}
+                    >
                       收起预览
                     </button>
                   </div>
@@ -242,6 +331,67 @@ export function DeliveryReview({
         </footer>
       </Modal>
     </ArtifactRevisionProvider>
+  );
+}
+
+function DeliveryFile({
+  item,
+  href,
+  preview,
+  embedded,
+}: {
+  item: SourceArtifact;
+  href: string;
+  preview: () => void;
+  embedded: boolean;
+}) {
+  const nameId = useId();
+  return (
+    <div className="workflow-file delivery-overview-file" data-embedded={embedded || undefined}>
+      <p id={nameId} className="delivery-file-name">
+        {item.name.length > 96 ? `${item.name.slice(0, 96)}…` : item.name}
+      </p>
+      <p className="field-help">
+        版本 {item.version} · {item.verified ? '结构证据已核验' : '尚未核验'}
+      </p>
+      <div className="workflow-actions">
+        <button type="button" className="text-button" aria-describedby={nameId} onClick={preview}>
+          预览文件
+        </button>
+        <a href={href} download aria-describedby={nameId}>
+          下载文件
+        </a>
+      </div>
+      <details>
+        <summary>完整名称与核验信息</summary>
+        <dl
+          className={`delivery-overview-fields${embedded ? '' : ' delivery-overview-reading'}`}
+          tabIndex={embedded ? undefined : 0}
+          aria-label="交付文件完整名称与核验信息"
+        >
+          <div>
+            <dt>完整名称</dt>
+            <dd>{item.name}</dd>
+          </div>
+          <div>
+            <dt>文件标识</dt>
+            <dd>
+              <code>{item.id}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>格式</dt>
+            <dd>{item.mediaType}</dd>
+          </div>
+          <div>
+            <dt>SHA256</dt>
+            <dd>
+              <code>{item.hash}</code>
+            </dd>
+          </div>
+        </dl>
+      </details>
+    </div>
   );
 }
 
@@ -278,12 +428,18 @@ function CommandEvidence({ runId, operationId }: { runId: string; operationId: s
       </button>
       {open &&
         (error ? (
-          <p className="field-error" role="alert">
-            {error}{' '}
+          <div className="delivery-overview-error" role="alert">
+            <p
+              className="field-error delivery-overview-reading"
+              tabIndex={0}
+              aria-label="命令证据读取失败详情"
+            >
+              {error}
+            </p>
             <button className="text-button" onClick={() => setRetry((value) => value + 1)}>
               重试
             </button>
-          </p>
+          </div>
         ) : operation ? (
           <ToolActivity
             call={{
