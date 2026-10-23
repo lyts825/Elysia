@@ -32,6 +32,7 @@ export function RunConfirmation({
     value.concurrency !== defaults.concurrency && '并发',
   ].filter(Boolean);
   const authorizedUrls = requirementLines(value.urls);
+  const writePaths = requirementLines(value.writePaths);
   return (
     <section className="workflow-confirmation run-review-confirmation" aria-label="本次执行配置确认">
       <h3>确认本次执行</h3>
@@ -98,7 +99,7 @@ export function RunConfirmation({
             <dl
               className="run-review-fields run-setup-reading"
               role="region"
-              aria-label="本次权限完整范围"
+              aria-label="本次权限配置"
               tabIndex={0}
             >
               <div>
@@ -107,20 +108,8 @@ export function RunConfirmation({
               </div>
               <div>
                 <dt>写入</dt>
-                <dd>
-                  {value.write
-                    ? `允许任务目录写入 · ${requirementLines(value.writePaths).length} 项范围`
-                    : '不允许写入'}
-                </dd>
+                <dd>{value.write ? `允许任务目录写入 · ${writePaths.length} 项范围` : '不允许写入'}</dd>
               </div>
-              {value.write && (
-                <div>
-                  <dt>完整写入范围</dt>
-                  <dd className="run-review-prose">
-                    {requirementLines(value.writePaths).join('\n') || '未指定'}
-                  </dd>
-                </div>
-              )}
               <div>
                 <dt>命令执行</dt>
                 <dd>{value.exec ? '允许（当前系统用户权限）' : '不允许命令执行'}</dd>
@@ -153,6 +142,19 @@ export function RunConfirmation({
           </dd>
         </div>
       </dl>
+      {value.write && (
+        <details className="run-review-materials run-review-write-paths">
+          <summary>写入范围 · {writePaths.length} 项</summary>
+          <p
+            className="workflow-prose run-setup-reading"
+            role="region"
+            aria-label="本次完整写入范围"
+            tabIndex={0}
+          >
+            {writePaths.join('\n') || '未指定'}
+          </p>
+        </details>
+      )}
       {value.inputs.trim() && (
         <details className="run-review-materials">
           <summary>重点资料 · 已填写</summary>

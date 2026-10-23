@@ -26,9 +26,6 @@
   font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
-.run-review-confirmation .run-review-prose {
-  white-space: pre-wrap;
-}
 .run-review-confirmation .run-confirmation-grid dd > span {
   display: block;
 }
