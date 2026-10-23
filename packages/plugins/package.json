@@ -1,6 +1,6 @@
 {
   "name": "@elysia/plugins",
-  "version": "1.19.90",
+  "version": "1.19.91",
   "private": true,
   "type": "module"
 }

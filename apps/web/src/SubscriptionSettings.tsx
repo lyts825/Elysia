@@ -118,6 +118,7 @@ export function SubscriptionSettings({
     };
   }, [accountId, selected?.connected, selected?.planEnabled, selected?.usageBlocked, reload]);
   const chosenModel = models.find((item) => item.id === model);
+  const catalogCurrent = loadedCatalog === catalogKey;
   const valid =
     !!selected?.connected &&
     selected.planEnabled &&
@@ -162,7 +163,12 @@ export function SubscriptionSettings({
       <p className="field-help">通过 OpenAI 官方授权使用账号可用的模型和额度。登录时会打开系统浏览器。</p>
       {!status?.available && (
         <p className="inline-warning subscription-reading" tabIndex={0} aria-label="订阅可用性说明">
-          {status?.message || '正在读取系统加密凭据…'}
+          {status?.message ||
+            (status
+              ? '当前环境尚未提供可用的订阅接入。'
+              : error
+                ? '订阅账号状态尚未读取成功，请核对下方说明。'
+                : '正在读取系统加密凭据…')}
         </p>
       )}
       {!!status?.accounts.length && (
@@ -181,7 +187,18 @@ export function SubscriptionSettings({
               </option>
             ))}
           </select>
+          <small className="subscription-catalog-status">本次已读 {status.accounts.length} 个账号</small>
         </label>
+      )}
+      {status && accountId && !selected && (
+        <p
+          className="inline-warning subscription-reading"
+          role="status"
+          tabIndex={0}
+          aria-label="当前订阅账号选择问题"
+        >
+          当前选择的账号不在本次已读列表中：<code>{accountId}</code>。请重新选择账号后核对模型。
+        </p>
       )}
       {selected && (
         <section className="subscription-selected" aria-label="当前订阅账号">
@@ -219,7 +236,7 @@ export function SubscriptionSettings({
           </dl>
         </section>
       )}
-      <div className="subscription-actions">
+      <div className="subscription-actions" role="group" aria-label="订阅账号授权操作">
         <button
           className="chatgpt-signin"
           disabled={busy || waiting || !status?.available}
@@ -246,6 +263,32 @@ export function SubscriptionSettings({
           </button>
         )}
       </div>
+      {(waiting || status?.attempt?.status === 'failed') && (
+        <section className="subscription-auth-progress" aria-label="订阅授权进度">
+          <h4>
+            {status?.attempt?.status === 'exchanging'
+              ? '正在完成授权'
+              : status?.attempt?.status === 'failed'
+                ? '授权未完成'
+                : '等待浏览器授权'}
+          </h4>
+          {status?.attempt?.status === 'failed' ? (
+            <p
+              className="inline-warning subscription-reading"
+              role="alert"
+              tabIndex={0}
+              aria-label="订阅登录失败详情"
+            >
+              {status.attempt.message}
+            </p>
+          ) : (
+            <p className="subscription-reading" role="status" tabIndex={0} aria-label="订阅授权进度详情">
+              {status?.attempt?.message || '请完成系统浏览器中的授权，或使用取消登录停止等待。'}
+            </p>
+          )}
+          <p className="field-help">授权完成后，仍需核对所选账号与模型是否就绪。</p>
+        </section>
+      )}
       {selected?.connected && !selected.planEnabled && (
         <button className="secondary" disabled={busy} onClick={() => void login(selected.id, true)}>
           授权使用订阅额度
@@ -270,6 +313,13 @@ export function SubscriptionSettings({
           )}
           <label className="subscription-field">
             账号可用模型
+            <small className="subscription-catalog-status" role="status">
+              {loading
+                ? '正在读取所选账号的模型目录…'
+                : catalogCurrent
+                  ? `当前账号已读 ${models.length} 个型号，其中 ${models.filter(supportsText).length} 个支持文字对话`
+                  : '当前账号的模型目录尚未读回，暂不能判断可用型号数量。'}
+            </small>
             <select
               value={model}
               aria-describedby={model ? modelHelpId : undefined}
@@ -279,7 +329,11 @@ export function SubscriptionSettings({
                 if (next && supportsText(next)) change({ model: next.id });
               }}
             >
-              {!models.length && <option value="">{loading ? '正在读取…' : '暂无可用模型'}</option>}
+              {!models.length && (
+                <option value="">
+                  {loading ? '正在读取…' : catalogCurrent ? '当前账号没有可用型号' : '当前目录尚未读回'}
+                </option>
+              )}
               {!!models.length && !chosenModel && (
                 <option value={model} disabled>
                   {model ? `${model}（已不可用，请重新选择）` : '请选择文字型号'}
@@ -325,12 +379,12 @@ export function SubscriptionSettings({
               )}
             </section>
           )}
-          {!loading && !error && catalogIssue(models, model) && (
+          {catalogCurrent && !loading && !error && catalogIssue(models, model) && (
             <p className="inline-warning" role="alert">
               {catalogIssue(models, model)}
             </p>
           )}
-          <div className="subscription-actions">
+          <div className="subscription-actions" role="group" aria-label="订阅模型目录与用量操作">
             <button
               className="secondary"
               disabled={loading}
@@ -382,16 +436,6 @@ export function SubscriptionSettings({
       {notice && (
         <p className="field-help subscription-reading" role="status" tabIndex={0} aria-label="订阅操作结果">
           {notice}
-        </p>
-      )}
-      {status?.attempt?.status === 'failed' && (
-        <p
-          className="inline-warning subscription-reading"
-          role="alert"
-          tabIndex={0}
-          aria-label="订阅登录失败详情"
-        >
-          {status.attempt.message}
         </p>
       )}
       {error && (

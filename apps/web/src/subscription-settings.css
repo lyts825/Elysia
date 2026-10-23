@@ -41,6 +41,27 @@
   max-width: 100%;
   min-width: 0;
 }
+.subscription-settings .subscription-catalog-status {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+.subscription-settings .subscription-auth-progress {
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
+.subscription-settings .subscription-auth-progress h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+  overflow-wrap: anywhere;
+}
+.subscription-settings .subscription-auth-progress > p {
+  margin-block: var(--space-2);
+  line-height: var(--leading-body);
+}
 
 .subscription-selected {
   display: grid;
