@@ -16,6 +16,45 @@
 .workbench-persistence p {
   overflow-wrap: anywhere;
 }
+.workbench-persistence .workbench-persistence-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.workbench-persistence .workbench-persistence-summary dt,
+.workbench-persistence .workbench-persistence-source dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.workbench-persistence .workbench-persistence-summary dd,
+.workbench-persistence .workbench-persistence-source dd {
+  margin: var(--space-1) 0 var(--space-2);
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.workbench-persistence .workbench-persistence-source {
+  margin-block: var(--space-3);
+  min-width: 0;
+}
+.workbench-persistence .workbench-persistence-source summary {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+.workbench-persistence .workbench-persistence-reading {
+  max-height: min(14rem, 40dvh);
+  min-width: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-gutter: stable;
+  line-height: var(--leading-body);
+}
+.workbench-persistence .workbench-persistence-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .workbench-persistence-actions {
   display: flex;
   align-items: center;
@@ -60,6 +99,14 @@
 }
 .workbench-inspection-columns label {
   min-width: 0;
+}
+.workbench-inspection-columns label > small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 400;
+  line-height: var(--leading-body);
 }
 .workbench-inspection-columns textarea {
   display: block;

@@ -201,10 +201,24 @@ export function WorkbenchPersistence({
       snapshot.entries[inspection.key]?.revision !== inspection.local.revision ||
       !snapshot.issues.some((issue) => issue.key === inspection.key));
   return (
-    <Modal title="草稿保存与恢复" close={close} wide busy={!!busy}>
+    <Modal title="草稿保存与恢复" close={close} wide busy={!!busy} className="workbench-persistence-modal">
       <div className="form-body workbench-persistence">
         <section aria-label="草稿保护状态">
           <h3>保存与恢复保护</h3>
+          <dl className="workbench-persistence-summary" aria-label="当前窗口草稿范围">
+            <div>
+              <dt>当前窗口已读</dt>
+              <dd>{Object.keys(snapshot.entries).length} 项草稿与偏好</dd>
+            </div>
+            <div>
+              <dt>尚未确认保存</dt>
+              <dd>{pending} 项</dd>
+            </div>
+            <div>
+              <dt>需要逐项处理</dt>
+              <dd>{snapshot.issues.length} 项</dd>
+            </div>
+          </dl>
           <p>
             {pending
               ? `${pending} 项内容尚未确认保存到本机服务。`
@@ -258,7 +272,12 @@ export function WorkbenchPersistence({
         </section>
         {snapshot.readError && (
           <section aria-label="草稿读取问题">
-            <p className="field-error" role="alert">
+            <p
+              className="field-error workbench-persistence-reading"
+              role="alert"
+              aria-label="草稿读取问题全文"
+              tabIndex={0}
+            >
               {snapshot.readError}
             </p>
             <button
@@ -273,11 +292,39 @@ export function WorkbenchPersistence({
         )}
         <section aria-label="逐项保存问题">
           <h3>逐项处理 · {snapshot.issues.length}</h3>
+          {snapshot.issues.length > 0 && (
+            <p className="field-help">本页显示 {shownIssues.length} 项；仅处理明确选择的单项内容。</p>
+          )}
           {!snapshot.issues.length && <p className="field-help">当前没有需要处理的保存问题。</p>}
           {shownIssues.map((issue) => (
             <article className="workbench-save-issue" key={issue.key}>
               <h4>{labelFor(issue.key)}</h4>
-              <p>{issue.message}</p>
+              <p
+                className="workbench-persistence-reading"
+                role="region"
+                aria-label={`${labelFor(issue.key)}保存问题全文`}
+                tabIndex={0}
+              >
+                {issue.message}
+              </p>
+              <details className="workbench-persistence-source">
+                <summary>完整条目标识与依据版本</summary>
+                <dl
+                  className="workbench-persistence-reading"
+                  role="region"
+                  tabIndex={0}
+                  aria-label={`${labelFor(issue.key)}完整草稿标识`}
+                >
+                  <div>
+                    <dt>条目标识</dt>
+                    <dd>{issue.key}</dd>
+                  </div>
+                  <div>
+                    <dt>当前窗口依据版本</dt>
+                    <dd>{snapshot.entries[issue.key]?.revision ?? '尚未读取条目'}</dd>
+                  </div>
+                </dl>
+              </details>
               <div className="workbench-persistence-actions">
                 {issue.kind === 'conflict' ? (
                   <button
@@ -346,14 +393,57 @@ export function WorkbenchPersistence({
             className="workbench-inspection"
             aria-label="草稿内容核对"
           >
-            <h3>核对：{labelFor(inspection.key)}</h3>
+            <h3>核对单项草稿</h3>
+            <p
+              className="workbench-persistence-reading"
+              role="region"
+              tabIndex={0}
+              aria-label="本次核对草稿完整名称"
+            >
+              {labelFor(inspection.key)}
+            </p>
+            <p className="field-help" role="status">
+              {busy === inspection.key
+                ? '正在处理本次选择，保存结果尚未确认。'
+                : changed
+                  ? '本次核对已失效，当前窗口原稿仍保留。'
+                  : '本次核对尚未处理；选择保存方向不等于已保存或已采用。'}
+            </p>
+            <details className="workbench-persistence-source">
+              <summary>本次核对的条目、版本与标识</summary>
+              <dl
+                className="workbench-persistence-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="本次草稿核对完整依据"
+              >
+                <div>
+                  <dt>条目标识</dt>
+                  <dd>{inspection.key}</dd>
+                </div>
+                <div>
+                  <dt>当前窗口依据版本</dt>
+                  <dd>{inspection.local.revision}</dd>
+                </div>
+                <div>
+                  <dt>本次读回服务端版本</dt>
+                  <dd>{inspection.remote?.revision ?? '没有可采用的内容'}</dd>
+                </div>
+                <div>
+                  <dt>本次核对标识</dt>
+                  <dd>{inspection.token}</dd>
+                </div>
+              </dl>
+            </details>
             <div className="workbench-inspection-columns">
               <label>
                 当前窗口内容
+                <small>格式化阅读，导出保留存储原文。</small>
                 <textarea readOnly value={readableText(inspection.local.value)} rows={12} />
               </label>
               <label>
                 服务端内容
+                <small>本次核对读回的内容，尚未采用。</small>
                 <textarea
                   readOnly
                   value={
@@ -396,18 +486,25 @@ export function WorkbenchPersistence({
                 采用服务端内容
               </label>
               {choice === 'remote' && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() =>
-                    void run('export', () => {
-                      exportOne(inspection.key, inspection.local.value);
-                      setDownloaded(inspection.token);
-                    })
-                  }
-                >
-                  导出核对中的原稿
-                </button>
+                <>
+                  <p className="field-help">
+                    {downloaded === inspection.token
+                      ? '已发起本次原稿下载，请确认文件保存完成后再勾选。'
+                      : '采用服务端内容前，须先导出本次核对的原稿并确认另存。'}
+                  </p>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() =>
+                      void run('export', () => {
+                        exportOne(inspection.key, inspection.local.value);
+                        setDownloaded(inspection.token);
+                      })
+                    }
+                  >
+                    导出核对中的原稿
+                  </button>
+                </>
               )}
               <label className="workbench-choice">
                 <input
@@ -452,7 +549,13 @@ export function WorkbenchPersistence({
         )}
         {busy && <p role="status">正在处理所选内容…</p>}
         {error && (
-          <p ref={errorMessage} tabIndex={-1} className="field-error" role="alert">
+          <p
+            ref={errorMessage}
+            tabIndex={-1}
+            className="field-error workbench-persistence-reading"
+            role="alert"
+            aria-label="草稿处理问题全文"
+          >
             {error}
           </p>
         )}
