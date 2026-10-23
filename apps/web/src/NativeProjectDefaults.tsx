@@ -4,6 +4,47 @@ import type {
   NativeProjectDefaultsRecord,
 } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
+import './native-project-defaults.css';
+
+function DefaultsSummary({ value }: { value: NativeProjectDefaults }) {
+  return (
+    <dl className="native-defaults-facts">
+      <div>
+        <dt>模型连接标识</dt>
+        <dd>{value.modelChoice?.providerId || '未指定'}</dd>
+      </div>
+      <div>
+        <dt>模型与推理强度</dt>
+        <dd>
+          {value.modelChoice?.model || '未指定'} · {value.modelChoice?.reasoningEffort || '默认'}
+        </dd>
+      </div>
+      <div>
+        <dt>计划模式</dt>
+        <dd>{value.planMode ? '先规划，接受后执行' : '直接执行'}</dd>
+      </div>
+      <div>
+        <dt>上下文</dt>
+        <dd>
+          {value.contextPolicy?.mode === 'manual'
+            ? `${value.contextPolicy.windowTokens?.toLocaleString() || '未指定'} Token`
+            : '托管'}
+        </dd>
+      </div>
+      <div>
+        <dt>预算上限</dt>
+        <dd>
+          {value.budget.maxRequests} 次请求 · {value.budget.maxTokens.toLocaleString()} Token ·{' '}
+          {value.budget.maxCost == null ? '未设金额上限' : `金额 ${value.budget.maxCost}`}
+        </dd>
+      </div>
+      <div>
+        <dt>并发实例</dt>
+        <dd>{value.concurrency}</dd>
+      </div>
+    </dl>
+  );
+}
 
 export function NativeProjectDefaultsPanel({
   projectId,
@@ -76,15 +117,34 @@ export function NativeProjectDefaultsPanel({
     }
   }
   return (
-    <section className="workflow-defaults" aria-label="项目默认配置">
-      <div>
-        <strong>项目默认</strong>
-        <span role="status">{notice || '正在读取项目默认…'}</span>
-      </div>
+    <section className="workflow-defaults native-project-defaults" aria-label="项目默认配置">
+      <header>
+        <h3>项目默认</h3>
+        {record && <span className="native-defaults-version">版本 {record.revision}</span>}
+      </header>
+      <p className="field-help" role="status">
+        {notice || (error ? '项目默认尚未读取成功，当前表单输入保留。' : '正在读取项目默认…')}
+      </p>
       <p className="field-help">复用模型、计划、上下文和预算；执行权限由本次任务单独确认。</p>
+      {record?.defaults && (
+        <details className="native-defaults-summary">
+          <summary>查看已保存默认配置</summary>
+          <div className="native-defaults-reading" role="region" aria-label="已保存默认完整配置" tabIndex={0}>
+            <DefaultsSummary value={record.defaults} />
+          </div>
+        </details>
+      )}
+      <details className="native-defaults-summary">
+        <summary>查看当前表单配置</summary>
+        <div className="native-defaults-reading" role="region" aria-label="当前表单完整配置" tabIndex={0}>
+          <DefaultsSummary value={value} />
+        </div>
+      </details>
       {error && (
-        <p className="field-error" role="alert">
-          {error}{' '}
+        <div className="native-defaults-error" role="alert">
+          <p className="native-defaults-reading" role="region" aria-label="项目默认操作问题全文" tabIndex={0}>
+            {error}
+          </p>
           <button
             type="button"
             className="text-button"
@@ -93,7 +153,7 @@ export function NativeProjectDefaultsPanel({
           >
             重新读取
           </button>
-        </p>
+        </div>
       )}
       <div className="workflow-actions">
         {record?.defaults && (
