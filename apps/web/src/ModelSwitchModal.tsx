@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { ModelPicker, defaultChoice, type ModelChoice, type SelectableProvider } from './ModelPicker';
 import { modelTaskCanContinue } from './ModelSwitchGuards';
 import './execution-config.css';
+import './model-switch.css';
 export { modelTaskCanContinue, modelSwitchReason } from './ModelSwitchGuards';
 
 export function ModelSwitchModal({
@@ -40,13 +41,22 @@ export function ModelSwitchModal({
   const canSubmit = !busy && !disabledReason && modelReady && changed;
   const canResume = modelTaskCanContinue(task);
   const selectedProvider = providers.find((provider) => provider.id === choice.providerId);
+  const selectionState = busy
+    ? 'busy'
+    : disabledReason
+      ? 'blocked'
+      : !changed
+        ? 'unchanged'
+        : !modelReady
+          ? 'unready'
+          : 'ready';
   return (
     <Modal
       title="切换模型"
       subtitle={chat ? '当前会话' : '为此代理选择后续调用使用的模型。'}
       close={close}
       busy={busy}
-      className="execution-config-modal"
+      className="execution-config-modal model-switch-modal"
     >
       <form
         onSubmit={(event) => {
@@ -120,6 +130,48 @@ export function ModelSwitchModal({
                 </dl>
               </div>
             )}
+            <p
+              className="model-switch-state"
+              data-state={selectionState}
+              id={id + '-selection-state'}
+              role="status"
+            >
+              {selectionState === 'busy'
+                ? '当前操作进行中，暂不能应用。'
+                : selectionState === 'blocked'
+                  ? '当前状态暂不允许切换，详见下方说明。'
+                  : selectionState === 'unchanged'
+                    ? '当前选择与已绑定模型一致。'
+                    : selectionState === 'unready'
+                      ? '所选型号尚未就绪，请检查连接与模型。'
+                      : '新选择已就绪，尚未应用。'}
+            </p>
+            <details className="model-switch-identity">
+              <summary>核对连接标识与版本</summary>
+              <dl
+                className="execution-config-read model-switch-identity-reading"
+                role="region"
+                aria-label="模型切换完整连接标识与版本"
+                tabIndex={0}
+              >
+                <div>
+                  <dt>当前绑定连接</dt>
+                  <dd>{agent.providerId}</dd>
+                </div>
+                <div>
+                  <dt>绑定版本</dt>
+                  <dd>{binding.revision ?? '未提供'}</dd>
+                </div>
+                <div>
+                  <dt>待应用连接</dt>
+                  <dd>{choice.providerId || '未选择'}</dd>
+                </div>
+                <div>
+                  <dt>当前连接版本</dt>
+                  <dd>{selectedProvider?.revision ?? '未提供'}</dd>
+                </div>
+              </dl>
+            </details>
           </section>
           <p className="field-help">
             {chat ? '应用后用于当前会话的下一次回复。' : '应用后用于此代理的后续调用。'}
@@ -137,9 +189,6 @@ export function ModelSwitchModal({
               </div>
             </div>
           )}
-          {!changed && !disabledReason && (
-            <p className="field-help">选择不同的连接、型号或推理强度后应用。</p>
-          )}
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" disabled={busy} onClick={close}>
@@ -150,12 +199,18 @@ export function ModelSwitchModal({
               type="button"
               className="secondary"
               disabled={!canSubmit}
+              aria-describedby={id + '-selection-state'}
               onClick={() => submit(choice, 'resume')}
             >
               应用并继续
             </button>
           )}
-          <button type="submit" className="primary" disabled={!canSubmit}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={!canSubmit}
+            aria-describedby={id + '-selection-state'}
+          >
             应用模型
           </button>
         </footer>

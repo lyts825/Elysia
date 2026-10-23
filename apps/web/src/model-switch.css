@@ -1,0 +1,55 @@
+.model-switch-modal .execution-config-binding {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+.model-switch-modal .execution-config-binding > div {
+  min-width: 0;
+}
+.model-switch-modal .execution-config-binding dd {
+  white-space: pre-wrap;
+}
+.model-switch-state {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.model-switch-state[data-state='ready'] {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+.model-switch-state[data-state='blocked'] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.model-switch-identity {
+  margin-top: var(--space-3);
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+.model-switch-identity > summary {
+  cursor: pointer;
+  color: var(--secondary);
+}
+.model-switch-identity-reading {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.model-switch-identity-reading dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.model-switch-identity-reading dd {
+  margin: var(--space-1) 0 0;
+}
