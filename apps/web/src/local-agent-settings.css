@@ -95,6 +95,20 @@
 .local-capability-preview {
   justify-self: start;
 }
+.local-agent-toolbar > .local-capability-clear-search {
+  flex: none;
+  width: auto;
+  height: auto;
+  min-height: var(--control-md);
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.local-capability-settings .local-capability-read-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
 @media (max-height: 600px) {
   .local-capability-settings {
     overflow-y: auto;

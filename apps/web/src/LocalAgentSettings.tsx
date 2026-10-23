@@ -313,9 +313,18 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
             <div className="local-agent-candidates">
               <div className="local-agent-scan-heading">
                 <strong>扫描结果</strong>
-                <small>{scan.candidates.length} 个条目</small>
+                <small>
+                  {scan.candidates.length} 个条目 · 已选 {selected.length} 项
+                </small>
               </div>
-              <small className="local-agent-path">{scan.source.root}</small>
+              <small
+                className="local-agent-path local-capability-reading"
+                role="region"
+                tabIndex={0}
+                aria-label="本次扫描完整来源目录"
+              >
+                {scan.source.root}
+              </small>
               {scan.warnings.map((warning, index) => (
                 <p className="field-help local-agent-scan-warning" key={index}>
                   {warning}
@@ -430,6 +439,18 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
+          {search && (
+            <button
+              type="button"
+              className="secondary local-capability-clear-search"
+              onClick={() => {
+                setSearch('');
+                searchInput.current?.focus();
+              }}
+            >
+              清除筛选
+            </button>
+          )}
           <button
             className="quiet-button"
             disabled={!!busy}
@@ -461,6 +482,11 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
           </p>
         )}
         {!overview && !error && <p role="status">正在读取本机能力…</p>}
+        {overview && busy === '读取' && (
+          <p className="local-capability-read-status" role="status">
+            正在重新读取，以下保留上次目录。
+          </p>
+        )}
         {overview && (
           <>
             <dl className="local-capability-summary" aria-label="已读本机能力目录状态">
