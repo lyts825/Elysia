@@ -46,6 +46,20 @@
   font-size: var(--font-xs);
   white-space: nowrap;
 }
+.project-files-read-context,
+.project-file-count {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.project-files-read-context > span {
+  display: block;
+}
+.project-files-read-context code {
+  font-size: var(--font-xs);
+}
 .project-files .file-encoding-choice label {
   display: flex;
   align-items: center;
@@ -126,6 +140,8 @@
   color: var(--muted);
   font-size: var(--font-xs);
   flex: none;
+  max-width: 35%;
+  overflow-wrap: anywhere;
 }
 .project-file-error,
 .project-file-empty {

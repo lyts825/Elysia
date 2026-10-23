@@ -89,6 +89,14 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
           <Icon name="refresh" size={16} />
         </button>
       </div>
+      {value && (loading || value.path !== path) && (
+        <p className="project-files-read-context" role="status">
+          {loading ? '正在读取当前路径，暂时保留上次已读内容。' : '当前显示上次已读内容。'}
+          <span>
+            已读来源：<code>{value.path}</code>
+          </span>
+        </p>
+      )}
       {(value ? !value.directory : file) && (
         <div className="file-encoding-choice">
           {(value?.text !== null || !value) && (
@@ -154,6 +162,10 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
               onChange={(event) => setFilter(event.target.value)}
             />
           </div>
+          <p className="project-file-count">
+            {filter ? '筛选显示' : '当前显示'} {entries.length} / 已读 {value.entries?.length || 0} 项
+            {value.truncated && ' · 目录尚未完整读取'}
+          </p>
           <div className="project-file-list" role="region" aria-label="项目目录内容" tabIndex={0}>
             {entries.map((entry) => (
               <button
@@ -167,7 +179,11 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
                 <Icon name={entry.directory ? 'folder' : 'file'} size={17} />
                 <span className="project-file-name">{entry.name}</span>
                 <small>
-                  {entry.directory ? '文件夹' : entry.size === undefined ? '' : formatFileBytes(entry.size)}
+                  {entry.directory
+                    ? '文件夹'
+                    : entry.size === undefined
+                      ? '文件'
+                      : formatFileBytes(entry.size)}
                 </small>
               </button>
             ))}
