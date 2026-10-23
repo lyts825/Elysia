@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { Contract } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
 import { ReviewModelPolicy } from './ReviewModelPolicy';
+import './execution-config.css';
 export function ContractModal({
   contract,
   planMode,
@@ -17,18 +18,15 @@ export function ContractModal({
   busy: boolean;
   disabled: boolean;
 }) {
+  const id = useId();
   const [value, setValue] = useState(contract);
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [sameModelReviewConfirmed, setSameModelReviewConfirmed] = useState(false);
-  const labels: Record<string, string> = {
-    scope: '范围',
-    nonGoals: '不包含',
-    inputs: '输入资料',
-    deliverables: '交付物',
-    acceptanceCriteria: '验收项',
-    constraints: '约束',
-    assumptions: '可见假设',
-  };
+  const groups = [
+    { title: '范围与资料', fields: { scope: '范围', nonGoals: '不包含', inputs: '输入资料' } },
+    { title: '交付与验收', fields: { deliverables: '交付物', acceptanceCriteria: '验收项' } },
+    { title: '约束与假设', fields: { constraints: '约束', assumptions: '可见假设' } },
+  ];
   return (
     <Modal
       title={'任务约定 · v' + contract.version}
@@ -41,6 +39,7 @@ export function ContractModal({
       }
       busy={busy}
       close={close}
+      className="execution-config-modal"
     >
       <form
         onSubmit={(e) => {
@@ -50,39 +49,77 @@ export function ContractModal({
         }}
       >
         <div className="form-body">
-          <ReviewModelPolicy
-            allowed={value.allowSameModelReview === true}
-            disabled={busy || disabled}
-            change={(allowed) => {
-              setValue((current) => ({ ...current, allowSameModelReview: allowed }));
-              setSameModelReviewConfirmed(allowed);
-            }}
-            pendingChanged={setReviewConfirmationPending}
-          />
-          <label>
-            目标
-            <textarea
-              disabled={busy}
-              readOnly={disabled}
-              value={value.objective}
-              onChange={(e) => setValue((v) => ({ ...v, objective: e.target.value }))}
-            />
-          </label>
-          {Object.entries(labels).map(([key, label]) => (
-            <label key={key}>
-              {label}（每行一项）
+          <section className="execution-config-section" aria-labelledby={id + '-objective'}>
+            <h3 id={id + '-objective'}>任务目标</h3>
+            {disabled && (
+              <p className="execution-config-note" id={id + '-readonly'}>
+                当前为只读约定，可聚焦文本框阅读完整内容。
+              </p>
+            )}
+            <label className="execution-config-field">
+              目标
               <textarea
-                rows={2}
+                rows={4}
                 disabled={busy}
                 readOnly={disabled}
-                value={(value[key as keyof Contract] as string[]).join('\n')}
-                onChange={(e) => setValue((v) => ({ ...v, [key]: e.target.value.split('\n') }))}
+                aria-describedby={disabled ? id + '-readonly' : undefined}
+                value={value.objective}
+                onChange={(e) => setValue((v) => ({ ...v, objective: e.target.value }))}
               />
             </label>
+          </section>
+          {groups.map((group, index) => (
+            <section
+              key={group.title}
+              className="execution-config-section"
+              aria-labelledby={id + '-group-' + index}
+            >
+              <h3 id={id + '-group-' + index}>{group.title}</h3>
+              <p className="field-help" id={id + '-lines-' + index}>
+                每行一项，保留完整内容。
+              </p>
+              <div className="execution-config-fields">
+                {Object.entries(group.fields).map(([key, label]) => (
+                  <label className="execution-config-field" key={key}>
+                    {label}
+                    <textarea
+                      rows={3}
+                      disabled={busy}
+                      readOnly={disabled}
+                      aria-describedby={id + '-lines-' + index}
+                      value={(value[key as keyof Contract] as string[]).join('\n')}
+                      onChange={(e) => setValue((v) => ({ ...v, [key]: e.target.value.split('\n') }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </section>
           ))}
-          <p className="field-help">
-            请求上限 {contract.budget.maxRequests} · Token 上限 {contract.budget.maxTokens}
-          </p>
+          <section
+            className="execution-config-section execution-contract-policy"
+            aria-labelledby={id + '-policy'}
+          >
+            <h3 id={id + '-policy'}>审计要求与预算</h3>
+            <ReviewModelPolicy
+              allowed={value.allowSameModelReview === true}
+              disabled={busy || disabled}
+              change={(allowed) => {
+                setValue((current) => ({ ...current, allowSameModelReview: allowed }));
+                setSameModelReviewConfirmed(allowed);
+              }}
+              pendingChanged={setReviewConfirmationPending}
+            />
+            <dl className="execution-config-budget">
+              <div>
+                <dt>请求上限</dt>
+                <dd>{contract.budget.maxRequests}</dd>
+              </div>
+              <div>
+                <dt>Token 上限</dt>
+                <dd>{contract.budget.maxTokens}</dd>
+              </div>
+            </dl>
+          </section>
         </div>
         <footer className="modal-footer">
           <button type="button" className="secondary" disabled={busy} onClick={close}>
