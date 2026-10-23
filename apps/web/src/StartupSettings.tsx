@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { StartupVisual, startupColors } from './StartupTransition';
 import {
@@ -34,6 +34,7 @@ const stageLabels: Record<StartupStage, string> = {
 
 export function StartupSettings({ close }: { close: () => void }) {
   const { config, loaded, error: readError } = useStartupPreferences();
+  const fieldsId = useId();
   const [draft, setDraft] = useState<StartupPreferences>(config);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
@@ -156,20 +157,29 @@ export function StartupSettings({ close }: { close: () => void }) {
             <label>
               标题
               <input
+                aria-describedby={`${fieldsId}-title-help`}
+                aria-invalid={!draft.title.trim() || undefined}
                 value={draft.title}
                 maxLength={64}
                 disabled={busy}
                 onChange={(event) => change({ title: event.target.value })}
               />
+              <small id={`${fieldsId}-title-help`} className="startup-preferences-field-help">
+                {draft.title.length} / 64 字符{!draft.title.trim() ? ' · 标题不能为空，填写后可保存' : ''}
+              </small>
             </label>
             <label>
               短句
               <input
+                aria-describedby={`${fieldsId}-caption-help`}
                 value={draft.caption}
                 maxLength={100}
                 disabled={busy}
                 onChange={(event) => change({ caption: event.target.value })}
               />
+              <small id={`${fieldsId}-caption-help`} className="startup-preferences-field-help">
+                {draft.caption.length} / 100 字符
+              </small>
             </label>
             <div className="startup-color-fields">
               <label>
@@ -180,6 +190,9 @@ export function StartupSettings({ close }: { close: () => void }) {
                   disabled={busy}
                   onChange={(event) => change({ accent: event.target.value })}
                 />
+                <output className="startup-preferences-color-value" aria-label="当前点缀色原值">
+                  {draft.accent}
+                </output>
               </label>
               <label>
                 背景色
@@ -189,6 +202,9 @@ export function StartupSettings({ close }: { close: () => void }) {
                   disabled={busy}
                   onChange={(event) => change({ background: event.target.value })}
                 />
+                <output className="startup-preferences-color-value" aria-label="当前背景色原值">
+                  {draft.background}
+                </output>
               </label>
             </div>
           </div>
@@ -230,29 +246,37 @@ export function StartupSettings({ close }: { close: () => void }) {
             />
           </div>
           {draft.media ? (
-            <dl
-              className="startup-preferences-media startup-preferences-reading"
-              role="region"
-              aria-label="当前动画文件完整信息"
-              tabIndex={0}
-            >
-              <div>
-                <dt>完整文件名</dt>
-                <dd>{draft.media.name}</dd>
-              </div>
-              <div>
-                <dt>格式</dt>
-                <dd>{draft.media.mime}</dd>
-              </div>
-              <div>
-                <dt>文件大小</dt>
-                <dd>{draft.media.size.toLocaleString()} 字节 / 最大 4 MiB</dd>
-              </div>
-              <div>
-                <dt>文件摘要</dt>
-                <dd>{draft.media.id}</dd>
-              </div>
-            </dl>
+            <>
+              <p className="startup-settings-hint">
+                {draft.style === 'media'
+                  ? '当前草稿已选择此本地动画样式。'
+                  : '文件仍保留，当前草稿使用其他动画样式。'}
+                {upload && '新导入文件尚未保存。'}
+              </p>
+              <dl
+                className="startup-preferences-media startup-preferences-reading"
+                role="region"
+                aria-label="当前动画文件完整信息"
+                tabIndex={0}
+              >
+                <div>
+                  <dt>完整文件名</dt>
+                  <dd>{draft.media.name}</dd>
+                </div>
+                <div>
+                  <dt>格式</dt>
+                  <dd>{draft.media.mime}</dd>
+                </div>
+                <div>
+                  <dt>文件大小</dt>
+                  <dd>{draft.media.size.toLocaleString()} 字节 / 最大 4 MiB</dd>
+                </div>
+                <div>
+                  <dt>文件 SHA-256</dt>
+                  <dd>{draft.media.id}</dd>
+                </div>
+              </dl>
+            </>
           ) : (
             <p className="startup-settings-hint">尚未导入本地动画。</p>
           )}
@@ -341,7 +365,19 @@ export function StartupSettings({ close }: { close: () => void }) {
           >
             恢复默认
           </button>
-          <span role="status">{saved ? '已保存，下次启动生效' : !loaded ? '正在读取偏好…' : ''}</span>
+          <span role="status">
+            {busy
+              ? '正在处理本机外观设置…'
+              : saved
+                ? '已保存，下次启动生效'
+                : !loaded
+                  ? '正在读取偏好…'
+                  : dirty
+                    ? '当前预览有未保存修改'
+                    : readError
+                      ? '偏好读取有问题，请核对上方说明'
+                      : '显示已读偏好，修改后需保存'}
+          </span>
           <button
             className="primary"
             disabled={busy || !loaded || !draft.title.trim()}

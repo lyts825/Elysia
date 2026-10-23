@@ -22,6 +22,22 @@
 .startup-preferences-group .startup-settings-fields {
   margin: 0;
 }
+.startup-preferences-panel .startup-preferences-field-help {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+.startup-preferences-panel .startup-preferences-color-value {
+  grid-column: 1 / -1;
+  color: var(--secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+.startup-preferences-panel .startup-settings-fields input[aria-invalid='true'] {
+  border-color: var(--danger-border);
+}
 .startup-preferences-reading {
   max-height: min(16rem, 40dvh);
   min-width: 0;
