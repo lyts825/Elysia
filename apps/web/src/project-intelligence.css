@@ -41,6 +41,21 @@
   margin-top: var(--space-4);
   min-width: 0;
 }
+.intelligence-selection-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: var(--space-3) 0;
+}
+.intelligence-selection-summary dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.intelligence-selection-summary dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
 .intelligence-heading,
 .intelligence-read {
   display: flex;

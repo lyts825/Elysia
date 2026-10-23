@@ -148,6 +148,7 @@ function IntelligenceEditor({
     version: ProjectMemoryVersion;
   }>();
   const [clearConfirmed, setClearConfirmed] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
   const active = useRef(true),
     writing = useRef(false);
   const readers = useRef<{ capabilities?: AbortController; memories?: AbortController }>({});
@@ -511,6 +512,16 @@ function IntelligenceEditor({
         {readControls('capabilities', capRead, !!view)}
         {view && selection && (
           <>
+            <dl className="intelligence-selection-summary" aria-label="当前能力选择依据">
+              <div>
+                <dt>显示来源</dt>
+                <dd>{draft?.selection ? '本机选择草稿' : '已读项目配置'}</dd>
+              </div>
+              <div>
+                <dt>选择依据</dt>
+                <dd>版本 {selection.expectedRevision}</dd>
+              </div>
+            </dl>
             <p className="field-help">
               {view.config.mode === 'legacy'
                 ? '当前沿用本机能力库；保存后只使用本项目明确选择的能力。'
@@ -520,13 +531,29 @@ function IntelligenceEditor({
             <label className="intelligence-search">
               搜索能力
               <input
+                ref={searchInput}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="名称或说明"
               />
             </label>
+            {!!query && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setQuery('');
+                  searchInput.current?.focus();
+                }}
+              >
+                清除能力筛选
+              </button>
+            )}
             <fieldset disabled={locked || capRead.status !== 'ready'}>
-              <legend>内置 Skills</legend>
+              <legend>
+                内置 Skills · 显示{' '}
+                {view.catalog.builtinSkills.filter((item) => matched(item.name, item.description)).length} 项
+              </legend>
               <div className="intelligence-options" role="region" aria-label="内置 Skills 列表" tabIndex={0}>
                 {view.catalog.builtinSkills
                   .filter((item) => matched(item.name, item.description))
@@ -543,11 +570,22 @@ function IntelligenceEditor({
                       </span>
                     </label>
                   ))}
+                {!view.catalog.builtinSkills.some((item) => matched(item.name, item.description)) && (
+                  <p className="field-help">没有匹配的内置 Skills。</p>
+                )}
               </div>
             </fieldset>
             {(['skill', 'memory', 'mcp'] as const).map((kind) => (
               <fieldset key={kind} disabled={locked || capRead.status !== 'ready'}>
-                <legend>{{ skill: '导入 Skills', memory: '导入记忆', mcp: 'MCP 服务' }[kind]}</legend>
+                <legend>
+                  {{ skill: '导入 Skills', memory: '导入记忆', mcp: 'MCP 服务' }[kind]} · 显示{' '}
+                  {
+                    view.catalog.localItems.filter(
+                      (item) => item.kind === kind && matched(item.name, item.description),
+                    ).length
+                  }{' '}
+                  项
+                </legend>
                 <div
                   className="intelligence-options"
                   role="region"
