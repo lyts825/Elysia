@@ -195,20 +195,44 @@ export function DeliveryUserReview({
       <section className="workflow-user-review delivery-user-review" aria-label="用户复核">
         <header className="delivery-review-heading">
           <h3>用户复核</h3>
-          <span className="delivery-review-status">
-            {value.userReview?.stale
-              ? '旧结论已失效'
-              : value.userReview?.decision === 'accepted'
-                ? '已采纳'
-                : value.userReview?.decision === 'changes_requested'
-                  ? '需修改'
-                  : '未复核'}
-          </span>
+          <div className="delivery-review-saved-status">
+            <span className="field-help">已保存结论</span>
+            <span className="delivery-review-status">
+              {value.userReview?.stale
+                ? '旧结论已失效'
+                : value.userReview?.decision === 'accepted'
+                  ? '已采纳'
+                  : value.userReview?.decision === 'changes_requested'
+                    ? '需修改'
+                    : '未复核'}
+            </span>
+          </div>
         </header>
-        <p className="field-help">
+        <p className="field-help" id={`${descriptionId}-scope`}>
           你的结论只针对当前交付版本，与执行完成和结构核验分别记录。未保存备注会保留为本机草稿。
         </p>
         {value.userReview && <p className="field-help">上次保存：{value.userReview.reviewedAt}</p>}
+        <details className="delivery-review-basis">
+          <summary>核对当前交付与草稿依据</summary>
+          <dl className="delivery-review-reading" role="region" aria-label="复核版本依据全文" tabIndex={0}>
+            <div>
+              <dt>已读任务修订</dt>
+              <dd>{value.runRevision}</dd>
+            </div>
+            <div>
+              <dt>已读根任务修订</dt>
+              <dd>{value.rootRevision}</dd>
+            </div>
+            <div>
+              <dt>当前交付指纹</dt>
+              <dd>{value.fingerprint}</dd>
+            </div>
+            <div>
+              <dt>当前输入依据</dt>
+              <dd>{draft.fingerprint}</dd>
+            </div>
+          </dl>
+        </details>
         {readonly && (
           <p className="field-help" role="status">
             {busy
@@ -297,17 +321,21 @@ export function DeliveryUserReview({
           />
         )}
         <label>
-          <span>复核结论</span>
+          <span>本次复核结论</span>
           <select
             aria-label="用户复核结论"
+            aria-describedby={`${descriptionId}-decision`}
             value={draft.decision}
             disabled={readonly || changed}
             onChange={(event) => patch({ decision: event.target.value as ReviewDraft['decision'] })}
           >
             <option value="">请选择结论</option>
-            <option value="accepted">已采纳</option>
-            <option value="changes_requested">需修改</option>
+            <option value="accepted">采纳当前交付</option>
+            <option value="changes_requested">要求修改</option>
           </select>
+          <small className="field-help" id={`${descriptionId}-decision`}>
+            选择结论后，使用下方按钮保存；修改选择不会自动保存。
+          </small>
         </label>
         <label>
           <span>整体备注</span>
@@ -343,10 +371,15 @@ export function DeliveryUserReview({
           </p>
         )}
         <div className="delivery-review-actions">
+          <p className="field-help" id={`${descriptionId}-save-range`}>
+            本次保存当前结论、整体备注和 {draft.criteriaNotes.length} 项逐项备注。
+            {draft.unlinked.length > 0 && `${draft.unlinked.length} 条未关联旧备注仍只保留在本机草稿中。`}
+          </p>
           <button
             type="button"
             className="primary"
             disabled={readonly || changed || conflict || !draft.decision}
+            aria-describedby={`${descriptionId}-scope ${descriptionId}-decision ${descriptionId}-save-range`}
             onClick={() => void save()}
           >
             {busy ? '正在保存…' : '保存复核结论'}

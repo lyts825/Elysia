@@ -20,6 +20,42 @@
   font-size: var(--font-sm);
   font-weight: 600;
 }
+.delivery-review-saved-status {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.delivery-review-basis {
+  min-width: 0;
+  margin-block: var(--space-3);
+}
+.delivery-review-basis > summary {
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+}
+.delivery-review-basis > dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.delivery-review-basis dl > div {
+  min-width: 0;
+}
+.delivery-review-basis dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.delivery-review-basis dd {
+  margin: var(--space-1) 0 0;
+}
 .delivery-review-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;
@@ -50,8 +86,22 @@
   line-height: var(--leading-body);
 }
 .delivery-review-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
   margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.delivery-review-actions > p {
+  margin: 0;
+}
+.delivery-user-review .inline-warning > button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.delivery-user-review :is(button, select, textarea, summary, .delivery-review-reading) {
+  scroll-margin-block: var(--space-3);
 }
