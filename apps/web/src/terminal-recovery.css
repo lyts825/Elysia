@@ -10,7 +10,14 @@
   font-size: var(--font-lg);
   line-height: var(--leading-ui);
 }
-.terminal-recovery-panel > .field-help,
+.terminal-recovery-heading {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.terminal-recovery-heading > p {
+  margin: 0;
+}
 .terminal-recovery-panel label > .field-help {
   margin: 0;
 }
@@ -30,6 +37,9 @@
 }
 .terminal-recovery-panel .terminal-recovery-state {
   margin: 0;
+  padding: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
@@ -41,9 +51,9 @@
   min-width: 0;
 }
 .terminal-recovery-option {
-  display: grid;
-  align-content: start;
-  justify-items: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-3);
@@ -63,6 +73,7 @@
   margin: 0;
 }
 .terminal-recovery-option button {
+  margin-top: auto;
   max-width: 100%;
   min-width: 0;
   white-space: normal;

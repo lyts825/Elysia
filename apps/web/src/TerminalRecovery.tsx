@@ -13,16 +13,23 @@ export function TerminalRecovery({
   submit: (outcome: 'confirmed' | 'not_applied', note: string) => void;
 }) {
   const noteHelpId = useId(),
+    scopeHelpId = useId(),
+    noteStateId = useId(),
     confirmedHelpId = useId(),
     pausedHelpId = useId();
   return (
     <div className="terminal-activity terminal-recovery-panel">
-      <h4>核验中断的终端操作</h4>
-      <p className="field-help">先检查任务日志和任务目录。提交核验结果时，系统会先核对并停止本任务容器。</p>
+      <header className="terminal-recovery-heading">
+        <h4>核验中断的终端操作</h4>
+        <p className="field-help" id={scopeHelpId}>
+          先检查任务日志和任务目录。提交核验结果时，系统会先核对并停止本任务容器。
+        </p>
+      </header>
       <label>
         实际核验说明
         <textarea
-          aria-describedby={noteHelpId}
+          aria-describedby={`${noteHelpId} ${scopeHelpId} ${noteStateId}`}
+          aria-required="true"
           value={note}
           disabled={disabled}
           rows={2}
@@ -34,14 +41,19 @@ export function TerminalRecovery({
           {note.length.toLocaleString()} / 60,000 字符；提交时去除说明首尾空白。
         </small>
       </label>
-      <p className="terminal-recovery-state" role="status">
+      <p className="terminal-recovery-state" id={noteStateId} role="status">
         {disabled
           ? '当前只读或操作处理中，暂不可提交核验结果。'
           : note.trim()
-            ? '说明已填写，请选择核验结果。'
+            ? `说明已填写，提交时保留 ${note.trim().length.toLocaleString()} 个字符。请选择核验结果。`
             : '填写实际核验说明后，再选择核验结果。'}
       </p>
-      <div className="terminal-recovery-options" role="group" aria-label="选择终端核验结果">
+      <div
+        className="terminal-recovery-options"
+        role="group"
+        aria-label="选择终端核验结果"
+        aria-describedby={scopeHelpId}
+      >
         <div className="terminal-recovery-option">
           <h5>操作已发生</h5>
           <p id={confirmedHelpId}>保留当前产物并进入验收。</p>
@@ -49,7 +61,7 @@ export function TerminalRecovery({
             type="button"
             className="secondary"
             disabled={disabled || !note.trim()}
-            aria-describedby={`${confirmedHelpId} ${noteHelpId}`}
+            aria-describedby={`${confirmedHelpId} ${noteHelpId} ${noteStateId}`}
             onClick={() => submit('confirmed', note.trim())}
           >
             确认已发生
@@ -62,7 +74,7 @@ export function TerminalRecovery({
             type="button"
             className="secondary"
             disabled={disabled || !note.trim()}
-            aria-describedby={`${pausedHelpId} ${noteHelpId}`}
+            aria-describedby={`${pausedHelpId} ${noteHelpId} ${noteStateId}`}
             onClick={() => submit('not_applied', note.trim())}
           >
             确认未发生
