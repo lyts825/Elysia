@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ComponentType, type ReactNode, type Ref } from 'react';
+import { Component, useEffect, useId, useState, type ComponentType, type ReactNode, type Ref } from 'react';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './features/plan-alignment/types';
 import entryUrl from 'virtual:elysia-plan-alignment';
 import './features/plan-alignment/plan-alignment.css';
@@ -29,7 +29,7 @@ function loadPanel(): Promise<Panel> {
 }
 
 class PanelBoundary extends Component<
-  { children: ReactNode; retry: () => void; version: number },
+  { children: ReactNode; retry: () => void; version: number; taskCount: number },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -38,19 +38,31 @@ class PanelBoundary extends Component<
   }
   render() {
     return this.state.failed ? (
-      <LoadFailure retry={this.props.retry} version={this.props.version} />
+      <LoadFailure retry={this.props.retry} version={this.props.version} taskCount={this.props.taskCount} />
     ) : (
       this.props.children
     );
   }
 }
-function LoadFailure({ retry, version }: { retry: () => void; version: number }) {
+function LoadFailure({
+  retry,
+  version,
+  taskCount,
+}: {
+  retry: () => void;
+  version: number;
+  taskCount: number;
+}) {
+  const scopeId = useId();
   return (
     <div className="plan-card plan-module-feedback" data-state="failed" role="alert">
       <h3>计划模块加载失败</h3>
-      <p className="plan-module-version">已读计划版本 {version}</p>
-      <p>计划记录仍保留，重试会重新加载此计划界面。</p>
-      <button type="button" className="secondary" onClick={retry}>
+      <div className="plan-module-source">
+        <p className="plan-module-version">已读计划版本 {version}</p>
+        <p className="plan-module-count">{taskCount} 项计划任务</p>
+      </div>
+      <p id={scopeId}>计划记录仍保留，重试会重新加载此计划界面。</p>
+      <button type="button" className="secondary" aria-describedby={scopeId} onClick={retry}>
         重新加载计划模块
       </button>
     </div>
@@ -86,19 +98,23 @@ export function PlanAlignmentLoader(props: PlanAlignmentProps & { anchorRef?: Re
   return (
     <div ref={props.anchorRef} className="plan-module" tabIndex={-1} aria-label="计划确认">
       {failed ? (
-        <LoadFailure retry={retry} version={plan.version} />
+        <LoadFailure retry={retry} version={plan.version} taskCount={plan.tasks.length} />
       ) : Panel ? (
         <PanelBoundary
           key={generation + ':' + props.detail.run.id + ':' + plan.version}
           retry={retry}
           version={plan.version}
+          taskCount={plan.tasks.length}
         >
           <Panel {...props} />
         </PanelBoundary>
       ) : (
         <div className="plan-card plan-module-feedback" data-state="loading" role="status" aria-busy="true">
           <h3>正在准备计划确认</h3>
-          <p className="plan-module-version">已读计划版本 {plan.version}</p>
+          <div className="plan-module-source">
+            <p className="plan-module-version">已读计划版本 {plan.version}</p>
+            <p className="plan-module-count">{plan.tasks.length} 项计划任务</p>
+          </div>
           <p>加载完成后可核对当前计划。</p>
         </div>
       )}

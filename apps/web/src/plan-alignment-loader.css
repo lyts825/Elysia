@@ -17,7 +17,14 @@
   margin: 0;
   color: var(--secondary);
 }
-.plan-module-feedback .plan-module-version {
+.plan-module-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.plan-module-feedback .plan-module-version,
+.plan-module-feedback .plan-module-count {
   color: var(--muted);
   font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
