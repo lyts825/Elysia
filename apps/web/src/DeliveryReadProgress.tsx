@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { ApiError, type SurfaceClient } from './api';
 import './delivery-read-progress.css';
 
@@ -90,27 +91,66 @@ export function DeliveryReadProgress({
   cancel: () => void;
   label?: string;
 }) {
+  const helpId = useId();
   return (
-    <div className="delivery-read-progress" aria-label={label + '准备进度'}>
-      <p role="status">
+    <div
+      className="delivery-read-progress"
+      data-state={progress?.status || 'starting'}
+      aria-label={label + '准备进度'}
+    >
+      <h3 className="delivery-read-title" tabIndex={0}>
+        {label}
+      </h3>
+      <p className="delivery-read-state" role={progress?.status === 'failed' ? 'alert' : 'status'}>
         {progress?.status === 'warming'
-          ? `正在准备${label}，已处理 ${progress.scanned.toLocaleString()} / ${progress.total.toLocaleString()} 份产物记录`
+          ? '正在准备读取…'
           : progress?.status === 'completed'
-            ? `准备步骤已结束，正在读取${label}…`
-            : `正在开始准备${label}…`}
-        {progress?.totalRuns !== undefined &&
-          ` · 已处理 ${progress.completedRuns ?? 0} / ${progress.totalRuns} 个任务`}
+            ? '准备步骤已结束，正在读取内容…'
+            : progress?.status === 'failed'
+              ? '读取准备未完成，请核对问题后重新读取。'
+              : progress?.status === 'cancelled'
+                ? '本次读取准备已取消，已处理的记录仍保留。'
+                : '正在开始准备读取…'}
       </p>
-      {progress?.status === 'warming' && (
-        <progress max={Math.max(1, progress.total)} value={Math.min(progress.scanned, progress.total)} />
+      {progress && (
+        <dl className="delivery-read-counts">
+          <div>
+            <dt>已处理产物记录</dt>
+            <dd>
+              {progress.scanned.toLocaleString()} / {progress.total.toLocaleString()} 份
+            </dd>
+          </div>
+          {progress.totalRuns !== undefined && (
+            <div>
+              <dt>已处理任务</dt>
+              <dd>
+                {progress.completedRuns ?? 0} / {progress.totalRuns} 个
+              </dd>
+            </div>
+          )}
+        </dl>
       )}
-      <p className="field-help">
+      {progress?.status === 'warming' && (
+        <progress
+          aria-label={label + '已处理产物记录'}
+          max={Math.max(1, progress.total)}
+          value={Math.min(progress.scanned, progress.total)}
+        />
+      )}
+      {progress?.status === 'failed' && progress.error?.message && (
+        <p className="delivery-read-error" role="region" aria-label="交付读取准备错误全文" tabIndex={0}>
+          {progress.error.message}
+        </p>
+      )}
+      <p className="field-help" id={helpId}>
         取消只停止本窗口的读取准备。已处理的记录和历史内容保留，不代表交付已经通过验收。
       </p>
       {!!progress?.unavailableRuns && (
-        <p className="field-help">有 {progress.unavailableRuns} 个任务暂不可读，项目状态将保留读取缺口。</p>
+        <p className="field-help delivery-read-gap">
+          有 {progress.unavailableRuns} 个任务暂不可读，项目状态将保留读取缺口。
+        </p>
       )}
-      <button type="button" className="secondary" onClick={cancel}>
+      <button type="button" className="secondary" aria-describedby={helpId} onClick={cancel}>
         取消本次读取
       </button>
     </div>

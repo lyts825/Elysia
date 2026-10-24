@@ -1,4 +1,6 @@
 .delivery-read-progress {
+  display: grid;
+  gap: var(--space-2);
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -8,6 +10,58 @@
   background: var(--surface-soft);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
+}
+.delivery-read-progress > p {
+  margin: 0;
+}
+.delivery-read-title {
+  margin: 0;
+  max-height: min(8rem, 25dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  color: var(--text);
+  font-size: var(--font-md);
+  line-height: var(--leading-heading);
+}
+.delivery-read-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.delivery-read-counts > div {
+  min-width: 0;
+}
+.delivery-read-counts dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.delivery-read-counts dd {
+  margin: var(--space-1) 0 0;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.delivery-read-progress[data-state='failed'] .delivery-read-state {
+  color: var(--danger);
+}
+.delivery-read-error {
+  min-width: 0;
+  max-height: min(10rem, 30dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  color: var(--danger);
+}
+.delivery-read-gap {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--warning-border);
+}
+.delivery-read-progress > button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
 }
 .delivery-read-progress progress {
   width: min(100%, 420px);
