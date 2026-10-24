@@ -317,6 +317,18 @@ function RoutingEditor({
         <p role="status">尚未读取角色配置。</p>
       ) : (
         <>
+          <dl className="routing-basis" id={`${fieldId}-basis`}>
+            <div>
+              <dt>已读配置</dt>
+              <dd>{record ? `版本 ${record.revision}${current ? '' : ' · 尚未重新确认'}` : '尚未读回'}</dd>
+            </div>
+            <div>
+              <dt>当前输入依据</dt>
+              <dd>
+                {saved ? '本机草稿' : '已读配置'} · 版本 {draft.expectedRevision}
+              </dd>
+            </div>
+          </dl>
           <label className="intelligence-check">
             <input
               type="checkbox"
@@ -404,19 +416,24 @@ function RoutingEditor({
                 type="button"
                 className="secondary"
                 disabled={locked || !current}
+                aria-describedby={`${fieldId}-basis ${fieldId}-rebase`}
                 onClick={() =>
                   update((value) => (value ? { ...value, expectedRevision: record!.revision } : value))
                 }
               >
                 保留角色选择，以当前版本核对
               </button>
+              <p className="field-help" id={`${fieldId}-rebase`}>
+                仅更新本机输入的版本依据，角色选择保持；还需明确保存。
+              </p>
             </div>
           )}
-          <div className="project-actions">
+          <div className="project-actions routing-actions">
             <button
               type="button"
               className="secondary"
               disabled={locked || !current || stale || !saved}
+              aria-describedby={`${fieldId}-basis ${fieldId}-save`}
               onClick={() =>
                 void save({
                   expectedRevision: draft.expectedRevision,
@@ -432,12 +449,21 @@ function RoutingEditor({
                 type="button"
                 className="text-button"
                 disabled={locked}
+                aria-describedby={`${fieldId}-discard`}
                 onClick={() => update(() => undefined)}
               >
                 舍弃角色配置草稿
               </button>
             )}
           </div>
+          <p className="field-help" id={`${fieldId}-save`}>
+            保存只影响之后创建的任务；关闭角色模型时，当前角色选择仍保留在配置中。
+          </p>
+          {saved && !pending && (
+            <p className="field-help" id={`${fieldId}-discard`}>
+              舍弃只移除本机角色配置草稿，其他项目草稿和已保存配置保留。
+            </p>
+          )}
           <p className="field-help">角色输入随本机项目草稿保留，关闭后可继续核对。</p>
         </>
       )}

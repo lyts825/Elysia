@@ -91,6 +91,23 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+.project-model-routing .routing-basis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-soft);
+}
+.project-model-routing .routing-basis > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-model-routing .routing-actions {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
 @container project-model-routing (max-width: 40rem) {
   .project-model-routing .routing-roles,
   .project-model-routing .routing-comparison {
