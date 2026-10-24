@@ -46,6 +46,20 @@
 .terminal-check-result[data-status='failed'] .terminal-check-state {
   color: var(--danger);
 }
+.terminal-check-result[data-status='running'] .terminal-check-state {
+  color: var(--accent);
+}
+.terminal-check-pending,
+.terminal-check-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.terminal-check-empty {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
 .terminal-check-reading {
   min-width: 0;
   max-height: clamp(8rem, 28dvh, 16rem);

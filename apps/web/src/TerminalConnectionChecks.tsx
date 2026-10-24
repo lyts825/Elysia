@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   TerminalConnectionProbeResult,
   TerminalConnectionHealth,
@@ -17,6 +17,7 @@ export function TerminalConnectionChecks({
   chooseModel: (model: string) => void;
 }) {
   const { api } = useSurfaceClient();
+  const helpId = useId();
   const [busy, setBusy] = useState<'check' | 'models' | null>(null);
   const [health, setHealth] = useState<TerminalConnectionHealth | undefined>(connection.health);
   const [catalog, setCatalog] = useState<TerminalConnectionProbeResult | null>(null);
@@ -112,6 +113,7 @@ export function TerminalConnectionChecks({
           type="button"
           className="secondary"
           disabled={!enabled || !!busy}
+          aria-describedby={helpId}
           onClick={() => void probe('check')}
         >
           {busy === 'check' ? '验证中…' : '验证连接'}
@@ -120,12 +122,13 @@ export function TerminalConnectionChecks({
           type="button"
           className="secondary"
           disabled={!enabled || !!busy}
+          aria-describedby={helpId}
           onClick={() => void probe('models')}
         >
           {busy === 'models' ? '读取中…' : '读取模型目录'}
         </button>
       </div>
-      <p className="field-help">
+      <p className="field-help" id={helpId}>
         {enabled
           ? '验证连接会发送一次小型模型请求，产生少量用量。模型目录不可用时可手填。'
           : '先保存当前修改，再验证连接或读取模型目录。'}
@@ -139,20 +142,30 @@ export function TerminalConnectionChecks({
               key={kind}
               role="status"
               className="terminal-check-result"
-              data-status={current ? result?.status : 'waiting'}
+              data-status={busy === kind ? 'running' : current ? result?.status : 'waiting'}
+              aria-busy={busy === kind}
             >
               <header>
                 <strong>{kind === 'check' ? '连接验证' : '模型目录'}</strong>
                 <span className="terminal-check-state">
-                  {!current
-                    ? '待检查'
-                    : result?.status === 'passed'
-                      ? '已通过'
-                      : result?.status === 'failed'
-                        ? '未通过'
-                        : '不支持'}
+                  {busy === kind
+                    ? kind === 'check'
+                      ? '正在验证'
+                      : '正在读取'
+                    : !current
+                      ? '待检查'
+                      : result?.status === 'passed'
+                        ? '已通过'
+                        : result?.status === 'failed'
+                          ? '未通过'
+                          : '不支持'}
                 </span>
               </header>
+              {busy === kind && (
+                <p className="terminal-check-pending">
+                  {result ? '本次操作尚未完成，下方暂保留上次检查结果。' : '本次操作尚未完成，请等待结果。'}
+                </p>
+              )}
               <p
                 className="terminal-check-reading"
                 tabIndex={0}
@@ -189,6 +202,11 @@ export function TerminalConnectionChecks({
           tabIndex={0}
         >
           {error}
+        </p>
+      )}
+      {enabled && !busy && catalog?.models?.length === 0 && (
+        <p className="terminal-check-empty" role="status">
+          已读目录未返回可选模型，可在连接表单中手填型号。
         </p>
       )}
       {enabled && !!catalog?.models?.length && (
