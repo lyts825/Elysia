@@ -1,20 +1,29 @@
-import React, { Component, Suspense, type ComponentType, type ReactNode } from 'react';
+import React, { Component, Suspense, useId, type ComponentType, type ReactNode } from 'react';
 import './deferred-panel.css';
 
 function PanelFeedback({ label, failed = false }: { label: string; failed?: boolean }) {
+  const scopeId = useId();
   return (
     <section
       className="deferred-panel-feedback"
       data-state={failed ? 'failed' : 'loading'}
       role={failed ? 'alert' : 'status'}
+      aria-busy={!failed}
     >
       <div className="deferred-panel-message">
         <p className="deferred-panel-state">{failed ? '面板加载失败' : '正在准备面板'}</p>
-        <h3>{label}</h3>
-        {failed && <p>重新加载会更新整个界面。</p>}
+        <h3 className="deferred-panel-label" tabIndex={0}>
+          {label}
+        </h3>
+        {failed && <p id={scopeId}>重新加载会更新整个界面。</p>}
       </div>
       {failed && (
-        <button type="button" className="secondary" onClick={() => location.reload()}>
+        <button
+          type="button"
+          className="secondary"
+          aria-describedby={scopeId}
+          onClick={() => location.reload()}
+        >
           重新加载整个界面
         </button>
       )}
