@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type {
   ProjectIntelligenceView,
@@ -127,6 +127,7 @@ function IntelligenceEditor({
   archived: boolean;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const editorId = useId();
   const key = projectIntelligenceKey(projectId),
     base = `/projects/${projectId}`;
   const [view, setView] = useState<ProjectIntelligenceView>();
@@ -418,7 +419,12 @@ function IntelligenceEditor({
       )}
       {state.status !== 'ready' && retained && <span role="status">显示上次结果，当前状态尚未确认。</span>}
       {state.message && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error intelligence-reading"
+          role="alert"
+          aria-label={kind === 'capabilities' ? '能力读取错误全文' : '记忆读取错误全文'}
+          tabIndex={0}
+        >
           {state.message}
         </p>
       )}
@@ -482,11 +488,20 @@ function IntelligenceEditor({
       )}
       {!loaded && !draftError && <p role="status">正在读取本机草稿…</p>}
       {actionError && (
-        <p className="field-error" role="alert">
+        <p
+          className="field-error intelligence-reading"
+          role="alert"
+          aria-label="项目资料保存错误全文"
+          tabIndex={0}
+        >
           {actionError}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p className="intelligence-reading" role="status" aria-label="项目资料操作反馈全文" tabIndex={0}>
+          {notice}
+        </p>
+      )}
       {pending && (
         <div className="intelligence-issue" role="status">
           <p>
@@ -655,8 +670,22 @@ function IntelligenceEditor({
                   配置已从版本 {selection.expectedRevision} 变为 {view.config.revision}
                   。请先比较，再决定本次选择。
                 </p>
-                <p>当前配置：{capabilityNames(view.config)}</p>
-                <p>我的选择：{capabilityNames(selection)}</p>
+                <p
+                  className="intelligence-reading"
+                  role="region"
+                  aria-label="当前能力配置全部选择"
+                  tabIndex={0}
+                >
+                  当前配置：{capabilityNames(view.config)}
+                </p>
+                <p
+                  className="intelligence-reading"
+                  role="region"
+                  aria-label="本机能力草稿全部选择"
+                  tabIndex={0}
+                >
+                  我的选择：{capabilityNames(selection)}
+                </p>
                 <div className="project-actions">
                   <button
                     type="button"
@@ -748,24 +777,33 @@ function IntelligenceEditor({
                 标题
                 <input
                   maxLength={160}
+                  aria-invalid={!editor.title.trim()}
+                  aria-describedby={`${editorId}-title`}
                   value={editor.title}
                   onChange={(event) =>
                     change((value) => ({ ...value, memory: { ...editor, title: event.target.value } }))
                   }
                 />
+                <small className="field-help" id={`${editorId}-title`}>
+                  {editor.title.length} / 160 字符
+                  {!editor.title.trim() && ' · 请填写记忆标题，空白不能保存。'}
+                </small>
               </label>
               <label>
                 正文
                 <textarea
                   rows={5}
+                  aria-invalid={!editor.text.trim() || bytes > memoryLimit}
+                  aria-describedby={`${editorId}-bytes`}
                   value={editor.text}
                   onChange={(event) =>
                     change((value) => ({ ...value, memory: { ...editor, text: event.target.value } }))
                   }
                 />
               </label>
-              <span className={bytes > memoryLimit ? 'field-error' : 'field-help'}>
+              <span id={`${editorId}-bytes`} className={bytes > memoryLimit ? 'field-error' : 'field-help'}>
                 {bytes.toLocaleString()} / {memoryLimit.toLocaleString()} 字节（UTF-8）
+                {!editor.text.trim() && ' · 请填写记忆正文，空白不能保存。'}
               </span>
               <label>
                 来源与核对说明
@@ -832,6 +870,7 @@ function IntelligenceEditor({
               <button
                 type="submit"
                 className="primary"
+                aria-describedby={`${editorId}-title ${editorId}-bytes`}
                 disabled={
                   locked ||
                   memoryRead.status !== 'ready' ||

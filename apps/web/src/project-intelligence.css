@@ -208,6 +208,20 @@
 .project-intelligence .field-error {
   overflow-wrap: anywhere;
 }
+.project-intelligence .intelligence-reading {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(12rem, 40dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.project-intelligence .intelligence-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
 .project-intelligence > .field-error,
 .intelligence-read .field-error {
   border: 1px solid var(--danger-border);
