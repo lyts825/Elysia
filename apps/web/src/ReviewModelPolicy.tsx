@@ -53,24 +53,35 @@ export function ReviewModelPolicy({
       {confirming && (
         <Modal title="确认允许同模型审计" close={close} className="review-policy-confirm-modal">
           <div className="form-body review-policy-confirmation">
-            <p className="review-policy-pending">本次开启选择尚未确认。</p>
-            <section aria-label="同模型审计的影响">
+            <p className="review-policy-pending" id={`${helpId}-pending`} role="status">
+              {disabled ? '当前表单暂不可调整，可以返回核对。' : '本次开启选择尚未确认。'}
+            </p>
+            <section aria-label="同模型审计的影响" id={`${helpId}-impact`}>
               <h3>审计独立性</h3>
               <p>相同模型可能重复执行时的判断偏差或遗漏，降低审计的独立性。</p>
             </section>
-            <section aria-label="同模型审计的适用范围">
+            <section aria-label="同模型审计的适用范围" id={`${helpId}-scope`}>
               <h3>仅限当前任务</h3>
               <p>保存后对后续计划、委派和模型切换生效。</p>
             </section>
+            <p className="field-help review-policy-form-scope" id={`${helpId}-form`}>
+              确认会更新当前表单的选择；仍需完成任务创建或约定保存，才会提交此要求。
+            </p>
           </div>
           <footer className="modal-footer">
-            <button type="button" className="secondary" onClick={close}>
-              保持关闭
+            <button
+              type="button"
+              className="secondary"
+              aria-describedby={`${helpId}-pending`}
+              onClick={close}
+            >
+              返回核对
             </button>
             <button
               type="button"
               className="primary"
               disabled={disabled}
+              aria-describedby={`${helpId}-impact ${helpId}-scope ${helpId}-form ${helpId}-pending`}
               onClick={() => {
                 change(true);
                 close();

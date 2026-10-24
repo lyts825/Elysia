@@ -47,6 +47,16 @@
 .review-policy-confirm-modal .review-policy-confirmation {
   scroll-padding-block: var(--space-4);
 }
+.review-policy-confirmation .review-policy-form-scope {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+.review-policy-confirm-modal :is(button, .review-policy-confirmation) {
+  scroll-margin-block: var(--space-3);
+}
 
 .review-policy-confirm-modal .modal-footer button {
   min-width: 0;
@@ -64,4 +74,21 @@
   margin: 0;
   font-size: var(--font-lg);
   font-weight: 600;
+}
+@media (max-height: 560px) {
+  .review-policy-confirm-modal {
+    overflow: auto;
+    scroll-padding-block: var(--space-4);
+  }
+  .review-policy-confirm-modal > header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    padding-block: var(--space-3);
+  }
+  .review-policy-confirm-modal > .form-body {
+    overflow: visible;
+    flex: none;
+  }
 }
