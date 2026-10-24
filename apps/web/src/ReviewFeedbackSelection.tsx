@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { DeliveryReview, ReviewSourceNote } from '../../../packages/contracts/src/workflow';
 import { readLocalReviewDraft, reviewCandidates, type ReviewCandidate } from './ReviewDraft';
 import {
@@ -10,6 +11,7 @@ import {
 import { ReviewSourceNoteBody, ReviewSourceNotes } from './ReviewSourceNotes';
 import { ReviewHistory } from './ReviewHistory';
 import './handoff-selection.css';
+import './review-feedback-selection.css';
 
 export function ReviewFeedbackSelection({
   runId,
@@ -32,10 +34,11 @@ export function ReviewFeedbackSelection({
   disabled: boolean;
   localDraft?: unknown;
 }) {
+  const helpId = useId();
   const state = readReviewSource(selection);
   if (!state)
     return (
-      <section className="workflow-source handoff-review">
+      <section className="workflow-source handoff-review review-feedback-selection" aria-label="复核备注选择">
         <p className="field-error" role="alert">
           备注选择草稿格式无法读取，原草稿仍保留。请先保留需要的内容，再明确清除此部分选择。
         </p>
@@ -74,6 +77,7 @@ export function ReviewFeedbackSelection({
         <label className="workflow-note-choice">
           <input
             type="checkbox"
+            aria-describedby={helpId}
             checked={pendingKeys.has(reviewNoteKey(item.source))}
             disabled={
               locked ||
@@ -104,14 +108,29 @@ export function ReviewFeedbackSelection({
   const issue = reviewNotesIssue(combined);
   return (
     <details
-      className="workflow-source handoff-review"
+      className="workflow-source handoff-review review-feedback-selection"
       open={!!local || !!state.pending.length || !!state.added.length}
     >
       <summary>选择复核备注（已保存／本机未保存／旧版本）</summary>
-      <p className="field-help">
+      <p className="field-help" id={helpId}>
         勾选与已加入内容分别保留。只有明确加入的备注会成为新任务来源，不占修改意见的 4000
         字额度，也不会保存或改变复核结论。
       </p>
+      <dl className="review-feedback-counts" aria-label="本区备注与当前选择数量">
+        <div>
+          <dt>本区已列出</dt>
+          <dd>{items.length} 条</dd>
+        </div>
+        <div>
+          <dt>待加入</dt>
+          <dd>{state.pending.length} 条</dd>
+        </div>
+        <div>
+          <dt>已加入</dt>
+          <dd>{state.added.length} 条</dd>
+        </div>
+      </dl>
+      <p className="field-help">列出数量仅含本次已读来源与本机草稿，历史备注另行展开查看。</p>
       {reading && <p role="status">正在核对来源交付版本…</p>}
       {error && (
         <div role="alert" className="field-error workflow-read-error handoff-read-error">
@@ -183,14 +202,21 @@ export function ReviewFeedbackSelection({
           {issue}
         </p>
       )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={locked || changed || !addition.length || !!issue}
-        onClick={() => change({ ...state, added: combined, pending: [], fingerprint: value!.fingerprint })}
-      >
-        确认加入所选备注
-      </button>
+      <div className="review-feedback-addition">
+        <p className="field-help" id={`${helpId}-addition`}>
+          本次待新增 {addition.length} 条，原已加入的 {state.added.length}{' '}
+          条保留。勾选不会自动加入或保存复核结论。
+        </p>
+        <button
+          type="button"
+          className="secondary"
+          aria-describedby={`${helpId} ${helpId}-addition`}
+          disabled={locked || changed || !addition.length || !!issue}
+          onClick={() => change({ ...state, added: combined, pending: [], fingerprint: value!.fingerprint })}
+        >
+          确认加入所选备注
+        </button>
+      </div>
       {!!state.added.length && (
         <div className="handoff-added-list" role="region" aria-label="已加入备注完整列表" tabIndex={0}>
           <ReviewSourceNotes
