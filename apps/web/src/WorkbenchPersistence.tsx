@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import type { WorkbenchCache, WorkbenchSnapshot, WorkbenchInspection } from './WorkbenchCache';
 import './workbench-persistence.css';
@@ -104,6 +104,7 @@ export function WorkbenchPersistence({
   onAdoptRemote: (key: string) => void;
   close: () => void;
 }) {
+  const issueTitlePrefix = useId();
   const [inspection, setInspection] = useState<WorkbenchInspection>();
   const [choice, setChoice] = useState<'local' | 'remote'>('local');
   const [confirmed, setConfirmed] = useState(false);
@@ -228,8 +229,13 @@ export function WorkbenchPersistence({
           </p>
           {pending > 0 && (
             <p
-              className={snapshot.recovery.status === 'verified' ? 'field-help' : 'field-error'}
+              className={
+                'workbench-persistence-reading ' +
+                (snapshot.recovery.status === 'verified' ? 'field-help' : 'field-error')
+              }
               role="status"
+              aria-label="当前窗口恢复保护完整说明"
+              tabIndex={0}
             >
               {snapshot.recovery.status === 'verified'
                 ? '浏览器恢复副本已核验。'
@@ -296,9 +302,15 @@ export function WorkbenchPersistence({
             <p className="field-help">本页显示 {shownIssues.length} 项；仅处理明确选择的单项内容。</p>
           )}
           {!snapshot.issues.length && <p className="field-help">当前没有需要处理的保存问题。</p>}
-          {shownIssues.map((issue) => (
+          {shownIssues.map((issue, index) => (
             <article className="workbench-save-issue" key={issue.key}>
-              <h4>{labelFor(issue.key)}</h4>
+              <h4
+                id={`${issueTitlePrefix}-${actualPage}-${index}`}
+                className="workbench-persistence-reading"
+                tabIndex={0}
+              >
+                {labelFor(issue.key)}
+              </h4>
               <p
                 className="workbench-persistence-reading"
                 role="region"
@@ -331,6 +343,7 @@ export function WorkbenchPersistence({
                     type="button"
                     className="secondary"
                     disabled={!!busy}
+                    aria-describedby={`${issueTitlePrefix}-${actualPage}-${index}`}
                     onClick={() => void inspect(issue.key)}
                   >
                     核对此项
@@ -341,6 +354,7 @@ export function WorkbenchPersistence({
                       type="button"
                       className="secondary"
                       disabled={!!busy}
+                      aria-describedby={`${issueTitlePrefix}-${actualPage}-${index}`}
                       onClick={() => void run(issue.key, () => cache.retry(issue.key))}
                     >
                       重试此项
@@ -351,6 +365,7 @@ export function WorkbenchPersistence({
                   type="button"
                   className="secondary"
                   disabled={!!busy || !snapshot.entries[issue.key]}
+                  aria-describedby={`${issueTitlePrefix}-${actualPage}-${index}`}
                   onClick={() =>
                     void run('export', () => exportOne(issue.key, snapshot.entries[issue.key].value))
                   }

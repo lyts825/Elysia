@@ -51,6 +51,9 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
+.workbench-save-issue > h4.workbench-persistence-reading {
+  max-height: min(6rem, 20dvh);
+}
 .workbench-persistence .workbench-persistence-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
