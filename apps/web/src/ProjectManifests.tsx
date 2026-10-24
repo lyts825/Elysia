@@ -530,16 +530,24 @@ export function ProjectManifests({
               readiness.canFreeze && <p role="status">当前已知条件已满足，可以提交冻结核验。</p>
             )}
           </section>
-          <label>
+          <label className="manifest-title-field">
             本次交付名称
             <input
               ref={manifestTitle}
               maxLength={200}
+              aria-invalid={!manifest.title.trim() || manifest.title.trim().length > 200}
+              aria-describedby={`${manifestId}-title-help`}
               value={manifest.title}
               onChange={(e) =>
                 change((value) => ({ ...value, manifest: { ...value.manifest!, title: e.target.value } }))
               }
             />
+            <small id={`${manifestId}-title-help`}>
+              原文 {manifest.title.length} 字符 · 去除首尾空白后 {manifest.title.trim().length} / 200 字符
+              {!manifest.title.trim()
+                ? ' · 请填写本次交付名称，空白不能提交。'
+                : manifest.title.trim().length > 200 && ' · 名称超过 200 字符，请缩短后再提交。'}
+            </small>
           </label>
           {[...new Set(manifest.selected)]
             .filter((id) => !board.items.some((item) => item.id === id))
@@ -656,6 +664,7 @@ export function ProjectManifests({
             type="button"
             className="primary"
             disabled={!readiness.canFreeze}
+            aria-describedby={`${manifestId}-title-help`}
             onClick={() => {
               if (!readiness.canFreeze) return;
               const sent = JSON.stringify(manifest);
@@ -723,8 +732,8 @@ export function ProjectManifests({
         )}
         {page && (
           <p className="field-help" role={listRead.status !== 'ready' ? 'status' : undefined}>
-            {listRead.status !== 'ready' && '上次读取：'}冻结清单第 {position.trail.length + 1} 页
-            {listRead.status !== 'ready' && '，当前历史尚未重新确认。'}
+            {listRead.status !== 'ready' && '上次读取：'}冻结清单第 {position.trail.length + 1} 页 · 本页{' '}
+            {page.items.length} 项{listRead.status !== 'ready' && '，当前历史尚未重新确认。'}
           </p>
         )}
         {!!page?.items.length && (
@@ -745,7 +754,9 @@ export function ProjectManifests({
             ))}
           </div>
         )}
-        {page && !page.items.length && <p className="field-help">尚未冻结交付清单。</p>}
+        {page && !page.items.length && (
+          <p className="field-help">{position.trail.length ? '此页没有冻结清单。' : '尚未冻结交付清单。'}</p>
+        )}
         <div className="project-actions">
           <button
             type="button"
