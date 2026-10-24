@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { FileContentView, fileEncodingOptions } from './FileContentView';
@@ -6,6 +6,7 @@ import { useFilePage } from './useFilePage';
 import './project-files.css';
 
 export function ProjectFiles({ projectId }: { projectId: string }) {
+  const fileListId = useId();
   const [selection, setSelection] = useState({
     projectId,
     path: '.',
@@ -93,7 +94,10 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
         <p className="project-files-read-context" role="status">
           {loading ? '正在读取当前路径，暂时保留上次已读内容。' : '当前显示上次已读内容。'}
           <span>
-            已读来源：<code>{value.path}</code>
+            已读来源：
+            <code className="project-file-reading" role="region" aria-label="已读文件完整来源" tabIndex={0}>
+              {value.path}
+            </code>
           </span>
         </p>
       )}
@@ -130,7 +134,9 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
       )}
       {error && (
         <div className="project-file-error" role="alert" ref={errorRef} tabIndex={-1}>
-          <span>{error}</span>
+          <span className="project-file-reading" role="region" aria-label="项目文件读取错误全文" tabIndex={0}>
+            {error}
+          </span>
           <button
             type="button"
             className="secondary"
@@ -157,12 +163,25 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
               ref={filterRef}
               type="search"
               aria-label="筛选项目文件"
+              aria-describedby={fileListId}
               placeholder="筛选文件"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
+            {filter && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setFilter('');
+                  filterRef.current?.focus();
+                }}
+              >
+                清除筛选
+              </button>
+            )}
           </div>
-          <p className="project-file-count">
+          <p className="project-file-count" id={fileListId}>
             {filter ? '筛选显示' : '当前显示'} {entries.length} / 已读 {value.entries?.length || 0} 项
             {value.truncated && ' · 目录尚未完整读取'}
           </p>
@@ -190,18 +209,6 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
             {!entries.length && (
               <div className="project-file-empty" role="status">
                 <p>{filter ? '没有匹配的文件。' : '此文件夹没有文件。'}</p>
-                {filter && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      setFilter('');
-                      filterRef.current?.focus();
-                    }}
-                  >
-                    清除筛选
-                  </button>
-                )}
               </div>
             )}
             {value.truncated && <p className="file-read-notice">目录显示前 300 项；进入子目录可继续浏览。</p>}

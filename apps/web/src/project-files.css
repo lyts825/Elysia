@@ -60,6 +60,16 @@
 .project-files-read-context code {
   font-size: var(--font-xs);
 }
+.project-files .project-file-reading {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(10rem, 35dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .project-files .file-encoding-choice label {
   display: flex;
   align-items: center;
@@ -89,12 +99,18 @@
   margin-bottom: var(--space-2);
 }
 .project-file-search input {
+  flex: 1;
   min-width: 0;
   min-height: var(--control-md);
   padding: var(--space-2) var(--space-2) var(--space-2) 0;
   border: 0;
   font-size: var(--font-sm);
   background: transparent;
+}
+.project-file-search > .text-button {
+  flex: none;
+  margin-right: var(--space-2);
+  white-space: normal;
 }
 .project-file-search:focus-within {
   border-color: var(--accent);
