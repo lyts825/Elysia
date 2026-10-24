@@ -94,11 +94,17 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
-.file-fragment-note {
+.file-fragment-note,
+.file-highlight-view-note {
   font-size: var(--font-sm);
   margin: 0 0 var(--space-2);
   line-height: var(--leading-body);
   color: var(--muted);
+}
+.file-highlight-view-note {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  overflow-wrap: anywhere;
 }
 .file-document-scroll {
   min-width: 0;

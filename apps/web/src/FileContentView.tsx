@@ -70,6 +70,7 @@ export function FileContentView({
     }
   }, [highlight?.requestId, range]);
   const markdown = file.kind === 'markdown' || /\.(?:md|markdown)$/i.test(file.path);
+  const documentView = markdown && mode === 'document' && !highlight;
   const encodingSource =
     file.encodingSource === 'bom'
       ? 'BOM 识别'
@@ -123,15 +124,15 @@ export function FileContentView({
         <div className="file-content-tools">
           {markdown && (
             <div className="file-content-tabs" role="group" aria-label="文件显示方式">
-              <button type="button" aria-pressed={mode === 'document'} onClick={() => setMode('document')}>
+              <button type="button" aria-pressed={documentView} onClick={() => setMode('document')}>
                 文档
               </button>
-              <button type="button" aria-pressed={mode === 'source'} onClick={() => setMode('source')}>
+              <button type="button" aria-pressed={!documentView} onClick={() => setMode('source')}>
                 源码
               </button>
             </div>
           )}
-          {(!markdown || mode === 'source') && (
+          {!documentView && (
             <label className="file-wrap-control">
               <input type="checkbox" checked={wrap} onChange={(event) => setWrap(event.target.checked)} />
               自动换行
@@ -144,7 +145,10 @@ export function FileContentView({
           )}
         </div>
       )}
-      {markdown && mode === 'document' && !highlight && file.text !== null ? (
+      {highlight && file.text !== null && (
+        <p className="file-highlight-view-note">搜索定位使用源码视图，原显示偏好仍保留。</p>
+      )}
+      {documentView && file.text !== null ? (
         <>
           {file.page?.paged && (
             <p className="file-fragment-note">大文档按片段显示。跨片段的代码块、表格或引用可切换源码查看。</p>
