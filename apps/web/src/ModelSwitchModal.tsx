@@ -146,6 +146,18 @@ export function ModelSwitchModal({
                       ? '所选型号尚未就绪，请检查连接与模型。'
                       : '新选择已就绪，尚未应用。'}
             </p>
+            {changed && selectedProvider && (
+              <div className="model-switch-changes" aria-label="本次选择的变化">
+                <h4>已改动的选择</h4>
+                <ul>
+                  {choice.providerId !== agent.providerId && <li>模型连接</li>}
+                  {choice.model !== binding.model && <li>型号</li>}
+                  {(choice.reasoningEffort ?? null) !== (binding.reasoningEffort ?? null) && (
+                    <li>推理强度</li>
+                  )}
+                </ul>
+              </div>
+            )}
             <details className="model-switch-identity">
               <summary>核对连接标识与版本</summary>
               <dl
@@ -173,10 +185,20 @@ export function ModelSwitchModal({
               </dl>
             </details>
           </section>
-          <p className="field-help">
-            {chat ? '应用后用于当前会话的下一次回复。' : '应用后用于此代理的后续调用。'}
-            {canResume ? (chat ? '“应用并继续”会立即继续回复。' : '“应用并继续”会立即继续任务。') : ''}
-          </p>
+          <div className="model-switch-action-help">
+            <p id={id + '-apply-help'}>
+              <strong>应用模型</strong>
+              <span>
+                {chat ? '应用后用于当前会话的下一次回复。' : '应用后用于此代理的后续调用。'}本次不立即继续。
+              </span>
+            </p>
+            {canResume && (
+              <p id={id + '-resume-help'}>
+                <strong>应用并继续</strong>
+                <span>{chat ? '更新模型并立即继续回复。' : '更新模型并立即继续任务。'}</span>
+              </p>
+            )}
+          </div>
           {disabledReason && (
             <div className="inline-warning" role="status">
               <div
@@ -199,7 +221,7 @@ export function ModelSwitchModal({
               type="button"
               className="secondary"
               disabled={!canSubmit}
-              aria-describedby={id + '-selection-state'}
+              aria-describedby={`${id}-selection-state ${id}-resume-help`}
               onClick={() => submit(choice, 'resume')}
             >
               应用并继续
@@ -209,7 +231,7 @@ export function ModelSwitchModal({
             type="submit"
             className="primary"
             disabled={!canSubmit}
-            aria-describedby={id + '-selection-state'}
+            aria-describedby={`${id}-selection-state ${id}-apply-help`}
           >
             应用模型
           </button>
