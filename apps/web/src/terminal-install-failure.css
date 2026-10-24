@@ -1,0 +1,27 @@
+.terminal-install-failure-target {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.terminal-install-failure-target > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.terminal-install-failure-target dt {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.terminal-install-failure-target dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-install-repair-section {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.terminal-install-repair-section > p {
+  margin: 0;
+}

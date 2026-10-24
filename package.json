@@ -1,6 +1,6 @@
 {
   "name": "elysia",
-  "version": "1.19.109",
+  "version": "1.19.110",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",

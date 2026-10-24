@@ -5,6 +5,7 @@ import {
   type TerminalCliInstallRepair,
 } from '../../../packages/contracts/src/cli-installation';
 import './terminal-operation-notices.css';
+import './terminal-install-failure.css';
 
 const actionLabels: Record<TerminalCliInstallRepair, string> = {
   check: '检查当前环境',
@@ -22,6 +23,7 @@ export function TerminalInstallFailure({
   repair?: (job: TerminalCliInstallationJob, action: TerminalCliInstallRepair) => void;
 }) {
   const titleId = useId();
+  const repairHelpId = useId();
   if (job.status !== 'failed') return null;
   const failure = terminalCliInstallFailure(job.code, job.message);
   return (
@@ -33,6 +35,16 @@ export function TerminalInstallFailure({
         <span>安装未完成</span>
       </header>
       <p>{failure.message}</p>
+      <dl className="terminal-install-failure-target" aria-label="本次失败的安装目标">
+        <div>
+          <dt>终端应用</dt>
+          <dd>{job.appId === 'custom' ? '自定义 CLI' : job.appId}</dd>
+        </div>
+        <div>
+          <dt>请求版本</dt>
+          <dd>{job.requestedVersion || '未指定'}</dd>
+        </div>
+      </dl>
       <details className="terminal-install-failure-details">
         <summary>查看失败记录</summary>
         <dl
@@ -41,6 +53,16 @@ export function TerminalInstallFailure({
           role="region"
           aria-label="终端安装失败完整记录"
         >
+          <div>
+            <dt>安装记录</dt>
+            <dd>
+              <code>{job.id}</code> · v{job.revision}
+            </dd>
+          </div>
+          <div>
+            <dt>基础镜像</dt>
+            <dd>{job.baseImage}</dd>
+          </div>
           <div>
             <dt>错误代码</dt>
             <dd>
@@ -62,20 +84,25 @@ export function TerminalInstallFailure({
         </dl>
       </details>
       {repair && (
-        <div className="terminal-install-repairs">
-          {failure.actions.map((action) => (
-            <button
-              type="button"
-              key={action}
-              className="secondary"
-              disabled={disabled}
-              aria-describedby={titleId}
-              onClick={() => repair(job, action)}
-            >
-              {actionLabels[action]}
-            </button>
-          ))}
-        </div>
+        <section className="terminal-install-repair-section" aria-label="处理安装问题">
+          <p className="field-help" id={repairHelpId}>
+            下列入口用于检查环境或定位安装配置；重新安装仍需在对应入口明确发起。
+          </p>
+          <div className="terminal-install-repairs">
+            {failure.actions.map((action) => (
+              <button
+                type="button"
+                key={action}
+                className="secondary"
+                disabled={disabled}
+                aria-describedby={`${titleId} ${repairHelpId}`}
+                onClick={() => repair(job, action)}
+              >
+                {actionLabels[action]}
+              </button>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
