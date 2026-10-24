@@ -12,8 +12,7 @@
   scroll-padding-block: var(--space-2);
 }
 .detail-read-stack:focus-visible,
-.detail-read-result:focus-visible,
-.detail-read-error:focus-visible {
+.detail-read-reading:focus-visible {
   outline-offset: -2px;
 }
 .detail-read-notice {
@@ -39,6 +38,13 @@
 .detail-read-result,
 .detail-read-error {
   white-space: pre-wrap;
+}
+.detail-read-reading {
+  max-height: clamp(4rem, 18dvh, 10rem);
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .detail-read-notice > button {
   margin-top: var(--space-2);
