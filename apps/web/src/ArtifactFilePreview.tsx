@@ -167,7 +167,7 @@ export function ArtifactFilePreview({
                 }
               }}
             >
-              搜索完整日志
+              {searchOpen ? '收起日志搜索' : '搜索完整日志'}
             </button>
           )}
         </div>
@@ -211,7 +211,12 @@ export function ArtifactFilePreview({
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
-            <button type="submit" className="secondary" disabled={searchBusy || !query.trim()}>
+            <button
+              type="submit"
+              className="secondary"
+              disabled={searchBusy || !query.trim()}
+              aria-describedby={`${searchIdentity}-query-help`}
+            >
               {searchBusy ? '搜索中…' : '搜索'}
             </button>
           </form>
@@ -230,7 +235,22 @@ export function ArtifactFilePreview({
           )}
           {searchPage && (
             <>
-              <p className="artifact-preview-log-help" role="status">
+              <div className="artifact-preview-search-basis">
+                <span>已读关键词</span>
+                <p
+                  id={`${searchIdentity}-read-query`}
+                  className="artifact-preview-reading"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="已读日志搜索完整关键词"
+                >
+                  {searchPage.query}
+                </p>
+                {query.trim() !== searchPage.query && (
+                  <p className="artifact-preview-log-help">输入已改动，当前结果仍对应以上关键词。</p>
+                )}
+              </div>
+              <p id={`${searchIdentity}-read-status`} className="artifact-preview-log-help" role="status">
                 {searchPage.matches.length
                   ? `已显示 ${searchPage.matches.length} 处匹配`
                   : '已扫描部分没有匹配'}
@@ -287,6 +307,7 @@ export function ArtifactFilePreview({
                   type="button"
                   className="secondary"
                   disabled={searchBusy}
+                  aria-describedby={`${searchIdentity}-read-query ${searchIdentity}-read-status`}
                   onClick={() =>
                     setIntent({
                       query: searchPage.query,
