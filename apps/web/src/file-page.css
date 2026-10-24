@@ -64,6 +64,16 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.file-page-position-help {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.file-page-position-help[data-invalid='true'] {
+  color: var(--danger);
+}
 .file-page-detail > summary {
   cursor: pointer;
   color: var(--secondary);

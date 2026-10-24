@@ -71,6 +71,7 @@ export function FilePageControls({
             aria-label="文件位置百分比"
             title="按位置读取；100% 查看末尾一页"
             aria-describedby={positionHelpId}
+            aria-invalid={!valid}
             type="number"
             min={0}
             max={100}
@@ -90,11 +91,17 @@ export function FilePageControls({
         <button
           type="button"
           disabled={loading || !valid || !page.totalBytes}
+          aria-describedby={positionHelpId}
           onClick={() => jump(targetOffset)}
         >
           定位
         </button>
       </div>
+      <p className="file-page-position-help" id={positionHelpId} data-invalid={!valid}>
+        {valid
+          ? '按文件字节位置读取；100% 查看末尾一页。'
+          : '请输入 0～100 的位置百分比；100% 查看末尾一页。'}
+      </p>
       <details className="file-page-detail">
         <summary>精确字节与定位说明</summary>
         <div
@@ -117,7 +124,7 @@ export function FilePageControls({
               <dd>{page.totalBytes.toLocaleString()} 字节</dd>
             </div>
           </dl>
-          <p id={positionHelpId}>按文件字节位置读取。100% 查看末尾一页；实际片段起点会对齐文本编码边界。</p>
+          <p>实际片段起点会对齐文本编码边界。</p>
         </div>
       </details>
     </div>
