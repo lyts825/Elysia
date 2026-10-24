@@ -121,3 +121,45 @@ export async function resolveModelChoice(
   }
   return { ...provider, model: modelId, reasoningEffort };
 }
+
+/** Share discovery only within one plan; each choice still validates its current connection. */
+export async function resolveModelChoices(
+  store: Store,
+  subscription: CatalogServices['subscription'],
+  codex: CatalogServices['codex'],
+  choices: readonly ModelChoice[],
+  apiCatalog?: ApiModelCatalog,
+): Promise<ProviderConfig[]> {
+  const memoize = <Input, Output>(read: (input: Input) => Promise<Output>, key: (input: Input) => string) => {
+    const catalogs = new Map<string, Promise<Output>>();
+    return (input: Input) => {
+      const id = key(input);
+      let catalog = catalogs.get(id);
+      if (!catalog) {
+        catalog = read(input);
+        catalogs.set(id, catalog);
+      }
+      return catalog;
+    };
+  };
+  const subscriptions = {
+    models: memoize(
+      (id: string) => subscription.models(id),
+      (id) => id,
+    ),
+  };
+  const codexAccounts = {
+    models: memoize(
+      (id: string) => codex.models(id),
+      (id) => id,
+    ),
+  };
+  const apiModels = apiCatalog
+    ? memoize(apiCatalog, (provider) => JSON.stringify([provider.id, provider.revision]))
+    : undefined;
+  const bindings: ProviderConfig[] = [];
+  // Keep plan order so a failed selection does not trigger unrelated discovery calls.
+  for (const choice of choices)
+    bindings.push(await resolveModelChoice(store, subscriptions, codexAccounts, choice, apiModels));
+  return bindings;
+}

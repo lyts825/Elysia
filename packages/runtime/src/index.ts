@@ -57,6 +57,8 @@ export class NativeExecutor implements ExecutorAdapter {
   private toolActive = 0;
   private runtimeRevision = 0;
   private runtimeLast = '';
+  private readonly dispatchOrder = new Map<string, number>();
+  private dispatchSequence = 0;
   private capacityController = new AbortController();
   private readonly admissions = new ExecutionAdmissions();
   onDelta: (runId: string, taskId: string, text: string, requestId: string, offset: number) => void =
@@ -173,12 +175,20 @@ export class NativeExecutor implements ExecutorAdapter {
       (!run.projectId || !this.kernel.store.require<Project>('projects', run.projectId).archived)
     );
   }
+  private orderedCandidates(tasks: readonly Task[]) {
+    // A native step may return to READY. Give waiting peers their turn before it runs again.
+    return [...tasks].sort(
+      (left, right) => (this.dispatchOrder.get(left.id) ?? 0) - (this.dispatchOrder.get(right.id) ?? 0),
+    );
+  }
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
-    for (const task of this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
-      excludeRunIds: [...this.locallyStopped],
-      excludeExecutionHolds: true,
-    })) {
+    for (const task of this.orderedCandidates(
+      this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
+        excludeRunIds: [...this.locallyStopped],
+        excludeExecutionHolds: true,
+      }),
+    )) {
       if (task.status !== 'READY' || this.active.has(task.id)) continue;
       const run = this.kernel.store.require<Run>('runs', task.runId);
       if (this.schedulableRun(run))
@@ -319,6 +329,9 @@ export class NativeExecutor implements ExecutorAdapter {
         excludeRunIds: [...this.locallyStopped],
         excludeExecutionHolds: true,
       });
+      const candidates = new Set(tasks.map((task) => task.id));
+      for (const taskId of this.dispatchOrder.keys())
+        if (!candidates.has(taskId) && !this.active.has(taskId)) this.dispatchOrder.delete(taskId);
       const admissions = new Set<ExecutionAdmission>();
       for (const task of tasks) {
         const run = this.kernel.store.require<Run>('runs', task.runId);
@@ -347,7 +360,7 @@ export class NativeExecutor implements ExecutorAdapter {
     }
   }
   private dispatchReady(tasks: readonly Task[], dispatched: Set<string>) {
-    for (const candidate of tasks) {
+    for (const candidate of this.orderedCandidates(tasks)) {
       if (this.stopped || this.active.size >= 4) break;
       // Every preparation completion rechecks current host state, never its earlier snapshot.
       if (dispatched.has(candidate.id) || this.isLocallyStopped(candidate.runId)) continue;
@@ -360,6 +373,7 @@ export class NativeExecutor implements ExecutorAdapter {
       const admission = this.executionPlugins.forRun(run).admission;
       if (admission && !admission.acquire(task, run)) continue;
       dispatched.add(task.id);
+      this.dispatchOrder.set(task.id, ++this.dispatchSequence);
       const promise = this.step(task, controller.signal)
         .catch((error) => this.fail(task, error))
         .finally(() => {

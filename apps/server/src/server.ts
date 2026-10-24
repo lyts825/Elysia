@@ -57,7 +57,7 @@ import { ProviderKeys } from './provider-keys.js';
 import { registerManagement } from './management.js';
 import { registerWorkbench, workbenchScope } from './workbench.js';
 import { BoundedEventStream, eventFrame } from './event-stream.js';
-import { availableModels, resolveModelChoice } from './model-choice.js';
+import { availableModels, resolveModelChoice, resolveModelChoices } from './model-choice.js';
 import { apiModels, officialDeepSeek } from './api-model-catalog.js';
 import { createSurfaceAuth, type SurfaceAuth, type WorkbenchSurface } from './surfaces.js';
 import { registerTerminalSettings, terminalSettings } from './terminal-settings.js';
@@ -1397,11 +1397,9 @@ export function createServer(
       '模型分配需要唯一的计划一级任务 key',
     );
     const planAlignment = await executor.gateway.planAlignment.load();
-    const bindings = new Map<string, ProviderConfig>();
-    for (const task of run.plan.tasks) {
-      const choice = body.assignments.find((a) => a.key === task.key) ?? task;
-      bindings.set(task.key, await resolveModelChoice(store, subscription, codex, choice, apiCatalog));
-    }
+    const choices = run.plan.tasks.map((task) => body.assignments.find((a) => a.key === task.key) ?? task);
+    const resolved = await resolveModelChoices(store, subscription, codex, choices, apiCatalog);
+    const bindings = new Map(run.plan.tasks.map((task, index) => [task.key, resolved[index]]));
     const result = executionCommand(run.id, body, request.url, () =>
       planAlignment.accept(
         request.params.id,
