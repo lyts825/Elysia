@@ -19,12 +19,35 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-.native-defaults-summary {
+.native-defaults-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
   margin-block: var(--space-3);
+}
+.native-defaults-summary {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
 }
 .native-defaults-summary summary {
   cursor: pointer;
   font-size: var(--font-md);
+  overflow-wrap: anywhere;
+}
+.native-defaults-summary summary span {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+.native-defaults-state {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
+.native-project-defaults :is(button, summary, .native-defaults-reading) {
+  scroll-margin-block: var(--space-3);
 }
 .native-defaults-reading {
   max-height: min(16rem, 42dvh);
@@ -38,11 +61,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: var(--space-3);
-  margin-block: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
+  margin: var(--space-3) 0 0;
 }
 .native-defaults-facts > div {
   min-width: 0;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   NativeProjectDefaults,
   NativeProjectDefaultsRecord,
@@ -62,6 +62,7 @@ export function NativeProjectDefaultsPanel({
   activity: (busy: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
+  const helpId = useId();
   const [record, setRecord] = useState<NativeProjectDefaultsRecord>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -122,24 +123,42 @@ export function NativeProjectDefaultsPanel({
         <h3>项目默认</h3>
         {record && <span className="native-defaults-version">版本 {record.revision}</span>}
       </header>
-      <p className="field-help" role="status">
-        {notice || (error ? '项目默认尚未读取成功，当前表单输入保留。' : '正在读取项目默认…')}
+      <p className="field-help native-defaults-state" id={helpId + '-state'} role="status">
+        {busy
+          ? '正在保存当前表单，已读默认仍可核对。'
+          : error
+            ? '项目默认操作未完成，当前表单输入保留。'
+            : !record
+              ? '正在读取项目默认…'
+              : notice}
       </p>
-      <p className="field-help">复用模型、计划、上下文和预算；执行权限由本次任务单独确认。</p>
-      {record?.defaults && (
+      <p className="field-help" id={helpId + '-scope'}>
+        载入会将已保存默认带入当前表单；保存会将当前表单设为项目默认。
+        两种操作均不创建任务，执行权限仍由本次任务单独确认。
+      </p>
+      <div className="native-defaults-comparison">
+        {record?.defaults && (
+          <details className="native-defaults-summary">
+            <summary>
+              查看已保存默认配置 <span>v{record.revision}</span>
+            </summary>
+            <div
+              className="native-defaults-reading"
+              role="region"
+              aria-label="已保存默认完整配置"
+              tabIndex={0}
+            >
+              <DefaultsSummary value={record.defaults} />
+            </div>
+          </details>
+        )}
         <details className="native-defaults-summary">
-          <summary>查看已保存默认配置</summary>
-          <div className="native-defaults-reading" role="region" aria-label="已保存默认完整配置" tabIndex={0}>
-            <DefaultsSummary value={record.defaults} />
+          <summary>查看当前表单配置</summary>
+          <div className="native-defaults-reading" role="region" aria-label="当前表单完整配置" tabIndex={0}>
+            <DefaultsSummary value={value} />
           </div>
         </details>
-      )}
-      <details className="native-defaults-summary">
-        <summary>查看当前表单配置</summary>
-        <div className="native-defaults-reading" role="region" aria-label="当前表单完整配置" tabIndex={0}>
-          <DefaultsSummary value={value} />
-        </div>
-      </details>
+      </div>
       {error && (
         <div className="native-defaults-error" role="alert">
           <p className="native-defaults-reading" role="region" aria-label="项目默认操作问题全文" tabIndex={0}>
@@ -161,6 +180,7 @@ export function NativeProjectDefaultsPanel({
             type="button"
             className="secondary"
             disabled={busy}
+            aria-describedby={`${helpId}-scope ${helpId}-state`}
             onClick={() => {
               apply(record.defaults!);
               setNotice('已载入项目默认，请核对当前配置。');
@@ -173,6 +193,7 @@ export function NativeProjectDefaultsPanel({
           type="button"
           className="secondary"
           disabled={!record || busy || !canSave}
+          aria-describedby={`${helpId}-scope ${helpId}-state`}
           onClick={() => void save()}
         >
           {busy ? '正在保存…' : '保存为项目默认'}
