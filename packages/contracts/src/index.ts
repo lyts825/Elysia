@@ -4,9 +4,11 @@ import { terminalResourcePresets } from './terminal-runtime.js';
 import type { NativeProjectDefaults, RunSourceSnapshot, DeliveryUserReview } from './workflow.js';
 import type { RoleRoutingSnapshot, RoleRoutingDecision } from './model-routing.js';
 import type { ProjectCapabilitySnapshot } from './project-intelligence.js';
+import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
+export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.19.126';
+export const VERSION = '1.20.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -55,6 +57,7 @@ export const Contract = z.object({
   acceptanceCriteria: z.array(z.string()).min(1),
   constraints: z.array(z.string()),
   allowSameModelReview: z.boolean().default(false),
+  peerReview: PeerReviewPolicy.optional(),
   permissionProfile: Permissions,
   budget: Budget,
   assumptions: z.array(z.string()),
@@ -329,6 +332,7 @@ export const ExecutionBinding = z.discriminatedUnion('kind', [
 ]);
 export type ExecutionBinding = z.infer<typeof ExecutionBinding>;
 export interface Run extends Entity {
+  peerReview?: PeerReviewState;
   /** Role choices captured at creation; never changes the coordinator's explicit choice. */
   modelRouting?: RoleRoutingSnapshot;
   /** Kernel-generated provenance for routed plan entries, never taken from model input. */
@@ -360,6 +364,7 @@ export interface Run extends Entity {
   deliveryReview?: DeliveryUserReview;
 }
 export interface Task extends Entity {
+  peerReview?: { candidateId: string; reviewerProviderId: string };
   contractVersion: number;
   runId: string;
   parentTaskId: string | null;
@@ -369,6 +374,8 @@ export interface Task extends Entity {
   phase: 'planning' | 'executing';
   depth: number;
   workspace: string | null;
+  /** Read-only alias of another task's workspace, never an independently owned checkout. */
+  workspaceOwnerTaskId?: string;
   baseline: string | null;
   waitReason?: string;
   waitingFor: string[];

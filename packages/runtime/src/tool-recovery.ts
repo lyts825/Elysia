@@ -41,6 +41,11 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
       'dependency',
       '审计模型与执行模型冲突。按当前角色配置选择不同型号，连接、账号或思考强度不同不能消除冲突；历史已使用型号也参与校验。保留合同 allowSameModelReview，只有用户在合同界面明确确认才能开启同模型审计。无其他可用模型时说明所需配置，不自行开启例外或反复重试。',
     );
+  if (code.startsWith('PEER_REVIEW_'))
+    return advice(
+      'evidence',
+      '核对当前 peerReview、候选编号和原错误。评分须逐项覆盖标准，引用本项真实证据；执行模型应按失败意见修订后再提交，不能重复索取评分。已冻结的模型、轮次与门槛不能修改；候选失效应等待新候选，轮次耗尽则保留意见并说明需新建任务继续。',
+    );
   if (['PATH_ESCAPE', 'WRITE_SCOPE', 'EXEC_SCOPE', 'PATH_DENIED', 'ARTIFACT_SCOPE'].includes(code))
     return advice(
       'scope',

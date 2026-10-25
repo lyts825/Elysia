@@ -50,17 +50,19 @@ export const dataFormat = (version: number): DataFormat => ({
   name: 'elysia-sqlite',
   version,
   minimumReaderVersion:
-    version >= 8
+    version >= 9
       ? STORAGE_MIN_READER_VERSION
-      : version === 7
-        ? '1.9.0'
-        : version === 6
-          ? '1.0.0-preview.6'
-          : version === 5
-            ? '1.0.0-preview.1'
-            : version === 4
-              ? '0.25.0-preview.1'
-              : '0.24.0-preview.1',
+      : version === 8
+        ? '1.10.0'
+        : version === 7
+          ? '1.9.0'
+          : version === 6
+            ? '1.0.0-preview.6'
+            : version === 5
+              ? '1.0.0-preview.1'
+              : version === 4
+                ? '0.25.0-preview.1'
+                : '0.24.0-preview.1',
 });
 export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   if (!entry.dataFormat) {

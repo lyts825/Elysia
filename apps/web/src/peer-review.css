@@ -1,0 +1,94 @@
+.peer-review-setup,
+.peer-review-panel {
+  min-width: 0;
+  margin-block: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+  overflow-wrap: anywhere;
+}
+.peer-review-setup .check-label,
+.peer-review-setup .peer-review-model {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.peer-review-setup .check-label input {
+  flex: none;
+  margin-block-start: var(--space-1);
+}
+.peer-review-models {
+  min-width: 0;
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.peer-review-models legend {
+  max-width: 100%;
+  font-weight: 600;
+  font-size: var(--font-md);
+}
+.peer-review-model > span {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+  line-height: var(--leading-body);
+}
+.peer-review-model > span > span,
+.peer-review-model small {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.peer-review-settings {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+}
+.peer-review-panel h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-lg);
+  line-height: var(--leading-heading);
+}
+.peer-review-panel p {
+  margin-block: var(--space-2);
+  line-height: var(--leading-body);
+}
+.peer-review-state {
+  font-weight: 600;
+}
+.peer-review-panel details > summary {
+  line-height: var(--leading-body);
+  cursor: pointer;
+}
+.peer-review-round {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.peer-review-score {
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.peer-review-reading {
+  max-height: min(24rem, 50dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+}
+.peer-review-reading dl {
+  margin: var(--space-2) 0;
+}
+.peer-review-reading dd {
+  margin: var(--space-1) 0 var(--space-3);
+}
+.peer-review-items {
+  padding-left: var(--space-5);
+}
+.peer-review-items li + li {
+  margin-top: var(--space-4);
+}

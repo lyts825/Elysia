@@ -10,6 +10,17 @@ export function assertReviewModelPolicy(
   replacingTaskIds: string[] = [],
   ledger?: RequestLedgerRow[],
 ) {
+  if (run.peerReview) {
+    const frozenModels = new Set(
+      run.peerReview.bindings.map((binding) => binding.model.trim().toLowerCase()),
+    );
+    for (const candidate of candidates)
+      invariant(
+        candidate.role === 'reviewer' || !frozenModels.has(candidate.model.trim().toLowerCase()),
+        'PEER_REVIEW_MODEL_CONFLICT',
+        '执行代理不能使用已冻结的评审模型型号',
+      );
+  }
   if (
     run.kind !== 'task' ||
     run.execution?.kind === 'docker-agent' ||

@@ -34,6 +34,8 @@ const toolNames: Record<string, string> = {
   allocate_context: '分配上下文',
   join_tasks: '等待子任务',
   submit_result: '提交验收结果',
+  submit_peer_review: '提交评审评分',
+  read_peer_evidence: '读取评审证据',
 };
 const fieldNames: Record<string, string> = {
   id: '标识',
@@ -64,6 +66,11 @@ const fieldNames: Record<string, string> = {
   acceptanceCriteria: '验收标准',
   evidence: '验证证据',
   incomplete: '未完成事项',
+  candidateId: '候选输出标识',
+  items: '逐项评分',
+  score: '分数',
+  verdict: '评审结论',
+  evidenceRefs: '证据引用',
   source: '来源',
   server: 'MCP 服务',
   tool: '工具',
@@ -117,11 +124,15 @@ function resultSummary(name: string, outcome: unknown): string {
   const result = record(outcome);
   if (!result) return '已返回结果';
   if (registeredWait(name, result))
-    return result.reason === 'children'
-      ? '当时已登记等待子任务'
-      : result.reason === 'user'
-        ? '当时已登记等待回答'
-        : '当时已登记等待';
+    return result.reason === 'peer_review'
+      ? '候选输出已提交，等待独立评审'
+      : result.reason === 'peer_review_limit'
+        ? '评审轮次已用完，目标尚未确认'
+        : result.reason === 'children'
+          ? '当时已登记等待子任务'
+          : result.reason === 'user'
+            ? '当时已登记等待回答'
+            : '当时已登记等待';
   const suffix = result?.truncated === true ? '（结果已截断）' : '';
   if (name === 'list' && Array.isArray(result?.entries))
     return Number(result.entriesTotal ?? result.entries.length)
@@ -147,11 +158,15 @@ function resultSummary(name: string, outcome: unknown): string {
     propose_plan: '计划已提交',
     spawn_task: '子任务已创建',
     submit_result: '验收结果已提交',
+    submit_peer_review: '评审评分已提交',
+    read_peer_evidence: '评审证据已读取',
   };
   return summaries[name] || '已返回结果';
 }
 function registeredWait(name: string, result: Record<string, unknown> | null): boolean {
-  return ['clarify', 'propose_plan', 'join_tasks'].includes(name) && result?.waiting === true;
+  return (
+    ['clarify', 'propose_plan', 'join_tasks', 'submit_result'].includes(name) && result?.waiting === true
+  );
 }
 function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
   const value = record(outcome);

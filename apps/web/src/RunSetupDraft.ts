@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AgentTerminalProfile, type ContextPolicy } from '../../../packages/contracts/src/index';
 import type { ModelChoice } from './ModelPicker';
+import type { PeerReviewPolicy } from '../../../packages/contracts/src/peer-review';
 
 export type RunSetupDraft = {
   planMode: boolean;
@@ -20,6 +21,7 @@ export type RunSetupDraft = {
   deliverables?: string;
   acceptanceCriteria?: string;
   allowSameModelReview?: boolean;
+  peerReview?: PeerReviewPolicy;
 };
 
 // Drafts may contain incomplete input. Validate their shape here; the form validates execution values.
@@ -53,6 +55,13 @@ const draftShape = z.object({
   deliverables: z.string().optional(),
   acceptanceCriteria: z.string().optional(),
   allowSameModelReview: z.boolean().optional(),
+  peerReview: z
+    .object({
+      reviewerProviderIds: z.array(z.string()),
+      minScore: z.number(),
+      maxRounds: z.number(),
+    })
+    .optional(),
 });
 
 export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {

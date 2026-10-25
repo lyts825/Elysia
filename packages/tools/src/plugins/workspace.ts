@@ -10,6 +10,7 @@ import {
 } from '../../../contracts/src/index.js';
 import { id, hash } from '../../../storage/src/index.js';
 import { isBinaryFile } from '../../../contracts/src/files.js';
+import { peerReviewCandidate } from '../../../context/src/peer-review.js';
 import { unicodeBoundary } from '../catalogue.js';
 import { contained } from '../path-policy.js';
 import { defineTool, type ToolServices, type ToolInvocation, type ToolContribution } from '../tool-plugin.js';
@@ -85,12 +86,17 @@ export function workspaceTools(
     let result: unknown;
 
     const artifact = context.store.require<Artifact>('artifacts', args.artifactId);
-    const source = context.store.require<Run>('runs', task.runId).source;
+    const run = context.store.require<Run>('runs', task.runId);
+    const source = run.source;
+    const selectedCandidate = peerReviewCandidate(run, task)?.evidence.some(
+      (e) => e.type === 'artifact' && e.ref === artifact.id,
+    );
     const selectedInput =
       source?.bundleArtifactId === artifact.id ||
       source?.artifacts.some((item) => item.importedId === artifact.id) === true;
     invariant(
-      artifact.runId === task.runId && (artifact.verified || artifact.taskId === task.id || selectedInput),
+      artifact.runId === task.runId &&
+        (artifact.verified || artifact.taskId === task.id || selectedInput || selectedCandidate),
       'ARTIFACT_SCOPE',
       '产物越界或尚未通过验收',
     );
@@ -299,6 +305,7 @@ export function workspaceTools(
       invariant(
         child.runId === task.runId &&
           child.status === 'DONE' &&
+          !child.workspaceOwnerTaskId &&
           child.baseline === task.baseline &&
           child.workspace &&
           context.kernel.ancestors(child).some((a) => a.id === task.id),

@@ -24,6 +24,7 @@ import {
 } from '../../contracts/src/index.js';
 import { Store, id, hash, stable, now } from '../../storage/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
+import { gatePeerReview } from '../../kernel/src/peer-review.js';
 import type { ToolDefinition } from '../../context/src/index.js';
 import { scopedLocalItems } from '../../context/src/local-library.js';
 import { McpClient } from './mcp-client.js';
@@ -341,7 +342,9 @@ export class ToolGateway {
     if (permission.read) names.push('list', 'read', 'read_artifact', 'search');
     if (permission.urls.length) names.push('fetch_url');
     if (task.phase === 'executing') {
-      names.push('join_tasks', 'submit_result');
+      names.push(
+        ...(task.peerReview ? ['read_peer_evidence', 'submit_peer_review'] : ['join_tasks', 'submit_result']),
+      );
       if (task.spec.role !== 'reviewer') {
         names.push('spawn_task', 'allocate_context');
         if (permission.write) {
@@ -727,6 +730,7 @@ export class ToolGateway {
     task = this.store.require<Task>('tasks', task.id);
     const run = this.store.require<Run>('runs', task.runId);
     invariant(!args.incomplete.length, 'ACCEPTANCE_INCOMPLETE', '仍有未完成事项，不能验收');
+    invariant(!task.peerReview, 'PEER_REVIEW_TOOL', '评审任务必须使用 submit_peer_review 提交逐项评分');
     const children = this.store
       .all<Task>('tasks', run.id)
       .filter(
@@ -780,12 +784,20 @@ export class ToolGateway {
     return this.store.tx(() => {
       task = this.store.require<Task>('tasks', task.id);
       invariant(task.status === 'RUNNING', 'STOPPED', '任务已停止');
+      const review = gatePeerReview(this.kernel, task, args);
+      if (review) return review;
       this.kernel.updateTask(task, 'VERIFYING');
       const result = {
         summary: args.summary,
         evidence: args.evidence,
         verifiedAt: now(),
         limitation: '已核验文件、引用与命令结果；结论内容需用户复核',
+        ...(run.contract.peerReview && task.id === run.rootTaskId
+          ? {
+              peerReviewCandidateId: this.store.require<Run>('runs', run.id).peerReview?.rounds.at(-1)
+                ?.candidate.id,
+            }
+          : {}),
       };
       this.kernel.updateTask(this.store.require('tasks', task.id), 'DONE', { result });
       for (const e of args.evidence.filter((e) => e.type === 'artifact')) {

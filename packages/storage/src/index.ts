@@ -58,8 +58,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
 }
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
-export const STORAGE_SCHEMA_VERSION = 8;
-export const STORAGE_MIN_READER_VERSION = '1.10.0';
+export const STORAGE_SCHEMA_VERSION = 9;
+export const STORAGE_MIN_READER_VERSION = '1.20.0';
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'id'
@@ -524,6 +524,8 @@ export class Store {
     if (version < 7) this.tx(() => this.db.exec('PRAGMA user_version=7;'));
     // Scheduled execution must not be reopened by clients that ignore its frozen configuration.
     if (version < 8) this.tx(() => this.db.exec('PRAGMA user_version=8;'));
+    // Peer-review completion gates must not be bypassed by older clients that ignore the frozen policy.
+    if (version < 9) this.tx(() => this.db.exec('PRAGMA user_version=9;'));
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
     const pending = this.db

@@ -33,6 +33,7 @@ import { Store, id, now, stable } from '../../storage/src/index.js';
 import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 import { freezeRoleRouting, routeTask } from './model-routing.js';
 import { assertReviewModelPolicy } from './review-policy.js';
+import { freezePeerReview, peerReviewReservedSlots, invalidatePeerReview } from './peer-review.js';
 import { ROLE_ROUTING_PROVIDER, type RoleRoutingDecision } from '../../contracts/src/model-routing.js';
 import { freezeProjectCapabilities } from '../../context/src/project-intelligence.js';
 import {
@@ -74,6 +75,13 @@ export class Kernel {
   }
   updateRun(run: Run, extra: Partial<Run>) {
     return this.store.tx(() => {
+      if (
+        extra.contract &&
+        stable(extra.contract) !== stable(run.contract) &&
+        run.peerReview?.rounds.length
+      ) {
+        run = invalidatePeerReview(this, run, '任务约定已更新，需要重新评审');
+      }
       const next = this.store.put('runs', { ...run, ...extra }, run.revision);
       this.event(run.id, 'run.updated', next);
       return next;
@@ -358,6 +366,7 @@ export class Kernel {
       const runId = id(),
         taskId = id(),
         agentId = id();
+      const peerReview = freezePeerReview(this.store, contract, provider, limits, kind, execution);
       const run = this.store.put<Run>('runs', {
         id: runId,
         revision: 0,
@@ -371,6 +380,7 @@ export class Kernel {
         archived: false,
         objective,
         contract,
+        ...(peerReview ? { peerReview } : {}),
         plan: null,
         status: 'READY',
         coordinatorAgentId: agentId,
@@ -533,18 +543,22 @@ export class Kernel {
       invariant(
         stable(contract.permissionProfile) === stable(run.contract.permissionProfile) &&
           stable(contract.budget) === stable(run.contract.budget) &&
-          contract.allowSameModelReview === (run.contract.allowSameModelReview === true),
+          contract.allowSameModelReview === (run.contract.allowSameModelReview === true) &&
+          stable(contract.peerReview) === stable(run.contract.peerReview),
         'PLAN_ESCALATION',
-        '计划不能改变用户授权、预算或同模型审计设置',
+        '计划不能改变用户授权、预算或评审设置',
       );
       invariant(
-        plan.tasks.length + this.store.all<Agent>('agents', run.id).length <= run.limits.maxAgents,
+        plan.tasks.length + this.store.all<Agent>('agents', run.id).length + peerReviewReservedSlots(run) <=
+          run.limits.maxAgents,
         'AGENT_LIMIT',
         '计划超出代理总量',
       );
       const keys = plan.tasks.map((t) => t.key);
       invariant(
-        new Set(keys).size === keys.length && !keys.includes('root'),
+        new Set(keys).size === keys.length &&
+          !keys.includes('root') &&
+          (!run.peerReview || !keys.some((key) => key.startsWith('peer-review-'))),
         'TASK_KEYS',
         '任务 key 必须唯一且不能是 root',
       );
@@ -623,7 +637,7 @@ export class Kernel {
       );
       invariant(parent.depth < run.limits.maxDepth, 'DEPTH_LIMIT', '委派深度达到上限');
       invariant(
-        this.store.all<Agent>('agents', run.id).length < run.limits.maxAgents,
+        this.store.all<Agent>('agents', run.id).length + peerReviewReservedSlots(run) < run.limits.maxAgents,
         'AGENT_LIMIT',
         '代理数量达到上限',
       );
@@ -631,7 +645,8 @@ export class Kernel {
       const routingDecision = routed.decision ?? routingDecisionOverride;
       const spec = TaskSpec.parse(routed.raw);
       invariant(
-        !this.store.all<Task>('tasks', run.id).some((t) => t.spec.key === spec.key),
+        (!run.peerReview || !spec.key.startsWith('peer-review-')) &&
+          !this.store.all<Task>('tasks', run.id).some((t) => t.spec.key === spec.key),
         'TASK_KEY_EXISTS',
         '任务 key 已存在',
       );
@@ -969,6 +984,16 @@ export class Kernel {
       );
       const requests = this.store.requestLedger({ runId: run.id });
       const currentTask = this.store.require<Task>('tasks', task.id);
+      if (currentTask.peerReview) {
+        const frozen = run.peerReview?.bindings.find(
+          (binding) => binding.id === currentTask.peerReview!.reviewerProviderId,
+        );
+        invariant(
+          frozen && stable(frozen) === stable(provider),
+          'PEER_REVIEW_MODEL_CHANGED',
+          '评审请求必须使用创建任务时冻结的模型配置',
+        );
+      }
       assertReviewModelPolicy(
         this.store,
         run,
@@ -1126,7 +1151,13 @@ export class Kernel {
   }
   switchModel(runId: string, taskId: string, provider: ProviderConfig, mode: 'apply' | 'resume') {
     return this.store.tx(() => {
-      const { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
+      let { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
+      invariant(!task.peerReview, 'PEER_REVIEW_MODEL_FROZEN', '评审模型在任务创建时冻结，不能单独切换');
+      invariant(
+        run.peerReview?.rounds.at(-1)?.status !== 'reviewing',
+        'PEER_REVIEW_PENDING',
+        '请等待本轮独立评审结束后再切换执行模型',
+      );
       invariant(
         run.execution?.kind !== 'docker-agent',
         'TERMINAL_MODEL_SWITCH',
@@ -1142,6 +1173,7 @@ export class Kernel {
       const binding = this.binding(provider.id, provider),
         agent = this.store.require<Agent>('agents', task.agentId);
       assertReviewModelPolicy(this.store, run, [{ ...task.spec, model: binding.model }], [task.id]);
+      run = invalidatePeerReview(this, run, '执行模型已切换，需重新评审候选结果');
       const currentPolicy = agent.contextPolicy ?? { mode: 'managed' as const };
       const contextPolicy = this.validateContextPolicy(
         binding,
@@ -1323,6 +1355,12 @@ export class Kernel {
         if (!taskId || taskId === run.rootTaskId)
           this.updateRun(this.store.require('runs', runId), { status: 'WAITING', reason: 'paused' });
       } else {
+        invariant(
+          run.peerReview?.rounds.at(-1)?.status !== 'limit_reached' &&
+            !this.store.all<Task>('tasks', run.id).some((task) => task.waitReason === 'peer_review_limit'),
+          'PEER_REVIEW_LIMIT',
+          '评审轮次已用完，请保留评审意见并新建任务继续；恢复操作不会重置评审轮次',
+        );
         if (run.execution?.kind === 'docker-agent') {
           invariant(
             !tasks.some((task) =>
@@ -1550,6 +1588,7 @@ export class Kernel {
         !(run.status === 'WAITING' && (run.reason === 'user' || (!run.authorized && run.reason === 'plan')))
       )
         return;
+      run = invalidatePeerReview(this, run, '用户要求已更新，需要重新评审候选结果');
       for (const m of incoming) {
         for (const t of this.store
           .all<Task>('tasks', runId)

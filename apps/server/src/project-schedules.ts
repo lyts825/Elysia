@@ -352,6 +352,11 @@ export class ProjectScheduler {
     return this.store.tx(() => {
       const project = mutableProject(this.store, projectId, this.hooks.assertMutable);
       const source = this.store.require<Run>('runs', sourceRunId);
+      invariant(
+        !source.contract.peerReview,
+        'SCHEDULE_PEER_REVIEW',
+        '评审模式使用创建时冻结的多模型配置，暂不支持作为定时任务模板',
+      );
       this.hooks.assertMutable(source.id, projectId);
       invariant(
         source.projectId === projectId && source.kind === 'task' && source.execution?.kind !== 'docker-agent',

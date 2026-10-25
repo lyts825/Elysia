@@ -491,6 +491,11 @@ export class NativeExecutor implements ExecutorAdapter {
       'ARTIFACT_SCOPE',
       'CRITERION_SCOPE',
       'ACCEPTANCE_INCOMPLETE',
+      'PEER_REVIEW_CRITERIA',
+      'PEER_REVIEW_EVIDENCE',
+      'PEER_REVIEW_UNCHANGED',
+      'PEER_REVIEW_TOO_LARGE',
+      'PEER_REVIEW_MODEL_CONFLICT',
     ]);
     const failures = outcomes.flatMap(({ call, result }) => {
       if (call.name === 'join_tasks') {

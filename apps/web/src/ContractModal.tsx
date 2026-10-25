@@ -118,6 +118,20 @@ export function ContractModal({
             aria-labelledby={id + '-policy'}
           >
             <h3 id={id + '-policy'}>审计要求与预算</h3>
+            {contract.peerReview && (
+              <div className="contract-editor-budget-note">
+                <p>
+                  已启用评审模式：{contract.peerReview.reviewerProviderIds.length} 个模型独立评分，每项至少{' '}
+                  {contract.peerReview.minScore} 分，最多 {contract.peerReview.maxRounds} 轮。
+                </p>
+                <p>
+                  评审配置在创建时固定。每位评审的每项结论均须通过，目标才能确认完成；修改目标或验收标准后需重新评审。
+                </p>
+                <p className="run-setup-reading" role="region" aria-label="评审连接完整标识" tabIndex={0}>
+                  {contract.peerReview.reviewerProviderIds.join('、')}
+                </p>
+              </div>
+            )}
             <ReviewModelPolicy
               allowed={value.allowSameModelReview === true}
               disabled={busy || disabled}

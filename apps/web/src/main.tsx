@@ -202,6 +202,10 @@ const ReadinessPanel = deferredPanel(
 import { contextPolicyLabel } from './ContextLabel';
 import { validContextPolicy } from './ContextPolicyEditor';
 const TaskGraph = deferredPanel(() => import('./TaskGraph').then((m) => m.TaskGraph), '任务图');
+const PeerReviewPanel = deferredPanel(
+  () => import('./PeerReviewPanel').then((m) => m.PeerReviewPanel),
+  '模型评审',
+);
 const TaskRecovery = deferredPanel(() => import('./TaskRecovery').then((m) => m.TaskRecovery), '分支恢复');
 import { agentOrder } from './agentOrder';
 import {
@@ -284,6 +288,7 @@ const reasons: Record<string, string> = {
   interrupted: '服务中断，等待恢复',
   verification: '副作用待核验',
   limit: '达到运行上限',
+  peer_review_limit: '评审轮次已用完，查看意见并新建任务继续',
   rate_limit: '等待账号额度',
   dependency_failed: '依赖分支失败或已取消，等待局部恢复',
   no_progress: '相同工具错误重复发生，已暂停此代理',
@@ -3868,6 +3873,7 @@ function App({
                   <MotionContent className="detail-content" motionKey={tab}>
                     {tab === 'tasks' && (
                       <>
+                        {detail.run.contract.peerReview && <PeerReviewPanel run={detail.run} />}
                         <div className="panel-heading">
                           <h3>执行拓扑</h3>
                           <span>

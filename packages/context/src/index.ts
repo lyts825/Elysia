@@ -23,6 +23,7 @@ import { compactHistory, COMPACTION_ALGORITHM } from './compaction.js';
 import { scopedLocalItems, listLocalMemories } from './local-library.js';
 import { listProjectMemories } from './project-intelligence.js';
 import { readTaskWorkingState } from './working-state.js';
+import { peerReviewCandidate, peerReviewContext } from './peer-review.js';
 import { AUTONOMOUS_EXECUTION_GUIDANCE, PROMPT_VERSION, nativeHarnessPolicy } from './harness.js';
 export { compactHistory, headTail, COMPACTION_ALGORITHM } from './compaction.js';
 export { listSkills, loadSkill, SKILL_CATALOG_VERSION } from './skills.js';
@@ -250,6 +251,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
         }
       : undefined,
     lastResult: task.result,
+    peerReview: peerReviewContext(run, task),
     phase: task.phase,
     workspace: task.workspace,
     projectDirectory: run.projectId ? store.require<Project>('projects', run.projectId).workspaceRoot : null,
@@ -334,6 +336,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
       .filter(
         (a) =>
           a.verified ||
+          peerReviewCandidate(run, task)?.evidence.some((e) => e.type === 'artifact' && e.ref === a.id) ||
           a.taskId === task.id ||
           a.id === run.source?.bundleArtifactId ||
           run.source?.artifacts.some((source) => source.importedId === a.id),

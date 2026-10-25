@@ -19,6 +19,8 @@ import { NativeProjectDefaultsPanel } from './NativeProjectDefaults';
 import type { NativeProjectDefaults } from '../../../packages/contracts/src/workflow';
 import { RunConfirmation } from './RunConfirmation';
 import { ReviewModelPolicy } from './ReviewModelPolicy';
+import { PeerReviewSetup, peerReviewSetupIssue } from './PeerReviewSetup';
+import type { PeerReviewPolicy } from '../../../packages/contracts/src/peer-review';
 import { TaskRequirements, requirementLines, validRequirements } from './TaskRequirements';
 import './workflow.css';
 import './run-setup.css';
@@ -74,6 +76,7 @@ export function RunModal({
   // A restored creation draft is not a saved contract: require a fresh explicit confirmation.
   const [allowSameModelReview, setAllowSameModelReview] = useState(false);
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
+  const [peerReview, setPeerReview] = useState<PeerReviewPolicy | undefined>(initial?.peerReview);
   const [deliverables, setDeliverables] = useState(
     initial?.deliverables ?? initialRequirements?.deliverables ?? '',
   );
@@ -104,6 +107,8 @@ export function RunModal({
   );
   const chat = kind === 'chat';
   const terminal = !chat && executionKind === 'docker-agent';
+  const peerReviewReady =
+    chat || terminal || !peerReviewSetupIssue(peerReview, providers, choice.model ?? selected?.model ?? '');
   const lines = (s: string) =>
     s
       .split('\n')
@@ -147,6 +152,7 @@ export function RunModal({
     deliverables,
     acceptanceCriteria,
     allowSameModelReview,
+    peerReview,
   };
   const changedRef = useRef(changed);
   changedRef.current = changed;
@@ -169,6 +175,7 @@ export function RunModal({
     deliverables,
     acceptanceCriteria,
     allowSameModelReview,
+    peerReview,
   ]);
   const applyDefaults = (defaults: NativeProjectDefaults) => {
     setAppliedDefaults(defaults);
@@ -202,6 +209,7 @@ export function RunModal({
             reviewConfirmationPending ||
             !setupReady ||
             !requirementsReady ||
+            !peerReviewReady ||
             !objective.trim() ||
             (localSurface === 'terminal' && chat)
           )
@@ -216,6 +224,7 @@ export function RunModal({
               ...(!chat && !terminal
                 ? {
                     allowSameModelReview,
+                    ...(peerReview ? { peerReview } : {}),
                     ...(allowSameModelReview ? { sameModelReviewConfirmed: true } : {}),
                     ...(requirementLines(deliverables).length
                       ? { deliverables: requirementLines(deliverables) }
@@ -293,6 +302,15 @@ export function RunModal({
               disabled={busy || defaultsBusy}
               change={setAllowSameModelReview}
               pendingChanged={setReviewConfirmationPending}
+            />
+          )}
+          {!chat && !terminal && (
+            <PeerReviewSetup
+              value={peerReview}
+              providers={providers}
+              executionModel={choice.model ?? selected?.model ?? ''}
+              disabled={busy || defaultsBusy}
+              change={setPeerReview}
             />
           )}
           {!chat && !terminal && (
@@ -444,24 +462,7 @@ export function RunModal({
                       disabled={busy}
                       onClick={() => {
                         if (busy) return;
-                        settings({
-                          planMode,
-                          executionKind,
-                          terminalProfile,
-                          choice,
-                          contextPolicy: context,
-                          write,
-                          exec,
-                          urls,
-                          inputs,
-                          writePaths,
-                          maxRequests,
-                          maxTokens,
-                          maxCost,
-                          concurrency,
-                          deliverables,
-                          acceptanceCriteria,
-                        });
+                        settings(currentDraft);
                       }}
                     >
                       前往模型设置
@@ -615,6 +616,7 @@ export function RunModal({
               reviewConfirmationPending ||
               !setupReady ||
               !requirementsReady ||
+              !peerReviewReady ||
               !objective.trim()
             }
           >

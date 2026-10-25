@@ -1011,6 +1011,7 @@ export function createServer(
         contextPolicy: ContextPolicy.optional(),
         planMode: z.boolean().default(true),
         allowSameModelReview: z.boolean().optional(),
+        peerReview: Contract.shape.peerReview,
         sameModelReviewConfirmed: z.boolean().optional(),
         execution: ExecutionBinding.default({ kind: 'native' }),
         permissionProfile: Permissions.default({
@@ -1111,6 +1112,7 @@ export function createServer(
           (body.kind === 'chat' ? ['回答用户消息'] : ['交付产物可读取，并有实际验证证据']),
         constraints: ['遵守用户指定的授权和预算'],
         allowSameModelReview: body.allowSameModelReview,
+        peerReview: body.peerReview,
         permissionProfile:
           body.kind === 'chat'
             ? { read: false, write: false, exec: false, urls: [], writePaths: [] }
@@ -1336,6 +1338,11 @@ export function createServer(
       );
       invariant(!['DONE', 'CANCELLED'].includes(run.status), 'INVALID_STATE', '运行已结束');
       if (body.contract) {
+        invariant(
+          stable(body.contract.peerReview ?? null) === stable(run.contract.peerReview ?? null),
+          'PEER_REVIEW_FROZEN',
+          '评审模型、通过分数及轮次已冻结，请新建任务调整评审模式',
+        );
         invariant(
           !body.contract.allowSameModelReview ||
             run.contract.allowSameModelReview === true ||

@@ -14,6 +14,7 @@ const reasons: Record<string, { action: string; hint: string }> = {
   user: { action: '回答', hint: '等待你的回答。' },
   plan: { action: '确认计划', hint: '请核对分工、型号与验收项。' },
   limit: { action: '查看限制', hint: '已达到运行限制，请核对预算与用量。' },
+  peer_review_limit: { action: '查看评审', hint: '评审轮次已用完，查看意见并新建任务继续。' },
   subscription_limit: { action: '查看设置', hint: '订阅额度受限，请核对用量。' },
   no_progress: { action: '查看分支', hint: '工具错误重复发生，请检查后继续此分支。' },
   dependency_failed: { action: '查看分支', hint: '依赖分支受阻，请先处理来源。' },

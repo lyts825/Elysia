@@ -130,6 +130,11 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     };
   if (run.status === 'CANCELLED') return { text: `已取消，记录保留；继续工作可新建${noun}`, action: 'new' };
   if (run.status === 'DONE') return { text: '交付已完成，可查看产物与验证记录', action: 'artifacts' };
+  if (
+    run.reason === 'peer_review_limit' ||
+    tasks.some((task) => task.status === 'WAITING' && task.waitReason === 'peer_review_limit')
+  )
+    return { text: '评审轮次已用完，查看意见并新建任务继续；恢复不会重置轮次', action: 'tasks' };
   if (detail.localExecutionStopped) {
     if (
       detail.requests?.some((record) => record.status === 'UNKNOWN') ||

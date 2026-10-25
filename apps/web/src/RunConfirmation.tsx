@@ -93,6 +93,15 @@ export function RunConfirmation({
           <dt>审计模型</dt>
           <dd>{value.allowSameModelReview ? '已确认允许与执行模型相同' : '必须与执行模型不同'}</dd>
         </div>
+        {value.peerReview && (
+          <div>
+            <dt>评审模式</dt>
+            <dd>
+              {value.peerReview.reviewerProviderIds.length} 个模型独立评分 · 每项至少{' '}
+              {value.peerReview.minScore} 分 · 最多 {value.peerReview.maxRounds} 轮
+            </dd>
+          </div>
+        )}
         <div className="run-confirmation-wide">
           <dt>权限范围</dt>
           <dd>
