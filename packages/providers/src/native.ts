@@ -1,43 +1,16 @@
 // Native protocol implementation; adapter selection belongs to the provider plugin registry.
 import {
-  AppError,
   UsageSchema,
   type Message,
   type ProviderConfig,
   type ToolCall,
   type Usage,
 } from '../../contracts/src/index.js';
-import { type CompiledContext } from '../../context/src/index.js';
+import type { CompiledContext } from '../../contracts/src/model.js';
 import { officialDeepSeek, retiredDeepSeekModelIssue } from './deepseek.js';
 export { officialDeepSeek, deepSeekModelReplacement, retiredDeepSeekModelIssue } from './deepseek.js';
-export class ProviderError extends AppError {
-  responseStarted = false;
-  usage: Usage | null = null;
-  constructor(
-    code: string,
-    message: string,
-    public status: number,
-    public retryAfterMs = 0,
-  ) {
-    super(code, message, status === 429 || status >= 500 || status === 0);
-  }
-}
-export type ProviderEvent =
-  | { type: 'delta'; text: string }
-  | { type: 'reasoning_delta'; text: string; kind: 'reasoning_content' }
-  | {
-      type: 'completed';
-      text: string;
-      calls: ToolCall[];
-      usage: Usage | null;
-      native: unknown[];
-      reasoningContent?: string;
-    };
-export interface ProviderAdapter {
-  capabilities: { streaming: boolean; tools: boolean; nativeReplay: boolean };
-  compile(context: CompiledContext): Record<string, unknown>;
-  stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent>;
-}
+import { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
+export { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
 function numeric(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }

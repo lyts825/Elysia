@@ -1,3 +1,4 @@
+import { RunApplicationService } from './run-application.js';
 import Fastify, { type FastifyRequest, type FastifyReply, type FastifyInstance } from 'fastify';
 import staticFiles from '@fastify/static';
 import { z } from 'zod';
@@ -26,7 +27,6 @@ import {
   type Operation,
   type Artifact,
   type RequestRecord,
-  type Attempt,
   type ContextSnapshot,
 } from '../../../packages/contracts/src/index.js';
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
@@ -186,37 +186,6 @@ export function createServer(
     options.surface === 'terminal'
       ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
       : undefined;
-  let terminal!: DockerAgentService;
-  const executor = new NativeExecutor(kernel, {
-    executionPlugins: (gateway) => {
-      terminal = new DockerAgentService(kernel, gateway, {
-        ...options.terminal,
-        ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
-      });
-      return [terminalExecutionPlugin(terminal)];
-    },
-  });
-  executor.acceptRun = (run) =>
-    options.surface === 'native'
-      ? run.execution?.kind !== 'docker-agent'
-      : options.surface === 'terminal'
-        ? run.execution?.kind === 'docker-agent'
-        : true;
-  const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
-    if (!terminalControl) return profile;
-    if (profile.connectionId === undefined && projectId) {
-      const selected = terminalControl.preferences(projectId).connectionId;
-      const connection = terminalControl.connections().find((entry) => entry.id === selected);
-      if (
-        connection &&
-        terminalAppCatalog()
-          .find((entry) => entry.id === profile.agent)
-          ?.protocols.includes(connection.protocol)
-      )
-        return terminalControl.bindProfile(profile, connection.id);
-    }
-    return terminalControl.bindProfile(profile);
-  };
   const nativeService = <T extends object>(factory: () => T): T =>
     options.surface === 'terminal'
       ? new Proxy({} as T, {
@@ -238,9 +207,43 @@ export function createServer(
       ? new ProviderRegistry([])
       : serverProviderPlugins({ codex, subscription, keys });
   const providerAdapter = (provider: ProviderConfig) => providerPlugins.adapter(provider);
-  executor.adapterFactory = (agent) => {
-    invariant(options.surface !== 'terminal', 'SURFACE_EXECUTION', 'Agent 终端入口不调用原生模型');
-    return providerAdapter(agent.providerBinding);
+  let terminal!: DockerAgentService;
+  const executor = new NativeExecutor(kernel, {
+    adapterFactory: (agent) => {
+      invariant(options.surface !== 'terminal', 'SURFACE_EXECUTION', 'Agent 终端入口不调用原生模型');
+      return providerAdapter(agent.providerBinding);
+    },
+    acceptRun: (run) =>
+      options.surface === 'native'
+        ? run.execution?.kind !== 'docker-agent'
+        : options.surface === 'terminal'
+          ? run.execution?.kind === 'docker-agent'
+          : true,
+    executionPlugins: (gateway) => {
+      terminal = new DockerAgentService(kernel, gateway, {
+        ...options.terminal,
+        ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
+      });
+      return [terminalExecutionPlugin(terminal)];
+    },
+  });
+  const runService = new RunApplicationService(kernel, executor, (runId, projectId) =>
+    management.assertMutable(runId, projectId),
+  );
+  const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
+    if (!terminalControl) return profile;
+    if (profile.connectionId === undefined && projectId) {
+      const selected = terminalControl.preferences(projectId).connectionId;
+      const connection = terminalControl.connections().find((entry) => entry.id === selected);
+      if (
+        connection &&
+        terminalAppCatalog()
+          .find((entry) => entry.id === profile.agent)
+          ?.protocols.includes(connection.protocol)
+      )
+        return terminalControl.bindProfile(profile, connection.id);
+    }
+    return terminalControl.bindProfile(profile);
   };
   if (options.surface !== 'terminal')
     for (const config of defaultProviders())
@@ -1493,74 +1496,11 @@ export function createServer(
     }
     let releasedFinishedHold = false;
     const result = executionCommand(request.params.id, body, request.url, () => {
-      const run = store.require<Run>('runs', request.params.id);
-      revision(body, run);
-      management.assertMutable(run.id, run.projectId);
-      invariant(
-        !run.archived && (!run.projectId || !store.require<Project>('projects', run.projectId).archived),
-        'ARCHIVED',
-        '请先恢复归档的对话或项目',
-      );
-      if (
-        body.action === 'resume' &&
-        !switching &&
-        !body.taskId &&
-        ['DONE', 'CANCELLED'].includes(run.status) &&
-        store.getExecutionHold(run.id)
-      ) {
-        invariant(!executorHasActive(executor, run.id), 'STOP_IN_PROGRESS', '当前执行尚未停止，请稍后再恢复');
-        executor.releaseLocalStop(run.id);
-        releasedFinishedHold = true;
-        return run;
-      }
-      if (['start', 'resume', 'resume_task'].includes(body.action) || body.switchMode === 'resume') {
-        if (store.getExecutionHold(run.id)) {
-          invariant(
-            !executorHasActive(executor, run.id),
-            'STOP_IN_PROGRESS',
-            '当前执行尚未停止，请稍后再恢复',
-          );
-          if (store.getExecutionHold(run.id)?.reason === 'recovery_unreadable') kernel.recover(run.id);
-        }
-        // The hold release and the authorized action commit together, or both roll back.
-        executor.releaseLocalStop(run.id);
-      }
-      if (body.action === 'resume_task') {
-        invariant(
-          body.taskId && !executorHasActive(executor, run.id, body.taskId),
-          'TASK_RESUME_BOUNDARY',
-          '请选择已暂停或失败的代理，并等待当前操作结束',
-        );
-        return kernel.resumeTask(run.id, body.taskId);
-      }
-      if (binding) {
-        invariant(
-          body.taskId && !executorHasActive(executor, run.id, body.taskId),
-          'MODEL_SWITCH_BOUNDARY',
-          '该代理仍在执行，请先暂停并等待当前操作结束',
-        );
-        const switched = kernel.switchModel(
-          run.id,
-          body.taskId,
-          binding,
-          body.action === 'switch_model' ? body.switchMode! : body.action === 'resume' ? 'resume' : 'apply',
-        );
-        // Legacy providerId + pause still means a saved pause, without pausing descendants.
-        if (body.action === 'pause') {
-          const task = store.require<Task>('tasks', body.taskId);
-          if (task.waitReason === 'user' && run.kind === 'chat') kernel.wait(task, 'paused');
-          return store.require<Run>('runs', run.id);
-        }
-        return switched;
-      }
-      invariant(body.action !== 'switch_model', 'MODEL_SWITCH_CHOICE', '模型选择未完成');
-      invariant(body.action !== 'stop_current', 'STOP_RUN_SCOPE', '停止当前执行需使用本机停止入口');
-      return kernel.action(run.id, body.action, body.taskId);
+      const applied = runService.apply(request.params.id, body, binding);
+      releasedFinishedHold = applied.releasedFinishedHold;
+      return applied.result;
     });
-    if (!switching && ['pause', 'cancel'].includes(body.action))
-      await executor.interrupt(request.params.id, body.taskId);
-    if (!releasedFinishedHold && (!switching || body.action === 'resume' || body.switchMode === 'resume'))
-      executor.resume(request.params.id);
+    await runService.afterAction(request.params.id, body, releasedFinishedHold);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/runs/:id/decisions', async (request) => {

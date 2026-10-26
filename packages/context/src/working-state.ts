@@ -4,7 +4,8 @@ import type {
   TaskWorkingStateDraft,
   TaskWorkingStateRecord,
 } from '../../contracts/src/working-state.js';
-import { hash, stable, type Store } from '../../storage/src/index.js';
+import { hash, stable } from '../../contracts/src/identity.js';
+import type { Store } from '../../storage/src/index.js';
 
 export type WorkingStateContext = { run: Run; task: Task };
 export const WORKING_STATE_REQUIREMENTS_MAX_CHARS = 16_000;

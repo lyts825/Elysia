@@ -1,6 +1,6 @@
 import type { Message } from '../../contracts/src/index.js';
 import type { ApprovedTaskWorkingState } from '../../contracts/src/working-state.js';
-import { stable } from '../../storage/src/index.js';
+import { stable } from '../../contracts/src/identity.js';
 import { validateTaskWorkingState, workingStateMemory, type WorkingStateContext } from './working-state.js';
 
 export const COMPACTION_ALGORITHM = 'tiered-recoverable-v2';

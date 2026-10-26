@@ -1,10 +1,10 @@
+import { contextWindowBudget } from '../../../packages/contracts/src/context-window.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   AppError,
   ContextRuntimeMetrics,
   CONTEXT_SAFETY_TOKENS,
-  effectiveContextWindowTokens,
   minimumContextWindowTokens,
   type Run,
   type Agent,
@@ -26,9 +26,7 @@ export class ContextPreviewReads {
     if (run.execution?.kind === 'docker-agent') return { runId, runRevision: run.revision, agents: [] };
     const provider = agent.providerBinding;
     const policy = agent.contextPolicy ?? { mode: 'managed' as const };
-    const windowTokens = effectiveContextWindowTokens(agent);
-    const inputBudgetTokens = Math.max(0, windowTokens - provider.outputLimit - CONTEXT_SAFETY_TOKENS);
-    const runtimeReserveTokens = provider.authMode === 'codex' ? 16384 : 0;
+    const { windowTokens, inputBudgetTokens, runtimeReserveTokens } = contextWindowBudget(agent);
     const candidates = this.store.db
       .prepare(
         `SELECT seq,substr(payload,1,65537) payload,length(content) compressed_bytes,
