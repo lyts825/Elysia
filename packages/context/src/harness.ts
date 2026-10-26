@@ -1,7 +1,7 @@
 import type { Run, Task } from '../../contracts/src/index.js';
 
-export const PROMPT_VERSION = '7';
-export const HARNESS_POLICY_VERSION = 'autonomous-within-scope-v2';
+export const PROMPT_VERSION = '8';
+export const HARNESS_POLICY_VERSION = 'autonomous-within-scope-v3';
 
 /** Shared execution guidance; authorization is still enforced by the host, never by this text. */
 export const AUTONOMOUS_EXECUTION_GUIDANCE =
@@ -39,7 +39,12 @@ export function nativeContinuationNotice(task: Pick<Task, 'phase' | 'spec' | 'pe
   return '当前执行任务仍未提交结果。根据实际进展选择下一项已开放工具；常规实施、修复与必要验证无需重复确认。完成全部本任务验收和必需子任务后用 submit_result 提交真实证据；关键阻塞用 clarify 说明已有成果和所需输入。普通文本不改变完成状态。';
 }
 
-export function nativeHarnessPolicy(run: Run, task: Task, toolNames: string[]) {
+export function nativeHarnessPolicy(
+  run: Run,
+  task: Task,
+  toolNames: string[],
+  environment?: { hostPlatform: string },
+) {
   const availableTools = [...new Set(toolNames)].sort();
   const accepted =
     run.authorized && (run.planMode === false || run.acceptedPlanVersion === run.plan?.version);
@@ -70,6 +75,25 @@ export function nativeHarnessPolicy(run: Run, task: Task, toolNames: string[]) {
     mode,
     authorization,
     availableTools,
+    commandEnvironment:
+      run.kind === 'chat'
+        ? undefined
+        : {
+            available: availableTools.includes('exec'),
+            hostPlatform: environment?.hostPlatform ?? 'unknown',
+            backend: run.contract.commandBackend ?? { kind: 'local' },
+            rule:
+              run.contract.commandBackend?.kind === 'docker'
+                ? 'exec 的程序在指定镜像内运行，任务目录挂载为 /workspace；cwd 仍填写任务内相对路径，程序参数中的文件路径使用容器路径。网络关闭，根文件系统只读；仅获整个任务目录写入授权时挂载可写。宿主上的程序不代表镜像内存在。MCP 与宿主 Git 管理不在此容器内；引擎或镜像不可用时不回退本机。'
+                : 'exec 在宿主运行；按 hostPlatform 选择程序和参数，cwd 指向任务目录。不会隐式启动 shell，管道、重定向和变量展开仅在明确调用相应 shell 时有效。本机进程不构成操作系统沙箱，安装或联网仍受原授权约束。',
+          },
+    toolReview:
+      run.kind === 'chat'
+        ? undefined
+        : {
+            mode: run.contract.toolReview?.mode ?? 'off',
+            rule: '工具审核与命令后端在创建时冻结，提出计划或编辑约定必须原样保留 toolReview、commandBackend。额外审核不替代工具授权；通过不代表已执行。拒绝时依据原因调整合法方案，不换工具绕过；结果未知先核验。模型审核共用任务预算和账号额度。',
+          },
     clarification:
       mode === 'chat'
         ? '直接回答；确有影响回答的关键缺口时集中提问，不使用项目 clarify 工具。'

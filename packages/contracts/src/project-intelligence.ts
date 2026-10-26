@@ -37,6 +37,7 @@ export interface CapturedSkill {
   hash: string;
   source?: string;
   resourcePaths?: string[];
+  resources?: { path: string; text: string; hash: string; bytes: number }[];
 }
 export interface CapturedLocalItem extends LocalAgentItem {
   content?: string;

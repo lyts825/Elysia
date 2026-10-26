@@ -79,7 +79,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
   }
 
   const prompts = Object.fromEntries(
-    ['platform', 'chat', 'workspace', task.spec.role].map((name) => [
+    ['platform', 'chat', 'workspace', task.peerReview ? 'peer-reviewer' : task.spec.role].map((name) => [
       name,
       readFileSync(builtinResourcePath('prompts', name + '.md'), 'utf8')
         .replace(/\r\n/g, '\n')
@@ -92,6 +92,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
     agent,
     definitions,
     prompts,
+    environment: { hostPlatform: process.platform },
     snapshots,
     snapshotContents: snapshots.map((s) => {
       const bytes = store.readObject(s.objectRef),

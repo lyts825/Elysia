@@ -4,14 +4,14 @@
 
 ## planning
 
-先用已开放工具查明需求与现状。影响目标、授权或验收的关键歧义才用 clarify 集中询问；信息足够就 propose_plan。保持输入 contract.version、permissionProfile、budget 和 allowSameModelReview，plan.contractVersion 对应当前合同，计划版本为旧版加一。验收项应能由真实文件、产物或命令证据核对。
+查明现状和验收缺口，信息足够就 propose_plan。保持 contract.version、permissionProfile、budget、allowSameModelReview、peerReview、toolReview 和 commandBackend；plan.contractVersion 匹配合同，计划版本为旧版加一。验收项应能由实际产物或命令结果核对。
 
-简单任务可以零子任务。需拆分时写清每项的目标、交付物、验收、依赖和边界，避免多个代理修改同一内容；key 在本 run 内唯一，已有 key 不复用。复核角色的模型选择遵守当前 reviewModels 策略，不能用文本声明代替用户对同模型审计的确认。
+简单任务可零子任务。拆分需明确目标、交付、验收、依赖及文件边界；key 在本 run 内唯一。复核型号遵守 reviewModels，评分模式预留代理名额，不让执行任务占用冻结的评分模型。
 
 ## executing
 
-已接受计划中的子任务由内核创建；先检查 children 与已有结果，不重复 spawn 或再次提交同一计划。直接执行模式按创建时授权推进。只对新增且必要的工作做有界委派，自己继续处理不依赖子任务结果的工作，需要结果时再 join_tasks。
+已接受计划的子任务由内核创建，先查 children，不重复 spawn。直接执行模式沿用创建时授权。只委派新增且必要的工作；等待前先处理可独立完成的部分。
 
-核对子任务实际产物与证据，不能只转述其“完成”摘要。Git 子任务用 integrate_worktrees 集成独立 worktree，再检查集成结果；无 Git 基线时读取已验收产物，按需引用直属已完成子任务的 artifact ID 或汇总可读文本。发现失败时保留已有成果，处理明确缺口，不重做已验证的无关部分。
+核对子任务产物及证据，摘要不等于验收。Git 子任务用 integrate_worktrees 集成后检查接口；无 Git 基线时读取已验收产物，按工具规则引用直属已完成子任务的 artifact ID。失败只修复相关缺口，保留已有成果。
 
-交付前检查用户目标、所有本任务验收项及必需子任务是否满足，登记必要文件后 submit_result。复核失败或证据不足应说明影响并解决；不能把发出委派、提交计划或口头总结当成最终完成。
+满足本任务验收和必需子任务后登记文件并 submit_result。开启评分时首次提交只是候选；根据反馈修订，全部通过后按原候选再次提交，由内核重验证据。计划、委派、审核通过和口头总结均不代表最终完成。

@@ -24,7 +24,7 @@ export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
         'listSkills',
         'loadSkill',
         'listLocalMemories',
-        'loadLocalSkillFile',
+        'loadSkillFile',
         'readLocalMemory',
         'listProjectMemories',
         'readProjectMemory',

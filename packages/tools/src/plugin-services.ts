@@ -1,7 +1,6 @@
-import { loadSkill, listSkills } from '../../context/src/skills.js';
+import { loadSkill, listSkills, loadSkillFile } from '../../context/src/skills.js';
 import {
   listLocalMemories,
-  loadLocalSkillFile,
   readLocalMemory,
   scopedLocalItems,
   readLocalMcpConfig,
@@ -42,8 +41,7 @@ export function pluginServices(
       loadSkill: (id: string, scope: Parameters<typeof loadSkill>[2]) => loadSkill(id, store, scope),
       listLocalMemories: (...args: Tail<Parameters<typeof listLocalMemories>>) =>
         listLocalMemories(store, ...args),
-      loadLocalSkillFile: (...args: Tail<Parameters<typeof loadLocalSkillFile>>) =>
-        loadLocalSkillFile(store, ...args),
+      loadSkillFile: (...args: Tail<Parameters<typeof loadSkillFile>>) => loadSkillFile(store, ...args),
       readLocalMemory: (...args: Tail<Parameters<typeof readLocalMemory>>) => readLocalMemory(store, ...args),
       listProjectMemories: (...args: Tail<Parameters<typeof listProjectMemories>>) =>
         listProjectMemories(store, ...args),

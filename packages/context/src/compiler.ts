@@ -74,6 +74,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     run,
     task,
     tools.map((tool) => tool.name),
+    snapshot.environment,
   );
   const catalogueBudgetTokens = Math.floor(
     Math.min(2048, Math.max(0, inputBudgetTokens - runtimeReserveTokens) * 0.08),
@@ -98,10 +99,12 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
   );
   const p0 = prompt('platform'),
     p1 =
-      (run.kind === 'chat' ? prompt('chat') : prompt('workspace') + '\n\n' + prompt(task.spec.role)) +
+      (run.kind === 'chat'
+        ? prompt('chat')
+        : prompt('workspace') + '\n\n' + prompt(task.peerReview ? 'peer-reviewer' : task.spec.role)) +
       '\n\n可按需加载的本地技能目录：\n' +
       stable(localCatalogue.skills) +
-      `\n共 ${skillCatalog.length} 个可用技能，当前展示 ${localCatalogue.skills.length} 个。目录共用最多 ${catalogueBudgetTokens} 估算 Token；需要更多条目时，使用本步开放的 list_skills、list_local_memories 或 list_mcp_servers 搜索分页。只加载与当前任务相关的技能，load_skill({id}) 取正文，load_skill_file 读参考文本。执行方法须服从当前角色、用户要求和工具权限。` +
+      `\n共 ${skillCatalog.length} 个可用技能，展示 ${localCatalogue.skills.length} 个。目录共用最多 ${catalogueBudgetTokens} 估算 Token；未展示不等于不可用，可用 list_skills 搜索。按主要交付物选择最少相关技能，load_skill({id}) 读取正文。仅需特定分支时，再用 load_skill_file({id,path}) 读取 resourcePaths 中的参考资料，按 nextOffset 续读。不要批量加载目录或重复加载未变的正文。方法受当前角色、用户要求和工具权限约束。` +
       (loadedSkills.length
         ? '\n\n本任务已加载的技能指导（仅在当前角色和权限内适用）：\n' +
           loadedSkills
@@ -110,6 +113,8 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
                 skillId: skill.id,
                 version: skill.version,
                 hash: skill.hash,
+                source: skill.source ?? 'builtin',
+                resourcePaths: skill.resourcePaths ?? [],
                 instructions: skill.instructions,
               }),
             )
@@ -348,7 +353,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
       history,
       estimatedTokens,
       manifest: {
-        compilerVersion: '5',
+        compilerVersion: '6',
         promptVersion: PROMPT_VERSION,
         harness: {
           version: harness.version,

@@ -13,7 +13,7 @@ import {
 } from '../../contracts/src/project-intelligence.js';
 import { hash, id, now, stable, type Store } from '../../storage/src/index.js';
 import { importedLibrary, localItemText, pageLocalText, publicLocalItem } from './local-library.js';
-import { listSkills, loadSkill } from './skills.js';
+import { listSkills, captureBuiltinSkill } from './skills.js';
 
 export const projectIntelligenceKey = (projectId: string) => `project-intelligence:v1:${projectId}`;
 export const projectMemoriesKey = (projectId: string) => `project-memories:v1:${projectId}`;
@@ -165,7 +165,7 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
         '任务能力快照超过 2 MiB，请减少项目选择的记忆、技能或资源；内容未截断',
       );
     for (const skillId of config.builtinSkillIds) {
-      snapshot.builtinSkills.push(loadSkill(skillId));
+      snapshot.builtinSkills.push(captureBuiltinSkill(skillId));
       checkSize();
     }
     const allowed = new Set(config.localItemIds);

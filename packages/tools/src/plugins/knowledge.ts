@@ -99,7 +99,7 @@ export function knowledgeTools(
   function execute_load_skill_file({ task }: ToolInvocation, args: z.output<typeof schemas.load_skill_file>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
-    result = context.library.loadLocalSkillFile(args.id, args.path, args, scope);
+    result = context.library.loadSkillFile(args.id, args.path, args, scope);
     return result;
   }
   function execute_recall_local_memory(
@@ -160,7 +160,7 @@ export function knowledgeTools(
       load_skill_file: defineTool(
         'load_skill_file',
         schemas.load_skill_file,
-        '按已同步技能 ID 和相对路径读取参考文本，按返回偏移翻页。仅返回内容，不执行脚本；参考文件不扩大权限。',
+        '按技能 ID 和 resourcePaths 中的相对路径读取内置或已同步技能的参考文本，按 nextOffset 翻页。项目任务使用创建时冻结的资源；仅返回文本，不执行脚本或扩大权限。',
         { transaction: false, serial: false, mutating: false, progress: false },
         execute_load_skill_file,
       ),

@@ -1,10 +1,17 @@
-import { readFileSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, realpathSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { AppError } from '../../contracts/src/index.js';
 import { Store } from '../../storage/src/index.js';
-import { capabilitySnapshot, scopedLocalItems, localItem, localItemText } from './local-library.js';
-import type { CapabilityScope } from '../../contracts/src/project-intelligence.js';
+import {
+  capabilitySnapshot,
+  scopedLocalItems,
+  localItem,
+  localItemText,
+  loadLocalSkillFile,
+  pageLocalText,
+} from './local-library.js';
+import type { CapabilityScope, CapturedSkill } from '../../contracts/src/project-intelligence.js';
 import { parseDocument } from 'yaml';
 import { builtinResourcePath } from './resources.js';
 
@@ -22,17 +29,56 @@ export interface LoadedSkill extends SkillSummary {
   hash: string;
 }
 
-export const SKILL_CATALOG_VERSION = '2';
+export const SKILL_CATALOG_VERSION = '3';
 // Only application-maintained entrypoints can become instructions. Metadata lives in SKILL.md.
-const skillIds = [
-  'data-analysis',
-  'documents',
-  'office-writing',
-  'pdf',
-  'presentations',
-  'research',
-  'spreadsheets',
-] as const;
+const builtinResources: Record<string, readonly string[]> = {
+  'data-analysis': ['references/joins-and-missing.md'],
+  documents: ['references/preservation.md'],
+  'office-writing': [],
+  pdf: ['references/forms-and-redaction.md'],
+  presentations: ['references/visual-review.md'],
+  research: ['references/evidence.md'],
+  'software-engineering': ['references/verification.md'],
+  spreadsheets: ['references/formulas.md'],
+};
+const skillIds = Object.keys(builtinResources);
+const BUILTIN_RESOURCE_BYTES = 64 * 1024;
+
+function resourceFile(id: string, relativePath: string) {
+  const root = realpathSync(builtinResourcePath('skills'));
+  const skillRoot = realpathSync(path.join(root, id));
+  const file = realpathSync(path.join(skillRoot, relativePath));
+  for (const [parent, child] of [
+    [root, skillRoot],
+    [skillRoot, file],
+  ]) {
+    const relative = path.relative(parent, child);
+    if (relative.startsWith('..') || path.isAbsolute(relative))
+      throw new AppError('SKILL_RESOURCE_PATH', '技能资源超出注册目录');
+  }
+  if (!statSync(file).isFile() || statSync(file).size > BUILTIN_RESOURCE_BYTES)
+    throw new AppError('SKILL_RESOURCE_LIMIT', '内置技能资源必须是 64 KiB 以内的文本文件');
+  return file;
+}
+
+function readResource(id: string, relativePath: string) {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(resourceFile(id, relativePath));
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('SKILL_RESOURCE_NOT_FOUND', `无法读取内置技能资源：${id}/${relativePath}`);
+  }
+  const text = bytes.toString('utf8');
+  if (bytes.length > BUILTIN_RESOURCE_BYTES || !Buffer.from(text).equals(bytes))
+    throw new AppError('SKILL_RESOURCE_INVALID', '技能资源不是有界 UTF-8 文本');
+  return {
+    path: relativePath,
+    text,
+    bytes: bytes.length,
+    hash: createHash('sha256').update(bytes).digest('hex'),
+  };
+}
 
 export function parseSkillMetadata(source: string, id: string) {
   const normalized = source
@@ -120,7 +166,55 @@ function readSkill(id: string, metadataOnly = false): LoadedSkill {
     version,
     instructions,
     hash: createHash('sha256').update(source).digest('hex'),
+    resourcePaths: [...builtinResources[id]],
   };
+}
+
+/** Capture resources with the entrypoint, but never inject their bodies into skill discovery. */
+export function captureBuiltinSkill(id: string): CapturedSkill {
+  const skill = readSkill(id);
+  return { ...skill, resources: skill.resourcePaths!.map((resource) => readResource(id, resource)) };
+}
+
+export function loadSkillFile(
+  store: Store | undefined,
+  id: string,
+  resourcePath: string,
+  options: { offset?: number; limit?: number } = {},
+  scope?: CapabilityScope,
+) {
+  if (id.startsWith('local:')) {
+    if (!store) throw new AppError('SKILL_NOT_FOUND', '导入技能需要本地存储');
+    return loadLocalSkillFile(store, id, resourcePath, options, scope);
+  }
+  const normalized = resourcePath.replace(/\\/g, '/');
+  if (
+    !normalized ||
+    normalized.startsWith('/') ||
+    /[:\u0000-\u001f]/.test(normalized) ||
+    normalized.split('/').some((part) => !part || part === '.' || part === '..')
+  )
+    throw new AppError('SKILL_RESOURCE_PATH', '技能资源路径无效');
+  const snapshot = capabilitySnapshot(scope);
+  let resource: NonNullable<CapturedSkill['resources']>[number];
+  if (snapshot) {
+    const skill = snapshot.builtinSkills.find((entry) => entry.id === id);
+    if (!skill) throw new AppError('SKILL_NOT_FOUND', '此技能不在任务创建时冻结的能力范围内');
+    const captured = skill.resources?.find((entry) => entry.path === normalized);
+    // A legacy snapshot must not silently acquire a newer built-in reference.
+    if (!captured) throw new AppError('SKILL_RESOURCE_NOT_FOUND', '此参考资料未在任务创建时冻结');
+    resource = captured;
+  } else {
+    if (!skillIds.includes(id) || !builtinResources[id].includes(normalized))
+      throw new AppError('SKILL_RESOURCE_NOT_FOUND', '此参考资料不在内置技能注册清单中');
+    resource = readResource(id, normalized);
+  }
+  if (
+    Buffer.byteLength(resource.text) !== resource.bytes ||
+    createHash('sha256').update(resource.text).digest('hex') !== resource.hash
+  )
+    throw new AppError('SKILL_RESOURCE_INVALID', '技能参考资料哈希不一致');
+  return pageLocalText({ id, contentHash: resource.hash }, resource.text, { ...options, path: normalized });
 }
 
 export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary[] {
@@ -168,7 +262,8 @@ export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): L
     const skill = snapshot.builtinSkills.find((entry) => entry.id === id);
     if (!skill)
       throw new AppError('SKILL_NOT_FOUND', '此技能不在任务创建时冻结的能力范围内', false, null, 404);
-    return structuredClone(skill);
+    const { resources: _resources, ...entrypoint } = skill;
+    return structuredClone(entrypoint);
   }
   return readSkill(id);
 }
