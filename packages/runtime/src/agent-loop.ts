@@ -9,7 +9,6 @@ import {
   type Attempt,
   type Project,
 } from '../../contracts/src/index.js';
-import { id } from '../../contracts/src/identity.js';
 import type { CompiledContext, ToolDefinition } from '../../contracts/src/model.js';
 import { nativeContinuationNotice } from '../../context/src/harness.js';
 import type { ToolGateway } from '../../tools/src/index.js';
@@ -58,8 +57,7 @@ export class NativeAgentLoop {
     task = store.require<Task>('tasks', task.id);
     if (task.status !== 'RUNNING') return;
     run = store.require<Run>('runs', task.runId);
-    const agent = store.require<Agent>('agents', task.agentId),
-      config = agent.providerBinding;
+    const agent = store.require<Agent>('agents', task.agentId);
     let context: CompiledContext;
     try {
       context = this.compiler(task, definitions);

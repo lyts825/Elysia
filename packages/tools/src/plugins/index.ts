@@ -1,3 +1,4 @@
+import { capabilities } from '../plugin-services.js';
 import { PluginRegistry } from '../../../plugins/src/index.js';
 import { invariant } from '../../../contracts/src/index.js';
 import type { PlanAlignmentHost } from '../module-host.js';
@@ -12,11 +13,46 @@ import { workspaceTools } from './workspace.js';
 /** Fixed composition; a new tool still needs an explicit grant in the gateway's policy. */
 export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
   const registry = new PluginRegistry<ToolContribution>([
-    collaborationTools(context),
-    knowledgeTools(context),
-    mcpTools(context),
-    networkTools(context),
-    workspaceTools(context),
+    collaborationTools({
+      store: capabilities(context.store, ['require']),
+      kernel: capabilities(context.kernel, ['wait', 'event', 'spawn', 'allocateContext', 'submitPeerReview']),
+      submit: context.submit,
+    }),
+    knowledgeTools({
+      store: capabilities(context.store, ['require']),
+      library: capabilities(context.library, [
+        'listSkills',
+        'loadSkill',
+        'listLocalMemories',
+        'loadLocalSkillFile',
+        'readLocalMemory',
+        'listProjectMemories',
+        'readProjectMemory',
+        'recallContext',
+      ]),
+      catalogueBudget: context.catalogueBudget,
+    }),
+    mcpTools({
+      store: capabilities(context.store, ['require']),
+      kernel: capabilities(context.kernel, ['permissions']),
+      library: capabilities(context.library, ['scopedLocalItems', 'readLocalMcpConfig']),
+      catalogueBudget: context.catalogueBudget,
+      mcp: context.mcp,
+    }),
+    networkTools(capabilities(context, ['fetch'])),
+    workspaceTools({
+      ...capabilities(context, [
+        'store',
+        'path',
+        'snapshot',
+        'artifact',
+        'diff',
+        'definitions',
+        'processes',
+        'runCommand',
+      ]),
+      kernel: capabilities(context.kernel, ['permissions', 'ancestors']),
+    }),
     {
       manifest: { ...PLAN_ALIGNMENT_MODULE, apiVersion: 1 },
       contributions: {

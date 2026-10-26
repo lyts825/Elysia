@@ -37,7 +37,22 @@ export class ToolExecutionService {
         assistantMessageId,
       );
     } catch (e) {
-      if (signal.aborted || this.kernel.store.require<Task>('tasks', task.id).waitReason === 'verification')
+      if (e instanceof AppError && e.code === 'TOOL_REVIEW_CAPACITY' && !signal.aborted) {
+        this.kernel.store.tx(() => {
+          const current = this.kernel.store.require<Task>('tasks', task.id);
+          if (current.status !== 'RUNNING') return;
+          const updated = this.kernel.updateTask(current, 'RUNNING', {
+            rateLimit: { source: 'account', resumeAt: Date.now() + 1000 },
+          });
+          this.kernel.wait(updated, 'rate_limit');
+        });
+        throw e;
+      }
+      if (
+        (e instanceof AppError && /BUDGET|CONTEXT_LIMIT|ACCOUNT_TOKEN_LIMIT/.test(e.code)) ||
+        signal.aborted ||
+        this.kernel.store.require<Task>('tasks', task.id).waitReason === 'verification'
+      )
         throw e;
       let toolNames: string[] = [];
       try {
@@ -109,6 +124,7 @@ export class ToolExecutionService {
     // Only known, non-transient validation/authorization failures count. Polls, provider
     // limits, unknown side effects and generic I/O errors must keep their own recovery rules.
     const deterministic = new Set([
+      'TOOL_REVIEW_DENIED',
       'TOOL_ARGUMENTS',
       'TOOL_DENIED',
       'TOOL_UNKNOWN',

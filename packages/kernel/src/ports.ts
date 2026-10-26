@@ -36,6 +36,7 @@ export interface RequestLedger {
     since?: number;
     logicalId?: string;
     attemptId?: string;
+    status?: RequestLedgerRow['status'];
   }): RequestLedgerRow[];
 }
 export interface KernelStore extends UnitOfWork, EntityRepository, SessionHistory, RequestLedger {

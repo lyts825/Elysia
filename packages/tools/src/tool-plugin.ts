@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Task, Attempt, Operation } from '../../contracts/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';
-import type { ToolGateway } from './index.js';
+import type { pluginServices } from './plugin-services.js';
 
 /** Only the gateway can create an authorized invocation and record its outcome. */
 export interface ToolInvocation {
@@ -27,22 +27,7 @@ export interface ToolContribution {
 }
 
 /** Capabilities are supplied by the gateway; plugins do not receive the gateway itself. */
-export type ToolServices = Pick<
-  ToolGateway,
-  | 'store'
-  | 'kernel'
-  | 'path'
-  | 'snapshot'
-  | 'artifact'
-  | 'diff'
-  | 'submit'
-  | 'fetch'
-  | 'processes'
-  | 'mcp'
-  | 'definitions'
-> & {
-  catalogueBudget(task: Task): number;
-};
+export type ToolServices = ReturnType<typeof pluginServices>;
 
 export function defineTool<Schema extends z.ZodType<Record<string, unknown>>>(
   name: string,

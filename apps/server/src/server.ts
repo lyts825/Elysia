@@ -1015,6 +1015,8 @@ export function createServer(
         planMode: z.boolean().default(true),
         allowSameModelReview: z.boolean().optional(),
         peerReview: Contract.shape.peerReview,
+        toolReview: Contract.shape.toolReview,
+        commandBackend: Contract.shape.commandBackend,
         sameModelReviewConfirmed: z.boolean().optional(),
         execution: ExecutionBinding.default({ kind: 'native' }),
         permissionProfile: Permissions.default({
@@ -1116,6 +1118,8 @@ export function createServer(
         constraints: ['遵守用户指定的授权和预算'],
         allowSameModelReview: body.allowSameModelReview,
         peerReview: body.peerReview,
+        toolReview: body.toolReview,
+        commandBackend: body.commandBackend,
         permissionProfile:
           body.kind === 'chat'
             ? { read: false, write: false, exec: false, urls: [], writePaths: [] }

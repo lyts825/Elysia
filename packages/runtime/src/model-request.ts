@@ -82,6 +82,15 @@ export class ModelRequestRunner {
     let successfulRequestId: string | null = null;
     for (let retry = firstRetry; retry <= 2; retry++) {
       signal.throwIfAborted();
+      if (store.requestLedger({ account: config.account, status: 'RESERVED' }).length >= config.concurrency) {
+        this.control.waitAtRateLimit(task, {
+          resumeAt: Date.now() + 1000,
+          source: 'account',
+          logicalId,
+          retry,
+        });
+        return;
+      }
       const accountRequests = store.requestLedger({ account: config.account, since: Date.now() - 60000 });
       const requestTokens = context.estimatedTokens + config.outputLimit;
       if (requestTokens > config.tpm) {

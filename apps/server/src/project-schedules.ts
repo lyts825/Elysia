@@ -1,3 +1,4 @@
+import { freezeExecutionPolicy } from '../../../packages/kernel/src/execution-policy.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -60,6 +61,7 @@ const templateSchema = z
         memoryHash: digest,
         routingHash: digest,
         providerHash: digest,
+        toolReviewProviderHash: digest.optional(),
       })
       .strict(),
   })
@@ -247,6 +249,7 @@ function environment(
   store: Store,
   project: Project,
   providerId: string,
+  contract?: Contract,
 ): ProjectScheduleTemplate['environment'] {
   const provider = store.require<ProviderConfig>('providers', providerId);
   invariant(
@@ -294,6 +297,13 @@ function environment(
       }),
     ),
     providerHash: providerFingerprint(provider),
+    ...(contract?.toolReview?.mode === 'model'
+      ? {
+          toolReviewProviderHash: providerFingerprint(
+            freezeExecutionPolicy(store, contract, 'task', { kind: 'native' })!,
+          ),
+        }
+      : {}),
   };
 }
 export interface SchedulerHooks {
@@ -394,7 +404,7 @@ export class ProjectScheduler {
         limits: Limits.parse(source.limits),
         contextPolicy: ContextPolicy.parse(agent.contextPolicy ?? { mode: 'managed' }),
         provider: providerSchema.parse(provider),
-        environment: environment(this.store, project, current.id),
+        environment: environment(this.store, project, current.id, source.contract),
       };
       validateTemplate(template);
       return { projectId, template, captureHash: captureHash(template) };
@@ -726,7 +736,7 @@ export class ProjectScheduler {
     );
     this.hooks.assertMutable(source.id, project.id);
     invariant(
-      stable(environment(this.store, project, schedule.template.provider.id)) ===
+      stable(environment(this.store, project, schedule.template.provider.id, schedule.template.contract)) ===
         stable(schedule.template.environment),
       'SCHEDULE_CONFIGURATION_CHANGED',
       '项目目录、能力、记忆、角色路由或模型配置已变化，请重新核对后启用',

@@ -39,7 +39,7 @@ export function assertReviewModelPolicy(
       model: store.require<Agent>('agents', task.agentId).providerBinding.model,
     }));
   for (const request of ledger ?? store.requestLedger({ runId: run.id })) {
-    if (request.status === 'RELEASED') continue;
+    if (request.status === 'RELEASED' || request.purpose === 'tool-review') continue;
     // Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
     const original =
       !request.model || !request.taskId ? store.require<RequestRecord>('requests', request.id) : undefined;

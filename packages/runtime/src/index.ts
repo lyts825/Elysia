@@ -1,3 +1,4 @@
+import { ToolCallReviewer } from './tool-review.js';
 import type { Store } from '../../storage/src/index.js';
 import {
   AppError,
@@ -51,9 +52,11 @@ export class NativeExecutor implements ExecutorAdapter {
     readonly kernel: Kernel<Store>,
     options: NativeExecutorOptions = {},
   ) {
-    this.gateway = options.gateway ?? new ToolGateway(kernel);
     const providers = options.adapterFactory ? undefined : new ProviderRegistry(nativeProviderPlugins());
     this.adapterFactory = options.adapterFactory ?? ((agent) => providers!.adapter(agent.providerBinding));
+    const reviewer = new ToolCallReviewer(kernel, (agent) => this.adapterFactory(agent));
+    this.gateway =
+      options.gateway ?? new ToolGateway(kernel, { reviewModel: reviewer.review.bind(reviewer) });
     this.acceptRun = options.acceptRun ?? (() => true);
     this.executionPlugins = new ExecutionPlugins([
       {
@@ -65,7 +68,7 @@ export class NativeExecutor implements ExecutorAdapter {
     this.scheduler = new ExecutionScheduler(kernel, this.executionPlugins, {
       acceptRun: (run) => this.acceptRun(run),
       step: (task, signal) => this.step(task, signal),
-      cancelProcesses: (taskIds) => this.gateway.processes.cancel(taskIds),
+      cancelProcesses: (taskIds) => this.gateway.cancelCommands(taskIds),
       disposeTools: () => this.gateway.dispose(),
     });
     this.tools = new ToolExecutionService(kernel, this.gateway);

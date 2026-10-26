@@ -2,6 +2,7 @@ import type { RequestRecord } from './index.js';
 
 export type RequestLedgerRow = Pick<
   RequestRecord,
+  | 'purpose'
   | 'id'
   | 'revision'
   | 'runId'

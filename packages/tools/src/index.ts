@@ -1,6 +1,10 @@
+import { pluginServices } from './plugin-services.js';
+import { reviewToolRules, type ReviewModel } from './tool-review.js';
+import type { ToolReviewReceipt } from '../../contracts/src/execution-policy.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { Processes } from './processes.js';
+import { ConfiguredCommandRunner, type CommandRunner } from './command-runner.js';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpRequest } from 'node:http';
@@ -33,129 +37,10 @@ import { PlanAlignmentHost, type PlanAlignmentLoader } from './module-host.js';
 import { builtinTools } from './plugins/index.js';
 import { MCP_CATALOGUE_BYTES } from './catalogue.js';
 import { contained, resolved } from './path-policy.js';
-export function cleanEnv() {
-  const keys = [
-    'PATH',
-    'PATHEXT',
-    'SystemRoot',
-    'WINDIR',
-    'COMSPEC',
-    'TEMP',
-    'TMP',
-    'HOME',
-    'USERPROFILE',
-    'APPDATA',
-    'LOCALAPPDATA',
-    'LANG',
-    'LC_ALL',
-  ];
-  return Object.fromEntries(keys.filter((k) => process.env[k]).map((k) => [k, process.env[k]!]));
-}
-export class Processes {
-  children = new Map<number, { taskId: string; child: ReturnType<typeof spawn> }>();
-  async kill(pid: number) {
-    const record = this.children.get(pid);
-    if (!record) return;
-    if (process.platform === 'win32') {
-      await new Promise<void>((resolve) => {
-        const p = spawn(
-          path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
-          ['/PID', String(pid), '/T', '/F'],
-          { windowsHide: true, stdio: 'ignore', env: cleanEnv() },
-        );
-        p.on('error', () => resolve());
-        p.on('exit', () => resolve());
-      });
-    } else {
-      try {
-        process.kill(-pid, 'SIGKILL');
-      } catch {}
-    }
-  }
-  async cancel(taskIds?: Set<string>) {
-    await Promise.all(
-      [...this.children.entries()]
-        .filter(([, r]) => !taskIds || taskIds.has(r.taskId))
-        .map(([pid]) => this.kill(pid)),
-    );
-  }
-  run(
-    taskId: string,
-    program: string,
-    args: string[],
-    cwd: string,
-    timeout: number,
-    outputLimit: number,
-    signal?: AbortSignal,
-  ): Promise<{
-    exitCode: number | null;
-    stdout: string;
-    stderr: string;
-    truncated: boolean;
-    timedOut: boolean;
-  }> {
-    return new Promise((resolve, reject) => {
-      signal?.throwIfAborted();
-      const child = spawn(program, args, {
-        cwd,
-        env: cleanEnv(),
-        shell: false,
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-      });
-      let stdout = '',
-        stderr = '',
-        bytes = 0,
-        truncated = false,
-        timedOut = false;
-      if (child.pid) this.children.set(child.pid, { taskId, child });
-      const record = (target: 'stdout' | 'stderr', data: Buffer) => {
-        const remaining = Math.max(0, outputLimit - bytes);
-        bytes += data.length;
-        const chunk = data.subarray(0, remaining).toString('utf8');
-        if (target === 'stdout') stdout += chunk;
-        else stderr += chunk;
-        if (bytes > outputLimit) truncated = true;
-      };
-      child.stdout?.on('data', (data) => record('stdout', data));
-      child.stderr?.on('data', (data) => record('stderr', data));
-      const abort = () => {
-        if (child.pid) void this.kill(child.pid);
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        abort();
-      }, timeout);
-      signal?.addEventListener('abort', abort, { once: true });
-      const cleanup = () => {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', abort);
-        if (child.pid) this.children.delete(child.pid);
-      };
-      child.on('error', (error) => {
-        cleanup();
-        reject(new AppError('PROCESS_START', error.message));
-      });
-      child.on('close', (exitCode) => {
-        cleanup();
-        resolve({ exitCode, stdout, stderr, truncated, timedOut });
-      });
-    });
-  }
-}
-export interface SandboxBackend {
-  run(
-    taskId: string,
-    program: string,
-    args: string[],
-    cwd: string,
-    timeout: number,
-    outputLimit: number,
-    signal?: AbortSignal,
-  ): ReturnType<Processes['run']>;
-}
+export { cleanEnv, Processes } from './processes.js';
 export class ToolGateway {
   processes = new Processes();
+  readonly commandRunner: CommandRunner;
   readonly mcp = new McpClient();
   readonly planAlignment: PlanAlignmentHost;
   private readonly tools: ReturnType<typeof builtinTools>;
@@ -163,28 +48,79 @@ export class ToolGateway {
   private closed = false;
   constructor(
     public kernel: Kernel<Store>,
-    options: { planAlignmentLoader?: PlanAlignmentLoader } = {},
+    private readonly options: {
+      planAlignmentLoader?: PlanAlignmentLoader;
+      commandRunner?: CommandRunner;
+      reviewModel?: ReviewModel;
+    } = {},
   ) {
+    this.commandRunner =
+      options.commandRunner ?? new ConfiguredCommandRunner(this.processes, kernel.store.directory);
     this.planAlignment = new PlanAlignmentHost(
       { propose: kernel.propose.bind(kernel), accept: kernel.accept.bind(kernel) },
       options.planAlignmentLoader,
     );
-    this.tools = builtinTools(
-      {
-        store: kernel.store,
-        kernel,
-        path: this.path.bind(this),
-        snapshot: this.snapshot.bind(this),
-        artifact: this.artifact.bind(this),
-        diff: this.diff.bind(this),
-        submit: this.submit.bind(this),
-        fetch: this.fetch.bind(this),
-        definitions: this.definitions.bind(this),
-        catalogueBudget: this.catalogueBudget.bind(this),
-        processes: this.processes,
-        mcp: this.mcp,
+    this.tools = builtinTools(pluginServices(this, this.catalogueBudget.bind(this)), this.planAlignment);
+  }
+  async cancelCommands(taskIds?: Set<string>) {
+    const results = await Promise.allSettled([
+      this.processes.cancel(taskIds),
+      this.commandRunner.cancel(taskIds),
+    ]);
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length)
+      throw new AggregateError(
+        failed.map((r) => r.reason),
+        '命令停止未确认',
+      );
+  }
+  async runCommand(
+    task: Task,
+    operation: Operation,
+    args: { program: string; args: string[]; cwd: string; timeout: number; outputLimit: number },
+    signal: AbortSignal,
+  ) {
+    const run = this.store.require<Run>('runs', task.runId),
+      permission = this.kernel.permissions(task),
+      backend = run.contract.commandBackend ?? { kind: 'local' as const };
+    invariant(permission.exec, 'EXEC_DENIED', '命令未授权');
+    // Revalidate the resolved cwd at the execution boundary.
+    const cwd = await this.path(task, args.cwd);
+    invariant(
+      task.workspace && contained(await fs.realpath(task.workspace), cwd),
+      'EXEC_SCOPE',
+      '命令 cwd 必须在任务目录',
+    );
+    const workspace = await fs.realpath(task.workspace);
+    const allowedWrites = permission.write
+      ? await Promise.all(permission.writePaths.map((p) => resolved(path.resolve(workspace, p))))
+      : [];
+    // Partial file-write grants must never become a writable mount of the entire workspace.
+    const writable = permission.write && allowedWrites.some((root) => root === workspace);
+    const current = this.store.require<Operation>('tool_operations', operation.id);
+    this.store.put('tool_operations', {
+      ...current,
+      evidence: {
+        ...current.evidence,
+        commandBackend: backend,
+        containerWritable: backend.kind === 'docker' ? writable : undefined,
+        containerName: backend.kind === 'docker' ? 'elysia-cmd-' + operation.id : undefined,
       },
-      this.planAlignment,
+    });
+    return this.commandRunner.run(
+      {
+        operationId: operation.id,
+        taskId: task.id,
+        workspace: task.workspace,
+        cwd,
+        program: args.program,
+        args: args.args,
+        timeout: args.timeout,
+        outputLimit: args.outputLimit,
+        writable,
+        backend,
+      },
+      signal,
     );
   }
   pluginManifests() {
@@ -212,7 +148,7 @@ export class ToolGateway {
     this.closed = true;
     this.closing = (async () => {
       const results = await Promise.allSettled([
-        Promise.resolve().then(() => this.processes.cancel()),
+        Promise.resolve().then(() => this.cancelCommands()),
         Promise.resolve().then(() => this.mcp.close()),
         this.planAlignment.dispose(),
       ]);
@@ -238,6 +174,36 @@ export class ToolGateway {
     return this.kernel.store;
   }
   async recoverOperations() {
+    const containers: Operation[] = [];
+    for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN']))
+      this.store.recovery.apply<Operation>('tool_operations', key, (operation) => {
+        if ((operation.evidence?.commandBackend as { kind?: string } | undefined)?.kind === 'docker')
+          containers.push(operation);
+      });
+    if (containers.length) {
+      let failure: string | undefined;
+      try {
+        invariant(this.commandRunner.recover, 'COMMAND_RECOVERY', '命令后端未提供恢复能力');
+        await this.commandRunner.recover();
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      for (const operation of containers)
+        this.store.recovery.apply<Operation>('tool_operations', operation.id, (current) => {
+          const recovery = { stopped: !failure, checkedAt: now(), ...(failure ? { error: failure } : {}) };
+          this.store.put('tool_operations', {
+            ...current,
+            evidence: { ...current.evidence, containerRecovery: recovery },
+          });
+          this.kernel.event(
+            current.runId,
+            'tool.recovery',
+            { operationId: current.id, ...recovery },
+            current.taskId,
+          );
+        });
+      // Stopping a container never proves its side effects were undone. Keep UNCERTAIN.
+    }
     for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN'])) {
       let operation: Operation | undefined, task: Task | undefined;
       this.store.recovery.apply<Operation>('tool_operations', key, (value) => {
@@ -575,6 +541,92 @@ export class ToolGateway {
         );
       }
     }
+    signal.throwIfAborted();
+    const scope = () => {
+      const current = this.store.require<Task>('tasks', task.id),
+        run = this.store.require<Run>('runs', task.runId);
+      return {
+        runId: run.id,
+        taskId: current.id,
+        assistantMessageId,
+        call,
+        args,
+        contract: run.contract,
+        authorized: run.authorized,
+        planVersion: run.acceptedPlanVersion,
+        capabilities: run.capabilities?.hash,
+        reviewer: run.toolReviewBinding,
+        task: {
+          spec: current.spec,
+          workspace: current.workspace,
+          phase: current.phase,
+          contractVersion: current.contractVersion,
+        },
+        permissions: this.kernel.permissions(current),
+      };
+    };
+    let review: ToolReviewReceipt | undefined;
+    const policy = this.store.require<Run>('runs', task.runId).contract.toolReview;
+    if (policy && policy.mode !== 'off' && (contribution.policy.mutating || name === 'mcp_list_tools')) {
+      const context = scope(),
+        fingerprint = hash(stable(context)),
+        rules = reviewToolRules(name, args);
+      review = { ...rules, fingerprint, mode: 'rules', reviewedAt: now() };
+      if (rules.decision === 'allow' && policy.mode === 'model') {
+        invariant(this.options.reviewModel, 'TOOL_REVIEW_UNAVAILABLE', '工具审核服务尚未装配，调用未执行');
+        review = await this.options.reviewModel(
+          { task, attempt, call, args, assistantMessageId, fingerprint, context },
+          signal,
+        );
+      }
+      signal.throwIfAborted();
+      invariant(
+        review.fingerprint === fingerprint &&
+          hash(stable(scope())) === fingerprint &&
+          !this.store.hasPendingInbox(task.runId),
+        'TOOL_REVIEW_STALE',
+        '审核期间任务、调用或授权已变化，调用未执行',
+      );
+      this.kernel.event(
+        task.runId,
+        'tool.reviewed',
+        { name, callId: call.id, assistantMessageId, ...review },
+        task.id,
+        attempt.id,
+      );
+      if (review.decision !== 'allow') {
+        this.store.put<Operation>('tool_operations', {
+          id: id(),
+          revision: 0,
+          runId: task.runId,
+          taskId: task.id,
+          attemptId: attempt.id,
+          toolCallId: call.id,
+          assistantMessageId,
+          name,
+          args,
+          status: 'FAILED',
+          review,
+          result: { code: 'TOOL_REVIEW_DENIED', error: review.reason },
+        });
+        throw new AppError('TOOL_REVIEW_DENIED', review.reason);
+      }
+    }
+    task = this.store.require<Task>('tasks', task.id);
+    const currentRun = this.store.require<Run>('runs', task.runId);
+    invariant(
+      !currentRun.archived &&
+        ['READY', 'RUNNING'].includes(currentRun.status) &&
+        (!currentRun.projectId || !this.store.require<Project>('projects', currentRun.projectId).archived),
+      'TASK_STOPPED',
+      '运行或项目已停止',
+    );
+    invariant(
+      this.definitions(task).some((t) => t.name === name),
+      'TOOL_DENIED',
+      '执行前工具授权已失效',
+    );
+    invariant(!this.store.getExecutionHold(task.runId), 'TASK_STOPPED', '当前执行已停止');
     invariant(task.status === 'RUNNING', 'TASK_STOPPED', '任务已停止，不能开始新工具操作');
     const operation: Operation = {
       id: id(),
@@ -587,6 +639,7 @@ export class ToolGateway {
       name,
       args,
       status: 'INTENT',
+      ...(review ? { review } : {}),
     };
     const begin = () => {
       this.store.put('tool_operations', operation);
@@ -637,7 +690,7 @@ export class ToolGateway {
           contribution.policy.mutating &&
           ((name === 'mcp_call' && e instanceof AppError && e.code === 'MCP_CALL_UNCERTAIN') ||
             (name !== 'mcp_call' && signal.aborted) ||
-            (e instanceof AppError && e.code === 'INTEGRATION_CONFLICT'));
+            (e instanceof AppError && ['INTEGRATION_CONFLICT', 'COMMAND_CLEANUP'].includes(e.code)));
         this.store.put('tool_operations', {
           ...op,
           status: uncertainty ? 'UNCERTAIN' : 'FAILED',

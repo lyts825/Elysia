@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type Run } from '../../../contracts/src/index.js';
-import { readLocalMcpConfig, scopedLocalItems } from '../../../context/src/local-library.js';
+
 import { localCataloguePage, mcpCataloguePage } from '../catalogue.js';
 import { defineTool, type ToolServices, type ToolInvocation, type ToolContribution } from '../tool-plugin.js';
 import type { PluginContributions } from '../../../plugins/src/index.js';
@@ -26,7 +26,11 @@ const schemas = {
   }),
 };
 export function mcpTools(
-  context: Pick<ToolServices, 'store' | 'kernel' | 'catalogueBudget' | 'mcp'>,
+  context: Pick<ToolServices, 'catalogueBudget' | 'mcp'> & {
+    store: Pick<ToolServices['store'], 'require'>;
+    kernel: Pick<ToolServices['kernel'], 'permissions'>;
+    library: Pick<ToolServices['library'], 'scopedLocalItems' | 'readLocalMcpConfig'>;
+  },
 ): PluginContributions<ToolContribution> {
   function execute_list_mcp_servers(
     { task }: ToolInvocation,
@@ -34,7 +38,7 @@ export function mcpTools(
   ) {
     const scope = context.store.require<Run>('runs', task.runId);
     return localCataloguePage(
-      scopedLocalItems(context.store, scope).filter((item) => item.kind === 'mcp' && item.enabled),
+      context.library.scopedLocalItems(scope).filter((item) => item.kind === 'mcp' && item.enabled),
       args,
       'untrusted',
       context.catalogueBudget(task),
@@ -48,7 +52,7 @@ export function mcpTools(
     const scope = context.store.require<Run>('runs', task.runId);
     result = mcpCataloguePage(
       await context.mcp.inspect(
-        readLocalMcpConfig(context.store, args.serverId, scope),
+        context.library.readLocalMcpConfig(args.serverId, scope),
         signal,
         context.kernel.permissions(task),
       ),
@@ -61,7 +65,7 @@ export function mcpTools(
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
     result = await context.mcp.call(
-      readLocalMcpConfig(context.store, args.serverId, scope),
+      context.library.readLocalMcpConfig(args.serverId, scope),
       args.tool,
       args.args,
       signal,

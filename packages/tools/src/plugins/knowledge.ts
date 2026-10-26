@@ -1,13 +1,5 @@
 import { z } from 'zod';
 import { invariant, type Run } from '../../../contracts/src/index.js';
-import { loadSkill, listSkills } from '../../../context/src/skills.js';
-import {
-  listLocalMemories,
-  loadLocalSkillFile,
-  readLocalMemory,
-} from '../../../context/src/local-library.js';
-import { listProjectMemories, readProjectMemory } from '../../../context/src/project-intelligence.js';
-import { recallContext } from '../../../context/src/index.js';
 import { localCataloguePage } from '../catalogue.js';
 import { defineTool, type ToolServices, type ToolInvocation, type ToolContribution } from '../tool-plugin.js';
 import type { PluginContributions } from '../../../plugins/src/index.js';
@@ -57,7 +49,10 @@ const schemas = {
   }),
 };
 export function knowledgeTools(
-  context: Pick<ToolServices, 'store' | 'catalogueBudget'>,
+  context: Pick<ToolServices, 'catalogueBudget'> & {
+    store: Pick<ToolServices['store'], 'require'>;
+    library: Omit<ToolServices['library'], 'scopedLocalItems' | 'readLocalMcpConfig'>;
+  },
 ): PluginContributions<ToolContribution> {
   function execute_list_project_memories({ task }: ToolInvocation, args: any, name: string) {
     let result: unknown;
@@ -66,9 +61,9 @@ export function knowledgeTools(
     invariant(scope.projectId, 'PROJECT_MEMORY_SCOPE', '项目记忆只能在所属项目任务中读取');
     result =
       name === 'recall_project_memory'
-        ? readProjectMemory(context.store, scope.projectId, args.id, args)
+        ? context.library.readProjectMemory(scope.projectId, args.id, args)
         : localCataloguePage(
-            listProjectMemories(context.store, scope.projectId, { activeOnly: true }).map((memory) => ({
+            context.library.listProjectMemories(scope.projectId, { activeOnly: true }).map((memory) => ({
               id: memory.id,
               name: memory.title,
               description: memory.source,
@@ -83,7 +78,7 @@ export function knowledgeTools(
   function execute_load_skill({ task }: ToolInvocation, args: z.output<typeof schemas.load_skill>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
-    result = loadSkill(args.id, context.store, scope);
+    result = context.library.loadSkill(args.id, scope);
     return result;
   }
   function execute_list_skills({ task }: ToolInvocation, args: any, name: string) {
@@ -91,7 +86,7 @@ export function knowledgeTools(
     const scope = context.store.require<Run>('runs', task.runId);
 
     const items =
-      name === 'list_skills' ? listSkills(context.store, scope) : listLocalMemories(context.store, scope);
+      name === 'list_skills' ? context.library.listSkills(scope) : context.library.listLocalMemories(scope);
     result = localCataloguePage(
       items,
       args,
@@ -104,7 +99,7 @@ export function knowledgeTools(
   function execute_load_skill_file({ task }: ToolInvocation, args: z.output<typeof schemas.load_skill_file>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
-    result = loadLocalSkillFile(context.store, args.id, args.path, args, scope);
+    result = context.library.loadLocalSkillFile(args.id, args.path, args, scope);
     return result;
   }
   function execute_recall_local_memory(
@@ -113,7 +108,7 @@ export function knowledgeTools(
   ) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
-    result = readLocalMemory(context.store, args.id, args, scope);
+    result = context.library.readLocalMemory(args.id, args, scope);
     return result;
   }
   async function execute_recall_context(
@@ -121,7 +116,7 @@ export function knowledgeTools(
     args: z.output<typeof schemas.recall_context>,
   ) {
     let result: unknown;
-    result = await recallContext(context.store, task, args);
+    result = await context.library.recallContext(task, args);
     return result;
   }
   return {

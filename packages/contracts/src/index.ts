@@ -1,3 +1,4 @@
+import { ToolReviewPolicy, CommandBackendPolicy, type ToolReviewReceipt } from './execution-policy.js';
 import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
 import { terminalResourcePresets } from './terminal-runtime.js';
@@ -8,7 +9,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.20.2';
+export const VERSION = '1.21.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -58,6 +59,8 @@ export const Contract = z.object({
   constraints: z.array(z.string()),
   allowSameModelReview: z.boolean().default(false),
   peerReview: PeerReviewPolicy.optional(),
+  toolReview: ToolReviewPolicy.optional(),
+  commandBackend: CommandBackendPolicy.optional(),
   permissionProfile: Permissions,
   budget: Budget,
   assumptions: z.array(z.string()),
@@ -344,6 +347,7 @@ export interface Run extends Entity {
   archived: boolean;
   objective: string;
   contract: Contract;
+  toolReviewBinding?: ProviderConfig;
   plan: Plan | null;
   /** Missing on older records means plan mode is enabled. */
   planMode?: boolean;
@@ -487,6 +491,7 @@ export const UsageSchema = z
     '推理用量必须包含于输出总量',
   );
 export interface RequestRecord extends Entity {
+  purpose?: 'assistant' | 'tool-review';
   /** Read-only display metadata; the display cache is independent of request accounting. */
   reasoning?: import('./reasoning.js').ReasoningDisplay;
   runId: string;
@@ -525,6 +530,7 @@ export interface Snapshot extends Entity {
   version: number;
 }
 export interface Operation extends Entity {
+  review?: ToolReviewReceipt;
   runId: string;
   taskId: string;
   attemptId: string;

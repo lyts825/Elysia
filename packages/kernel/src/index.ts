@@ -1,3 +1,4 @@
+import { freezeExecutionPolicy } from './execution-policy.js';
 import {
   UsageSchema,
   AppError,
@@ -78,6 +79,13 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   }
   updateRun(run: Run, extra: Partial<Run>) {
     return this.store.tx(() => {
+      if (extra.contract)
+        invariant(
+          stable(extra.contract.toolReview ?? null) === stable(run.contract.toolReview ?? null) &&
+            stable(extra.contract.commandBackend ?? null) === stable(run.contract.commandBackend ?? null),
+          'EXECUTION_POLICY_FROZEN',
+          '工具审核与命令后端已冻结，请新建任务调整',
+        );
       if (
         extra.contract &&
         stable(extra.contract) !== stable(run.contract) &&
@@ -371,6 +379,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         'KERNEL_CAPABILITIES',
         '项目任务需要装配能力快照服务',
       );
+      const toolReviewBinding = freezeExecutionPolicy(this.store, contract, kind, execution);
       const peerReview = freezePeerReview(this.store, contract, provider, limits, kind, execution);
       const run = this.store.put<Run>('runs', {
         id: runId,
@@ -388,6 +397,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         objective,
         contract,
         ...(peerReview ? { peerReview } : {}),
+        ...(toolReviewBinding ? { toolReviewBinding } : {}),
         plan: null,
         status: 'READY',
         coordinatorAgentId: agentId,
@@ -976,6 +986,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     manifest: Record<string, unknown>,
     tokens: number,
     logicalId: string,
+    purpose: 'assistant' | 'tool-review' = 'assistant',
   ) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
@@ -988,23 +999,34 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       );
       const requests = this.store.requestLedger({ runId: run.id });
       const currentTask = this.store.require<Task>('tasks', task.id);
-      if (currentTask.peerReview) {
-        const frozen = run.peerReview?.bindings.find(
-          (binding) => binding.id === currentTask.peerReview!.reviewerProviderId,
-        );
+      if (purpose === 'tool-review') {
         invariant(
-          frozen && stable(frozen) === stable(provider),
-          'PEER_REVIEW_MODEL_CHANGED',
-          '评审请求必须使用创建任务时冻结的模型配置',
+          currentTask.status === 'RUNNING' &&
+            run.contract.toolReview?.mode === 'model' &&
+            run.toolReviewBinding &&
+            stable(run.toolReviewBinding) === stable(provider),
+          'TOOL_REVIEW_BINDING',
+          '审核请求必须使用冻结的审核模型且任务仍在执行',
+        );
+      } else {
+        if (currentTask.peerReview) {
+          const frozen = run.peerReview?.bindings.find(
+            (binding) => binding.id === currentTask.peerReview!.reviewerProviderId,
+          );
+          invariant(
+            frozen && stable(frozen) === stable(provider),
+            'PEER_REVIEW_MODEL_CHANGED',
+            '评审请求必须使用创建任务时冻结的模型配置',
+          );
+        }
+        assertReviewModelPolicy(
+          this.store,
+          run,
+          [{ ...currentTask.spec, model: provider.model }],
+          [task.id],
+          requests,
         );
       }
-      assertReviewModelPolicy(
-        this.store,
-        run,
-        [{ ...currentTask.spec, model: provider.model }],
-        [task.id],
-        requests,
-      );
       const price = provider.prices;
       const reservedCost = price
         ? (tokens * (Math.max(price.input, price.cacheRead) + (price.cacheWrite ?? 0)) +
@@ -1056,6 +1078,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         taskId: task.id,
         attemptId: attempt.id,
         logicalId,
+        purpose,
         providerId: provider.id,
         providerBinding: provider,
         manifest,

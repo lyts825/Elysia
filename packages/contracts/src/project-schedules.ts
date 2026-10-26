@@ -46,6 +46,7 @@ export interface ProjectScheduleTemplate {
     memoryHash: string;
     routingHash: string;
     providerHash: string;
+    toolReviewProviderHash?: string;
   };
 }
 export interface ProjectSchedulePreview {

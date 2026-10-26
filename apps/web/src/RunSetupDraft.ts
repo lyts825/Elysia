@@ -1,3 +1,7 @@
+import type {
+  ToolReviewPolicy,
+  CommandBackendPolicy,
+} from '../../../packages/contracts/src/execution-policy';
 import { z } from 'zod';
 import { AgentTerminalProfile, type ContextPolicy } from '../../../packages/contracts/src/index';
 import type { ModelChoice } from './ModelPicker';
@@ -22,6 +26,8 @@ export type RunSetupDraft = {
   acceptanceCriteria?: string;
   allowSameModelReview?: boolean;
   peerReview?: PeerReviewPolicy;
+  toolReview?: ToolReviewPolicy;
+  commandBackend?: CommandBackendPolicy;
 };
 
 // Drafts may contain incomplete input. Validate their shape here; the form validates execution values.
@@ -55,6 +61,10 @@ const draftShape = z.object({
   deliverables: z.string().optional(),
   acceptanceCriteria: z.string().optional(),
   allowSameModelReview: z.boolean().optional(),
+  toolReview: z
+    .object({ mode: z.enum(['off', 'rules', 'model']), providerId: z.string().optional() })
+    .optional(),
+  commandBackend: z.object({ kind: z.enum(['local', 'docker']), image: z.string().optional() }).optional(),
   peerReview: z
     .object({
       reviewerProviderIds: z.array(z.string()),

@@ -1,3 +1,8 @@
+import { ExecutionPolicySetup, executionPolicyIssue } from './ExecutionPolicySetup';
+import type {
+  ToolReviewPolicy,
+  CommandBackendPolicy,
+} from '../../../packages/contracts/src/execution-policy';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AgentTerminalProfile,
@@ -76,6 +81,10 @@ export function RunModal({
   // A restored creation draft is not a saved contract: require a fresh explicit confirmation.
   const [allowSameModelReview, setAllowSameModelReview] = useState(false);
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
+  const [toolReview, setToolReview] = useState<ToolReviewPolicy | undefined>(initial?.toolReview);
+  const [commandBackend, setCommandBackend] = useState<CommandBackendPolicy | undefined>(
+    initial?.commandBackend,
+  );
   const [peerReview, setPeerReview] = useState<PeerReviewPolicy | undefined>(initial?.peerReview);
   const [deliverables, setDeliverables] = useState(
     initial?.deliverables ?? initialRequirements?.deliverables ?? '',
@@ -107,6 +116,8 @@ export function RunModal({
   );
   const chat = kind === 'chat';
   const terminal = !chat && executionKind === 'docker-agent';
+  const executionPolicyReady =
+    chat || terminal || !executionPolicyIssue(toolReview, commandBackend, providers);
   const peerReviewReady =
     chat || terminal || !peerReviewSetupIssue(peerReview, providers, choice.model ?? selected?.model ?? '');
   const lines = (s: string) =>
@@ -153,6 +164,8 @@ export function RunModal({
     acceptanceCriteria,
     allowSameModelReview,
     peerReview,
+    toolReview,
+    commandBackend,
   };
   const changedRef = useRef(changed);
   changedRef.current = changed;
@@ -176,6 +189,8 @@ export function RunModal({
     acceptanceCriteria,
     allowSameModelReview,
     peerReview,
+    toolReview,
+    commandBackend,
   ]);
   const applyDefaults = (defaults: NativeProjectDefaults) => {
     setAppliedDefaults(defaults);
@@ -210,6 +225,7 @@ export function RunModal({
             !setupReady ||
             !requirementsReady ||
             !peerReviewReady ||
+            !executionPolicyReady ||
             !objective.trim() ||
             (localSurface === 'terminal' && chat)
           )
@@ -225,6 +241,8 @@ export function RunModal({
                 ? {
                     allowSameModelReview,
                     ...(peerReview ? { peerReview } : {}),
+                    ...(toolReview ? { toolReview } : {}),
+                    ...(commandBackend ? { commandBackend } : {}),
                     ...(allowSameModelReview ? { sameModelReviewConfirmed: true } : {}),
                     ...(requirementLines(deliverables).length
                       ? { deliverables: requirementLines(deliverables) }
@@ -311,6 +329,16 @@ export function RunModal({
               executionModel={choice.model ?? selected?.model ?? ''}
               disabled={busy || defaultsBusy}
               change={setPeerReview}
+            />
+          )}
+          {!chat && !terminal && (
+            <ExecutionPolicySetup
+              review={toolReview}
+              backend={commandBackend}
+              providers={providers}
+              disabled={busy || defaultsBusy}
+              onReview={setToolReview}
+              onBackend={setCommandBackend}
             />
           )}
           {!chat && !terminal && (
@@ -617,6 +645,7 @@ export function RunModal({
               !setupReady ||
               !requirementsReady ||
               !peerReviewReady ||
+              !executionPolicyReady ||
               !objective.trim()
             }
           >

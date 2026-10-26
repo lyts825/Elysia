@@ -64,8 +64,8 @@ const schemas = {
 export function workspaceTools(
   context: Pick<
     ToolServices,
-    'store' | 'kernel' | 'path' | 'snapshot' | 'artifact' | 'diff' | 'definitions' | 'processes'
-  >,
+    'store' | 'path' | 'snapshot' | 'artifact' | 'diff' | 'definitions' | 'processes' | 'runCommand'
+  > & { kernel: Pick<ToolServices['kernel'], 'permissions' | 'ancestors'> },
 ): PluginContributions<ToolContribution> {
   async function execute_list({ task }: ToolInvocation, args: z.output<typeof schemas.list>) {
     let result: unknown;
@@ -257,23 +257,11 @@ export function workspaceTools(
 
     return result;
   }
-  async function execute_exec({ task, signal }: ToolInvocation, args: z.output<typeof schemas.exec>) {
-    let result: unknown;
-
-    invariant(context.kernel.permissions(task).exec, 'EXEC_DENIED', '命令未授权');
-    const cwd = await context.path(task, args.cwd);
-    invariant(contained(await fs.realpath(task.workspace!), cwd), 'EXEC_SCOPE', '命令 cwd 必须在任务目录');
-    result = await context.processes.run(
-      task.id,
-      args.program,
-      args.args,
-      cwd,
-      args.timeout,
-      args.outputLimit,
-      signal,
-    );
-
-    return result;
+  async function execute_exec(
+    { task, operation, signal }: ToolInvocation,
+    args: z.output<typeof schemas.exec>,
+  ) {
+    return context.runCommand(task, operation, args, signal);
   }
   async function execute_artifact({ task }: ToolInvocation, args: z.output<typeof schemas.artifact>) {
     let result: unknown;

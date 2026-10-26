@@ -57,8 +57,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
     ...(message.calls?.length ? { calls: message.calls.map((call) => ({ id: call.id })) } : {}),
   };
 }
-export const STORAGE_SCHEMA_VERSION = 9;
-export const STORAGE_MIN_READER_VERSION = '1.20.0';
+export const STORAGE_SCHEMA_VERSION = 10;
+export const STORAGE_MIN_READER_VERSION = '1.21.0';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
@@ -70,6 +70,7 @@ function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
     attemptId: entity.attemptId,
     logicalId: entity.logicalId,
     providerId: entity.providerId,
+    purpose: entity.purpose,
     status: entity.status,
     startedAt: entity.startedAt,
     reservedTokens: entity.reservedTokens,
@@ -470,6 +471,8 @@ export class Store {
     if (version < 8) this.tx(() => this.db.exec('PRAGMA user_version=8;'));
     // Peer-review completion gates must not be bypassed by older clients that ignore the frozen policy.
     if (version < 9) this.tx(() => this.db.exec('PRAGMA user_version=9;'));
+    // Old clients must not bypass tool review or silently run container commands on the host.
+    if (version < 10) this.tx(() => this.db.exec('PRAGMA user_version=10;'));
     // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
     // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
     const pending = this.db
@@ -581,11 +584,12 @@ export class Store {
       since?: number;
       logicalId?: string;
       attemptId?: string;
+      status?: RequestLedgerRow['status'];
     } = {},
   ): RequestLedgerRow[] {
     const conditions: string[] = [],
       values: (string | number)[] = [];
-    for (const key of ['runId', 'taskId', 'account', 'logicalId', 'attemptId'] as const) {
+    for (const key of ['runId', 'taskId', 'account', 'logicalId', 'attemptId', 'status'] as const) {
       if (filters[key] === undefined) continue;
       conditions.push(key === 'runId' ? 'run_id=?' : `json_extract(data,'$.requestLedger.${key}')=?`);
       values.push(filters[key]!);
@@ -605,7 +609,7 @@ export class Store {
   latestTaskRequest(runId: string, taskId: string): RequestRecord | undefined {
     const row = this.db
       .prepare(
-        "SELECT data,content FROM requests WHERE run_id=? AND json_extract(data,'$.requestLedger.taskId')=? ORDER BY rowid DESC LIMIT 1",
+        "SELECT data,content FROM requests WHERE run_id=? AND json_extract(data,'$.requestLedger.taskId')=? AND COALESCE(json_extract(data,'$.requestLedger.purpose'),'assistant')!='tool-review' ORDER BY rowid DESC LIMIT 1",
       )
       .get(runId, taskId) as any;
     return row ? this.decodeRow('requests', row) : undefined;

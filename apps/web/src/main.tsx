@@ -1,3 +1,4 @@
+import { ToolReviewPanel } from './ToolReviewPanel';
 import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
@@ -1537,6 +1538,7 @@ function App({
         'message.completed',
         'tool.started',
         'tool.completed',
+        'tool.reviewed',
         'decision.required',
         'artifact.created',
         'usage.updated',
@@ -3874,6 +3876,7 @@ function App({
                     {tab === 'tasks' && (
                       <>
                         {detail.run.contract.peerReview && <PeerReviewPanel run={detail.run} />}
+                        <ToolReviewPanel run={detail.run} events={detail.events} />
                         <div className="panel-heading">
                           <h3>执行拓扑</h3>
                           <span>
