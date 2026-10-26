@@ -34,7 +34,7 @@ const peer = (run: Run): TerminalPeer => ({
 export class TerminalCommunication {
   constructor(
     private store: Store,
-    private kernel: Kernel,
+    private kernel: Kernel<Store>,
   ) {}
 
   run(runId: string) {
@@ -357,7 +357,7 @@ export class TerminalCommunication {
 export function registerTerminalCommunication(
   app: FastifyInstance,
   store: Store,
-  kernel: Kernel,
+  kernel: Kernel<Store>,
   guard: { assertReadable: (runId: string) => void; assertMutable: (runId: string) => unknown },
 ) {
   const service = new TerminalCommunication(store, kernel);

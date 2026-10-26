@@ -1,6 +1,7 @@
 import { invariant, type Agent, type RequestRecord, type Run, type Task } from '../../contracts/src/index.js';
 import { reviewModelConflict, type ReviewModelAssignment } from '../../contracts/src/review-policy.js';
-import type { RequestLedgerRow, Store } from '../../storage/src/index.js';
+import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
+import type { KernelStore as Store } from './ports.js';
 
 /** Validate the resolved models inside the same transaction that saves or reserves them. */
 export function assertReviewModelPolicy(

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { createHash, randomUUID } from 'node:crypto';
+import { id, now, hash, stable } from '../../contracts/src/identity.js';
+export { id, now, hash, stable } from '../../contracts/src/identity.js';
 import {
   mkdirSync,
   readFileSync,
@@ -56,35 +57,10 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
     ...(message.calls?.length ? { calls: message.calls.map((call) => ({ id: call.id })) } : {}),
   };
 }
-export const id = () => randomUUID();
-export const now = () => new Date().toISOString();
 export const STORAGE_SCHEMA_VERSION = 9;
 export const STORAGE_MIN_READER_VERSION = '1.20.0';
-export type RequestLedgerRow = Pick<
-  RequestRecord,
-  | 'id'
-  | 'revision'
-  | 'runId'
-  | 'taskId'
-  | 'attemptId'
-  | 'logicalId'
-  | 'providerId'
-  | 'status'
-  | 'startedAt'
-  | 'reservedTokens'
-  | 'reservedCost'
-> & {
-  account?: string;
-  priceCurrency?: string;
-  providerKind?: string;
-  authMode?: string;
-  model?: string;
-  providerLabel?: string;
-  usage: Pick<
-    NonNullable<RequestRecord['usage']>,
-    'inputTotal' | 'outputTotal' | 'cost' | 'cacheRead' | 'ttftMs'
-  > | null;
-};
+import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
+export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
   return {
     id: entity.id,
@@ -115,46 +91,14 @@ function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
       : null,
   };
 }
-export function stable(value: unknown): string {
-  if (value === undefined) return 'null';
-  if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
-  if (value && typeof value === 'object')
-    return (
-      '{' +
-      Object.entries(value)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => a.localeCompare(b, 'en'))
-        .map(([k, v]) => JSON.stringify(k) + ':' + stable(v))
-        .join(',') +
-      '}'
-    );
-  return JSON.stringify(value);
-}
-export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export function dataDirectory() {
   return path.resolve(
     process.env.ELYSIA_DATA_DIR ||
       path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'), 'Elysia'),
   );
 }
-export const tables = [
-  'project_spaces',
-  'projects',
-  'providers',
-  'runs',
-  'tasks',
-  'agents',
-  'attempts',
-  'messages',
-  'snapshots',
-  'artifacts',
-  'requests',
-  'tool_operations',
-  'checkpoints',
-  'decisions',
-  'inbox',
-] as const;
-export type Table = (typeof tables)[number];
+import { tables, type Table } from '../../contracts/src/persistence.js';
+export { tables, type Table } from '../../contracts/src/persistence.js';
 const unscopedTables = new Set<Table>(['project_spaces', 'projects', 'providers', 'runs']);
 const legacyObjectPattern = /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/;
 const sqliteObjectPattern = /^sqlite:[a-f0-9]{64}$/;
@@ -569,6 +513,38 @@ export class Store {
     } finally {
       this.depth--;
     }
+  }
+  metadata(key: string): string | undefined {
+    return (
+      this.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as { value: string } | undefined
+    )?.value;
+  }
+  setMetadata(key: string, value: string) {
+    this.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(key, value);
+  }
+  taskDependencies(taskId: string): string[] {
+    return this.db
+      .prepare('SELECT dependency_id id FROM task_edges WHERE task_id=?')
+      .all(taskId)
+      .map((row) => String(row.id));
+  }
+  addTaskDependency(taskId: string, dependencyId: string) {
+    this.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dependencyId);
+  }
+  latestEvent(runId: string, taskId: string, type: string): Event | undefined {
+    const row = this.db
+      .prepare('SELECT seq FROM events WHERE run_id=? AND task_id=? AND type=? ORDER BY seq DESC LIMIT 1')
+      .get(runId, taskId, type) as { seq: number } | undefined;
+    return row ? this.events(runId, row.seq - 1, { limit: 1 })[0] : undefined;
+  }
+  hasUncertainOperation(runId: string, taskId: string): boolean {
+    return !!this.db
+      .prepare(
+        `SELECT 1 FROM tool_operations WHERE run_id=?
+      AND json_extract(data,'$.readModel.taskId')=?
+      AND COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))='UNCERTAIN' LIMIT 1`,
+      )
+      .get(runId, taskId);
   }
   get<T>(table: Table, key: string): T | undefined {
     const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;

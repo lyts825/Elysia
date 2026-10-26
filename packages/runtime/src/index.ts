@@ -1,3 +1,4 @@
+import type { Store } from '../../storage/src/index.js';
 import {
   AppError,
   ContextRuntimeMetrics,
@@ -72,7 +73,7 @@ export class NativeExecutor implements ExecutorAdapter {
   /** A workbench surface owns only its selected execution kind. */
   acceptRun: (run: Run) => boolean = () => true;
   constructor(
-    public kernel: Kernel,
+    public kernel: Kernel<Store>,
     options: { executionPlugins?: (gateway: ToolGateway) => readonly ExecutionPlugin[] } = {},
   ) {
     this.gateway = new ToolGateway(kernel);

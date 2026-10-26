@@ -30,7 +30,7 @@ import {
   type ContextSnapshot,
 } from '../../../packages/contracts/src/index.js';
 import { Store, id, now, stable } from '../../../packages/storage/src/index.js';
-import { Kernel } from '../../../packages/kernel/src/index.js';
+import { createKernel } from './kernel-services.js';
 import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { DockerAgentService, type TerminalSessionView } from '../../../packages/runtime/src/docker-agent.js';
 import { registerTerminalCommunication } from './terminal-communication.js';
@@ -181,7 +181,7 @@ export function createServer(
       : url.startsWith('/terminal/')
         ? null
         : url;
-  const kernel = new Kernel(store);
+  const kernel = createKernel(store);
   const terminalControl =
     options.surface === 'terminal'
       ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())

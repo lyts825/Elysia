@@ -162,7 +162,7 @@ export class ToolGateway {
   private closing?: Promise<void>;
   private closed = false;
   constructor(
-    public kernel: Kernel,
+    public kernel: Kernel<Store>,
     options: { planAlignmentLoader?: PlanAlignmentLoader } = {},
   ) {
     this.planAlignment = new PlanAlignmentHost(

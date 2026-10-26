@@ -15,7 +15,8 @@ import {
   type Run,
   type Task,
 } from '../../contracts/src/index.js';
-import { hash, id, now, stable, type Store } from '../../storage/src/index.js';
+import { hash, id, now, stable } from '../../contracts/src/identity.js';
+import type { KernelStore as Store } from './ports.js';
 import type { Kernel } from './index.js';
 
 const modelIdentity = (model: string) => model.trim().toLowerCase();

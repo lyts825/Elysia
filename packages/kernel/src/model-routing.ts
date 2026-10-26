@@ -5,7 +5,8 @@ import {
   type RoleRoutingDecision,
   type RoleRoutingSnapshot,
 } from '../../contracts/src/model-routing.js';
-import { stable, type Store } from '../../storage/src/index.js';
+import { stable } from '../../contracts/src/identity.js';
+import type { KernelStore as Store } from './ports.js';
 
 export interface RoleRoutingRecord {
   projectId: string;
@@ -14,12 +15,11 @@ export interface RoleRoutingRecord {
 }
 export const routingKey = (projectId: string) => 'project-model-routing:v1:' + projectId;
 export function readRoleRouting(store: Store, projectId: string): RoleRoutingRecord {
-  const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(routingKey(projectId)) as
-    | { value: string }
-    | undefined;
-  if (!row) return { projectId, revision: 0, policy: { enabled: false, worker: null, reviewer: null } };
+  const value = store.metadata(routingKey(projectId));
+  if (value === undefined)
+    return { projectId, revision: 0, policy: { enabled: false, worker: null, reviewer: null } };
   try {
-    const record = JSON.parse(row.value) as RoleRoutingRecord;
+    const record = JSON.parse(value) as RoleRoutingRecord;
     invariant(
       record.projectId === projectId && Number.isSafeInteger(record.revision) && record.revision > 0,
       'ROUTING_INVALID',
@@ -104,8 +104,6 @@ export function saveRoleRouting(store: Store, projectId: string, expectedRevisio
       if (providerId) routingProvider(store, providerId);
   }
   const next = { projectId, revision: current.revision + 1, policy };
-  store.db
-    .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
-    .run(routingKey(projectId), stable(next));
+  store.setMetadata(routingKey(projectId), stable(next));
   return next;
 }

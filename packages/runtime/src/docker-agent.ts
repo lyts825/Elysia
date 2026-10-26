@@ -1,3 +1,4 @@
+import type { Store } from '../../storage/src/index.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -397,7 +398,7 @@ export class DockerAgentService {
   private environment: (names: string[]) => Record<string, string>;
   private resolveConnection?: (binding: TerminalConnectionBinding) => Promise<string>;
   constructor(
-    public kernel: Kernel,
+    public kernel: Kernel<Store>,
     public gateway: ToolGateway,
     options: {
       transport?: DockerTransport;

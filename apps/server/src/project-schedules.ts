@@ -308,7 +308,7 @@ export class ProjectScheduler {
   private running = false;
   constructor(
     private store: Store,
-    private kernel: Kernel,
+    private kernel: Kernel<Store>,
     private hooks: SchedulerHooks,
   ) {}
   private reportError(projectId?: string) {
@@ -941,7 +941,7 @@ export class ProjectScheduler {
 export function registerProjectSchedules(
   app: FastifyInstance,
   store: Store,
-  kernel: Kernel,
+  kernel: Kernel<Store>,
   hooks: SchedulerHooks,
 ) {
   const scheduler = new ProjectScheduler(store, kernel, hooks);

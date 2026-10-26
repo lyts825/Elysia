@@ -29,13 +29,13 @@ import {
   type ContextProjection,
   type ContextSnapshot,
 } from '../../contracts/src/index.js';
-import { Store, id, now, stable } from '../../storage/src/index.js';
+import { id, now, stable } from '../../contracts/src/identity.js';
+import type { KernelStore, KernelServices } from './ports.js';
 import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 import { freezeRoleRouting, routeTask } from './model-routing.js';
 import { assertReviewModelPolicy } from './review-policy.js';
 import { freezePeerReview, peerReviewReservedSlots, invalidatePeerReview } from './peer-review.js';
 import { ROLE_ROUTING_PROVIDER, type RoleRoutingDecision } from '../../contracts/src/model-routing.js';
-import { freezeProjectCapabilities } from '../../context/src/project-intelligence.js';
 import {
   TERMINAL_INBOX_MAX_BYTES,
   TERMINAL_INBOX_MAX_PENDING,
@@ -43,8 +43,11 @@ import {
   type TerminalInboxPeer,
 } from '../../contracts/src/terminal-inbox.js';
 export type PlanModelAssignment = ModelChoice & { key: string; contextPolicy?: ContextPolicy };
-export class Kernel {
-  constructor(public store: Store) {}
+export class Kernel<Storage extends KernelStore = KernelStore> {
+  constructor(
+    public store: Storage,
+    private readonly services: KernelServices = {},
+  ) {}
   event(runId: string, type: string, payload: unknown, taskId?: string, attemptId?: string) {
     return this.store.event(runId, type, payload, taskId, attemptId);
   }
@@ -88,10 +91,7 @@ export class Kernel {
     });
   }
   contextMetrics(agent: Agent): ContextRuntimeMetrics | null {
-    const seq = this.store.db
-      .prepare('SELECT seq FROM events WHERE run_id=? AND task_id=? AND type=? ORDER BY seq DESC LIMIT 1')
-      .get(agent.runId, agent.taskId, 'context.updated') as { seq: number } | undefined;
-    const event = seq ? this.store.events(agent.runId, seq.seq - 1, { limit: 1 })[0] : undefined;
+    const event = this.store.latestEvent(agent.runId, agent.taskId, 'context.updated');
     const candidates = [
       event?.payload,
       ...this.store
@@ -366,6 +366,11 @@ export class Kernel {
       const runId = id(),
         taskId = id(),
         agentId = id();
+      invariant(
+        terminal || !project || this.services.captureProjectCapabilities,
+        'KERNEL_CAPABILITIES',
+        '项目任务需要装配能力快照服务',
+      );
       const peerReview = freezePeerReview(this.store, contract, provider, limits, kind, execution);
       const run = this.store.put<Run>('runs', {
         id: runId,
@@ -375,7 +380,9 @@ export class Kernel {
         planMode: kind === 'task' && planMode,
         execution,
         ...(!terminal && project ? { modelRouting: freezeRoleRouting(this.store, project.id) } : {}),
-        ...(!terminal && project ? { capabilities: freezeProjectCapabilities(this.store, project.id) } : {}),
+        ...(!terminal && project
+          ? { capabilities: this.services.captureProjectCapabilities!(project.id) }
+          : {}),
         title: objective.slice(0, 60),
         archived: false,
         objective,
@@ -479,10 +486,7 @@ export class Kernel {
       .filter((t) => this.ancestors(t).some((a) => a.id === task.id));
   }
   dependencies(task: Task): string[] {
-    return this.store.db
-      .prepare('SELECT dependency_id id FROM task_edges WHERE task_id=?')
-      .all(task.id)
-      .map((r: any) => r.id);
+    return this.store.taskDependencies(task.id);
   }
   checkGraph(tasks: { id: string; deps: string[] }[]) {
     const graph = new Map(tasks.map((t) => [t.id, t.deps]));
@@ -710,7 +714,7 @@ export class Kernel {
         contextAssignedByAgentId: contextPolicy.mode === 'managed' ? parent.agentId : undefined,
         contextPolicyRevision: 1,
       });
-      for (const dep of deps) this.store.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dep);
+      for (const dep of deps) this.store.addTaskDependency(taskId, dep);
       this.checkGraph(this.graph(run.id));
       this.event(run.id, 'task.updated', child, taskId);
       if (routingDecision) this.event(run.id, 'model.routed', routingDecision, taskId);
@@ -1774,13 +1778,7 @@ export class Kernel {
           '恢复记录归属不一致',
         );
         if (!['RUNNING', 'VERIFYING'].includes(task.status)) return;
-        const pending = this.store.db
-          .prepare(
-            `SELECT 1 FROM tool_operations WHERE run_id=?
-          AND json_extract(data,'$.readModel.taskId')=?
-          AND COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))='UNCERTAIN' LIMIT 1`,
-          )
-          .get(task.runId, task.id);
+        const pending = this.store.hasUncertainOperation(task.runId, task.id);
         const reason = pending ? 'verification' : 'interrupted';
         // Recovery does not rebuild a graph/checkpoint from all historical bodies.
         // Preserve the last checkpoint and normalize only the interrupted live records.

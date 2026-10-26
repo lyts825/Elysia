@@ -17,7 +17,7 @@ const mutation = Command.extend({ expectedRevision: z.number().int().nonnegative
 export function registerManagement(
   app: FastifyInstance,
   store: Store,
-  kernel: Kernel,
+  kernel: Kernel<Store>,
   executor: NativeExecutor,
   closeStreams: (runId: string) => void,
   deletedProject?: (projectId: string) => void,

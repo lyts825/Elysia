@@ -27,7 +27,7 @@ type Params = { runId: string; taskId: string };
 export function registerTaskWorkingStateRoutes(
   app: FastifyInstance,
   store: Store,
-  kernel: Kernel,
+  kernel: Kernel<Store>,
   assertMutable: (runId: string | null, projectId?: string | null) => void,
   assertExecutionReadable: (runId: string) => void,
 ) {
