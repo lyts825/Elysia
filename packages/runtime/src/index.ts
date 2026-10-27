@@ -29,9 +29,13 @@ export interface ExecutorAdapter {
   dispose(): Promise<void>;
 }
 export interface NativeExecutorOptions {
+  /** 可注入同一内核拥有的工具网关；默认网关装配独立工具审核服务。 */
   gateway?: ToolGateway;
+  /** 每次按 Agent 冻结绑定构造适配器，便于不同执行子任务保持模型隔离。 */
   adapterFactory?: (agent: Agent) => ProviderAdapter;
+  /** 编译器只负责当前任务上下文，调用顺序和持久化由代理循环控制。 */
   compiler?: ContextCompiler;
+  /** 宿主入口归属谓词；直接 step 和调度器派发都使用同一判断。 */
   acceptRun?: (run: Run) => boolean;
   executionPlugins?: (gateway: ToolGateway) => readonly ExecutionPlugin[];
 }
@@ -136,6 +140,7 @@ export class NativeExecutor implements ExecutorAdapter {
   replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
     return this.tools.replayPending(task, attempt, signal);
   }
+  /** 统一直接调用与调度路径的入口归属检查，拒绝发生在通道执行和内核 claim 之前。 */
   async step(task: Task, signal: AbortSignal) {
     if (this.scheduler.isClosing) throw new AppError('EXECUTOR_DISPOSED', '执行器已释放');
     signal.throwIfAborted();

@@ -35,6 +35,10 @@ export function defaultManualContextWindowTokens(minimumWindowTokens: number, pr
   return preset ?? (custom >= minimumWindowTokens ? custom : undefined);
 }
 
+/**
+ * 受控窗口编辑器，只通过 change 上报草稿，不直接写入运行配置。
+ * 手动输入以 K 展示、以 token 保存；自定义选项状态与当前值分开，保留用户选中自定义的意图。
+ */
 export function ContextPolicyEditor({
   value,
   change,

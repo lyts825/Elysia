@@ -48,6 +48,10 @@ function DefaultsSummary({ value }: { value: NativeProjectDefaults }) {
   );
 }
 
+/**
+ * 在任务创建表单中读取或保存项目默认。首次读取且表单从未编辑时可自动载入；重试或
+ * 用户已有输入时只提示可手动载入。保存使用已读默认修订，且不创建任务或授予执行权限。
+ */
 export function NativeProjectDefaultsPanel({
   projectId,
   value,
@@ -96,6 +100,7 @@ export function NativeProjectDefaultsPanel({
       });
     return () => controller.abort();
   }, [api, projectId, retry]);
+  /** 将当前有效表单作为下次创建的默认配置保存，向外层报告忙碌以阻止同时创建任务。 */
   async function save() {
     if (!record || busy || !canSave) return;
     setBusy(true);

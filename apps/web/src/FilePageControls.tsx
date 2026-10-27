@@ -12,6 +12,10 @@ export function formatFileBytes(bytes: number) {
   return `${(bytes / divisor).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
 }
 
+/**
+ * 控制字节分页，显示当前实际读取范围。百分比只是目标位置，服务端负责按编码边界对齐；
+ * 100% 定位末页起点而非 EOF，确保仍有内容可读。翻页过程中禁用动作以免累积旧游标。
+ */
 export function FilePageControls({
   page,
   loading,

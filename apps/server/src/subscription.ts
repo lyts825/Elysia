@@ -62,6 +62,7 @@ export class SubscriptionService {
     private request: typeof fetch = fetch,
   ) {}
 
+  /** 串行处理登录、刷新和退出，避免两个请求并发使用同一轮换 refresh token。 */
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
     const result = this.queue.then(action);
     this.queue = result.catch(() => {});
@@ -125,6 +126,7 @@ export class SubscriptionService {
     }
     return body;
   }
+  /** OIDC discovery 必须来自固定签发者和精确端点，再建立仅支持指定算法的身份验证。 */
   private async metadata() {
     if (this.discovery) return this.discovery;
     const doc = await this.json(issuer + '/.well-known/openid-configuration');
@@ -149,6 +151,7 @@ export class SubscriptionService {
     });
     return (this.discovery = doc);
   }
+  /** 核验签名、issuer、audience、时效与可选 nonce，拒绝登录返回到不同客户端或账号。 */
   private async identity(token: string, clientId: string, nonce?: string) {
     await this.metadata();
     try {
@@ -408,6 +411,11 @@ export class SubscriptionService {
       attempt.server.closeAllConnections();
     }
   }
+  /**
+   * 在串行区取得可用访问令牌，临近过期且允许刷新时轮换凭据并持久化。
+   * 返回账号级取消信号与额度封锁回调；退出或额度受限立即阻止后续模型调用，
+   * 刷新明确失效时清除旧凭据，不能继续重用已轮换或已撤销的 refresh token。
+   */
   async credential(id: string) {
     await this.load();
     return this.exclusive(async () => {
@@ -494,6 +502,7 @@ export class SubscriptionService {
     this.account(id);
     this.usageBlocked.delete(id);
   }
+  /** 先中止该账号在途调用，再尝试远端撤销并清除本机凭据；远端失败单独报告而不阻止本机退出。 */
   async logout(id: string) {
     await this.load();
     this.signingOut.add(id);
@@ -542,6 +551,7 @@ export class SubscriptionService {
       this.signingOut.delete(id);
     }
   }
+  /** 禁止新工作、取消登录和账号请求，等待凭据串行队列收束后再由宿主释放桌面服务。 */
   async close() {
     this.closed = true;
     this.cancel();

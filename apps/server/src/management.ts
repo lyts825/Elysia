@@ -45,6 +45,7 @@ export function registerManagement(
   const command = <T>(body: any, route: string, work: () => T) =>
     store.command(body.commandId, { route, body }, work);
   const acknowledgeArchives = (projectId: string, expected?: string) => {
+    // 项目删除会影响已保存交付包，必须绑定用户查看过的完整集合哈希，不能只核对数量。
     const summary = projectDeliveryArchiveSummary(store, projectId);
     if ((summary.count > 0 || expected !== undefined) && expected !== summary.setHash)
       throw new AppError(
@@ -57,6 +58,10 @@ export function registerManagement(
   };
   // Prevent concurrent retries from interrupting/deleting the same running conversation twice.
   const pending = new Map<string, { fingerprint: string; result: Promise<unknown> }>();
+  /**
+   * 删除生命周期先占用进程内实体锁并暂停/取消运行，再等待实际执行停止，最后幂等删除。
+   * 同一命令并发重试共享 Promise，避免两次中断或一方清理另一方仍使用的数据。
+   */
   const lifecycle = async (
     body: any,
     route: string,
@@ -89,6 +94,7 @@ export function registerManagement(
     pending.set(body.commandId, { fingerprint, result });
     return result;
   };
+  /** 归档暂停保留已有计划/提问等待原因，恢复归档后仍能继续原来的用户决定。 */
   const pauseKeepingDecision = (runId: string) => {
     const run = store.require<Run>('runs', runId);
     kernel.action(runId, 'pause');

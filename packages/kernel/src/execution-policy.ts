@@ -3,7 +3,10 @@ import { ToolReviewPolicy, CommandBackendPolicy } from '../../contracts/src/exec
 import { invariant, type Contract, type ProviderConfig, type Run } from '../../contracts/src/index.js';
 import type { KernelStore } from './ports.js';
 
-/** 验证运行的审核与命令后端范围；模型审核返回经过验证的连接快照。 */
+/**
+ * 验证工具审核和命令后端只作用于原生项目任务，并返回模型审核的冻结连接副本。
+ * 关闭/规则模式不需要模型；这里只检查策略与绑定，实际命令隔离及审核在执行层进行。
+ */
 export function freezeExecutionPolicy(
   store: KernelStore,
   contract: Contract,

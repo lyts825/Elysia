@@ -22,6 +22,11 @@ export type SessionTarget = Target;
 export type SessionUpdateResult = boolean | 'conflict';
 type Dialog = { target: Target; action: 'rename' | 'delete' | 'move'; value: string };
 type MenuAction = { label: string; icon: string; shortcut?: string; danger?: boolean; action: () => void };
+/**
+ * 将项目与运行列表组织为侧栏树，并承接外层的分页、选择和持久标记操作。
+ * 列表刷新用可见锚点保留阅读位置，自动加载只响应可见区域的滚动意图；菜单通过 portal
+ * 显示在入口根节点内，键盘操作在弹窗或输入控件活跃时暂停，避免夺取编辑快捷键。
+ */
 export function SessionSidebar({
   projects,
   spaces,
@@ -107,6 +112,7 @@ export function SessionSidebar({
   const listIdentity = `${spaceId}:${listQuery || ''}`;
   const previousListIdentity = useRef(listIdentity);
   const previousListBefore = useRef(listPage?.before);
+  // 查询/空间变化或返回最新页时从顶部开始；同一窗口数据更新才恢复旧锚点。
   useLayoutEffect(() => {
     const tree = treeRef.current;
     if (!tree) return;
@@ -164,6 +170,7 @@ export function SessionSidebar({
   const ordered = (list: RunListItem[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pinned = ordered(visibleRuns.filter((r) => flag(`pinned:run:${r.id}`) && matches(r)));
   const chats = ordered(visibleRuns.filter((r) => r.kind === 'chat' && matches(r)));
+  // 项目列表尚未读到的任务单独保留，不能把未观测所属误当作任务不存在。
   const pendingProjectRuns = ordered(
     runs.filter(
       (r) => !r.archived && r.kind === 'task' && !projects.some((p) => p.id === r.projectId) && matches(r),
@@ -173,6 +180,7 @@ export function SessionSidebar({
     if (restore && menu?.trigger.isConnected) menu.trigger.focus({ preventScroll: true });
     setMenu(null);
   };
+  /** 保存触发元素用于菜单关闭后恢复焦点；鼠标右键与按钮点击分别采用指针或按钮坐标。 */
   const openMenu = (event: React.MouseEvent<HTMLElement>, target: Target) => {
     event.preventDefault();
     event.stopPropagation();
@@ -194,6 +202,7 @@ export function SessionSidebar({
     setDialog(null);
     setArchiveConsent(undefined);
   };
+  /** 只更新仍属于当前弹窗实例的输入，避免异步冲突处理改写后来打开的目标。 */
   const changeDialogValue = (source: Dialog, value: string) => {
     if (dialogRef.current !== source) return;
     const next = { ...source, value };
@@ -234,6 +243,7 @@ export function SessionSidebar({
       setClipboardError('无法复制，请检查剪贴板权限后重试。');
     }
   };
+  /** 列表目标可能被截断；复制目标或据此新建前先读取完整运行头信息。 */
   async function fullObjective(run: RunListItem, action: (run: Run) => void | Promise<void>) {
     try {
       const full = await api<Run>(`/runs/${run.id}/header`);
@@ -242,6 +252,7 @@ export function SessionSidebar({
       setClipboardError(issue instanceof Error ? issue.message : '无法读取完整目标，请重试。');
     }
   }
+  /** 按目标类型构建菜单；原生入口中的旧终端记录只保留查看和本地标记操作。 */
   const actions = (target: Target): MenuAction[] => {
     const item = target.item;
     const common: MenuAction[] = [
@@ -330,6 +341,7 @@ export function SessionSidebar({
   useEffect(() => {
     if (busy) setMenu(null);
   }, [busy]);
+  // 快捷键按当前菜单目标或所选实体执行；输入法、表单和任一可见弹窗活跃时完全让出。
   useEffect(() => {
     const hotkey = (event: KeyboardEvent) => {
       if (
@@ -748,6 +760,7 @@ export function SessionSidebar({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                // 固定提交时的弹窗实例，异步结果不能关闭后来为另一个目标打开的新弹窗。
                 const submitted = dialog;
                 if (!canSubmitDialog || dialogRef.current !== submitted) return;
                 void update(
@@ -766,6 +779,7 @@ export function SessionSidebar({
                   if (result === false || dialogRef.current !== submitted) return;
                   if (result === 'conflict' && submitted.action === 'delete') return;
                   const key = draftKey(submitted.target, submitted.action);
+                  // 版本冲突保留重命名/移动文字，删除则留在原确认流程要求重新核对。
                   if (result === 'conflict' && submitted.action !== 'delete')
                     conflictDrafts.current.set(key, submitted.value);
                   else conflictDrafts.current.delete(key);

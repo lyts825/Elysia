@@ -14,7 +14,11 @@ import type { WorkbenchCache } from './WorkbenchCache';
 import { Modal } from './Modal';
 import './project-item-setup.css';
 
-/** 为从交付项创建的任务恢复和保存设置草稿；实际创建交由父组件提交。 */
+/**
+ * 编辑从交付项派生的创建草稿，初始目标与标准固定于打开时读取的 launch。
+ * 每次回写核对缓存中的 launch 仍等于本组件上次保存结果；其他页面修改或移除来源时
+ * 保留当前表单并阻止提交。实际创建交给父级，提交体与保存后的 launch 一起传递。
+ */
 export function ProjectItemSetup({
   projectId,
   projectName,
@@ -55,6 +59,7 @@ export function ProjectItemSetup({
   const [objective, setObjective] = useState(first.current.launch?.objective || '');
   const launch = first.current.launch;
   const lastSaved = useRef(launch);
+  /** 用最新缓存执行比较再写入，规范化读回值作为下一次比较基线。 */
   const saveLaunch = (patch: Partial<NonNullable<ProjectBoardDraft['launch']>>) => {
     const current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
     if (!launch || !current || JSON.stringify(current) !== JSON.stringify(lastSaved.current))

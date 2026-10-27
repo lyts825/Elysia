@@ -1,7 +1,7 @@
 /** 将项目交付清单导出为 Markdown。 */
 import type { ProjectDeliveryManifest } from '../../../packages/contracts/src/project-delivery.js';
 
-/** User-authored text stays literal: no embedded HTML, links or Markdown control structure. */
+/** 用比正文内最长反引号串更长的围栏包裹用户文本，避免标题、HTML 或链接改变导出结构。 */
 function literal(value: string) {
   let length = 3;
   for (const match of value.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
@@ -15,7 +15,9 @@ function list(label: string, values: string[]) {
   return `**${label}**\n\n${values.length ? values.map((v, i) => `**第 ${i + 1} 项**\n\n${literal(v)}`).join('\n\n') : '（无）'}`;
 }
 
-/** 将冻结交付清单转换为包含项目和清单信息的 Markdown。 */
+/** 只从冻结快照生成可重复导出的 Markdown，不查询当前任务或打开产物正文。
+ * 保留任务标准、人工确认、复核和来源意见处置的对应关系；结构核验与证据不替代质量判断。
+ */
 export function projectDeliveryMarkdown(manifest: ProjectDeliveryManifest) {
   const sections = [
     '# 项目冻结交付清单',

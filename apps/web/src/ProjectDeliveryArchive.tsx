@@ -26,6 +26,10 @@ const archiveQuery = (archive: Archive) =>
   encodeURIComponent(archive.manifestHash) +
   '&expectedObjectHash=' +
   encodeURIComponent(archive.objectHash);
+/**
+ * 下载前在浏览器核对声明长度、ZIP 头和完整 SHA-256，取消检查放在耗时摘要计算之后。
+ * 只有全部一致才创建下载链接，防止网络或存储异常内容被当作已验证保存包交付。
+ */
 async function downloadArchive(bytes: Uint8Array, archive: Archive, signal?: AbortSignal) {
   // 下载前先检查声明长度和 ZIP 文件头，后续再核对内容摘要。
   if (
@@ -71,7 +75,11 @@ function ArchiveFacts({ value }: { value: Archive }) {
   );
 }
 
-/** Durable records remain usable independently of current Run and Artifact availability. */
+/**
+ * 分页浏览持久保存的项目文件包，记录独立于当前运行和产物是否仍存在。
+ * 下载和删除按冻结清单哈希及对象哈希绑定；取消或读取错误时禁用动作，保留上一页供查看。
+ * onSnapshot 在读取开始即置空，避免外层删除确认继续信任旧集合。
+ */
 export function ProjectDeliveryArchives({
   projectId,
   revision = 0,
@@ -200,6 +208,7 @@ export function ProjectDeliveryArchives({
       }
     }
   };
+  /** 删除只移除项目中的保存对象；响应必须确认同一项目、清单且 archive 为 null。 */
   const remove = async () => {
     if (!removing || request.current) return;
     const archive = removing,

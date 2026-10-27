@@ -8,6 +8,11 @@ import './execution-config.css';
 import './model-switch.css';
 export { modelTaskCanContinue, modelSwitchReason } from './ModelSwitchGuards';
 
+/**
+ * 对比代理冻结绑定与本次选择，只有连接/型号/强度确实变化且通过 ModelPicker 校验才提交。
+ * disabledReason 由当前运行边界计算；“仅应用”和“应用并继续”分别回传，恢复资格不能
+ * 仅依据是否换了模型推断，最终版本与执行状态仍由父级动作及服务端检查。
+ */
 export function ModelSwitchModal({
   providers,
   agent,

@@ -66,6 +66,7 @@ export class NativeAgentLoop {
     run = store.require<Run>('runs', task.runId);
     const agent = store.require<Agent>('agents', task.agentId);
     let context: CompiledContext;
+    // 编译失败也可能携带可展示的窗口指标，先发布这些证据，再交调度器处理限额等待。
     try {
       context = this.compiler(task, definitions);
     } catch (error) {
@@ -84,6 +85,7 @@ export class NativeAgentLoop {
       ContextRuntimeMetrics.parse(context.manifest.contextWindow),
     );
     const response = await this.requests.run(task, attempt, agent, context, metrics, signal);
+    // undefined 表示已转入限流等等待，不能继续把它作为空的完成回复执行下一步。
     if (!response) return;
     const { message: assistantMessage, completed } = response;
     attempt = response.attempt;
@@ -110,6 +112,7 @@ export class NativeAgentLoop {
       );
     }
     task = store.require('tasks', task.id);
+    // 单步结束归还 READY 使其他候选有机会执行；工具内部若已转为等待/完成则保持其状态。
     if (task.status === 'RUNNING') this.kernel.updateTask(task, 'READY');
     this.kernel.checkpoint(attempt.id);
   }

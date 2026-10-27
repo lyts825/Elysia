@@ -8,6 +8,7 @@ export const localSurface: WorkspaceSurface = (() => {
   );
   return requested === 'terminal' ? 'terminal' : 'native';
 })();
+/** 生成切换入口后的同源相对地址，只改变 surface 参数并保留其他查询及锚点。 */
 export function surfaceLocation(surface: WorkspaceSurface): string {
   const url = new URL(location.href);
   if (surface === 'terminal') url.searchParams.set('surface', 'terminal');
@@ -15,6 +16,7 @@ export function surfaceLocation(surface: WorkspaceSurface): string {
   return url.pathname + url.search + url.hash;
 }
 
+/** 区分传输、HTTP 拒绝和响应协议错误，供界面决定重试、重新连接或保留未知写入回执。 */
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -37,8 +39,10 @@ export function canRetryConnection(error: unknown) {
       (error.kind === 'http' && (error.status || 0) >= 500 && (error.status || 0) < 600))
   );
 }
-// A client belongs to one surface for its entire lifetime. Delayed callbacks and
-// pending draft writes keep their original destination during a UI switch.
+/**
+ * 建立永久绑定一个入口的客户端，闭包单独保存 CSRF、认证范围和初始化结果。
+ * 调用方可在界面切换后继续完成原入口的请求，不能根据当前页面全局变量临时改目的地。
+ */
 export function createSurfaceClient(surface: WorkspaceSurface) {
   // 入口和存储键在客户端创建时固定，异步回调不会因切换页面改写另一个入口的草稿。
   const apiPrefix = surface === 'terminal' ? '/terminal/api' : '/api';
@@ -46,6 +50,11 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
   const surfaceStorageKey = (key: string) => (surface === 'terminal' ? key + ':terminal' : key);
   let csrf = '';
   let workbenchScope: string | undefined;
+  /**
+   * 读取或写入 JSON。未指定方法时按是否有 body 选择 GET/POST，有 body 才附 CSRF。
+   * GET 同时限制响应读取时间；取消原样向上传递，其余错误归类为 ApiError。
+   * 写入不自动重试，因为连接失败可能发生在服务端已提交之后。
+   */
   async function api<T = any>(
     path: string,
     body?: unknown,
@@ -95,6 +104,7 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     }
     return result;
   }
+  /** 下载原始字节，超时覆盖 fetch 和正文读取；非成功响应仍尝试读取服务端 JSON 错误。 */
   async function apiBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
     const deadline = new ReadDeadline(signal);
     let response: Response;
@@ -142,12 +152,18 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
       deadline.clear();
     }
   }
+  /** 默认附加幂等命令 ID；调用方已提供 commandId 时保留，以核对同一未知写入。 */
   const mutation = <T = any>(path: string, body: Record<string, unknown>, method = 'POST') =>
     api<T>(path, { commandId: crypto.randomUUID(), ...body }, method);
   let sessionPromise: Promise<string | undefined> | null = null;
   let sessionFailure: unknown;
   let bootstrapToken: string | null = null;
   let bootstrapRead = false;
+  /**
+   * 一次性消费地址栏启动令牌并缓存认证 Promise，合并同入口并发初始化。
+   * 显式重试先检查已有 Cookie，仅在 SESSION_REQUIRED 时复用内存令牌；成功或不可重试
+   * 失败后立即清除令牌。返回值用于选择范围，工作台草稿范围另保存在 workbenchScope。
+   */
   function initializeSession(options?: { retry?: boolean }) {
     // 合并并发初始化；明确不可重试的失败会保留，直到调用方重新建立上下文。
     if (sessionPromise) return sessionPromise;

@@ -59,6 +59,10 @@ const states = { draft: '草稿', active: '已启用', revoked: '已撤销' };
 const errorText = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，请重试。');
 export const projectIntelligenceKey = (id: string) => `draft:project-intelligence:${id}`;
 
+/**
+ * 严格读取持久草稿；损坏、超限或记忆 ID/版本配对不完整时抛错，调用方保留原文供导出。
+ * 缺少草稿是合法初始状态，不能把无法读取的草稿静默替换成空对象。
+ */
 function readDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1 };
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('能力与记忆草稿无法读取，原文保留。');
@@ -71,6 +75,7 @@ function readDraft(raw: unknown): Draft {
     throw Error('保存请求的记忆版本不完整，原稿保留。');
   return result.data;
 }
+/** 从权威记忆生成编辑基线，expectedRevision 随草稿保存以检测后续并发修改。 */
 function memoryDraft(memory: ProjectMemory): MemoryDraft {
   return {
     id: memory.id,
@@ -94,6 +99,7 @@ const sameSelection = (
   value.expectedRevision === request.expectedRevision &&
   JSON.stringify(value.builtinSkillIds) === JSON.stringify(request.builtinSkillIds) &&
   JSON.stringify(value.localItemIds) === JSON.stringify(request.localItemIds);
+/** 将无法安全处理的原草稿原样导出为文本，下载后延迟释放对象 URL。 */
 function exportOriginal(raw: unknown, projectId: string) {
   const url = URL.createObjectURL(
     new Blob([typeof raw === 'string' ? raw : JSON.stringify(raw ?? '')], {
@@ -107,6 +113,7 @@ function exportOriginal(raw: unknown, projectId: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** 用 projectId 作为编辑器身份；切换项目重新建立读取、草稿和提交状态。 */
 export function ProjectIntelligence({
   projectId,
   cache,
@@ -119,6 +126,11 @@ export function ProjectIntelligence({
   return <IntelligenceEditor key={projectId} projectId={projectId} cache={cache} archived={archived} />;
 }
 
+/**
+ * 管理项目冻结能力选择、项目记忆及模型路由草稿。能力和记忆分别读取，草稿单独加载；
+ * 未知保存结果以 pending 命令持久保留并锁住新提交，直到相同负载重试得到确定结果。
+ * 归档、草稿损坏或基线版本过期时保持只读或要求重新核对，不能自行覆盖服务端数据。
+ */
 function IntelligenceEditor({
   projectId,
   cache,
@@ -180,6 +192,7 @@ function IntelligenceEditor({
     };
   }, [cache, key, draftAttempt]);
 
+  /** 取消同类旧读取后验证项目归属，再发布结果；能力读取不取消记忆读取。 */
   async function read(kind: 'capabilities' | 'memories') {
     // 能力和记忆分别取消及读取；结果必须属于当前项目。
     readers.current[kind]?.abort();
@@ -232,6 +245,7 @@ function IntelligenceEditor({
   } catch (issue) {
     parseError = errorText(issue);
   }
+  /** 基于缓存中的最新草稿执行更新，再校验形状和总容量，成功后触发当前组件重读。 */
   function change(update: (value: Draft) => Draft) {
     // 先校验并检查容量，再覆盖缓存；失败时保留原草稿。
     try {
@@ -287,6 +301,11 @@ function IntelligenceEditor({
     };
     change((value) => ({ ...value, selection: next }));
   }
+  /**
+   * 发送前将精确负载和 commandId 写入草稿，并确认它仍对应当前编辑内容。
+   * 成功只清除属于本次命令且未被改动的部分；记忆写入后重新读完整列表。
+   * 未知错误保留 pending，用户只能核对或重试同一请求，避免重复创建或覆盖新版本。
+   */
   async function submit(request: Pending) {
     // 发送前固定当前输入和请求；已有待核对请求只能使用同一内容继续。
     if (writing.current || archived || !active.current) return;

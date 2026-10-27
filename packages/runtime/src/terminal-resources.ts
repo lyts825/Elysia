@@ -10,6 +10,7 @@ type Kind = 'task' | 'installation' | 'probe';
 type Reservation = { kind: Kind; resourcePreset?: TerminalResourcePreset };
 /** Per-application admission, independent of the execution's immutable permission/budget binding. */
 export class TerminalResourcePool {
+  // 预约按本应用持有的事实计数，不将持久 UI 阶段或 Docker 总空闲量直接当成释放证据。
   private state: TerminalResourceSnapshot['status'] = 'unknown';
   private message = '尚未读取 Docker 资源容量';
   private capacity = { sessions: 2, cpus: 4, memoryMiB: 4096 };
@@ -94,12 +95,14 @@ export class TerminalResourcePool {
       ? 'terminal-capacity'
       : 'terminal-resources';
   }
+  /** 队列展示与真实申请共用条件；等待安装具有优先权，避免用户触发的安装被新任务饿死。 */
   canAcquireTask(id: string, preset?: TerminalResourcePreset) {
     return (
       this.has(id) ||
       (this.fits(id, 'task', preset) && !this.waiters.some((entry) => entry.kind === 'installation'))
     );
   }
+  /** 同 ID 重复预约幂等；检查 CPU、内存、会话数及安装优先级后同步登记。 */
   tryAcquire(id: string, kind: Kind = 'task', preset?: TerminalResourcePreset) {
     if (this.reservations.has(id)) return true;
     // A user-requested install gets the next available slot rather than starving behind fresh tasks.
@@ -120,16 +123,19 @@ export class TerminalResourcePool {
     this.held.add(id);
     if (reason) this.heldReasons.set(id, reason);
   }
+  /** 只解除“停止未确认”保护；真正释放由 release 完成，调用方必须先取得停止证据。 */
   confirmStopped(id: string) {
     this.held.delete(id);
     this.heldReasons.delete(id);
   }
+  /** held 预约不会被普通 finally 释放；确认停止后才可删除预约并唤醒等待者。 */
   release(id: string) {
     if (this.held.has(id)) return;
     this.reservations.delete(id);
     this.sponsors.delete(id);
     this.drain();
   }
+  /** 有效任务/安装可承担自身检查的资源成本；已被 hold 的赞助方不能支持新探测。 */
   sponsorProbe(id: string, sponsorId?: string) {
     if (
       sponsorId &&
@@ -179,6 +185,7 @@ export class TerminalResourcePool {
       signal.throwIfAborted();
     }
   }
+  /** 从等待队列中取当前可满足的首项，避免首项大规格阻塞后续可以执行的小检查。 */
   private drain() {
     while (this.waiters.length) {
       const index = this.waiters.findIndex((entry) => this.fits(entry.id, entry.kind));

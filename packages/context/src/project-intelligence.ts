@@ -38,6 +38,7 @@ const configSchema = ProjectCapabilitySelection.extend({
   mode: z.literal('explicit'),
   updatedAt: z.string().datetime(),
 }).strict();
+/** 有界读取元数据 JSON；缺失与损坏分开，损坏不覆盖或重建原记录。 */
 function readMeta(store: Store, key: string, limit: number): unknown | undefined {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
     | { value: string }
@@ -56,6 +57,7 @@ function readMeta(store: Store, key: string, limit: number): unknown | undefined
     );
   }
 }
+/** 按稳定格式序列化并在写入前检查 UTF-8 字节容量。 */
 function saveMeta(store: Store, key: string, value: unknown, limit: number) {
   const text = stable(value);
   invariant(Buffer.byteLength(text) <= limit, 'PROJECT_MEMORY_LIMIT', '项目能力或记忆记录超过存储容量上限');
@@ -70,6 +72,7 @@ function invalid(): never {
     409,
   );
 }
+/** 所有项目能力/记忆入口共用的归档检查，防止已归档项目继续编辑或调用能力。 */
 export function requireIntelligenceProject(store: Store, projectId: string) {
   const project = store.require<Project>('projects', projectId);
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目再使用项目能力和记忆');
@@ -106,6 +109,7 @@ export function readProjectIntelligence(store: Store, projectId: string): Projec
   if (!parsed.success || parsed.data.projectId !== projectId) return invalid();
   return parsed.data;
 }
+/** 返回当前选择、可选择的目录和限制；目录不内联技能/记忆正文。 */
 export function projectIntelligenceView(store: Store, projectId: string): ProjectIntelligenceView {
   return {
     config: readProjectIntelligence(store, projectId),
@@ -169,6 +173,7 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
         'CAPABILITY_SNAPSHOT_LIMIT',
         '任务能力快照超过 2 MiB，请减少项目选择的记忆、技能或资源；内容未截断',
       );
+    // 每次加入入口或资源后检查总容量，超限整次捕获失败，不保存无法完整执行的截断技能。
     for (const skillId of config.builtinSkillIds) {
       snapshot.builtinSkills.push(captureBuiltinSkill(skillId));
       checkSize();
@@ -211,6 +216,10 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
 }
 const memoryHash = (memory: ProjectMemoryContent) =>
   hash(stable({ title: memory.title, text: memory.text, source: memory.source, status: memory.status }));
+/**
+ * 读取并验证当前项目的记忆集合、当前内容摘要及递增历史修订。
+ * activeOnly 过滤草稿和撤销项，但读取损坏的历史仍报错，避免把不完整集合当成正常结果。
+ */
 export function listProjectMemories(
   store: Store,
   projectId: string,
@@ -254,6 +263,7 @@ function saveMemories(store: Store, projectId: string, memories: ProjectMemory[]
     PROJECT_INTELLIGENCE_LIMITS.projectMemoryBytes,
   );
 }
+/** 创建修订 1 的草稿或启用记忆；容量包含已撤销项，撤销不用于绕过记录数量上限。 */
 export function createProjectMemory(
   store: Store,
   projectId: string,
@@ -283,6 +293,10 @@ export function createProjectMemory(
     return memory;
   });
 }
+/**
+ * 按期望修订更新、撤销或恢复历史正文；恢复是新增一个修订，不回退版本号。
+ * 保存完整旧版本供回查，并按数量与单记录容量逐个移除最旧历史，始终保留当前版本。
+ */
 export function updateProjectMemory(
   store: Store,
   projectId: string,
@@ -357,6 +371,7 @@ export function updateProjectMemory(
     return next;
   });
 }
+/** 仅从当前项目已启用的记忆中分页正文，同时返回来源、修订和摘要供调用方核验。 */
 export function readProjectMemory(
   store: Store,
   projectId: string,

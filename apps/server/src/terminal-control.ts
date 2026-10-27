@@ -163,6 +163,7 @@ export class TerminalControlService {
       apiKeyEnv: connection.auth.kind === 'environment' ? connection.auth.env : 'ELYSIA_TERMINAL_API_KEY',
     } as ProviderConfig;
   }
+  /** 只按冻结 binding 的环境变量/密钥库引用取值，当前连接列表变化不改写旧任务凭据身份。 */
   async credential(binding: TerminalConnectionBinding): Promise<string> {
     const connection = TerminalConnectionBinding.parse(binding);
     return (await this.keys.credential(this.keyConfig(connection))).token;
@@ -184,7 +185,11 @@ export class TerminalControlService {
     invariant(binding, 'TERMINAL_CONNECTION_MISSING', '所选 API 连接已删除，请刷新');
     return this.connectionHealth(binding);
   }
-  /** 按连接 ID、预期版本和操作类型发起连接检测或模型列表查询。 */
+  /**
+   * 每连接最多一个在线检测，联合调用方取消、服务关闭和超时信号。
+   * 检测结果绑定发起时 revision；配置变化后拒绝写健康状态，避免迟到响应验证新配置。
+   * check 与 models 分别存储安全摘要，不将远端正文或凭据写入健康记录。
+   */
   async probe(connectionId: string, input: unknown, operation: 'check' | 'models', caller?: AbortSignal) {
     const id = z.string().uuid().parse(connectionId);
     const body = TerminalConnectionProbeRequest.parse(input);
@@ -252,7 +257,10 @@ export class TerminalControlService {
     this.closed = true;
     for (const controller of this.probes.values()) controller.abort();
   }
-  /** 读取终端配置并汇总指定模板的诊断状态。 */
+  /**
+   * 汇总模板→项目→应用→环境的连接选择与缺失配置，只用占位凭据生成命令预览。
+   * 异步密钥检查后重新核对全部参与配置版本；该本地诊断不发模型请求，也不证明真实认证成功。
+   */
   async diagnostics(profileId: string, input: unknown = {}) {
     const id = z.string().uuid().parse(profileId);
     const body = z.object({ projectId: z.string().uuid().optional() }).strict().parse(input);
@@ -356,7 +364,10 @@ export class TerminalControlService {
       ready: !issues.some((issue) => issue.severity === 'error'),
     });
   }
-  /** 按显式选择或当前配置确定连接，并为终端模板构造绑定。 */
+  /**
+   * 根据显式选择或应用配置冻结连接。丢弃客户端自带 connection 内容，只从宿主保存的
+   * 连接表复制兼容绑定；null 显式选择环境变量模式，undefined 才允许应用默认选择。
+   */
   bindProfile(profile: AgentTerminalProfile, connectionId?: string | null): AgentTerminalProfile {
     const supplied = profile as AgentTerminalProfile & {
       connectionId?: string | null;
@@ -386,6 +397,7 @@ export class TerminalControlService {
         409,
       );
   }
+  /** 串行处理跨密钥库和数据库的修改；失败只影响该次请求，队列后续动作仍可执行。 */
   private serialize<T>(action: () => Promise<T>): Promise<T> {
     const result = this.queue.then(action);
     this.queue = result.catch(() => {});

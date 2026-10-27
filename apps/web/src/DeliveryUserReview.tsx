@@ -15,6 +15,10 @@ import { ArtifactChanges } from './ArtifactChanges';
 import { UnlinkedReviewNotes } from './UnlinkedReviewNotes';
 import './delivery-user-review.css';
 
+/**
+ * 将人工复核草稿与已读交付指纹绑定。编辑保存在上层草稿，保存通过运行/根修订与指纹做并发校验。
+ * 旧备注和无法重新关联的标准保留为 unlinked，不因重新读取或保存新结论而丢弃。
+ */
 export function DeliveryUserReview({
   value,
   rawDraft,
@@ -62,6 +66,7 @@ export function DeliveryUserReview({
     setError('');
   }, [readVersion]);
   const changed = draft.fingerprint !== value.fingerprint;
+  // 使用最新 ref 合并一次局部编辑；达到本机容量时拒绝本次写入，不能静默截断已有文字。
   const patch = (next: Partial<ReviewDraft>) => {
     setNotice('');
     const updated = { ...draftRef.current, ...next };
@@ -75,6 +80,7 @@ export function DeliveryUserReview({
     return true;
   };
   const readonly = disabled || reading || busy || reconciling;
+  /** 重读备注涉及的验收项，只保留原标准仍逐字相同的关联，其余转为未关联并清除旧结论。 */
   async function reconcile() {
     if (readonly || conflict || reconcileRequest.current) return;
     const controller = new AbortController();
@@ -86,6 +92,7 @@ export function DeliveryUserReview({
     try {
       const criteria = await readReviewCriteria(api, value, before.criteriaNotes, controller.signal);
       if (controller.signal.aborted) return;
+      // 校验读取期间草稿未被其他输入改变，不能用旧快照覆盖更新后的编辑。
       if (JSON.stringify(draftRef.current) !== token) {
         setError('复核草稿已变化，请核对最新输入后重试。');
         return;
@@ -159,6 +166,7 @@ export function DeliveryUserReview({
       </label>
     );
   };
+  /** 保存明确结论和当前已关联备注；失败保留草稿，409 后需重读，不自动重发旧版本意见。 */
   async function save() {
     if (readonly || changed || conflict || !draft.decision) return;
     setBusy(true);

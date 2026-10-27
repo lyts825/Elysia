@@ -226,6 +226,7 @@ function state(client: SurfaceClient) {
   if (!store) stores.set(client, (store = { values: new Map() }));
   return store;
 }
+/** 只序列化白名单元数据，按最近使用顺序在总容量内保留条目；失败继续以内存位置工作。 */
 function flush(store: CheckpointStore) {
   if (store.timer) clearTimeout(store.timer);
   store.timer = undefined;
@@ -270,8 +271,10 @@ function schedule(store: CheckpointStore) {
   store.timer = setTimeout(() => flush(store), 150);
 }
 
-// Call only after this client's session has authenticated. A changed server/data
-// scope drops the old in-memory selection; storage is never imported beforehand.
+/**
+ * 认证后才允许导入会话存储。入口或数据范围改变先刷新旧存储，再清空内存；
+ * 新副本必须同时匹配 schema、scope、surface 和各条目的元数据约束。
+ */
 export function bindReadingCheckpointScope(client: SurfaceClient, scope: string | undefined): void {
   // 仅认证后绑定作用域；切换入口或数据范围时先清空旧内存状态。
   const store = state(client);
@@ -315,6 +318,7 @@ export function readingCheckpoint<T extends object>(client: SurfaceClient, key: 
   }
   return value as T | undefined;
 }
+/** 保存最近使用的阅读元数据；绑定范围后的记录经过按键类型校验，不接受任意正文。 */
 export function saveReadingCheckpoint<T extends object>(client: SurfaceClient, key: string, value: T) {
   // 已绑定的作用域只接受经过元数据校验的内容，避免把正文写入检查点。
   const store = state(client),
@@ -338,6 +342,10 @@ export type ReadingPosition = {
   version?: string;
   view?: string;
 };
+/**
+ * 视图正文 ready 后按客户端、键和实际 DOM 节点恢复一次滚动位置。
+ * 恢复前的 scroll 事件被忽略，避免初始布局把有效检查点覆盖为零。
+ */
 export function useReadingScroll<T extends HTMLElement = HTMLDivElement>(
   client: SurfaceClient,
   key: string,

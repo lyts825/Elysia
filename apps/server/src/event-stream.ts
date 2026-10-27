@@ -28,8 +28,9 @@ export class BoundedEventStream {
     return !this.closed && !this.blocked && !this.stream.destroyed;
   }
   /**
-   * 写入已编码的事件帧。超过单帧或缓冲上限时断开连接；背压时返回 false。
+   * 写入已编码的事件帧。超过单帧或缓冲上限时断开连接；背压时拒绝后续帧并返回 false。
    * delta 为真时记录丢失的增量，恢复后提示客户端重新读取完整状态。
+   * 底层 write 返回 false 的那一帧已被接收，仍返回 true；持久事件调用方可安全推进游标。
    */
   write(frame: string, delta = false) {
     if (!this.available) {
@@ -51,6 +52,7 @@ export class BoundedEventStream {
     }
     return true;
   }
+  /** 清理内部超时并禁止新帧；响应连接本身由调用方或超时处理负责关闭。 */
   dispose() {
     this.closed = true;
     clearTimeout(this.timeout);

@@ -19,6 +19,11 @@ function savedRatio(ratioKey: string) {
   return 0.5;
 }
 
+/**
+ * 为工作区预览和产物预览提供可切换/分屏的停靠容器。已访问视图由 Activity 保留，
+ * 窄屏或展开模式将会话设为 inert 并接管焦点；退出后恢复原交互状态。
+ * 分屏比例按入口保存，当前产物、视图及展开状态按会话检查点保存；旧产物可按 ID 单独补读。
+ */
 export function PreviewDock({
   children,
   workspaceAvailable,
@@ -69,6 +74,7 @@ export function PreviewDock({
   const [lastArtifactId, setLastArtifactId] = useState(selectedArtifactId || saved?.artifactId);
   const handledWorkspaceRequest = useRef(saved?.requestId || '');
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
+  // 两个阅读区各需至少 320 px，另计分隔条；不足时切换为单面板模式。
   const single = available < 668;
   const usable = Math.max(0, available - 8);
   const minimum = 320;

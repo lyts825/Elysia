@@ -5,6 +5,11 @@ import { RunModal } from './RunSetupModal';
 import { readRunSetupDraft, writeRunSetupDraft, type RunSetupDraft } from './RunSetupDraft';
 import type { WorkbenchCache } from './WorkbenchCache';
 
+/**
+ * 在 RunModal 外提供按草稿键的加载和保存门禁。读取完成前不挂载可编辑表单，避免默认值
+ * 回写覆盖尚未读到的保留草稿；解析失败只显示恢复入口，清空必须由用户明确操作。
+ * submit 同时获得精确序列化快照，父级可据此仅清理本次创建所用的未变化草稿。
+ */
 export function PersistentRunSetup({
   cache,
   draftKey,
@@ -44,6 +49,7 @@ export function PersistentRunSetup({
       live = false;
     };
   }, [cache, draftKey, retry]);
+  /** 语义相同的规范化表单沿用原始字节，防止默认字段补齐导致创建成功后的精确清理失配。 */
   const snapshot = (draft: RunSetupDraft) => {
     const raw = writeRunSetupDraft(draft);
     const current = cache.get(draftKey);
@@ -63,6 +69,7 @@ export function PersistentRunSetup({
     if (typeof current === 'string' && comparable(current) === comparable(raw)) return current;
     return raw;
   };
+  /** 序列化或缓存保存失败时返回 false，使“打开设置”等后续跳转保留当前表单。 */
   const save = (draft: RunSetupDraft) => {
     try {
       cache.set(draftKey, snapshot(draft));

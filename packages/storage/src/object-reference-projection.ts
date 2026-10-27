@@ -9,6 +9,10 @@ type Source = { table: string; key: string };
 /** Derived roots are invalidated by authoritative body writes, including external SQLite writers. */
 export class ObjectReferenceProjection {
   private sources: Source[];
+  /**
+   * 注册实体、事件和命令的引用来源；触发器使正文写入立即失效旧投影。
+   * expand 与 refs 由 Store 注入，让本模块只负责索引生命周期，不重定义正文或引用格式。
+   */
   constructor(
     private db: DatabaseSync,
     tables: readonly string[],
@@ -73,6 +77,7 @@ export class ObjectReferenceProjection {
       .run(table, key, json, digest(json), refs.length);
     if (table === 'commands') this.commandTokens(key, value);
   }
+  /** 只展开缺失投影的来源行；写入失败保留缺失状态，回收流程不能假定这些行没有引用。 */
   private warm(source: Source) {
     for (const row of this.db
       .prepare(

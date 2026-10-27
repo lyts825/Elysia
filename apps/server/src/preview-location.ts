@@ -17,7 +17,10 @@ const querySchema = z.object({
     .regex(/^[a-f0-9]{48}$/)
     .optional(),
 });
-/** 注册预览入口及定位路由；断开请求时取消读取，响应禁止缓存。 */
+/**
+ * 注册入口和锚点定位查询，路径/编码/版本/续读游标均由服务端 schema 校验。
+ * 客户端提前断开时取消当前扫描，finally 卸载监听；定位服务再按任务授权和文件版本核验来源。
+ */
 export function registerPreviewLocationRoutes(app: FastifyInstance, previews: PreviewService) {
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
     '/api/runs/:runId/tasks/:taskId/preview/entry',

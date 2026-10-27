@@ -44,6 +44,7 @@ export class Processes {
       } catch {}
     }
   }
+  /** 对活动 PID 表按任务过滤并并行终止；未传集合时清理本实例管理的全部进程。 */
   async cancel(taskIds?: Set<string>) {
     await Promise.all(
       [...this.children.entries()]

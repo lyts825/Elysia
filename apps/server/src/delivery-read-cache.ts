@@ -41,6 +41,7 @@ export function cachedDeliveryRead<T>(store: Store, key: string, read: () => T):
         | { value: string }
         | undefined
     )?.value;
+  // token 与当前数据库事务视图一起变化；回滚后旧 token 恢复，不会误复用中间写入的缓存。
   const before = epoch();
   if (!before) return read();
   let cache = caches.get(store);
@@ -48,6 +49,7 @@ export function cachedDeliveryRead<T>(store: Store, key: string, read: () => T):
     cache = { epoch: before, entries: new Map(), bytes: 0 };
     caches.set(store, cache);
   }
+  // 命中后移动到末尾，容量淘汰始终先移除最近未使用的完整快照。
   const found = cache.entries.get(key);
   if (found) {
     cache.entries.delete(key);

@@ -70,6 +70,7 @@ const mutation = z
 type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
+/** 从白名单缓存键解析实体引用，用于实体删除后的定向清理，不能从任意键推导数据库表。 */
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
   const schedules = projectSchedulesDraftKey.exec(key);
   if (schedules) return { table: 'projects', id: schedules[1] };
@@ -112,6 +113,10 @@ function assertValue(key: string, value: string | boolean) {
     );
 }
 
+/**
+ * 校验规范 Base64、解压上限及值类型，返回实际原始字节用于容量统计。
+ * 损坏条目保留并明确报错，不能当作空草稿覆盖用户输入。
+ */
 function decode(row: Row): { entry: Entry; bytes: number } {
   try {
     invariant(row.value.length <= maxEncodedBytes, 'WORKBENCH_CORRUPT', '工作台缓存条目过大');
@@ -154,7 +159,10 @@ export function workbenchScope(store: Store) {
   const directory = path.normalize(path.resolve(store.directory));
   return hash(`workbench:v1:${process.platform === 'win32' ? directory.toLowerCase() : directory}`);
 }
-/** 注册工作台读取与保存接口，并维护相关索引失效触发器。 */
+/**
+ * 管理带版本的本地草稿和显示偏好。缓存键和值均受白名单及总容量限制，
+ * 保存用 expectedRevision 防止多窗口覆盖，派生大小索引在原文变化时失效并可重建。
+ */
 export function registerWorkbench(app: FastifyInstance, store: Store) {
   const scope = workbenchScope(store);
   // Older application versions and management deletes invalidate the derived sizes too.
@@ -171,6 +179,7 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
       key: string;
     }[];
   const prune = (entries: { key: string }[]) =>
+    // 只移除所属项目/运行已不存在的条目；格式未知的键必须报错保留，不能无差别清空缓存。
     entries.filter((row) => {
       const key = row.key.slice(prefix.length);
       if (!keySchema.safeParse(key).success)
@@ -194,6 +203,7 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
       );
   };
   const totalBytes = (saved: { key: string }[]) => {
+    // 可用大小索引避免每次写草稿解压全库；缺失/损坏的索引只从保留正文重建。
     let total = 0;
     for (const row of saved) {
       const metadata = store.db

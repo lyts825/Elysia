@@ -149,6 +149,7 @@ export function sourceMessage(store: Store, runId: string, messageId: string): S
     truncated: bytes.length > textLimit,
   };
 }
+/** 分别分页公开消息和产物元数据；一页原始消息可能无可选公开正文，但仍可有更早页面。 */
 export function sourceOptions(
   store: Store,
   runId: string,
@@ -202,7 +203,10 @@ export function sourceOptions(
     artifactPage: artifacts.page,
   };
 }
-/** 核对来源运行版本，捕获选中的消息、复核备注和产物差异。 */
+/**
+ * 将用户明确选择的来源固定为不可变快照：版本、公开消息、复核备注、产物变化及原始字节摘要
+ * 均需核验。文本/单产物/总产物和快照大小分别有界，超限直接拒绝而不截断修改要求。
+ */
 export function captureRunSource(store: Store, selection: RunSourceSelection): RunSourceSnapshot {
   const source = nativeRun(store, selection.runId);
   assertRevision(selection.expectedRevision, source.revision);
@@ -275,7 +279,10 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
   );
   return { ...snapshot, hash: hash(stable(snapshot)) };
 }
-/** 将来源快照保存为对象并关联到新运行的根任务。 */
+/**
+ * 在创建命令事务中保存来源元数据对象及新的产物引用，再把快照绑定到新运行。
+ * 复用相同对象正文而生成独立 importedId；导入来源保持 verified=false，不能继承上轮验收。
+ */
 export function attachRunSource(store: Store, run: Run, source: RunSourceSnapshot) {
   const bundle = store.object(stable(source));
   store.put<Artifact>('artifacts', {
@@ -372,6 +379,7 @@ function criterionEvidence(
   }
   return groups;
 }
+/** 对指定验收项独立计数并分页证据；expectedRootRevision 防止把两版交付的证据页混合。 */
 export function deliveryEvidencePage(
   store: Store,
   runId: string,
@@ -396,6 +404,10 @@ export function deliveryEvidencePage(
     page: deliveryPage(offset, 20, group.total),
   };
 }
+/**
+ * 从同一交付状态构造人工复核视图，标准、每项证据和产物均有独立分页。
+ * 这里只展示提交时结构与引用证据，不把工具成功或文件存在等同于内容满足需求。
+ */
 export function deliveryReview(
   store: Store,
   runId: string,

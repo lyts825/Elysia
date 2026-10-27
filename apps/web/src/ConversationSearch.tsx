@@ -12,6 +12,11 @@ const roleLabels: Record<string, string> = {
   system: '系统',
 };
 
+/**
+ * 在单个运行内按需搜索完整公开消息。输入防抖、分页请求和消息定位分别维护状态；
+ * 查询或运行改变会取消旧请求并递增序号，结果最多保留 60 条。
+ * 选择结果等待外层定位成功，失败保留该消息 ID 供重试；关闭时恢复原触发焦点。
+ */
 export function ConversationSearch({
   runId,
   onSelect,
@@ -50,6 +55,7 @@ export function ConversationSearch({
   const context = useRef({ runId, query: query.trim(), open });
   context.current = { runId, query: query.trim(), open };
   const panelId = useId();
+  /** 查询身份固定为开始读取时的运行和关键字；append 只用于同一查询的后续页。 */
   const read = async (before?: string | null, append = false, focusFeedback = false) => {
     // 每次查询取消上一请求并递增序号，防止较慢的旧结果覆盖新查询。
     request.current?.abort();
@@ -144,6 +150,7 @@ export function ConversationSearch({
     if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     onClose?.();
   };
+  /** 外层可能需要异步切换历史窗口；结果只回写仍属于原运行与查询的搜索面板。 */
   const select = async (messageId: string) => {
     const target = { ...context.current };
     setSelecting(messageId);

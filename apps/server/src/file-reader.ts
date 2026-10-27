@@ -104,6 +104,7 @@ export function resolveEncoding(prefix: Uint8Array, requested: TextFileEncoding 
       requested === 'auto' ? (bom ? ('bom' as const) : ('default' as const)) : ('manual' as const),
   };
 }
+/** 判断当前位置完整字符的字节宽度；拒绝截断的多字节序列和孤立 UTF-16 代理码元。 */
 function width(bytes: Uint8Array, index: number, encoding: ResolvedTextEncoding) {
   const first = bytes[index];
   if (encoding === 'utf-16le' || encoding === 'utf-16be') {
@@ -156,6 +157,10 @@ function width(bytes: Uint8Array, index: number, encoding: ResolvedTextEncoding)
 // GB18030 lead/trail ranges overlap, so arbitrary positions need a known boundary.
 // Cache only positions, never file contents; all cache dimensions are bounded.
 const checkpoints = new Map<string, number[]>();
+/**
+ * GB18030 首/尾字节范围重叠，不能仅看目标附近几字节猜边界；从最近已知检查点扫描。
+ * 缓存只保存版本化位置，不保存正文，并限制文件键数与每文件检查点数量。
+ */
 async function gbBoundary(
   handle: TextReadHandle,
   key: string,
@@ -189,6 +194,7 @@ async function gbBoundary(
   }
   return position;
 }
+/** 将请求字节位置向后调整到完整字符边界；返回实际偏移，客户端必须沿 nextOffset 继续。 */
 async function boundary(
   handle: TextReadHandle,
   encoding: ResolvedTextEncoding,
@@ -243,6 +249,10 @@ export async function readTextPage(
     await opened.handle.close();
   }
 }
+/**
+ * 从已打开来源读取一页文本。offset/limit 都以字节计，返回文本及实际页边界；最多额外读取
+ * 四字节以保留完整字符。validate 由来源提供，在解码后再次确认版本，防止混读两版文件。
+ */
 export async function readTextSource(
   opened: {
     handle: TextReadHandle;
@@ -326,7 +336,10 @@ export type FileResource = {
   contentLength?: number;
   acceptRanges: boolean;
 };
-/** 打开文件资源流，支持版本校验、字节范围及取消信号。 */
+/**
+ * 创建有界文件流。普通资源支持单个 HTTP 字节范围；HTML/CSS 做入口 URL 改写时长度变化，
+ * 因此关闭 Range 和 Content-Length。完整不可变产物可核对 verifyHash，部分读取不声称整文件验真。
+ */
 export async function streamFile(
   filename: string,
   mediaType: string,
@@ -432,6 +445,7 @@ export async function streamFile(
 // Hold one final chunk until the source version (and immutable artifact digest)
 // is checked, so a changed stream ends with an explicit incomplete response.
 class FileStreamGuard extends Transform {
+  // 保留最后一块直到版本/摘要检查通过，校验失败时响应显式不完整，不发送看似完整的尾部。
   private last: Buffer | null = null;
   private digest;
   constructor(
@@ -467,6 +481,7 @@ class FileStreamGuard extends Transform {
 // A small state machine scopes root-relative URLs across arbitrary stream boundaries.
 // Whitespace and attributes are emitted immediately, so even malformed huge tags use bounded memory.
 class ScopedResourceTransform extends Transform {
+  // 小状态机跨 chunk 保存属性/引号状态；只缓存短属性名，巨大畸形标签不能无限积累正文。
   private decoder: TextDecoder;
   private word = '';
   private wordOverflow = false;

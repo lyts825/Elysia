@@ -6,6 +6,10 @@ import './record-history.css';
 
 type HistoryPage = { items: any[]; page: RecordPage; readCoverage?: ProjectionReadCoverage };
 
+/**
+ * 请求/操作/产物的按需历史列表，before 游标配合 trail 支持返回上一页。
+ * 外部版本或总数变化触发当前页重读；readCoverage 另行展示无法读取记录，不把可读页当作全集。
+ */
 export function RecordHistory({
   runId,
   kind,
@@ -146,6 +150,7 @@ export function RecordHistory({
     </details>
   );
 }
+/** 展开时才读取完整记录，记录修订变化清空旧正文；读取失败仍保留上层已有摘要。 */
 function RecordItem({ runId, kind, record }: { runId: string; kind: string; record: any }) {
   const { api } = useSurfaceClient();
   const [value, setValue] = useState<any>(null),

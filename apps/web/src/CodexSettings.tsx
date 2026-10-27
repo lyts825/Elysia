@@ -22,6 +22,11 @@ type State = {
   message?: string;
   attempt?: { status: string; userCode?: string; message?: string };
 };
+/**
+ * 将本机 Codex 登录或 Elysia 独立登录绑定到供应商草稿，登录状态和型号目录分别核对。
+ * refresh 序号使切换来源后的旧结果失效；只有账号身份、当前目录、文字型号和思考强度
+ * 都匹配才向父级报告 ready，连接成功本身不代表型号选择已可保存。
+ */
 export function CodexSettings({
   config,
   change,
@@ -53,6 +58,7 @@ export function CodexSettings({
     errorRef.current?.scrollIntoView({ block: 'nearest' });
   }, [error]);
   current.current = { config, change };
+  /** 先读取连接状态再读取该账号目录；仅空型号自动选默认，已保存但失效型号保留供用户处理。 */
   const refresh = async (reconnect = false, focusOnFailure = reconnect) => {
     const seq = ++generation.current;
     setBusy(true);
@@ -113,6 +119,7 @@ export function CodexSettings({
     }, 2000);
     return () => clearInterval(timer);
   }, [status?.attempt?.status]);
+  /** 登录或退出动作完成后统一重读状态，错误只改变反馈，不替换父级尚未保存的草稿。 */
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError('');

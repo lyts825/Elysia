@@ -30,6 +30,7 @@ type Worker = {
 };
 const managers = new WeakMap<Store, DeliveryArtifactWarmReads>();
 
+/** 用会话 cookie 的摘要隔离预热订阅，公开作业视图不保存或返回 cookie 原文。 */
 export const deliveryWarmSession = (request: FastifyRequest) =>
   hash(
     request.headers.cookie
@@ -75,6 +76,7 @@ export class DeliveryArtifactWarmReads {
       .prepare('SELECT 1 FROM artifact_delivery_metadata_dirty_v1 WHERE run_id=? LIMIT 1')
       .get(runId);
   }
+  /** 仅首次终结生效；移除订阅后无调用者的 worker 才可退休，并唤醒等待该 job 的读取者。 */
   private finish(
     job: Job,
     status: DeliveryArtifactWarmJob['status'],
@@ -95,6 +97,7 @@ export class DeliveryArtifactWarmReads {
     for (const [key, job] of this.jobs)
       if (job.view.status !== 'warming' && Date.now() - job.updated > 120_000) this.jobs.delete(key);
   }
+  /** jobId 必须同时匹配运行和会话，不能凭猜到的作业 ID 读取或取消其他窗口的工作。 */
   private bound(runId: string, jobId: string, session: string) {
     const job = this.jobs.get(jobId);
     if (!job || job.view.runId !== runId || job.session !== session)
@@ -107,6 +110,7 @@ export class DeliveryArtifactWarmReads {
       );
     return job;
   }
+  /** 返回订阅副本；未指定 ID 时仅查当前会话，缺失时反映队列是否仍有待处理记录。 */
   view(runId: string, session: string, jobId?: string) {
     this.prune();
     const job = jobId
@@ -123,6 +127,10 @@ export class DeliveryArtifactWarmReads {
           backfilled: 0,
         };
   }
+  /**
+   * 幂等创建会话订阅；同运行共享有界回填 worker，不同调用者保留各自取消身份。
+   * 限制保留作业数和同时工作的运行数；无脏记录时立即完成，不启动后台循环。
+   */
   start(runId: string, jobId: string, session: string) {
     if (this.closed) throw new AppError('DELIVERY_WARM_CLOSED', '读取服务已关闭', true, null, 503);
     const run = this.store.require<Run>('runs', runId);
@@ -173,15 +181,21 @@ export class DeliveryArtifactWarmReads {
     }
     return job;
   }
+  /** 只取消选定订阅；仍有其他订阅者时不会停止共享 worker。 */
   cancel(runId: string, jobId: string, session: string) {
     const job = this.bound(runId, jobId, session);
     this.finish(job, 'cancelled');
     return structuredClone(job.view);
   }
+  /** 终结作业可主动从保留集合移除，活动作业必须先走取消或完成流程。 */
   release(runId: string, jobId: string, session: string) {
     const job = this.bound(runId, jobId, session);
     if (job.view.status !== 'warming') this.jobs.delete(jobId);
   }
+  /**
+   * 分批提交回填并在批次间让出事件循环；前后都核对产物 epoch，变更后拒绝混合结果。
+   * 根据批次耗时在 32/64 条间调整工作量，五分钟未收束或不可读时向各订阅报告失败。
+   */
   private async drain(worker: Worker) {
     const timer = setTimeout(() => worker.controller.abort(), 300_000);
     timer.unref();
@@ -232,6 +246,7 @@ export class DeliveryArtifactWarmReads {
       worker.controller.abort();
     }
   }
+  /** 等待自己的订阅完成；signal 取消只释放本调用，完成前的错误不执行后续正式读取。 */
   async warm(runId: string, signal?: AbortSignal, session = hash('internal-reader')) {
     signal?.throwIfAborted();
     if (this.closed) throw new AppError('DELIVERY_WARM_CLOSED', '读取服务已关闭', true, null, 503);
@@ -255,6 +270,7 @@ export class DeliveryArtifactWarmReads {
       signal?.removeEventListener('abort', abort);
     }
   }
+  /** 停止接入并取消订阅，等全部在途 worker 收束后移除存储关闭钩子。 */
   async close() {
     this.stop();
     await Promise.allSettled([...this.draining].map((w) => w.work));
@@ -276,10 +292,15 @@ export function deliveryArtifactWarmReads(store: Store) {
   }
   return manager;
 }
+/** 调用单 Store 管理器的等待接口，供交付读取入口复用。 */
 export function warmDeliveryMetadata(store: Store, runId: string, signal?: AbortSignal, session?: string) {
   return deliveryArtifactWarmReads(store).warm(runId, signal, session);
 }
 
+/**
+ * 将 HTTP 断连绑定到本读取者的预热取消，逐个准备运行后执行同步 read 回调。
+ * allowUnreadable 仅容许特定不可读问题交给回调自行降级，版本冲突及其他错误仍向上传递。
+ */
 export async function withWarmDeliveryMetadata<T>(
   store: Store,
   runId: string | string[],
@@ -312,6 +333,7 @@ export async function withWarmDeliveryMetadata<T>(
     reply.raw.off('close', close);
   }
 }
+/** 注册会话绑定的创建/查询/取消接口；服务器关闭时等待管理器释放，避免遗留回填工作。 */
 export function registerDeliveryArtifactWarm(app: FastifyInstance, store: Store) {
   const manager = deliveryArtifactWarmReads(store);
   app.addHook('onClose', async () => {

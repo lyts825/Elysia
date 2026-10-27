@@ -49,6 +49,8 @@ export type ProviderEvent =
 export interface ProviderAdapter {
   /** 接入层声明能力；compile 将共享上下文映射为具体协议，stream 逐步产出事件。 */
   capabilities: { streaming: boolean; tools: boolean; nativeReplay: boolean };
+  /** 仅生成可序列化协议请求；凭据读取与网络副作用留到 stream。 */
   compile(context: CompiledContext): Record<string, unknown>;
+  /** 通过 signal 响应取消，正常结束必须产出 completed，不能以 EOF 冒充完成。 */
   stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent>;
 }

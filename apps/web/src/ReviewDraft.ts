@@ -5,6 +5,7 @@ import type {
   ReviewSourceNote,
 } from '../../../packages/contracts/src/workflow';
 
+/** 一条本机备注同时保留原索引和原标准文字，不能仅按后来同索引标准自动复用。 */
 export type ReviewNote = {
   index: number;
   text: string;
@@ -20,6 +21,7 @@ export type ReviewDraft = {
   unlinked: { text: string; note: string; unknownStandard?: boolean; fingerprint?: string }[];
 };
 export const unknownCriterionText = '旧标准内容未记录';
+/** 旧数据未捕获原标准时保留明确占位，后续重关联必须由用户核对。 */
 export function criterionSnapshot(note: { criterionText?: string | null }) {
   return note.criterionText?.trim() ? note.criterionText : unknownCriterionText;
 }
@@ -95,6 +97,10 @@ export type ReviewCandidate = {
   text: string;
   note: string;
 };
+/**
+ * 汇总已保存、本机未保存和未关联备注，保留来源、原标准及指纹作为选取身份。
+ * 仅去掉与已保存内容完全重复的本机项；不同版本或文字保留供用户明确选择。
+ */
 export function reviewCandidates(
   review: (DeliveryUserReview & { stale: boolean }) | null,
   draft: ReviewDraft | undefined,

@@ -14,6 +14,7 @@ const version = (stat: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint
 // The immutable target is checked by inode/size/mtime plus its full expected SHA-256.
 const byteVersion = (stat: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint }) =>
   `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+/** 通过 lstat 与 realpath 同时检查末端类型和整条路径，返回 bigint 文件身份供前后比较。 */
 async function plain(filename: string, directory = false) {
   const stat = await fs.lstat(filename, { bigint: true });
   // 不跟随符号链接，并要求解析后的路径仍与传入路径一致。

@@ -22,7 +22,9 @@ import type { RunControl } from './scheduler.js';
 import { delay } from './async.js';
 
 export interface ModelRequestServices {
+  /** 由代理创建时的冻结绑定选择适配器，不能读取当前默认模型代替它。 */
   adapterFactory(agent: Agent): ProviderAdapter;
+  /** 接收已经持久提交的正文片段；offset 是该请求的 UTF-16 字符偏移。 */
   onDelta(runId: string, taskId: string, text: string, requestId: string, offset: number): void;
   onReasoningDelta(value: ReasoningDelta): void;
 }
@@ -138,6 +140,7 @@ export class ModelRequestRunner {
         context.estimatedTokens,
         logicalId,
       );
+      // 先预留预算和请求身份再发网络请求，中断后才能保守保留未知用量并回查原始片段。
       store.startRequestStream(record.id);
       let partial = '';
       let reasoningOffset = 0,
@@ -202,6 +205,7 @@ export class ModelRequestRunner {
         break;
       } catch (error) {
         const rejected =
+          // 只有服务端明确在开始响应前拒绝的 4xx 才可按未执行释放，其他异常可能已产生用量。
           error instanceof ProviderError &&
           !error.responseStarted &&
           error.status >= 400 &&
@@ -268,6 +272,7 @@ export class ModelRequestRunner {
     }
     if (!complete) return;
     const completed = complete;
+    // 用量结算、助手消息、步骤计数和流指针清理同事务提交，避免完成消息与账本各写一半。
     const assistantMessage = store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
       metrics = this.publishContext(

@@ -14,6 +14,7 @@ const count = (value: number | null | undefined) => (value == null ? '—' : val
 const percentage = (projection?: ContextProjection) =>
   projection?.usageRatio == null ? null : Math.round(projection.usageRatio * 100);
 
+/** 紧凑入口只展示估算压力；占用未知时显示占位，点击由上层打开完整快照。 */
 export function ContextMeter({
   projection,
   open,
@@ -61,6 +62,7 @@ export function ContextMeter({
   );
 }
 
+/** 分开呈现输入估算、运行预留、压缩结果和最近供应商实测，避免将单次窗口等同累计预算。 */
 export function ContextWindowDetails({ projection }: { projection: ContextProjection }) {
   const used = percentage(projection);
   const compression = projection.compression;
@@ -148,6 +150,7 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
   );
 }
 
+/** 展示各代理独立窗口，由上层根据 safeToConfigure 决定具体设置与刷新流程。 */
 export function ContextOverview({
   contexts,
   titleFor,
@@ -180,6 +183,10 @@ export function ContextOverview({
   );
 }
 
+/**
+ * 打开时固定代理与运行修订作为编辑基线；外部快照变化即锁定提交，保留当前草稿供核对。
+ * submit 同时携带两层期望修订，最终容量和安全检查点仍由内核验证。
+ */
 export function ContextWindowModal({
   projection,
   runId,
@@ -261,6 +268,7 @@ export function ContextWindowModal({
   );
 }
 
+/** 新运行的初始窗口选择，没有持久修订；仅在型号可用且草稿满足当前容量限制时提交给上层。 */
 export function NewContextWindowModal({
   policy: initial,
   provider,

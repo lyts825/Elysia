@@ -24,7 +24,10 @@ const supported = {
 };
 
 /** Build from the frozen binding and its exact credential reference, never a live provider record. */
-/** 校验 CLI 与 API 协议及凭据，再生成运行终端所需的连接配置。 */
+/**
+ * 从冻结连接生成容器命令、环境和私有 HOME 配置。实际 credential 只进入环境及脱敏列表，
+ * 不写入生成的普通配置文件；拒绝命令中已有的模型/端点覆盖参数，避免两份配置争夺优先级。
+ */
 export function terminalConnectionConfiguration(
   rawProfile: AgentTerminalProfile,
   rawBinding: TerminalConnectionBinding,
@@ -50,6 +53,7 @@ export function terminalConnectionConfiguration(
     secrets: [credential],
   };
   const refuseFlags = (flags: string[]) => {
+    // 必须先移除冲突参数再使用管理器连接，不能把用户自带配置静默覆盖成另一组授权。
     if (command.slice(1).some((part) => flags.some((flag) => part === flag || part.startsWith(flag + '='))))
       throw new AppError(
         'TERMINAL_CONNECTION_COMMAND',

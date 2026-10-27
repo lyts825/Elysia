@@ -14,8 +14,11 @@ export type TaskCenterDestination =
   | { kind: 'tasks'; taskId?: string }
   | { kind: 'artifacts' | 'plan' | 'reply' | 'questions' | 'archive' | 'limits' | 'settings' };
 
-// The list is a snapshot. Resolve the destination again from freshly read detail;
-// navigation never accepts a plan, resumes execution, or settles a request.
+/**
+ * 用刚读取的完整详情重新确定任务中心的跳转目标，列表分类仅是入口提示。
+ * 读取异常、归档、终端验收、未知操作/用量和完整摘要依次优先；这里只导航，
+ * 不接受计划、不恢复执行，也不替用户结算未知请求。
+ */
 export function taskCenterDestination(
   detail: Detail,
   target: TaskCenterTarget,

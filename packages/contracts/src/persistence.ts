@@ -28,6 +28,7 @@ export type RequestLedgerRow = Pick<
     'inputTotal' | 'outputTotal' | 'cost' | 'cacheRead' | 'ttftMs'
   > | null;
 };
+/** 持久实体表的闭合集合；动态表名调用只能来自该联合，不能直接使用外部输入。 */
 export const tables = [
   'project_spaces',
   'projects',

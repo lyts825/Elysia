@@ -26,6 +26,7 @@ export function deepSeekModelReplacement(
   return undefined;
 }
 
+/** 返回显式迁移提示或空字符串；读取/编译旧配置时不会在这里替换保存的型号。 */
 export function retiredDeepSeekModelIssue(
   provider: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'model' | 'reasoningEffort'>,
 ): string {

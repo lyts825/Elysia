@@ -9,6 +9,7 @@ const occupancy = {
   coverage: TerminalMaintenanceCoverage.default('complete'),
   measurementReason: z.string().optional(),
 };
+/** 已开始但尚未确认完成的清理记录，保留身份和修订以便定向重试。 */
 export const TerminalPendingCleanup = z
   .object({
     id: z.string().uuid(),
@@ -19,6 +20,7 @@ export const TerminalPendingCleanup = z
     message: z.string(),
   })
   .strict();
+/** 占用汇总绑定扫描摘要；coverage 表达未能完整测量的部分，protected/preserved 说明保留原因。 */
 export const TerminalMaintenanceOverview = z
   .object({
     revision: digest,
@@ -51,6 +53,10 @@ export const TerminalMaintenanceOverview = z
   })
   .strict();
 export type TerminalMaintenanceOverview = z.infer<typeof TerminalMaintenanceOverview>;
+/**
+ * 可审阅的维护预览，列出精确对象、扫描摘要及有效期。
+ * 预览本身不执行动作；应用时必须仍匹配 expectedRevision，过期或内容变化应重新扫描。
+ */
 export const TerminalMaintenancePlan = z
   .object({
     id: z.string().uuid(),
@@ -80,9 +86,11 @@ export const TerminalMaintenancePlan = z
   })
   .strict();
 export type TerminalMaintenancePlan = z.infer<typeof TerminalMaintenancePlan>;
+/** 幂等应用某份预览的命令，不接受客户端自行扩展待操作路径列表。 */
 export const TerminalMaintenanceApply = z
   .object({ commandId: z.string().uuid(), planId: z.string().uuid(), expectedRevision: digest })
   .strict();
+/** 会话检查点备份元数据；consistent 表达捕获一致性，不表示备份已在当前环境恢复验证。 */
 export const TerminalSessionBackupView = z
   .object({
     id: z.string().uuid(),
@@ -121,6 +129,7 @@ export const TerminalBackupPage = z
   })
   .strict();
 export type TerminalBackupPage = z.infer<typeof TerminalBackupPage>;
+/** 针对当前运行状态重新计算恢复/删除资格，历史列表中的旧资格不能替代本次检查。 */
 export const TerminalBackupEligibility = z
   .object({
     backupId: z.string().uuid(),
@@ -135,6 +144,7 @@ export const TerminalBackupEligibility = z
   })
   .strict();
 export type TerminalBackupEligibility = z.infer<typeof TerminalBackupEligibility>;
+/** 不同扫描种类携带各自的身份与修订，拒绝将恢复请求伪装为普通占用读取。 */
 export const TerminalMaintenanceScanInput = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('overview') }).strict(),
   z.object({ kind: z.literal('cleanup') }).strict(),
@@ -161,6 +171,7 @@ export const TerminalMaintenanceScanInput = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
+/** 后台扫描进度；completed 后可能携带 overview 或 plan，取消/失败不等于动作已经执行。 */
 export const TerminalMaintenanceScan = z
   .object({
     id: z.string().uuid(),

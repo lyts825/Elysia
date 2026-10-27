@@ -4,6 +4,10 @@ import { useId, useState } from 'react';
 import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
 import './detail-read-notice.css';
 
+/**
+ * 分别显示事件预览缺口、业务记录不可读和持久调度暂停。重新读取不等于恢复执行；
+ * 停止或清除已结束任务的暂停标记是用户明确触发的独立动作，并单独展示确认结果与错误。
+ */
 export function DetailReadNotice({
   detail,
   retry,

@@ -29,6 +29,7 @@ const configSchema = z
     needsConfiguration: z.boolean(),
   })
   .strict();
+/** 将客户端断开传到只读扫描/同步准备；正常响应完成后移除请求监听。 */
 function signalFor(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -39,7 +40,10 @@ function signalFor(request: FastifyRequest, reply: FastifyReply) {
   });
   return controller.signal;
 }
-/** 注册本地代理资源扫描、同步和管理路由；服务关闭时释放同步器。 */
+/**
+ * 本地资源采用扫描→选择→带版本同步的流程，配置写入携带 commandId 以处理网络重试。
+ * MCP 检测是独立显式操作，导入配置本身不连接外部服务；HTTP 输入先接受有界 schema 校验。
+ */
 export function registerLocalAgentRoutes(
   app: FastifyInstance,
   store: Store,

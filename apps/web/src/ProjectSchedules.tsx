@@ -59,6 +59,7 @@ const recordFields = (record: ProjectSchedule): Draft['fields'] => ({
   count: String(record.settings.maxRuns),
   until: localDate(record.settings.until),
 });
+/** 严格恢复定时表单和待核对命令；格式错误时抛错，禁止把原始输入静默当作空草稿。 */
 function parseDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1, fields: initialFields() };
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('定时任务草稿无法读取，原文保留。');
@@ -76,6 +77,10 @@ type ProjectSchedulesProps = {
 export function ProjectSchedules(props: ProjectSchedulesProps) {
   return <ProjectSchedulePanel key={props.projectId} {...props} />;
 }
+/**
+ * 项目定时任务编辑器。服务器列表、来源模板预览和本地草稿分别维护“当前有效”标记，
+ * 编辑或重读撤销先前确认。未知写入结果保留精确命令，明确 HTTP 拒绝才解锁新操作。
+ */
 function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: ProjectSchedulesProps) {
   const { api, mutation } = useSurfaceClient();
   const base = `/projects/${projectId}/schedules`,
@@ -246,6 +251,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setDeleteTarget(undefined);
     setNotice('');
   }
+  /** 解析数字和本地截止时间；未编辑的已有时间沿用原 ISO 值，避免时区往返造成变化。 */
   function settings() {
     if (!fields) throw Error('草稿尚未读取。');
     if (!fields.until || !Number.isFinite(Date.parse(fields.until))) throw Error('请选择有效截止时间。');
@@ -263,6 +269,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     if (!result.success) throw Error('请填写名称、至少 5 分钟的间隔、1–100 次的上限及有效截止时间。');
     return result.data;
   }
+  /**
+   * 先持久化带 commandId 的请求，再发送创建或更新。响应需要核对项目、任务和来源；
+   * 只有当前 pending 仍对应本次命令时才清理，网络及协议未知结果保留供原样重试。
+   */
   async function send(request: Pending) {
     // 发送前持久化原请求；网络或协议结果未知时保留请求供后续核对。
     if (writing.current || archived || !loaded) return;

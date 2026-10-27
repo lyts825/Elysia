@@ -16,6 +16,7 @@ const uniqueIds = z
   .array(identifier)
   .max(500)
   .refine((ids) => new Set(ids).size === ids.length, '不能重复选择能力');
+/** 用户选择的内置技能与本地资源 ID；去重后保存，执行前还要核对资源是否存在及启用。 */
 export const ProjectCapabilitySelection = z
   .object({
     builtinSkillIds: uniqueIds,
@@ -23,6 +24,7 @@ export const ProjectCapabilitySelection = z
   })
   .strict();
 export type ProjectCapabilitySelection = z.infer<typeof ProjectCapabilitySelection>;
+/** legacy 表示未显式保存的兼容选择，explicit 表示有修订可核对的用户配置。 */
 export interface ProjectIntelligenceConfig extends ProjectCapabilitySelection {
   version: 1;
   projectId: string;
@@ -30,6 +32,7 @@ export interface ProjectIntelligenceConfig extends ProjectCapabilitySelection {
   mode: 'legacy' | 'explicit';
   updatedAt: string | null;
 }
+/** 与入口一起冻结的完整指导和显式参考资源，hash/bytes 核对准确内容而非仅路径。 */
 export interface CapturedSkill {
   id: string;
   name: string;
@@ -85,6 +88,7 @@ export const ProjectMemoryContent = z
   })
   .strict();
 export type ProjectMemoryContent = z.infer<typeof ProjectMemoryContent>;
+/** 不可变旧版本的正文及摘要；恢复旧正文时仍创建更高的当前修订。 */
 export interface ProjectMemoryVersion extends ProjectMemoryContent {
   revision: number;
   hash: string;
@@ -101,6 +105,7 @@ export interface ProjectMemoryList {
   memories: ProjectMemory[];
   limits: typeof PROJECT_INTELLIGENCE_LIMITS;
 }
+/** 编辑与恢复历史互斥；禁止空更新，避免无意生成无内容变化的编辑请求。 */
 export const ProjectMemoryUpdate = ProjectMemoryContent.partial()
   .extend({
     restoreRevision: z.number().int().positive().optional(),

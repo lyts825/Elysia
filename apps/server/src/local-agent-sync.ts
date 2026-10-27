@@ -52,6 +52,7 @@ const within = (root: string, file: string) => {
   return value === '' || (!value.startsWith('..' + path.sep) && value !== '..' && !path.isAbsolute(value));
 };
 
+/** 移除已识别的凭据形态和赋值；属于尽力脱敏，不能保证发现业务文本中所有秘密。 */
 function redact(text: string) {
   return text
     .replace(
@@ -79,6 +80,7 @@ function strings(value: unknown, maximum = 100) {
     return undefined;
   return value as string[];
 }
+/** 只保留不含认证、查询和片段的 HTTP(S) 地址，避免把 URL 中的秘密同步入库。 */
 function safeUrl(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 4000) return undefined;
   try {
@@ -97,6 +99,7 @@ function safeUrl(value: unknown): string | undefined {
     return undefined;
   }
 }
+/** 识别环境变量引用语法，只返回变量名，不解析本机实际值。 */
 function reference(value: unknown) {
   if (typeof value !== 'string') return undefined;
   return /^(?:\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|env:([A-Za-z_][A-Za-z0-9_]*))$/
@@ -105,7 +108,11 @@ function reference(value: unknown) {
     .find(Boolean);
 }
 
-/** 验证导入的本地 MCP 配置及允许的字段，拒绝不符合结构的内容。 */
+/**
+ * 校验用户保存的 MCP 安全配置：只接受显式字段、环境变量名称和有界参数。
+ * stdio 命令/参数拒绝已知明文凭据，HTTP 地址拒绝用户信息及查询参数；此检查只描述
+ * 连接配置，不建立连接、不证明远端工具安全，也不授予调用权限。
+ */
 export function validateLocalMcpConfig(value: unknown): LocalMcpConfig {
   const config = plain(value);
   const keys = new Set([
@@ -196,6 +203,10 @@ export function validateLocalMcpConfig(value: unknown): LocalMcpConfig {
   return result;
 }
 
+/**
+ * 将不同代理的 MCP 格式转换为本地描述。无法安全保留的字段不执行，也不迁移实际秘密，
+ * 而是设置 needsConfiguration，使导入项默认禁用并等待用户补齐引用。
+ */
 function normalizeMcp(value: unknown): LocalMcpConfig {
   const raw = plain(value),
     headers: Record<string, string> = {};
@@ -279,6 +290,7 @@ function normalizeMcp(value: unknown): LocalMcpConfig {
   return config;
 }
 
+/** 禁止重复键、别名和有警告的 YAML，避免宽松解析把导入来源解释成不同配置。 */
 function yaml(source: string): unknown {
   const doc = parseDocument(source, { uniqueKeys: true, schema: 'core', strict: true });
   if (doc.errors.length || doc.warnings.length)
@@ -292,6 +304,7 @@ function tomlMcp(source: string): Record<string, unknown> {
     throw new AppError('LOCAL_CONFIG_INVALID', 'MCP TOML 配置格式无效');
   }
 }
+/** 有界枚举全局/项目 MCP 配置；DSH 另按其插件节点结构查找，不递归执行任何来源代码。 */
 function configEntries(value: unknown, kind: LocalAgentKind) {
   const result: { name: string; value: unknown }[] = [];
   const addMap = (map: unknown, prefix = '') => {
@@ -333,6 +346,10 @@ function textContent(value: unknown): string {
       .join('\n');
   return '';
 }
+/**
+ * 从多种 JSONL 日志中抽取公开用户/助手正文，跳过元事件、侧链和无法解析的行。
+ * 尾部截取时丢弃第一条不完整行；结果只作为脱敏资料，不恢复原代理执行状态。
+ */
 function conversationText(source: string, truncated: boolean) {
   const lines = source.split('\n'),
     result: string[] = [];
@@ -384,6 +401,7 @@ export class LocalAgentSync {
       ],
     };
   }
+  /** 同 commandId 只重放相同载荷；相同 ID 配不同选择或版本时拒绝，避免误合并请求。 */
   private replay(commandId: string | undefined, payload: unknown): LocalAgentOverview | undefined {
     if (!commandId) return undefined;
     const old = this.store.db.prepare('SELECT fingerprint FROM commands WHERE id=?').get(commandId) as
@@ -400,7 +418,10 @@ export class LocalAgentSync {
     if (importedLibrary(this.store).revision !== expected)
       throw new AppError('LOCAL_REVISION_CHANGED', '本机同步目录已更新，请刷新后重试', false, null, 409);
   }
-  /** 按所选来源扫描本地资源；可指定根目录并通过 signal 取消。 */
+  /**
+   * 核验本机来源根目录后扫描候选，结果在当前进程缓存十分钟且最多保留三次扫描。
+   * 扫描只生成可供选择的资料；持久库不变化，MCP 配置不会因此自动连接或启用。
+   */
   async scan(kind: LocalAgentKind, requestedRoot?: string, signal?: AbortSignal): Promise<LocalAgentScan> {
     if (!['codex', 'claude', 'dsh'].includes(kind))
       throw new AppError('LOCAL_SOURCE_INVALID', '请选择 Codex、Claude Code 或 DeepSeek Harness');
@@ -441,6 +462,10 @@ export class LocalAgentSync {
     this.scans.set(scanId, { result, prepared, createdAt });
     return result;
   }
+  /**
+   * 统一采集技能、记忆、会话正文和 MCP 描述。目录/文件/解压/总读取量均有独立上限；
+   * 未知文件、链接、敏感路径和不可解析来源通过警告保留，不推断其可安全导入。
+   */
   private async collect(source: LocalAgentSource, signal?: AbortSignal) {
     const prepared = new Map<string, Prepared>(),
       warnings: string[] = [];
@@ -455,6 +480,7 @@ export class LocalAgentSync {
       if (warnings.length < 100) warnings.push(message);
     };
     const read = async (file: string, tail = false) => {
+      // 路径和文件句柄都核验身份；读取前后的版本变化会使整个候选失效。
       cancelled(signal);
       const relativePath = relative(source.root, file);
       if (!within(source.root, file) || relativePath.split('/').some((part) => secretName.test(part)))
@@ -479,6 +505,7 @@ export class LocalAgentSync {
           throw new AppError('LOCAL_SOURCE_CHANGED', '扫描期间来源已改变', false, null, 409);
         let data: Buffer;
         if (file.endsWith('.zstd')) {
+          // 压缩输入和解压输出分别限流，只保留最近正文尾部，避免小压缩文件放大占用。
           if (before.size > 4 * 1024 * 1024)
             throw new AppError('LOCAL_FILE_LIMIT', '压缩日志超过4MiB，请导出近期 JSONL 或 Markdown');
           const stream = fd.createReadStream({ autoClose: false, highWaterMark: 65536 }),
@@ -532,6 +559,7 @@ export class LocalAgentSync {
           throw new AppError('LOCAL_SOURCE_CHANGED', '扫描期间来源已改变', false, null, 409);
         if (data.includes(0)) throw new AppError('LOCAL_BINARY_SKIPPED', '非 UTF-8 文本不导入');
         if (tail) {
+          // 尾部切片可能起于 UTF-8 续字节，先跳到完整字符边界再进行严格解码。
           let start = 0;
           while (start < data.length && (data[start] & 0xc0) === 0x80) start++;
           data = data.subarray(start);
@@ -827,6 +855,10 @@ export class LocalAgentSync {
     }
     return { prepared, warnings };
   }
+  /**
+   * 显式同步选中的候选：先重新采集并核对扫描时哈希，再在事务中复核库版本。
+   * 保留用户对 MCP 的本地覆盖；覆盖项的来源发生变化时要求重新核对，不能静默替换。
+   */
   async sync(
     scanId: string,
     ids: string[],
@@ -925,6 +957,7 @@ export class LocalAgentSync {
       });
     return commandId ? this.store.command(commandId, payload, commit) : commit();
   }
+  /** 对单个持久项执行版本化修改；启用不完整 MCP 被拒绝，移除只影响本地导入库。 */
   update(
     itemId: string,
     changes: { enabled?: boolean; remove?: boolean; config?: LocalMcpConfig },
@@ -961,6 +994,7 @@ export class LocalAgentSync {
       });
     return commandId ? this.store.command(commandId, payload, commit) : commit();
   }
+  /** 以内容摘要分页预览已导入资料；MCP 展示的是规范化安全配置，而非原始秘密配置文件。 */
   preview(itemId: string, options: { offset?: number; limit?: number; query?: string } = {}) {
     const item = localItem(this.store, itemId, undefined, true),
       text = item.kind === 'mcp' ? stable(item.config) : localItemText(this.store, item);

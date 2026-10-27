@@ -16,6 +16,7 @@ import { deliveryArtifactMetadata, deliveryFingerprintFromArtifacts } from './de
 import { cachedDeliveryRead } from './delivery-read-cache.js';
 import { equalDeliveryArtifactMetadata } from '../../../packages/storage/src/artifact-delivery-metadata.js';
 
+/** 只保存比较所需摘要与产物语义字段；它不是旧文件内容的永久备份。 */
 export type DeliveryBaseline = {
   version: 1;
   fingerprint: string;
@@ -223,6 +224,7 @@ const unknown = (
   fields: null,
   artifacts: null,
 });
+/** 按稳定产物 ID 比较增删改，并核对整体指纹与逐字段差异是否自洽，不一致时返回未知。 */
 function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): DeliveryChangeSummary {
   const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
   let added = 0,
@@ -246,6 +248,7 @@ function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): 
     return unknown('baseline_invalid', 'unknown');
   return { baseline: 'known', status: unchanged ? 'unchanged' : 'changed', fields, artifacts };
 }
+/** 历史基线缺失、损坏和当前不可读分别返回原因，不能将无法比较视为未变化。 */
 function reviewComparison(store: Store, runId: string, reviewId: string, current: DeliveryBaseline | null) {
   const row = store.db
     .prepare('SELECT baseline_json,fingerprint FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
@@ -259,6 +262,7 @@ function reviewComparison(store: Store, runId: string, reviewId: string, current
     summary: current ? compareBaselines(before, current) : unknown('current_unreadable', 'known'),
   };
 }
+/** 返回某份历史复核相对当前基线的字段级比较摘要。 */
 export function deliveryChanges(
   store: Store,
   runId: string,
@@ -293,6 +297,7 @@ export function deliveryArtifactChanges(
   }
   if (current.fingerprint !== expectedCurrentFingerprint)
     throw new AppError('DELIVERY_CHANGED', '交付内容已变化，请重新读取后查看产物变更', false, null, 409);
+  // 缓存键同时绑定不可变复核和当前指纹；未知基线返回 page=null，不伪造零差异集合。
   const comparison = cachedDeliveryRead(store, `changes:${run.id}:${reviewId}:${current.fingerprint}`, () => {
     const { before, summary } = reviewComparison(store, run.id, reviewId, current);
     const items: DeliveryArtifactChange[] = [];
@@ -334,6 +339,7 @@ export function deliveryArtifactChanges(
     page: { offset, limit: 20, total, hasMore, nextOffset: hasMore ? offset + 20 : null },
   };
 }
+/** 保留当前可迁移旧结论后按 rowid 倒序分页，游标必须属于本运行；覆盖字段揭示旧版历史缺口。 */
 export function deliveryReviewHistory(store: Store, run: Run, before?: string): DeliveryReviewHistory {
   ensureCurrentReviewSnapshot(store, run);
   const limit = 20;
@@ -374,6 +380,7 @@ export function deliveryReviewHistory(store: Store, run: Run, before?: string): 
     },
   };
 }
+/** 读取冻结复核正文并尽力比较当前交付；当前不可读仍保留历史记录，数据库错误不降级吞掉。 */
 export function deliveryReviewHistoryDetail(
   store: Store,
   run: Run,

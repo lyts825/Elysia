@@ -17,6 +17,7 @@ export interface ProjectUsageTotals {
   costUnknownCount: number;
   costComplete: boolean;
 }
+/** 按持久请求绑定聚合的连接用量，source 区分 API、订阅及无法核对来源的记录。 */
 export interface ProjectUsageConnection extends ProjectUsageTotals {
   providerId: string;
   label: string;
@@ -31,6 +32,7 @@ export interface ProjectUsageRun extends ProjectUsageTotals {
   status: Status | null;
   archived: boolean;
 }
+/** 项目完整总量与当前运行页分开；unassignedRunCount 揭示无法确认项目归属的旧/坏记录。 */
 export interface ProjectUsageSummary {
   projectId: string;
   generatedAt: string;

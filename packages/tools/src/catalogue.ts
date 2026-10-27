@@ -4,6 +4,7 @@ import { hash } from '../../storage/src/index.js';
 import type { McpInspection, McpTool } from './mcp-client.js';
 export const MCP_CATALOGUE_BYTES = 16000;
 const MCP_INLINE_SCHEMA_BYTES = 6000;
+/** 令 UTF-16 截断点落在完整代理对之前；索引仍使用字符串单元，不转换为 UTF-8 字节偏移。 */
 export function unicodeBoundary(value: string, offset: number) {
   // 分页不能把 UTF-16 代理对拆开，否则下一页会出现损坏的字符。
   const end = Math.min(offset, value.length);
@@ -15,9 +16,11 @@ export function unicodeBoundary(value: string, offset: number) {
     ? end - 1
     : end;
 }
+/** 按字符单元预限长，保持代理对完整，随后仍需接受目录 JSON 字节预算约束。 */
 function clipMcpText(value: string, limit: number) {
   return value.slice(0, unicodeBoundary(value, limit));
 }
+/** 按每个字符 JSON 编码后的 UTF-8 开销逐个加入，转义符成本也计入而不是只数文本长度。 */
 function clipCatalogueText(value: string, byteLimit: number) {
   let text = '',
     bytes = 0;
@@ -114,7 +117,7 @@ export function mcpCataloguePage(
       totalCharacters: schema.length,
       nextSchemaOffset: end < schema.length ? end : null,
     });
-    // Bound the encoded result as well as its text: escapes and UTF-8 can enlarge JSON.
+    // 对编码后整页大小二分，既考虑 Schema 文本的转义膨胀，也考虑页元数据；每次候选避开代理对中间。
     let low = start,
       high = Math.min(schema.length, start + 8000);
     while (low < high) {
@@ -167,6 +170,7 @@ export function mcpCataloguePage(
     const value = entry(tool);
     tools.push(value);
     if (historyBytes(page()) <= historyBudget) continue;
+    // 先降级为单独读取 Schema，再缩短描述；仍放不下才撤回本条，不能返回预算外的部分定义。
     const omitted: Record<string, unknown> = { ...value, schemaOmitted: true, schemaTool: tool.name };
     delete omitted.inputSchema;
     tools[tools.length - 1] = omitted;

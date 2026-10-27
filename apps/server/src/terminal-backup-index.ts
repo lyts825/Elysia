@@ -41,6 +41,7 @@ export class TerminalBackupIndex {
       | undefined;
     return Number(row?.value ?? 0);
   }
+  /** 内容真正变化时在同一事务写索引和全局版本，分页游标据此识别目录变化。 */
   private write(id: string, value: z.infer<typeof entrySchema>) {
     const current = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(prefix + id) as
         | { value: string }
@@ -77,6 +78,7 @@ export class TerminalBackupIndex {
       409,
     );
   }
+  /** 已逻辑删除的备份不能因扫描迟到结果重新出现，删除墓碑优先于旧读取。 */
   record(view: TerminalBackupHistoryItem, stamp: string) {
     if (this.entry(view.id)?.status === 'deleted') return;
     this.write(view.id, { owner: this.owner, view, status: 'present', stamp });
@@ -88,7 +90,10 @@ export class TerminalBackupIndex {
   isDeleted(id: string) {
     return this.entry(id)?.status === 'deleted';
   }
-  /** 扫描备份目录并更新索引；通过 options 检查取消及扫描约束。 */
+  /**
+   * 扫描备份目录的轻量文件戳；只在戳变化或缺少有效索引时加载完整清单。
+   * 当前无法核验或已消失的条目标为 invalid，不以目录存在直接证明它可恢复或可删除。
+   */
   async refresh(options: Options = {}) {
     this.check(options);
     const root = await this.resolve(undefined, options);
@@ -153,7 +158,10 @@ export class TerminalBackupIndex {
       await turn();
     }
   }
-  /** 校验搜索条件和游标后分页读取备份历史。 */
+  /**
+   * 刷新索引后按创建时间和 ID 稳定倒序分页。游标绑定索引版本和搜索词，
+   * 目录或查询变化时要求回到最新页，防止将两次结果集拼成看似完整的历史。
+   */
   async page(input: unknown, options: Options = {}) {
     const query = z
       .object({

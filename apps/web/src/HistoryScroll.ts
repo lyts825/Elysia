@@ -1,7 +1,10 @@
 /* 捕获和恢复历史列表的滚动锚点。 */
 export type HistoryAnchor = { id: string; offset: number };
 
-/** One bounded viewport index; text updates do not invalidate its anchor nodes. */
+/**
+ * 为一个历史视口缓存锚点节点及 ID 索引。只在锚点节点增删或标识改变时重建，
+ * 流式文字与普通属性更新不使索引失效；使用者卸载时必须 disconnect。
+ */
 export class HistoryAnchorIndex {
   private dirty = true;
   private entries: HTMLElement[] = [];
@@ -30,6 +33,7 @@ export class HistoryAnchorIndex {
         ),
     );
   }
+  /** 同步消费尚未回调的 DOM 变更，保证 React layout effect 能读到本次提交的新锚点。 */
   nodes() {
     // React layout effects run before the observer callback after a DOM commit.
     this.changed(this.observer.takeRecords());
@@ -56,6 +60,7 @@ export class HistoryAnchorIndex {
   }
 }
 
+/** 只有文档可见、节点有布局尺寸且不位于 inert 子树时，才允许自动分页或保存位置。 */
 export function historyViewportVisible(viewport: HTMLElement | null) {
   return !!(
     viewport &&

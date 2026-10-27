@@ -30,6 +30,7 @@ declare global {
         status: 'DONE' | 'WAITING' | 'FAILED' | 'UNCERTAIN';
         revision: number;
       }): Promise<boolean>;
+      /** 注册桌面通知点击监听；返回的函数必须在组件清理时调用。 */
       onTaskNotification?(
         callback: (value: { surface: 'native' | 'terminal'; taskId: string }) => void,
       ): () => void;

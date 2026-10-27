@@ -1,8 +1,10 @@
 // 项目文件预览快照及资源读取问题的契约。
+/** HTML 预览依赖资源的问题清单；受限、过大和不可读分别报告，不把缺资源当作完整预览。 */
 export type PreviewResourceIssue = {
   path?: string;
   reason: 'missing' | 'too-large' | 'unreadable' | 'restricted' | 'not-file';
 };
+/** 文件目录条目与渲染依赖版本；change 表示相对基线的 Git 变化，renderIssues 另述资源缺口。 */
 export type PreviewEntry = {
   path: string;
   size: number;
@@ -23,6 +25,10 @@ export type PreviewSnapshot = {
   truncated: boolean;
   renderBase: string | null;
 };
+/**
+ * 单文件预览的安全投影：二进制正文为 null，文本可分页；diff 和渲染链接分别读取。
+ * deleted 与内容不可读分开表达，分页 version 用于防止不同文件修订混读。
+ */
 export type PreviewFile = {
   path: string;
   text: string | null;

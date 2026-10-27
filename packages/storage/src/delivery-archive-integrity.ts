@@ -10,6 +10,7 @@ const samePath = (a: string, b: string) =>
   process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 const version = (stat: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }) =>
   `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+/** 核对普通文件或目录及其真实路径，拒绝符号链接与路径中间层的重定向。 */
 function plain(filename: string, directory = false) {
   const stat = lstatSync(filename, { bigint: true });
   if (

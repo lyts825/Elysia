@@ -9,6 +9,7 @@ export const ToolReviewPolicy = z.discriminatedUnion('mode', [
 ]);
 export type ToolReviewPolicy = z.infer<typeof ToolReviewPolicy>;
 
+/** exec 的冻结后端；docker 只接受镜像标识，实际执行不会因镜像或引擎不可用回退本机。 */
 export const CommandBackendPolicy = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('local') }).strict(),
   z
@@ -24,6 +25,7 @@ export const CommandBackendPolicy = z.discriminatedUnion('kind', [
 ]);
 export type CommandBackendPolicy = z.infer<typeof CommandBackendPolicy>;
 
+/** 审核只有允许/拒绝和说明，不提供可执行命令或授予新权限。 */
 export const ToolReviewDecision = z
   .object({
     decision: z.enum(['allow', 'deny']),
@@ -31,6 +33,7 @@ export const ToolReviewDecision = z
   })
   .strict();
 export type ToolReviewDecision = z.infer<typeof ToolReviewDecision>;
+/** 宿主保存的审核回执，指纹绑定实际参数和执行边界，requestId 关联独立模型审核用量。 */
 export interface ToolReviewReceipt extends ToolReviewDecision {
   fingerprint: string;
   mode: 'rules' | 'model';

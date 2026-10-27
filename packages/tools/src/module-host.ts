@@ -15,9 +15,13 @@ export interface PlanAlignmentModule {
   id: typeof PLAN_ALIGNMENT_MODULE.id;
   version: typeof PLAN_ALIGNMENT_MODULE.version;
   definition: ToolDefinition;
+  /** 只做输入结构校验；合同权限与计划语义仍由内核验证。 */
   parse(input: unknown): { contract: unknown; plan: unknown };
+  /** 提出候选合同与计划，结果仍需要用户接受。 */
   propose(task: Task, input: { contract: unknown; plan: unknown }): ReturnType<Kernel['propose']>;
+  /** 通过注入的原内核入口接受计划，不能绕过版本和状态约束。 */
   accept(...args: Parameters<Kernel['accept']>): ReturnType<Kernel['accept']>;
+  /** 停止实例并释放资源；关闭后任何公开动作应拒绝调用。 */
   dispose(): void | Promise<void>;
 }
 export interface PlanAlignmentFactory {
@@ -30,6 +34,10 @@ export type PlanAlignmentLoader = () => Promise<PlanAlignmentFactory>;
 /** 固定注册内置模块；每个网关按需加载一个实例，不从外部加载代码。 */
 export class PlanAlignmentHost {
   private readonly plugin: LazyPlugin<PlanAlignmentContext, PlanAlignmentModule>;
+  /**
+   * 包装固定身份的惰性工厂；激活时交叉核对实例身份、版本和 propose_plan 贡献名。
+   * context 只包含计划操作，loader 可由宿主注入而不是从用户配置加载任意外部代码。
+   */
   constructor(
     context: PlanAlignmentContext,
     loader: PlanAlignmentLoader = async () => (await import('./modules/plan-alignment.js')).default,

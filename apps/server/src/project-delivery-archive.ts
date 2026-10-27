@@ -52,6 +52,7 @@ const corrupt = () =>
     null,
     409,
   );
+/** 归档记录依赖当前数据库格式；拒绝在未升级或不匹配的库中静默写入新结构。 */
 function schema(store: Store) {
   if (
     STORAGE_SCHEMA_VERSION < 6 ||
@@ -65,6 +66,7 @@ function schema(store: Store) {
       503,
     );
 }
+/** 同时验证行结构、冻结清单哈希和内容寻址路径，避免损坏记录引导到任意文件。 */
 function checked(raw: unknown): Row {
   const parsed = rowSchema.safeParse(raw);
   if (!parsed.success) throw unreadable();
@@ -90,6 +92,7 @@ function view(row: Row): ProjectDeliveryArchive {
     savedAt: row.saved_at,
   };
 }
+/** 读取项目完整归档集合并逐行核验；存在坏行时整个读取失败，不能把它当成已不存在。 */
 function rows(store: Store, projectId: string) {
   schema(store);
   store.require<Project>('projects', projectId);
@@ -109,7 +112,7 @@ function setHash(retained: Row[]) {
     ),
   );
 }
-/** Includes the entire retained set, so project deletion cannot omit unseen pages. */
+/** 哈希覆盖完整保留集合；项目删除确认不能只绑定用户当前看见的归档页。 */
 export function archiveSetHash(store: Store, projectId: string) {
   return setHash(rows(store, projectId));
 }
@@ -123,7 +126,9 @@ export function projectDeliveryArchiveSummary(
   if (!Number.isSafeInteger(totalBytes)) throw unreadable();
   return { count: retained.length, totalBytes, setHash: setHash(retained) };
 }
-/** 按项目分页读取归档列表，并限制单页数量。 */
+/** 按保存时间、清单 ID 稳定倒序分页；游标行消失时要求刷新，避免无声跳过记录。
+ * count、totalBytes 和 setHash 始终描述整个集合，可供删除确认核对未展示的页面。
+ */
 export function readProjectArchives(
   store: Store,
   projectId: string,
@@ -171,12 +176,14 @@ export class ProjectDeliveryArchiveService {
     private store: Store,
     private guard: (runId: string | null, projectId?: string) => void,
   ) {}
+  /** 保存前检查当前作用域和项目归档状态；异步处理后仍需在提交事务内再次检查。 */
   writable(manifest: ProjectDeliveryManifest) {
     schema(this.store);
     this.guard(null, manifest.projectId);
     if (this.store.require<Project>('projects', manifest.projectId).archived)
       throw new AppError('PROJECT_ARCHIVED', '请先恢复归档项目，再保存文件包', false, null, 409);
   }
+  /** 仅返回与指定冻结清单完全绑定的记录；缺失为 null，哈希不符属于不可读错误。 */
   private row(manifest: ProjectDeliveryManifest) {
     schema(this.store);
     this.store.require<Project>('projects', manifest.projectId);
@@ -188,6 +195,7 @@ export class ProjectDeliveryArchiveService {
     if (row.manifest_hash !== manifest.hash) throw unreadable();
     return row;
   }
+  /** 返回归档元数据，不在此读取文件正文；实际下载还会完整核对不可变对象。 */
   get(manifest: ProjectDeliveryManifest): ProjectDeliveryArchive | null {
     const row = this.row(manifest);
     return row ? view(row) : null;
@@ -200,6 +208,7 @@ export class ProjectDeliveryArchiveService {
       archive: this.get(manifest),
     };
   }
+  /** 以对象哈希作并发前提删除引用；已删除可重放，引用已变化则要求用户重新确认。 */
   remove(manifest: ProjectDeliveryManifest, expectedObjectHash: string): ProjectDeliveryArchiveView {
     this.guard(null, manifest.projectId);
     return this.store.tx(() => {
@@ -213,10 +222,11 @@ export class ProjectDeliveryArchiveService {
           'DELETE FROM project_delivery_archives_v1 WHERE project_id=? AND manifest_id=? AND object_hash=?',
         )
         .run(manifest.projectId, manifest.id, expectedObjectHash);
-      // Remove only the reference. Shared immutable bytes remain for explicit object maintenance.
+      // 此事务只删除引用。内容寻址对象可能被其他记录共享，实体字节留给显式对象维护回收。
       return this.read(manifest);
     });
   }
+  /** 分块计算准备文件的完整哈希，限制大小并复核同一文件句柄版本；支持取消和累计字节进度。 */
   private async digest(
     filename: string,
     expectedSize: number,
@@ -249,6 +259,11 @@ export class ProjectDeliveryArchiveService {
       await opened.handle.close();
     }
   }
+  /** 将已生成 ZIP 发布成不可变对象，再在事务内登记与冻结清单的绑定。
+   * 同一清单已保存时返回原回执；异步文件发布后重新检查授权、项目状态和清单正文哈希。
+   * 对象发布成功而事务失败时不伪造成功记录；未引用对象由后续显式维护处理。
+   * committed 在提交后同步调用，使调用方一旦观察到成功便保留该回执，晚到的取消不改写结果。
+   */
   async save(
     manifest: ProjectDeliveryManifest,
     prepared: { filename: string; size: number; fileCount: number },
@@ -299,10 +314,13 @@ export class ProjectDeliveryArchiveService {
         );
       return this.get(manifest)!;
     });
-    // No await separates the committed transaction from the immutable success receipt.
+    // 提交与成功回执之间不让出事件循环，避免取消信号把已持久保存的结果描述成失败。
     committed(receipt);
     return receipt;
   }
+  /** 下载前核验引用、真实父目录、完整内容哈希和文件版本，再重读引用确认其仍被保留。
+   * 返回的流仍绑定核验版本和哈希；调用者必须 dispose，取消或损坏都不能替换成重新生成的包。
+   */
   async body(manifest: ProjectDeliveryManifest, expectedObjectHash: string, signal: AbortSignal) {
     const row = this.row(manifest);
     if (!row)
@@ -352,7 +370,7 @@ export class ProjectDeliveryArchiveService {
       )
         throw corrupt();
       signal.throwIfAborted();
-      // Re-read the retained record after byte verification; removal or project deletion wins.
+      // 文件核验可能耗时；重新读取引用，让并发移除归档或删除项目优先于这次下载。
       const current = this.row(manifest);
       if (!current || current.object_hash !== row.object_hash || current.saved_at !== row.saved_at)
         throw corrupt();

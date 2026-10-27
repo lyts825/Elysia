@@ -27,6 +27,7 @@ export function ArtifactChanges(props: Props) {
   // 运行、复核或交付指纹变化时重建分页状态，避免显示上一版差异。
   return <ArtifactChangePages key={`${props.runId}:${props.reviewId}:${props.fingerprint}`} {...props} />;
 }
+/** 展示冻结元数据；null 表示该侧无产物，不尝试从名称或其他版本推断内容。 */
 function Metadata({ label, value }: { label: string; value: DeliveryArtifactMetadata | null }) {
   return (
     <section className="artifact-version" aria-label={`${label}产物元数据`}>
@@ -83,6 +84,10 @@ function Metadata({ label, value }: { label: string; value: DeliveryArtifactMeta
     </section>
   );
 }
+/**
+ * 展开后才准备并读取差异页，分页绑定同一复核和当前交付指纹。
+ * 409 或不可读冲突会保留已读页并锁定动作，要求重新读取整体交付以建立新的比较基线。
+ */
 function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = false }: Props) {
   const { api } = useSurfaceClient();
   const [open, setOpen] = useState(false),
@@ -120,6 +125,7 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
       )
       .then((next) => {
         if (controller.signal.aborted) return;
+        // 即使 HTTP 成功也验证页身份与边界，防止服务端版本变化后拼接不同快照。
         if (
           next.runId !== runId ||
           next.reviewId !== reviewId ||

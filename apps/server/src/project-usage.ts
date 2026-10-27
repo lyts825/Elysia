@@ -65,6 +65,10 @@ const newTotals = (): ProjectUsageTotals => ({
   costUnknownCount: 0,
   costComplete: true,
 });
+/**
+ * 叠加一条请求的可读/状态/token/费用分类。缺失或非SETTLED的用量保持不完整标记，
+ * 已知费用按冻结币种分开累计；不能用预留量冒充实测，也不能把不同币种直接相加。
+ */
 function add(totals: ProjectUsageTotals, row?: Ledger) {
   totals.requestCount++;
   if (!row) {
@@ -209,6 +213,7 @@ export class ProjectUsageReads {
     signal?.throwIfAborted();
     if (this.closed) throw new AppError('PROJECT_USAGE_CLOSED', '用量读取服务已关闭', true, null, 503);
   }
+  /** 实例身份、项目数据epoch和全局归属epoch共同组成快照版本，使旧游标不能跨更新复用。 */
   private version(projectId: string) {
     const rows = this.store.db
       .prepare(
@@ -217,6 +222,10 @@ export class ProjectUsageReads {
       .all(projectId);
     return hash(`${this.identity}:${JSON.stringify(rows)}`);
   }
+  /**
+   * 按rowid分批重建缺少或失效的请求账本投影；每条仍由ProjectionReads隔离坏记录。
+   * 外层已有事务时使用保存点而非提交调用方事务，批次间让出事件循环并检查取消。
+   */
   private async warm(projectId: string, signal?: AbortSignal) {
     let after = 0;
     for (;;) {
@@ -256,6 +265,10 @@ export class ProjectUsageReads {
       await yieldRead();
     }
   }
+  /**
+   * 对完整项目账本生成一致快照后再分页运行；页大小不会缩小总量的统计范围。
+   * expectedVersion 固定翻页基线，聚合期间epoch变化最多重试三轮，持续变化明确返回冲突。
+   */
   async summary(
     projectId: string,
     query: { before?: string; expectedVersion?: string } = {},
@@ -263,6 +276,7 @@ export class ProjectUsageReads {
   ): Promise<ProjectUsageSummary> {
     this.checkOpen(signal);
     this.store.require<Project>('projects', projectId);
+    // 调用方事务中的临时视图不读写全局缓存，防止回滚后把未提交数据留作正式统计。
     const transaction = this.store.db.isTransaction;
     if (!transaction) {
       const version = this.version(projectId);
@@ -349,6 +363,7 @@ export class ProjectUsageReads {
             changed = true;
             break requestPages;
           }
+          // 只消费版本和所属关系可核对的轻量账本，其余仍计入请求数并标记不可读/未知。
           let row: Ledger | undefined;
           try {
             const data = JSON.parse(item.data);
@@ -403,6 +418,7 @@ export class ProjectUsageReads {
         await this.warm(projectId, signal);
         continue;
       }
+      // 全局损坏运行可能属于本项目；归属无法证明时揭示缺口，不声称总量完整。
       if (unassignedRunCount) totals.tokenComplete = totals.costComplete = false;
       const summary = {
         projectId,
@@ -439,6 +455,7 @@ export class ProjectUsageReads {
     throw new AppError('PROJECT_USAGE_CHANGED', '项目用量持续变化，请稍后刷新', true, null, 409);
   }
 }
+/** 将请求中断和未写完响应的断连绑定到统计取消，并提供移除监听器的收尾函数。 */
 function readSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
   const abort = () => controller.abort();

@@ -1,7 +1,10 @@
 /** 在本地端口启动监听。 */
 import type { FastifyInstance } from 'fastify';
 
-/** 仅监听回环地址；首选端口被占用时让系统分配端口，并返回实际端口。 */
+/**
+ * 仅监听回环地址，端口 0 表示由系统分配。只有首选端口 EADDRINUSE 才回退，
+ * 权限或其他监听错误继续抛出；返回实际端口供引导链接和 Origin 校验同步使用。
+ */
 /** The OS reserves the fallback port atomically, with no probe/bind race. */
 export async function listenLocal(app: FastifyInstance, preferredPort: number) {
   if (

@@ -27,6 +27,7 @@ const presets = [
   ['deepseek', 'DeepSeek', 'Chat Completions'],
   ['custom', '自定义服务', '兼容 API 端点'],
 ];
+/** 创建尚未保存的连接草稿；预设只提供协议默认值，不代表密钥已配置或实际调用已验证。 */
 function preset(name: string): Provider {
   return {
     id: crypto.randomUUID(),
@@ -55,6 +56,7 @@ function preset(name: string): Provider {
     keyConfigured: false,
   };
 }
+/** 排除服务端校验状态并稳定排序嵌套对象，用于判断当前表单是否有需要保存的修改。 */
 const editable = (p?: Provider) =>
   p &&
   JSON.stringify(
@@ -68,6 +70,11 @@ const editable = (p?: Provider) =>
         ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
         : value,
   );
+/**
+ * 管理供应商连接草稿、凭据来源、目录和实际调用验证。config 与父级 providers 分开，
+ * 用户编辑不会立即覆盖已保存配置；切换或关闭脏表单需要明确选择舍弃。
+ * 保存和检查均携带当前修订，串行操作结束后让父级重新读取权威列表。
+ */
 export function ProviderSettings({
   providers,
   initialProviderId,
@@ -157,6 +164,7 @@ export function ProviderSettings({
   useEffect(() => {
     if (!dirty) setConfirmClose(false);
   }, [dirty]);
+  // 已保存密钥必须与当前选择的凭据来源一致；有环境密钥不等于本机存储密钥已就绪。
   const credentialReady =
     !!saved?.keyConfigured && (keyMode === 'stored' ? !!saved.credentialId : !saved.credentialId);
   const credentialHelp =
@@ -184,10 +192,15 @@ export function ProviderSettings({
   ) || ['low', 'high', 'max'];
   const unsupportedApiModel =
     !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
+  /** 仅修改本地草稿，并取消外部初始定位意图，避免后续列表刷新切回旧选择。 */
   const change = (patch: Partial<Provider>) => {
     setRequestedProviderId(undefined);
     setConfig((p) => p && { ...p, ...patch });
   };
+  /**
+   * 切换编辑目标，同时清除只属于旧连接的密钥输入、目录和订阅就绪状态。
+   * 脏表单先存 pendingChoice；completedAction 仅供已完成的串行操作内部切换。
+   */
   const choose = (next: Provider, force = false, completedAction = false) => {
     if (actionPending.current && !completedAction) return;
     setRequestedProviderId(undefined);
@@ -216,6 +229,7 @@ export function ProviderSettings({
     if (config?.id === target.id) setRequestedProviderId(undefined);
     else choose(target);
   }, [requestedProviderId, providers, busy]);
+  /** 同一时刻只允许一个保存/验证/删除动作，集中维护忙碌状态并保留表单供失败后修改。 */
   const perform = async (fn: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -231,6 +245,7 @@ export function ProviderSettings({
       setBusy(false);
     }
   };
+  /** 校验型号和凭据来源后提交配置；原始密钥仅随本次保存发送，成功后从输入状态清除。 */
   const save = () =>
     perform(async () => {
       if (!config) return;
@@ -254,6 +269,7 @@ export function ProviderSettings({
       await updated();
       setNotice('配置已保存，下一步验证实际调用。');
     });
+  /** 仅验证已保存且凭据就绪的配置，检查结果的修订身份由服务端维护。 */
   const verify = () =>
     perform(async () => {
       if (!config) return;

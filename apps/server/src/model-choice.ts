@@ -38,7 +38,10 @@ export async function availableModels(
 }
 
 /** Freeze a per-agent choice while retaining the verified connection and shared account quota. */
-/** 验证模型连接后解析并冻结单个代理的模型选择。 */
+/**
+ * 基于已验证连接冻结单代理配置，保留账号和并发额度。沿用原 API 型号时不依赖在线目录，
+ * 显式换型号/强度时必须查询并校验真实能力，窗口/输出上限只收紧，换型号后清除旧价格假设。
+ */
 export async function resolveModelChoice(
   store: Store,
   subscription: CatalogServices['subscription'],
@@ -126,7 +129,10 @@ export async function resolveModelChoice(
 }
 
 /** Share discovery only within one plan; each choice still validates its current connection. */
-/** 批量解析模型选择，同一调用内复用相同连接的目录请求。 */
+/**
+ * 同一计划内按账号或连接版本共享目录 Promise，并按原计划顺序逐项解析。
+ * 单项失败后不再触发无关目录请求；缓存不跨本次调用，不能掩盖后续连接变化。
+ */
 export async function resolveModelChoices(
   store: Store,
   subscription: CatalogServices['subscription'],

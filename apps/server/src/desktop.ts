@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../../packages/contracts/src/index.js';
 
 export interface DesktopServices {
+  /** 只允许列出的桌面操作；明文秘密仅在父子进程 IPC 中传递，持久化由桌面安全存储处理。 */
   request(
     operation:
       | 'vault-read'
@@ -23,6 +24,7 @@ export function desktopServices(): DesktopServices | undefined {
       return new Promise((resolve, reject) => {
         const id = randomUUID();
         const finish = (error?: string, result?: unknown) => {
+          // 每次完成都移除专属监听和超时，避免长期账号操作积累 message 监听器。
           clearTimeout(timer);
           process.off('message', receive);
           if (error) reject(new AppError('DESKTOP_SERVICE', error));

@@ -49,6 +49,7 @@ export function terminalDataDirectory(directory: string) {
   return resolved;
 }
 
+/** 路径不同仍可能是硬链接；以设备与 inode 拒绝两入口共用实际数据库。 */
 function assertDifferentDatabase(nativeFile: string, terminalFile: string) {
   if (!existsSync(nativeFile) || !existsSync(terminalFile)) return;
   const native = statSync(nativeFile, { bigint: true }),
@@ -63,7 +64,11 @@ function assertDifferentDatabase(nativeFile: string, terminalFile: string) {
 type ServerOptions = Parameters<typeof createServer>[1];
 type SurfaceOptions = Omit<ServerOptions, 'port' | 'app' | 'prefix' | 'surface' | 'auth'>;
 /** Registers independent services under one local session. Execution starts explicitly after recovery. */
-/** 校验两个入口使用不同目录和数据库，再装配各自服务。 */
+/**
+ * 在同一个监听器和引导会话下注册两个独立 Store/执行器，终端 API 挂载 /terminal。
+ * 两入口仅共享鉴权集合，不共享模型凭据或业务数据库；ready 失败时关闭已创建的服务。
+ * 调用方必须先完成存储恢复，再显式启动执行器。
+ */
 export async function createSurfaceServer(
   nativeStore: Store,
   terminalStore: Store,

@@ -6,7 +6,11 @@ export type ContinuationDraft = {
   commandId?: string;
   expectedRevision?: number;
 };
-/** 从本地缓存恢复续接输入；限制文本和收件项数量，损坏时返回空白续接草稿。 */
+/**
+ * 容错恢复续接表单，文本最多 60000 字符，合法收件 ID 去重后最多 100 项。
+ * commandId 与 expectedRevision 仅在各自合法时保留，调用方仍需确认二者和当前输入共同
+ * 构成可重试请求；本函数返回有效表单不代表终端已具备恢复资格。
+ */
 export function readContinuationDraft(value: string | boolean | undefined): ContinuationDraft {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : null;

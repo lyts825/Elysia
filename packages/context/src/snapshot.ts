@@ -39,6 +39,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
     run.projectId && run.contract.permissionProfile.read
       ? listProjectMemories(store, run.projectId, { activeOnly: true })
       : [];
+  // 已成功加载的技能以当时工具结果为准；撤销/禁用后从内联集合移除并留下撤销标识。
   const loadedById = new Map<string, LoadedSkill>();
   const withdrawnSkillIds = new Set<string>();
   for (const op of store.all<Operation>('tool_operations', run.id)) {
@@ -71,6 +72,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
     loadedById.set(id, captured ? (result as LoadedSkill) : loadSkill(id, store, run));
   }
   const loadedSkills = [...loadedById.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'));
+  // 工作状态损坏时显式记录回退原因，让压缩保留原始要求；其他读取错误仍向上传递。
   let workingState: ReturnType<typeof readTaskWorkingState> | undefined;
   let workingStateFallback: string | null = null;
   try {
@@ -88,6 +90,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
         .trim(),
     ]),
   );
+  // 复制后交给纯编译器，避免后续持久对象变更影响本次上下文的确定性。
   return structuredClone({
     run,
     task,

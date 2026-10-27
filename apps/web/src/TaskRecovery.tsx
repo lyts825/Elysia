@@ -5,6 +5,11 @@ import { modelTaskCanContinue, taskResumeReason } from './ModelSwitchGuards';
 import './workflow.css';
 import './task-recovery.css';
 
+/**
+ * 为单个模型任务提供局部恢复入口，按运行归档、未知请求/操作与授权规则决定禁用原因。
+ * 依赖阻塞仅定位真正失败的来源分支，等待依赖恢复的父任务不会被重复恢复；
+ * 本组件只传任务 ID 给外层命令，累计预算和其他分支状态由内核保持。
+ */
 export function TaskRecovery({
   task,
   detail,

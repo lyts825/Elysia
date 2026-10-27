@@ -89,6 +89,7 @@ export class PreviewService {
     private gateway: ToolGateway,
     private prefix = '',
   ) {}
+  /** 为任务、目录范围和页面建立随机能力令牌；令牌只在当前进程有效，闲置半小时后回收。 */
   private capability(runId: string, taskId: string, scope = '', page = '') {
     const key = capabilityKey(taskId, scope, page);
     for (const [token, value] of this.capabilities)
@@ -118,6 +119,10 @@ export class PreviewService {
       });
     return token;
   }
+  /**
+   * 按单调 observation 合并资源观察，旧异步结果不能覆盖新版本。
+   * 同一版本的迟到读取可以补充错误状态；资源集合有界，超限时显式标记 truncated。
+   */
   private observe(
     capability: Capability,
     name: string,
@@ -203,6 +208,7 @@ export class PreviewService {
     invariant(run.contract.permissionProfile.read, 'PREVIEW_DENIED', '当前任务未授权读取文件');
     return task;
   }
+  /** 预览仅限当前代理工作区，并逐级拒绝符号链接/junction，不能借链接读取其他代理或宿主路径。 */
   private async filename(task: Task, input: string) {
     const relative = normalized(input);
     invariant(task.workspace, 'WORKSPACE_MISSING', '代理尚未创建工作区');

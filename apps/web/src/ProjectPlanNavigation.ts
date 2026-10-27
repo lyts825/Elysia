@@ -15,7 +15,10 @@ export type PendingProjectPlanLeave = {
   label: string;
 };
 
-/** One pending destination for the currently displayed project's temporary import preview. */
+/**
+ * 保存当前项目临时导入预览的一项待确认导航。intent 隔离异步目标，来源 epoch 隔离界面
+ * 已发生的导航；confirm 只有在原项目、空间和运行仍一致时才丢弃预览并执行目的动作。
+ */
 export class ProjectPlanNavigationGuard {
   private intent = 0;
   private pending: PendingProjectPlanLeave | null = null;
@@ -34,6 +37,7 @@ export class ProjectPlanNavigationGuard {
   current(intent: number) {
     return intent === this.intent;
   }
+  /** 返回 true 表示动作已执行，false 表示意图失效或等待用户处理当前导入预览。 */
   request(
     action: () => void,
     options: { intent?: number; leaving?: boolean; bypass?: boolean; label?: string } = {},
@@ -61,6 +65,7 @@ export class ProjectPlanNavigationGuard {
   cancel() {
     this.begin();
   }
+  /** 重新核验来源后执行原目的动作；来源变化时只撤销旧确认，不影响当前页面的新预览。 */
   confirm() {
     const pending = this.pending,
       context = this.context(),

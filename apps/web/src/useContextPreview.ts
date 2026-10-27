@@ -70,7 +70,11 @@ export function contextFromMetrics(agent: Agent, value: unknown): ContextProject
   };
 }
 
-/** One agent, frozen binding, and live metrics; full settings are a separate explicit read. */
+/**
+ * 将单个代理的轻量上下文读取与实时指标合并，完整可配置状态仍需另行显式读取。
+ * identity 包含会话、策略和冻结模型绑定；变化即清空旧投影、取消请求并递增 epoch。
+ * 同时用更新时间和实时修订计数保证迟到快照不覆盖请求期间到达的较新 SSE 指标。
+ */
 export function useContextPreview(
   client: SurfaceClient,
   runId: string,
@@ -94,6 +98,7 @@ export function useContextPreview(
     agent?.contextPolicy,
     agent?.providerBinding,
   ]);
+  /** 请求开始固定运行及代理身份；结果需同时匹配 epoch 和当前选择才允许发布。 */
   const request = useCallback(async () => {
     // 新请求取消旧请求并推进代次，以屏蔽延迟返回的过期结果。
     const target = selected.current;

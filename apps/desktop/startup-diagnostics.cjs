@@ -92,6 +92,10 @@ function createStartupDiagnostics(directory, options = {}) {
     } catch {}
   })();
   const snapshot = () => ({ version: 1, records: [cleanRecord(current), ...prior].slice(0, 20) });
+  /**
+   * 将持久化排到前次写入之后，历史加载完成后再取快照；总大小超限时先丢弃最旧记录。
+   * 写入错误被观察但不阻塞启动，下一次阶段记录仍可排入队列重试保存。
+   */
   function schedule() {
     writing = writing
       .catch(() => {})
@@ -131,9 +135,11 @@ function createStartupDiagnostics(directory, options = {}) {
   record({ stage: 'launch-entry', status: 'ok', elapsedMs: 0 });
   if (Array.isArray(options.marks)) for (const mark of options.marks.slice(0, 12)) record(mark);
   return {
+    /** 主进程阶段用同一时钟计算相对耗时，返回是否实际加入了新记录。 */
     mark(stage, status = 'ok') {
       return record({ stage, status, elapsedMs: performance.timeOrigin + performance.now() - started });
     },
+    /** 接收页面的绝对高精度时间，拒绝明显超前的值，再转换为本次启动相对时间。 */
     recordFromRenderer(value) {
       if (
         !value ||
@@ -149,10 +155,12 @@ function createStartupDiagnostics(directory, options = {}) {
         elapsedMs: value.atEpoch - started,
       });
     },
+    /** 等待历史文件加载后返回内存快照，不要求此前每个阶段写入都已落盘。 */
     async read() {
       await loaded;
       return snapshot();
     },
+    /** 关闭前尽力等待当前写队列；诊断失败不作为应用无法退出的理由。 */
     async flush() {
       await writing.catch(() => {});
     },

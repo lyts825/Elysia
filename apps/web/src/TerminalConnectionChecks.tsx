@@ -72,7 +72,10 @@ export function TerminalConnectionChecks({
       controller.current?.abort();
     };
   }, [api, connection.id, connection.revision, enabled]);
-  /** 验证连接或读取目录；仅接受仍属于当前连接版本的结果。 */
+  /**
+   * 取消前次检查并提交当前连接 revision，只有 ID 与 revision 都匹配的响应才更新界面。
+   * check 与 models 分别保留健康摘要；模型目录只更新候选列表，不自动替用户选择模型。
+   */
   async function probe(kind: 'check' | 'models') {
     if (!enabled || busy) return;
     const request = new AbortController();
@@ -94,6 +97,7 @@ export function TerminalConnectionChecks({
         value.revision === connection.revision
       ) {
         const { models, resolvedModel: _ignored, ...summary } = value;
+        // 不把服务端推断的 resolvedModel 当作用户确认；选择必须通过 chooseModel 显式发生。
         setHealth((previous) => ({
           connectionId: connection.id,
           revision: connection.revision,

@@ -132,6 +132,7 @@ export class DockerCliManager {
       )
       .run('cli-probe:' + record.id, JSON.stringify(record));
   }
+  /** 按持久探测记录核对容器标签后清理；停止未确认时不能释放 held 资源。 */
   private async cleanupProbe(id: string) {
     const record = this.probeRecords.get(id);
     if (!record) return;
@@ -173,6 +174,7 @@ export class DockerCliManager {
     this.resources.confirmStopped(id);
     this.resources.release(id);
   }
+  /** 合并并发恢复请求，先解决上次遗留的 held 探测，再开始新的 CLI 检查。 */
   private reconcileProbes() {
     if (this.reconciling) return this.reconciling;
     this.reconciling = (async () => {
@@ -185,6 +187,10 @@ export class DockerCliManager {
     });
     return this.reconciling;
   }
+  /**
+   * 相同固定镜像/命令检查共享短期离线容器。每个调用方只取消自己的订阅，最后一个
+   * 订阅者离开时才中止底层探测；无网络且只读，仍须单独核对清理结果才释放资源。
+   */
   private sharedProbe(
     key: string,
     imageId: string,
@@ -403,6 +409,10 @@ export class DockerCliManager {
     const result = await this.command(['image', 'inspect', '--format', '{{.Id}}', image], { signal });
     return complete(result) && digest(result.stdout) ? result.stdout.trim() : undefined;
   }
+  /**
+   * 按不可变镜像摘要和可执行名称缓存版本探测，不把可变镜像标签作为能力缓存身份。
+   * 引擎/镜像/CLI 失败分别返回状态；该离线检查不验证外部模型凭据。
+   */
   async check(
     rawAppId: TerminalAppId,
     rawProfile: AgentTerminalProfile,
@@ -492,6 +502,7 @@ export class DockerCliManager {
       };
     }
   }
+  /** 用户显式安装入口：使用固定版本构建派生镜像，受安装资源预约和取消信号约束。 */
   async install(
     input: { appId: TerminalAppId; baseImage: string; version?: string },
     signal?: AbortSignal,
@@ -609,6 +620,7 @@ export class DockerCliManager {
     }
   }
   /** Probe the exact task image offline, never a host CLI or the mutable profile tag. */
+  /** 检查固定镜像的实际 CLI 帮助和版本后判断 resume 支持，不仅依据代理名称推测参数。 */
   async resumeCapability(profile: AgentTerminalProfile, imageId: string): Promise<TerminalResumeCapability> {
     if (profile.agent !== 'codex' || profile.protocol !== 'codex-jsonl')
       return { supported: false, reason: '当前 CLI 尚未验证原会话续接；可显式开启新会话' };

@@ -20,6 +20,7 @@ export class ProjectUsageCache {
     if (entry) this.bytes -= entry.bytes;
     this.entries.delete(projectId);
   }
+  /** 版本必须完全匹配，过期项立即淘汰；命中项移到末尾延长其 LRU 保留。 */
   get(projectId: string, version: string) {
     const entry = this.entries.get(projectId);
     if (!entry || entry.version !== version) {
@@ -32,6 +33,7 @@ export class ProjectUsageCache {
     this.entries.set(projectId, entry);
     return entry.value;
   }
+  /** 按序列化字节和项目数淘汰旧项；单项过大只跳过缓存，不能截断用量快照。 */
   put(projectId: string, value: UsageSnapshot) {
     this.remove(projectId);
     const bytes = Buffer.byteLength(JSON.stringify(value));
@@ -44,6 +46,7 @@ export class ProjectUsageCache {
     this.entries.set(projectId, { version: value.summary.version, bytes, value });
     this.bytes += bytes;
   }
+  /** 返回缓存自身计数，serializedBytes 不代表整个进程内存占用。 */
   stats() {
     return { entries: this.entries.size, serializedBytes: this.bytes, hits: this.hits, misses: this.misses };
   }

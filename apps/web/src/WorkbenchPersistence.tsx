@@ -93,6 +93,11 @@ export function WorkbenchSaveStatus({ snapshot, open }: { snapshot: WorkbenchSna
   );
 }
 
+/**
+ * 展示逐项保存问题并引导人工选择本地/服务端内容。inspect 返回的 token 固定核对快照，
+ * 本地值或问题状态变化就使确认失效；采用远端前要求另存原稿并显式确认。
+ * 每次只解决一个键，其他待保存项保留，实际版本检查和写入由 WorkbenchCache 完成。
+ */
 export function WorkbenchPersistence({
   cache,
   snapshot,
@@ -139,6 +144,7 @@ export function WorkbenchPersistence({
     errorMessage.current?.scrollIntoView({ block: 'nearest' });
     errorMessage.current?.focus({ preventScroll: true });
   }, [error]);
+  /** 串行化核对、保存和导出动作，用请求序号屏蔽弹窗卸载后的错误与忙碌回写。 */
   const run = async (label: string, action: () => Promise<void> | void) => {
     if (working.current) return;
     working.current = true;
@@ -169,6 +175,7 @@ export function WorkbenchPersistence({
       setConfirmed(false);
       setDownloaded('');
     });
+  /** 只有当前 token 已确认且满足原稿另存门禁时才提交选择，结束后清除该次核对界面。 */
   const resolve = () => {
     if (!inspection || !confirmed || (choice === 'remote' && downloaded !== inspection.token)) return;
     const value = inspection;

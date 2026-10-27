@@ -3,12 +3,14 @@ import { AppError, invariant } from '../../contracts/src/index.js';
 
 export const PLUGIN_API_VERSION = 1;
 
+/** 宿主可检查的插件身份；apiVersion 约束共享接口，version 标记插件实现。 */
 export interface PluginManifest {
   readonly id: string;
   readonly version: string;
   readonly apiVersion: typeof PLUGIN_API_VERSION;
 }
 
+/** 同一插件的清单与命名贡献点；名称冲突在整个注册表中拒绝。 */
 export interface PluginContributions<T> {
   readonly manifest: PluginManifest;
   readonly contributions: Readonly<Record<string, T>>;
@@ -58,16 +60,19 @@ export class PluginRegistry<T> {
     );
   }
 
+  /** 可选查询；不触发模块加载，也不允许调用方替换贡献。 */
   get(name: string): T | undefined {
     return this.contributions.get(name);
   }
 
+  /** 必需贡献缺失时给出稳定错误，避免宿主悄悄选择另一个实现。 */
   require(name: string): T {
     const contribution = this.get(name);
     invariant(contribution !== undefined, 'PLUGIN_CONTRIBUTION_MISSING', `插件贡献点不存在：${name}`);
     return contribution;
   }
 
+  /** 返回映射副本用于遍历，内部注册顺序和映射不暴露给外部修改。 */
   entries(): ReadonlyArray<readonly [string, T]> {
     return [...this.contributions.entries()];
   }
@@ -81,6 +86,7 @@ export interface PluginInstance {
   dispose(): void | Promise<void>;
 }
 
+/** 工厂只接收宿主提供的能力上下文；create 若在返回实例前失败，其局部资源由工厂清理。 */
 export interface PluginFactory<Context, Instance extends PluginInstance> {
   readonly manifest: PluginManifest;
   create(context: Context): Instance | Promise<Instance>;
@@ -108,6 +114,10 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
     return this.instance;
   }
 
+  /**
+   * 惰性激活一个实例；同宿主并发调用共享 pending，成功后共享 instance。
+   * 校验或关闭竞争发生在 create 后时由本层释放；清理失败永久记住，防止重试叠加副作用。
+   */
   load(): Promise<Instance> {
     if (this.cleanupFailure) return Promise.reject(this.cleanupFailure);
     if (this.closed)
@@ -157,6 +167,10 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
     invariant(!this.closed, 'PLUGIN_DISPOSED', `插件已释放：${this.manifest.id}`);
   }
 
+  /**
+   * 幂等关闭：先拒绝新加载，再等待当前激活完成并清理实例。
+   * 加载本身失败不使关闭失败，只有明确记录的清理失败或实例释放失败向上传递。
+   */
   dispose(): Promise<void> {
     // 多次关闭共享结果；先阻止新加载，再等待正在进行的激活收束。
     if (this.closing) return this.closing;

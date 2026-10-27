@@ -37,6 +37,10 @@ const draftShape = z
 type Draft = z.infer<typeof draftShape>;
 type Pending = z.infer<typeof pendingShape>;
 const message = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，输入已保留。');
+/**
+ * 读取工作状态的结构化草稿与待核对命令；旧客户端的纯文本要求仍可完整恢复。
+ * 能识别为新版草稿的损坏数据必须报错并保留原文，不能误当纯文本后覆盖其命令身份。
+ */
 function parseDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1, kind: 'working-state', requirements: '' };
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('工作状态草稿无法读取，原文已保留。');
@@ -50,6 +54,7 @@ function parseDraft(raw: unknown): Draft {
   // Earlier clients stored the complete requirements as plain text.
   return { version: 1, kind: 'working-state', requirements: raw };
 }
+/** 导出当前输入或不可读原稿为本地文本，延迟释放 URL 使下载点击可完成。 */
 function download(value: string, taskId: string) {
   const url = URL.createObjectURL(new Blob([value], { type: 'text/plain;charset=utf-8' }));
   const link = document.createElement('a');
@@ -58,9 +63,14 @@ function download(value: string, taskId: string) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+/** 按运行和任务强制重建编辑器，避免上一任务的确认状态或 pending 命令串入新任务。 */
 export function TaskWorkingState(props: { runId: string; taskId: string; cache: WorkbenchCache }) {
   return <WorkingStateEditor key={`${props.runId}:${props.taskId}`} {...props} />;
 }
+/**
+ * 将“当前服务端检查点”“用户有效要求”和“批准/撤销待确认请求”分开管理。
+ * 批准必须绑定已读取的 snapshotHash、revision 和用户确认；断连后保留同一命令供重试核对。
+ */
 function WorkingStateEditor({
   runId,
   taskId,
@@ -116,6 +126,7 @@ function WorkingStateEditor({
       active = false;
     };
   }, [key, cache, draftRetry]);
+  /** 以缓存中的最新原稿执行变换，严格校验后整份保存；失败返回 false 并阻止后续网络提交。 */
   function persist(change: (value: Draft) => Draft) {
     try {
       if (!draftReady || !live.current) return false;
@@ -131,10 +142,15 @@ function WorkingStateEditor({
       return false;
     }
   }
+  /** 核对响应中快照来源属于本编辑器任务，不能仅凭请求 URL 假定返回内容归属正确。 */
   function validateView(next: TaskWorkingStateView) {
     if (next.draft.source.runId !== runId || next.draft.source.taskId !== taskId)
       throw Error('返回的工作状态所属不匹配，请重新核对。');
   }
+  /**
+   * 刷新安全检查点时取消上次读取并撤销旧确认；已读 view 可保留展示，但 current=false 禁止新批准。
+   * 写入进行中不发起新读取，避免界面先应用一个早于待提交操作的快照。
+   */
   async function read() {
     if (writing.current) return;
     reader.current?.abort();
@@ -162,6 +178,11 @@ function WorkingStateEditor({
   }
   const tooLong = requirements.length > 16000;
   const locked = busy || !!pending || !draftReady;
+  /**
+   * 发送前把精确请求保存进草稿，重试只接受同一命令负载。新批准还须核对当前视图和输入。
+   * 成功只清除匹配 commandId 的 pending；明确 4xx 拒绝使旧确认失效，未知结果则保留原请求。
+   * 批准工作状态仅影响后续上下文压缩，不启动或恢复执行。
+   */
   async function save(request: Pending) {
     if (writing.current || !live.current) return;
     if (

@@ -111,6 +111,7 @@ export class RunReads {
   eventPreview(runId: string) {
     return readDetailEvents(this.store, runId);
   }
+  /** 推理展示缓存失败只标记 readUnavailable，不让非权威缓存故障隐藏整个请求。 */
   requestPreview(request: RequestRecord) {
     try {
       const reasoning = this.store.requestReasoningMetadata(request.id);
@@ -145,6 +146,7 @@ export class RunReads {
       };
     }
   }
+  /** 同时传入不可读任务 ID，使“当前没有问题”和“问题无法读取”在界面中可区分。 */
   currentQuestions(run: Run, tasks: readonly Task[]) {
     const unavailable = this.store.db
       .prepare("SELECT record_id FROM projection_read_issues_v1 WHERE table_name='tasks' AND run_id=?")
@@ -163,6 +165,7 @@ export class RunReads {
       operations: this.projections.collection<Operation>('tool_operations', runId),
     };
   }
+  /** 标注详情各分区的读取范围和覆盖率，选中的一页不能被描述为全部请求/操作。 */
   detailCoverage(runId: string, scope: 'all' | 'selected'): RunDetailCoverage {
     const section = (table: 'tasks' | 'requests' | 'tool_operations', selectedScope: 'all' | 'selected') => ({
       ...this.projections.coverage(table, runId),
@@ -184,6 +187,7 @@ export class RunReads {
   retry(runId: string) {
     return this.projections.retry(runId);
   }
+  /** 修改执行状态前强制读取必要记录；任一不可读使入口保持只读，防止基于残缺状态继续执行。 */
   assertExecutionReadable(runId: string) {
     this.executionRecords(runId);
     if (this.hasUnavailable(runId))
@@ -249,6 +253,10 @@ export class RunReads {
       return [{ ...identity, value }];
     });
   }
+  /**
+   * 用量独立汇总完整请求集合，不受当前对话分页影响。缺失成本/缓存观测保留 unknown，
+   * 不可读记录使 costKnown=false，避免将局部统计呈现为完整账单。
+   */
   usage(runId: string): RunUsageSummary {
     const rows = this.metadata('requests', runId);
     const readCoverage = this.projections.coverage('requests', runId);
@@ -299,6 +307,10 @@ export class RunReads {
       })),
     };
   }
+  /**
+   * 按当前消息关联补入请求/操作，并始终保留最近记录及在途/不确定记录。
+   * deferred 首屏暂缓完整统计，但返回明确标记；列表被裁剪不代表历史已被删除。
+   */
   conversation(run: Run, messages: ConversationMessageLinks[], deferred = false) {
     const requestIds = new Set(messages.flatMap((message) => (message.requestId ? [message.requestId] : [])));
     const calls = new Set(

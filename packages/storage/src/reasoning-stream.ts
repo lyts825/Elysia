@@ -24,11 +24,13 @@ type State = {
   pending: number;
 };
 type Chunk = { chunk_index: number; characters: number; content: Uint8Array };
+/** 展示缓存损坏使用统一可重试错误，提醒保留权威原文，不能把缺失内容当作空推理。 */
 function corrupt(): never {
   throw new AppError('REASONING_UNAVAILABLE', '思考文本暂时无法读取，原始记录已保留。', true, null, 422);
 }
 /** 推理内容的可选展示缓存；供应商重放和请求计费不依赖此缓存。 */
 export class ReasoningStreams {
+  /** 建立展示元数据和压缩块；received_characters 跟踪接收量，characters 仅跟踪保留展示量。 */
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS reasoning_streams_v1(
       request_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
@@ -48,6 +50,7 @@ export class ReasoningStreams {
       chunk_index INTEGER NOT NULL,characters INTEGER NOT NULL,
       content BLOB NOT NULL,PRIMARY KEY(request_id,chunk_index));`);
   }
+  /** 同时读取请求状态与缓存归属，供元数据核验和追加资格检查，避免只相信缓存自身的状态。 */
   private state(requestId: string): State | undefined {
     return this.db
       .prepare(
@@ -89,6 +92,7 @@ export class ReasoningStreams {
       status: completed ? 'complete' : state.request_status === 'RESERVED' ? 'streaming' : 'interrupted',
     };
   }
+  /** 有界解压单块并核对实际字符数，防止压缩膨胀或块头与正文不一致。 */
   private decode(row: Chunk): string {
     let text: unknown;
     try {

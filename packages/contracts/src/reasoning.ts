@@ -48,6 +48,7 @@ export function reasoningPrefixLength(text: string, limit: number): number {
   if (last >= 0xd800 && last <= 0xdbff) end--;
   return end;
 }
+/** 检查 UTF-16 偏移是否落在代理对中间，供分页拒绝无法独立解码的起点。 */
 export function splitsReasoningCharacter(text: string, offset: number): boolean {
   const current = text.charCodeAt(offset),
     prior = text.charCodeAt(offset - 1);

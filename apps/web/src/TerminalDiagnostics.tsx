@@ -56,6 +56,7 @@ export function TerminalDiagnostics({
     [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const checkedRequest = useRef(0);
+  // 模板、项目或配置指纹改变后旧诊断不再适用，取消请求并清空其结果。
   useEffect(() => {
     controller.current?.abort();
     setResult(null);
@@ -63,6 +64,7 @@ export function TerminalDiagnostics({
     setBusy(false);
     return () => controller.current?.abort();
   }, [configKey, profileId, projectId]);
+  // 外层修复完成可递增请求号；每个请求号只消费一次，忙碌时等待当前检查结束。
   useEffect(() => {
     if (!recheckRequest || checkedRequest.current === recheckRequest || disabled || busy) return;
     checkedRequest.current = recheckRequest;
@@ -107,6 +109,7 @@ export function TerminalDiagnostics({
       if (!request.signal.aborted) setBusy(false);
     }
   }
+  /** 把诊断结果中的实际应用和连接身份传给外层导航，不直接执行修复或修改配置。 */
   function target(kind: TerminalDiagnosticRepair['kind']) {
     const configuration = result!.configuration;
     repair?.({

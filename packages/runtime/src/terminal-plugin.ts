@@ -17,6 +17,7 @@ export function terminalExecutionPlugin(terminal: DockerAgentService): Execution
         dispose: () => terminal.dispose(),
         queueMetadata: (run) => ({ resourcePreset: preset(run) ?? 'standard' }),
         admission: {
+          // 准备仅刷新容量，不启动 CLI；预约与队列原因都按任务创建时冻结的资源规格计算。
           prepare: (signal) => terminal.refreshResourceCapacity(signal),
           unavailable: (run) => {
             const reason = terminal.resources.reason(preset(run));

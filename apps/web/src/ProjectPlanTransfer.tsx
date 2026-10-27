@@ -11,7 +11,11 @@ import {
 import './project-plan-transfer.css';
 export type PlanImportLifecycle = { hasPending: () => boolean; discard: () => void };
 
-/** 在应用前预览并检查计划文件，离开页面时由生命周期接口保护待处理预览。 */
+/**
+ * 在当前编辑计划上导入或导出可复用计划文件，读取本身只形成预览，不改变草稿。
+ * 确认键同时包含当前编辑内容和导入内容，任一变化都撤销确认；应用还要满足保留原稿后的
+ * 总容量检查。lifecycle 向外层暴露未处理预览，跨页面离开时先由导航门禁处理。
+ */
 export function ProjectPlanTransfer({
   projectId,
   edit,
@@ -65,6 +69,7 @@ export function ProjectPlanTransfer({
       generation.current++;
     };
   }, [projectId]);
+  /** 严格 UTF-8 解码并校验格式/大小，generation 使重选文件或离开后的旧 File 读取失效。 */
   const read = async (file: File) => {
     const request = ++generation.current;
     setPreview(undefined);

@@ -54,9 +54,11 @@ export function collaborationTools(
 
     return result;
   }
+  /** 将已经过 TaskSpec 校验的子任务意图交给内核，代理名额、依赖和授权仍由内核判断。 */
   function execute_spawn_task({ task }: ToolInvocation, args: z.output<typeof schemas.spawn_task>) {
     return context.kernel.spawn(task, args);
   }
+  /** 带目标任务当前 revision 调整其上下文窗口，防止基于旧状态覆盖后来配置。 */
   function execute_allocate_context(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.allocate_context>,
@@ -80,6 +82,7 @@ export function collaborationTools(
 
     return result;
   }
+  /** 委托网关核验每个验收项证据，再推进任务与运行终态；提交摘要本身不等于完成。 */
   async function execute_submit_result(
     { task, signal }: ToolInvocation,
     args: z.output<typeof schemas.submit_result>,

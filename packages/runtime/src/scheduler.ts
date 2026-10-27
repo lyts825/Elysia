@@ -22,7 +22,9 @@ import { ExecutionPlugins, type ExecutionAdmission } from './execution-plugins.j
 import { ExecutionAdmissions } from './execution-admission.js';
 
 export interface SchedulerServices {
+  /** 当前入口的运行归属检查，必须在驱动解析前生效。 */
   acceptRun(run: Run): boolean;
+  /** 执行一轮步骤；Promise 收束前该任务持续占用活动名额。 */
   step(task: Task, signal: AbortSignal): Promise<void>;
   cancelProcesses(taskIds?: Set<string>): Promise<void>;
   disposeTools(): Promise<void>;
@@ -33,6 +35,7 @@ export interface RunControl {
   waitAtLimit(task: Task, code: string, message: string): void;
 }
 export class ExecutionScheduler implements RunControl {
+  // active 是当前进程的在途执行事实，持久任务状态不能替代它判断是否还会产生副作用。
   readonly active = new Map<
     string,
     { controller: AbortController; promise: Promise<void>; account: string; runId: string }
@@ -66,6 +69,7 @@ export class ExecutionScheduler implements RunControl {
     this.timer = setInterval(() => void this.tick(), 300);
     void this.tick();
   }
+  /** 仅请求新一轮调度，不直接将指定运行改为 READY；状态变更由调用方先完成。 */
   resume(_runId: string) {
     void this.tick();
   }
@@ -145,6 +149,7 @@ export class ExecutionScheduler implements RunControl {
       return 'account-concurrency';
     return admission?.reason(task, run) ?? 'ready';
   }
+  /** 入口、持久停止和归档检查先于通道选择，旧入口不能因加载了某驱动就调度其历史任务。 */
   private schedulableRun(run: Run) {
     return (
       this.services.acceptRun(run) &&
@@ -154,6 +159,7 @@ export class ExecutionScheduler implements RunControl {
       (!run.projectId || !this.kernel.store.require<Project>('projects', run.projectId).archived)
     );
   }
+  /** 以最近派发次序做轮转，避免每步回到 READY 的任务长期挤占一直等待的同级任务。 */
   private orderedCandidates(tasks: readonly Task[]) {
     // A native step may return to READY. Give waiting peers their turn before it runs again.
     return [...tasks].sort(
@@ -221,6 +227,10 @@ export class ExecutionScheduler implements RunControl {
     if (this.timer) clearInterval(this.timer);
     return (this.closing = Promise.resolve().then(() => this.close()));
   }
+  /**
+   * 先保存可调度运行的暂停，再取消在途工作、等待准备阶段收束，最后释放驱动和工具。
+   * 每个阶段收集异常而非遇首错退出，确保某条损坏记录不会跳过其他进程的停止。
+   */
   private async close() {
     const errors: unknown[] = [];
     const settle = async (work: Promise<unknown>[]) => {
@@ -322,6 +332,7 @@ export class ExecutionScheduler implements RunControl {
       for (const taskId of this.dispatchOrder.keys())
         if (!candidates.has(taskId) && !this.active.has(taskId)) this.dispatchOrder.delete(taskId);
       const admissions = new Set<ExecutionAdmission>();
+      // 多种贡献键可指向同一资源域；按实例去重，使每轮容量检查只执行一次。
       for (const task of tasks) {
         const run = this.kernel.store.require<Run>('runs', task.runId);
         if (this.active.has(task.id) || !this.schedulableRun(run)) continue;
@@ -329,6 +340,7 @@ export class ExecutionScheduler implements RunControl {
         if (admission) admissions.add(admission);
       }
       const dispatched = new Set<string>();
+      // 所有准备完成回调共用本轮 dispatched；同一候选不能被多个就绪回调重复启动。
       const dispatch = () => this.dispatchReady(tasks, dispatched);
       const preparing = this.admissions.prepare(
         admissions,
@@ -379,6 +391,7 @@ export class ExecutionScheduler implements RunControl {
       });
     }
   }
+  /** 优先读取结构化限流信息；旧记录仅在没有新字段时使用 result.resumeAt。 */
   rateLimitResumeAt(task: Task) {
     const legacy =
       task.result && typeof task.result === 'object'
@@ -387,6 +400,7 @@ export class ExecutionScheduler implements RunControl {
     const value = task.rateLimit === undefined ? legacy : task.rateLimit?.resumeAt;
     return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
   }
+  /** 只唤醒已到期且依赖满足的限流分支；未来冷却、持久停止和归档运行保持等待。 */
   private resumeRateLimited(runId: string) {
     if (this.isLocallyStopped(runId)) return;
     this.kernel.store.tx(() => {
@@ -433,6 +447,7 @@ export class ExecutionScheduler implements RunControl {
         this.kernel.updateRun(run, { status: 'READY', reason: undefined });
     });
   }
+  /** 仅对仍在 RUNNING 的任务写限流等待，避免迟到请求覆盖用户暂停或取消。 */
   waitAtRateLimit(task: Task, rateLimit: NonNullable<Task['rateLimit']>) {
     this.kernel.store.tx(() => {
       const current = this.kernel.store.require<Task>('tasks', task.id);
@@ -441,6 +456,7 @@ export class ExecutionScheduler implements RunControl {
       this.kernel.wait(updated, 'rate_limit');
     });
   }
+  /** 累计预算等硬限制转为 limit 等待并记录事件；重复的同类等待不反复推进版本。 */
   waitAtLimit(task: Task, code: string, message: string) {
     this.kernel.store.tx(() => {
       const current = this.kernel.store.require<Task>('tasks', task.id);
@@ -449,6 +465,10 @@ export class ExecutionScheduler implements RunControl {
       this.kernel.event(current.runId, 'limit.reached', { taskId: current.id, code, message }, current.id);
     });
   }
+  /**
+   * 步骤异常按语义分类：订阅额度/预算进入可解释等待，其余标记任务与活动尝试失败。
+   * 已等待、完成或取消的任务不再覆盖，避免异常回调破坏用户刚提交的状态。
+   */
   fail(task: Task, error: unknown) {
     const store = this.kernel.store;
     const current = store.require<Task>('tasks', task.id);

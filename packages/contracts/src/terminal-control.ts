@@ -53,6 +53,7 @@ export interface TerminalConnectionView extends TerminalConnectionBinding {
   credentialSource: 'environment' | 'vault';
   health?: TerminalConnectionHealth;
 }
+/** 编辑连接的幂等命令；密钥只允许加密保存模式接收，环境变量模式只保存变量名。 */
 export const TerminalConnectionWrite = z
   .object({
     commandId: z.string().uuid(),
@@ -107,6 +108,7 @@ export const TerminalConnectionHealthResult = TerminalConnectionProbeResult.omit
   .extend({ modelCount: z.number().int().nonnegative().optional() })
   .strict();
 export type TerminalConnectionHealthResult = z.infer<typeof TerminalConnectionHealthResult>;
+/** 连通性与模型目录分别记录时间和状态，且都绑定连接修订以识别配置变化后的旧结果。 */
 export const TerminalConnectionHealth = z
   .object({
     connectionId: z.string().uuid(),
@@ -116,6 +118,7 @@ export const TerminalConnectionHealth = z
   })
   .strict();
 export type TerminalConnectionHealth = z.infer<typeof TerminalConnectionHealth>;
+/** 模板/项目/应用选择解析后的安全诊断；只列环境变量名和命令预览，不返回凭据值。 */
 export const TerminalProfileDiagnostics = z
   .object({
     profileId: z.string().uuid(),
@@ -141,6 +144,7 @@ export const TerminalProfileDiagnostics = z
   })
   .strict();
 export type TerminalProfileDiagnostics = z.infer<typeof TerminalProfileDiagnostics>;
+/** 固定保留五个应用身份，可调整可见性和连接；默认应用必须在可见集合内。 */
 export const TerminalControlApps = z
   .object({
     revision: z.number().int().nonnegative(),
@@ -165,6 +169,7 @@ export const TerminalControlApps = z
       context.addIssue({ code: 'custom', path: ['defaultAppId'], message: '默认应用须开启显示' });
   });
 export type TerminalControlApps = z.infer<typeof TerminalControlApps>;
+/** 项目级模板与连接选择，null 表示沿用上层默认，不复制可变连接作为运行绑定。 */
 export const TerminalProjectPreferences = z
   .object({
     revision: z.number().int().nonnegative(),
@@ -203,6 +208,7 @@ export const TerminalCliInstallationPhase = z.enum([
   'complete',
 ]);
 export type TerminalCliInstallationPhase = z.infer<typeof TerminalCliInstallationPhase>;
+/** 安装任务的阶段快照；只有核验后的 result 才包含实际镜像摘要和实际 CLI 版本。 */
 export const TerminalCliInstallationJob = z
   .object({
     id: z.string().uuid(),

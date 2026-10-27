@@ -38,6 +38,7 @@ function fileText(file: ProjectDraftBackupFile): string {
     throw Error('备份文件超过 640 KiB，未生成不完整文件。当前原稿未改动。');
   return raw;
 }
+/** 生成包含完整 draftRaw 和精确所属身份的备份；任何容量或草稿校验失败都不产生截断文件。 */
 export function createProjectDraftBackup(
   draftRaw: string,
   current: ProjectDraftBackupBinding,
@@ -55,6 +56,7 @@ export function createProjectDraftBackup(
   });
   return { file, raw: fileText(file) };
 }
+/** 严格读取备份 JSON 并核对三重所属身份；跨项目、跨入口或跨认证范围均拒绝完整恢复。 */
 export function readProjectDraftBackup(
   raw: string,
   current: ProjectDraftBackupBinding,
@@ -111,6 +113,10 @@ export function projectDraftProtectionKey(current: ProjectDraftBackupBinding): s
   const owner = requireBinding(current);
   return `elysia.project-draft-restore.v1:${owner.workbenchScope}:${owner.surface}:${encodeURIComponent(owner.projectId)}`;
 }
+/**
+ * 比较当前浏览器副本仍等于预览时的 expectedProtection 后保存恢复前原稿。
+ * 已有相同原稿可复用；不同或不可读副本要求明确 replace，写入后读回一致才返回成功。
+ */
 export function protectProjectDraftBeforeRestore(
   storage: BackupStorage,
   current: ProjectDraftBackupBinding,
@@ -148,6 +154,10 @@ export function protectProjectDraftBeforeRestore(
   }
   return next.raw;
 }
+/**
+ * 独占锁覆盖重新核验、保护原稿和应用备份，readCurrent 在等待结束和应用前各检查一次。
+ * assertActive 由界面验证代次与范围；缺少 LockManager 时拒绝恢复，不能降级为无锁覆盖。
+ */
 export async function restoreProjectDraftWithProtection({
   locks,
   storage,
@@ -196,6 +206,7 @@ export async function restoreProjectDraftWithProtection({
     return protectedCopy;
   });
 }
+/** 使用与恢复相同的锁删除明确确认过的副本；删除后读回 null 才能证明成功。 */
 export async function deleteProjectDraftProtection({
   locks,
   storage,

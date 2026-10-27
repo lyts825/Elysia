@@ -100,6 +100,7 @@ export function canonicalDestination(destination: string): string {
   return path.join(canonicalDestination(parent), path.basename(destination));
 }
 
+/** 原生入口使用根目录，终端入口使用独立子目录；备份恢复均以此映射避免混用数据库。 */
 export function surfaceDirectory(root: string, surface: Surface) {
   return surface === 'native' ? root : path.join(root, 'surfaces', 'terminal');
 }
@@ -110,6 +111,7 @@ export function assertDirectory(directory: string) {
     throw new Error('维护目录不能是链接或特殊文件：' + directory);
 }
 
+/** 验证入口目录和数据库是普通文件，并拒绝两个入口通过硬链接指向同一个数据库。 */
 export function assertSurfacePath(root: string, surface: Surface) {
   if (surface === 'terminal') {
     for (const item of [path.join(root, 'surfaces'), surfaceDirectory(root, surface)])
@@ -128,7 +130,10 @@ export function assertSurfacePath(root: string, surface: Surface) {
   }
 }
 
-/** 创建数据库快照，并按预期版本检查源数据。 */
+/**
+ * 使用 SQLite backup 捕获已提交 WAL 页面，随后转换为独立 DELETE 日志模式数据库。
+ * 校验 schema 和完整性只作用于副本；expectedVersion 用于防止备份元数据与实际库版本不符。
+ */
 export async function snapshotDatabase(source: string, target: string, expectedVersion?: number) {
   if (!lstatSync(source).isFile() || lstatSync(source).isSymbolicLink())
     throw new Error('数据库不能是链接或特殊文件');
@@ -161,6 +166,7 @@ export async function snapshotDatabase(source: string, target: string, expectedV
   }
 }
 
+/** 递归复制普通对象/日志文件并在复制前后核对 SHA-256，来源变化或链接使备份失败。 */
 export function copyDirectory(source: string, target: string) {
   assertDirectory(source);
   mkdirSync(target, { recursive: true });
@@ -179,6 +185,10 @@ export function copyDirectory(source: string, target: string) {
   }
 }
 
+/**
+ * 将单入口数据库、对象和日志准备到目标目录。migrate 只升级准备副本，随后再次快照为
+ * 独立数据库，并验证交付归档引用；所有入口准备完成前不改写当前运行数据。
+ */
 export async function prepareSurface(
   source: string,
   target: string,
@@ -223,6 +233,7 @@ export async function prepareSurface(
   return { schemaVersion, dataFormat: dataFormat(schemaVersion), includes };
 }
 
+/** 解析备份封装并核对入口目录和最低读取格式；旧版根备份只认作原生入口，不猜测终端数据。 */
 export function backupSurfaces(source: string): Partial<Record<Surface, SurfaceBackup>> {
   const metadata = JSON.parse(readFileSync(path.join(source, 'backup.json'), 'utf8'));
   if (!supportedSchema(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
@@ -263,6 +274,7 @@ export function backupSurfaces(source: string): Partial<Record<Surface, SurfaceB
   return selected;
 }
 
+/** 只移除数据目录的 .maintenance-* 直属临时目录，防止计算错误扩大递归删除范围。 */
 export function removeStage(stage: string, directory: string) {
   if (
     path.dirname(path.resolve(stage)) !== path.resolve(directory) ||
@@ -310,6 +322,10 @@ export function acquireSurfaceLocks(directory: string) {
   }
 }
 
+/**
+ * 依据持久安装日志完成启动恢复。installing 表示替换尚未提交，逐项从原件归档回滚；
+ * committed 表示新数据已生效，只清理日志/准备目录。任何归属不明的路径都拒绝自动恢复。
+ */
 export function recoverPreparedInstall(directory: string) {
   const filename = path.join(directory, journalName);
   if (!existsSync(filename)) return;
@@ -363,6 +379,10 @@ export function recoverPreparedInstall(directory: string) {
   if (existsSync(stage)) removeStage(stage, directory);
 }
 
+/**
+ * 在双方入口锁保护下安装已校验的准备副本。先记录原始存在性并 fsync 日志，再归档旧文件
+ * 和移动新文件；只有全部替换完成才提交日志。失败尝试恢复原件，失败的回滚留待下次启动。
+ */
 export function installPrepared(directory: string, stage: string, surfaces: Surface[]) {
   if (path.dirname(stage) !== directory || !/^\.maintenance-[a-zA-Z0-9_-]+$/.test(path.basename(stage)))
     throw new Error('维护安装暂存路径越界');

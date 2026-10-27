@@ -65,6 +65,7 @@ if (
 )
   throw new Error('本地依赖与锁文件不一致；打包器不下载或安装依赖');
 
+/** 同步运行构建/校验工具并继承输出；任何非零退出或启动错误立即中止发布流程。 */
 function command(filename, parameters, cwd = root) {
   const result = spawnSync(filename, parameters, { cwd, windowsHide: true, stdio: 'inherit' });
   if (result.error || result.status !== 0) throw result.error || new Error('构建命令失败：' + filename);
@@ -160,6 +161,7 @@ output = realpathSync(output);
 const destination = path.join(output, name),
   zip = destination + '.zip';
 if (existsSync(destination) || existsSync(zip)) throw new Error('分发目标已存在，拒绝覆盖：' + destination);
+// 发行目标已存在时拒绝覆盖；本次所有复制和验证先放在唯一临时目录。
 const stage = path.join(output, '.building-' + randomUUID());
 mkdirSync(stage);
 /** 复制普通目录和文件，遇到链接或特殊文件时中止打包。 */
@@ -306,6 +308,7 @@ try {
     dependencies: copied,
     files,
   };
+  // 完整清单生成后使用包内校验入口复核，再发布目录；校验失败不会产生正式发行目标。
   writeFileSync(path.join(app, 'distribution.json'), JSON.stringify(manifest, null, 2));
   command(process.execPath, [path.join(app, 'apps/desktop/packaged.cjs')], stage);
   renameSync(stage, destination);

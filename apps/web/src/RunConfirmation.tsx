@@ -5,6 +5,10 @@ import { requirementLines } from './TaskRequirements';
 import './run-setup.css';
 import './run-confirmation.css';
 
+/**
+ * 以只读摘要展示本次原生任务配置，并突出与项目默认配置不同的字段。
+ * adjust 仅返回编辑步骤，真正提交由上层表单负责；显示的权限来自当前 value，不从默认值补授。
+ */
 export function RunConfirmation({
   projectName,
   objective,

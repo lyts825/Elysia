@@ -12,6 +12,11 @@ const surfaces = [
   { id: 'terminal', label: 'Agent 终端', description: 'DSH / Codex CLI · Docker 调度', icon: 'terminal' },
 ] as const;
 
+/**
+ * 按当前客户端显示入口菜单，change 只在未忙碌时发出目标入口选择。
+ * portal 限定在当前入口根，菜单支持方向键/Home/End；外部点击、滚动或尺寸变化关闭，
+ * Esc/Tab 关闭时恢复触发焦点，避免已改变布局的菜单仍悬在旧位置。
+ */
 export function SurfaceSwitcher({
   disabled,
   switching,

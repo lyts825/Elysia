@@ -103,7 +103,10 @@ function browserSnapshot(): StartupDiagnosticSnapshot {
   return { version: 1, records: [current, ...prior].slice(0, 20) };
 }
 
-// Timing is best effort and never blocks authentication, lists, or animation playback.
+/**
+ * 尽力记录启动阶段，不阻塞认证、列表或动画。桌面使用主进程统一时基，浏览器保留本次
+ * performance 耗时；同阶段/入口/结果只记一次，存储失败也不使用户动作失败。
+ */
 export function markStartupStage(
   stage: StartupStage,
   options: { surface?: 'native' | 'terminal'; status?: StartupStageStatus } = {},
@@ -150,6 +153,7 @@ export function markStartupStage(
   }
 }
 
+/** 桌面诊断也经本地校验清洗后返回；浏览器从有界历史中构造同一格式快照。 */
 export async function readStartupDiagnostics(): Promise<StartupDiagnosticSnapshot> {
   if (window.elysia?.readStartupDiagnostics) {
     const snapshot = await window.elysia.readStartupDiagnostics();

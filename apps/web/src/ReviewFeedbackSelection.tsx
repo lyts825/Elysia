@@ -58,11 +58,13 @@ export function ReviewFeedbackSelection({
   const items = value
     ? reviewCandidates(value.userReview, local, value.fingerprint, value.userReview?.reviewId ?? null)
     : [];
+  // pending 表示勾选草稿，added 才会作为新任务来源提交；两组按完整来源字段生成键去重。
   const pendingKeys = new Set(state.pending.map(reviewNoteKey)),
     addedKeys = new Set(state.added.map(reviewNoteKey));
   const changed =
     !!value && !!(state.pending.length || state.added.length) && state.fingerprint !== value.fingerprint;
   const locked = disabled || reading || !!error || !value;
+  /** 首次勾选固定当前交付指纹，已有选择不因重新读取而被静默更新为新版本。 */
   function toggle(note: ReviewSourceNote) {
     const key = reviewNoteKey(note);
     change({
@@ -106,6 +108,7 @@ export function ReviewFeedbackSelection({
       </article>
     ));
   const addition = state.pending.filter((note) => !addedKeys.has(reviewNoteKey(note)));
+  // 容量校验针对加入后的完整集合，不能让每条单独合规的备注合并后突破总字节预算。
   const combined = [...state.added, ...addition];
   const issue = reviewNotesIssue(combined);
   return (

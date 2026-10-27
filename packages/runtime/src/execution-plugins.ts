@@ -18,7 +18,9 @@ export interface ExecutionAdmission {
 }
 
 export interface ExecutionDriver {
+  /** 只执行宿主已经准入的单步；不得自行绕过内核领取或启动其他任务。 */
   step(task: Task, signal: AbortSignal): Promise<void>;
+  /** 中断范围由运行与可选任务标识限定，必须等待可确认的停止动作结束。 */
   interrupt?(runId: string, taskId?: string): Promise<void>;
   dispose?(): Promise<void>;
   admission?: ExecutionAdmission;
@@ -34,6 +36,7 @@ export class ExecutionPlugins {
   private closing?: Promise<void>;
   constructor(plugins: readonly ExecutionPlugin[]) {
     this.registry = new PluginRegistry(plugins);
+    // 一个实例可能贡献多个通道键；中断和释放必须按实例去重，而不是按贡献键重复执行。
     this.drivers = [...new Set(this.registry.entries().map(([, driver]) => driver))];
   }
   /** 按运行冻结的通道类型选取驱动；旧运行缺省使用 native。 */

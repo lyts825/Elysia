@@ -32,7 +32,11 @@ const searchQuery = z.object({
 });
 const edgeText = (bytes: Buffer) => bytes.toString('utf8').replace(/^\uFFFD+|\uFFFD+$/g, '');
 
-/** 注册终端日志搜索接口；校验关键词、游标及产物归属，并限制扫描字节数。 */
+/**
+ * 只搜索已登记操作对应的公开终端日志，不访问私有 CLI 会话文件。
+ * 每请求按字节游标扫描最多 8 MiB，跨块保留关键词重叠和短上下文，不把整个日志装入内存；
+ * 页结束后重新核验产物版本，nextCursor 仅表示本次扫描进度，不是全日志匹配总数。
+ */
 export function registerTerminalLogSearchRoutes(
   app: FastifyInstance,
   store: Store,

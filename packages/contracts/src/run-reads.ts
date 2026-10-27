@@ -23,12 +23,14 @@ export type CurrentQuestion = {
   questions: string[];
   seq: number;
 };
+/** 仅当前仍未回答的问题；limited/unavailableTaskIds 区分读取受限与确实没有问题。 */
 export type RunCurrentQuestions = {
   items: CurrentQuestion[];
   coverage: ProjectionReadCoverage & { limited: boolean };
   unavailableTaskIds: string[];
 };
 export type EventPreviewCoverage = ProjectionReadCoverage & { limited: boolean };
+/** 停止动作的分项结果，调度暂停、持久记录与本机进程停止必须分别核验。 */
 export type RunStopCurrentResult = {
   runId: string;
   interrupted: boolean;
@@ -38,12 +40,14 @@ export type RunStopCurrentResult = {
   replayed: boolean;
   message: string;
 };
+/** 跨重启保留的调度暂停，独立于任务状态；不可读记录修复后仍需显式恢复。 */
 export type ExecutionHold = {
   reason: 'user_stop' | 'recovery_unreadable';
   since: string;
   issueCount: number;
   message: string;
 };
+/** 按稳定 before 游标读取记录；total 是范围内总数，不是当前页长度。 */
 export type RecordPage = {
   total: number;
   limit: number;
@@ -51,6 +55,7 @@ export type RecordPage = {
   hasMore: boolean;
   nextBefore: string | null;
 };
+/** 完整账本的独立汇总，costKnown=false 时 cost 仅含已知金额，不能视为完整费用。 */
 export type RunUsageSummary = {
   readCoverage?: ProjectionReadCoverage;
   requestCount: number;

@@ -8,6 +8,10 @@ import './workflow.css';
 import './delivery-overview.css';
 import './delivery-status-card.css';
 
+/**
+ * 定期读取轻量人工复核摘要，按传入版本隔离结果并防止同轮读取重入。
+ * 显式重试可请求服务端重新核验失败摘要；读取问题与未复核状态分别显示。
+ */
 export function DeliveryStatusCard({
   runId,
   version,

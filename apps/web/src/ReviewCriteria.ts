@@ -4,6 +4,10 @@ import { ApiError, type SurfaceClient } from './api';
 import type { ReviewNote } from './ReviewDraft';
 
 /** Resolve only the pages needed by notes, without mixing delivery versions. */
+/**
+ * 根据旧备注索引只读取必要验收页，返回 index 到当前标准的映射用于逐字重关联。
+ * 所有页必须仍属于首屏的运行、根版本、交付指纹及分页范围，任一变化整体失败。
+ */
 export async function readReviewCriteria(
   api: SurfaceClient['api'],
   initial: DeliveryReview,

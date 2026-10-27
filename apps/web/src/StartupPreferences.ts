@@ -144,6 +144,7 @@ async function uploadBlob(upload: StartupMediaUpload): Promise<Blob> {
 }
 
 let database: Promise<IDBDatabase> | undefined;
+/** 共享浏览器媒体数据库连接；升级或失败会清除 Promise 缓存，后续操作可重新建立连接。 */
 function mediaDatabase() {
   if (database) return database;
   database = new Promise<IDBDatabase>((resolve, reject) => {
@@ -164,6 +165,7 @@ function mediaDatabase() {
   });
   return database;
 }
+/** 等待整个 IndexedDB 事务提交后才返回请求值，不能只用 onsuccess 宣称媒体已经保存。 */
 async function mediaTransaction<T>(
   mode: IDBTransactionMode,
   operation: (store: IDBObjectStore) => IDBRequest<T>,
@@ -213,6 +215,7 @@ function clearMediaCache() {
 }
 window.addEventListener('pagehide', clearMediaCache);
 
+/** 读取旧版内联媒体偏好，完整校验后把媒体移入 IndexedDB，再保存 v2 元数据。 */
 async function migrateBrowser(): Promise<StartupPreferences> {
   const raw = localStorage.getItem(legacyStorageKey);
   if (!raw) return { ...defaultStartupPreferences };
@@ -245,6 +248,10 @@ async function migrateBrowser(): Promise<StartupPreferences> {
   localStorage.setItem(storageKey, JSON.stringify(config));
   return config;
 }
+/**
+ * 合并并发偏好加载。桌面读取本机存储，浏览器读取 v2 或迁移旧格式；generation 防止
+ * 加载结果覆盖期间已成功保存的新配置。失败显示默认外观并保留原偏好待修复。
+ */
 export function loadStartupPreferences() {
   if (loadPromise) return loadPromise;
   const current = generation;
@@ -279,6 +286,10 @@ export function loadStartupPreferences() {
   return loadPromise;
 }
 
+/**
+ * 按媒体摘要共享读取 Promise；浏览器 Blob 在创建 URL 前重新核对大小、头部和摘要。
+ * 新媒体或 pagehide 会撤销旧 blob URL，防止缓存长期持有大文件。
+ */
 export async function readStartupMedia(value: StartupMedia): Promise<string> {
   const media = normalizeStartupMedia(value);
   if (mediaCache?.id === media.id) return mediaCache.pending;
@@ -301,6 +312,7 @@ export async function readStartupMedia(value: StartupMedia): Promise<string> {
   return entry.pending;
 }
 
+/** 在独立图像/视频元素中实际解码，8 秒内无有效画面视为失败，并清理媒体来源及临时 URL。 */
 export async function validateStartupMedia(
   media: StartupMedia,
   upload?: StartupMediaUpload,
@@ -362,6 +374,11 @@ export async function validateStartupMedia(
   }
 }
 
+/**
+ * 串行保存经过规范化的偏好，动画启用时先确认可解码。
+ * 浏览器先写媒体再写配置，配置失败只回滚本次新建媒体；提交成功后才发布外部状态并清理旧媒体。
+ * 桌面分支通过受限桥发送配置及校验后的 data URL，原始文件不由页面直接写本机目录。
+ */
 export function saveStartupPreferences(value: StartupPreferences, upload?: StartupMediaUpload) {
   const config = normalizeStartupPreferences(value);
   const job = saving
@@ -414,6 +431,7 @@ export function saveStartupPreferences(value: StartupPreferences, upload?: Start
   saving = job;
   return job;
 }
+/** 导入仅接受不超过 4 MiB 的本地 GIF/MP4/WebM，再由 fromBlob 核对实际内容并生成摘要。 */
 export async function importStartupFile(file: File): Promise<StartupMediaUpload> {
   if (!file.size || file.size > startupMediaLimit) throw new Error('请选择不超过 4 MiB 的本地动画文件');
   const mime = ({ gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm' } as const)[
@@ -422,6 +440,7 @@ export async function importStartupFile(file: File): Promise<StartupMediaUpload>
   if (!mime) throw new Error('仅支持 GIF、MP4 或 WebM 动画');
   return fromBlob(file.name, mime, file);
 }
+/** 所有启动界面共享同一个外部存储快照；首次挂载触发幂等加载。 */
 export function useStartupPreferences() {
   const value = useSyncExternalStore(subscribe, () => state);
   useEffect(() => {

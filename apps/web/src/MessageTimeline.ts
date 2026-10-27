@@ -15,6 +15,7 @@ export function isInboxUserMessage(message: Message): boolean {
 
 /** 同一运行的同一来源若正文一致只显示一次；正文冲突时保留所有记录供核对。 */
 export function conversationMessages(messages: readonly Message[]): Message[] {
+  // 先检查同源文字是否冲突再去重；单遍先删重复会隐藏后来发现的冲突证据。
   const sources = new Map<string, { text: string; conflict: boolean }>();
   const sourceKey = (message: Message) => JSON.stringify([message.runId, message.sourceInboxId]);
   for (const message of messages) {

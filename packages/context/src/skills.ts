@@ -46,6 +46,7 @@ const builtinResources: Record<string, readonly string[]> = {
 const skillIds = Object.keys(builtinResources);
 const BUILTIN_RESOURCE_BYTES = 64 * 1024;
 
+/** 解析真实路径并要求文件同时位于技能根和该技能目录内，拒绝通过链接越界。 */
 function resourceFile(id: string, relativePath: string) {
   const root = realpathSync(builtinResourcePath('skills'));
   const skillRoot = realpathSync(path.join(root, id));
@@ -63,6 +64,7 @@ function resourceFile(id: string, relativePath: string) {
   return file;
 }
 
+/** 读取有界 UTF-8 资源并保存精确字节摘要；不能无损解码的文件不作为模型指导。 */
 function readResource(id: string, relativePath: string) {
   let bytes: Buffer;
   try {
@@ -132,6 +134,10 @@ export function parseSkillMetadata(source: string, id: string) {
   };
 }
 
+/**
+ * 只接受应用维护的技能 ID；目录模式最多读取入口前 16 KiB，完整加载才读取全部正文。
+ * 入口名称必须与注册 ID 一致，返回的 hash 绑定规范化后的完整或目录读取文本。
+ */
 function readSkill(id: string, metadataOnly = false): LoadedSkill {
   if (!(skillIds as readonly string[]).includes(id))
     throw new AppError('SKILL_NOT_FOUND', `未注册的技能：${id}`);
@@ -201,6 +207,7 @@ export function loadSkillFile(
   )
     throw new AppError('SKILL_RESOURCE_PATH', '技能资源路径无效');
   const snapshot = capabilitySnapshot(scope);
+  // 显式注册清单与冻结资源构成读取边界，不提供任意技能目录文件读取能力。
   let resource: NonNullable<CapturedSkill['resources']>[number];
   if (snapshot) {
     const skill = snapshot.builtinSkills.find((entry) => entry.id === id);
@@ -272,5 +279,6 @@ export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): L
     const { resources: _resources, ...entrypoint } = skill;
     return structuredClone(entrypoint);
   }
+  // 仅没有任务快照的入口使用当前内置文件，旧任务不会因升级自动得到新技能正文。
   return readSkill(id);
 }

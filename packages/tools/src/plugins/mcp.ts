@@ -37,6 +37,7 @@ export function mcpTools(
     library: Pick<ToolServices['library'], 'scopedLocalItems' | 'readLocalMcpConfig'>;
   },
 ): PluginContributions<ToolContribution> {
+  /** 只列出当前运行可见且启用的服务元数据，不启动进程或发网络请求。 */
   function execute_list_mcp_servers(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.list_mcp_servers>,
@@ -49,6 +50,7 @@ export function mcpTools(
       context.catalogueBudget(task),
     );
   }
+  /** 显式连接后校验工具目录，再按任务预算分页；连接权限由当前任务实时计算。 */
   async function execute_mcp_list_tools(
     { task, signal }: ToolInvocation,
     args: z.output<typeof schemas.mcp_list_tools>,
@@ -66,6 +68,7 @@ export function mcpTools(
     );
     return result;
   }
+  /** 在本次运行资源范围内解析连接，向客户端传递完整权限与取消信号，不复用未经核验的调用。 */
   async function execute_mcp_call({ task, signal }: ToolInvocation, args: z.output<typeof schemas.mcp_call>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);

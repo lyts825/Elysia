@@ -23,7 +23,11 @@ const start = (scope: string) => ({
   revision: 0,
 });
 
-/** 按文件、编码和刷新代次分页读取；可选检查点只恢复相同文件与编码的位置。 */
+/**
+ * 按文件端点、编码和手动刷新代次形成读取范围，页偏移与服务端版本决定一次正文请求。
+ * 同范围翻页期间可保留上次内容，跨文件/编码则立即废弃旧游标；FILE_CHANGED 回到首页，
+ * 不将不同版本字节拼接。返回的导航函数会检查加载互斥、偏移范围及最多 128 次历史。
+ */
 export function useFilePage(endpoint: string, encoding: string, refresh: number, checkpointKey?: string) {
   const client = useSurfaceClient(),
     { api } = client;
@@ -100,6 +104,7 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number,
       controller.abort();
     };
   }, [key, scope, endpoint, encoding, current.offset, current.version, current.revision]);
+  /** 页面必须先取得有效 version，后续跳转全部携带此版本以供服务端对齐和变更检查。 */
   const move = (offset: number, history: number[]) => {
     // 读取尚未完成或偏移无效时不切页；历史最多保留 128 次跳转。
     if (loading || pending.current || !value?.page) return;

@@ -105,6 +105,7 @@ function useCommunicationRead<T>(
           value: undefined,
           position: undefined,
         };
+  // path 尚未切换成功时可保留同 scope 的旧页，但 loading/position 会明确指出数据仍是旧页。
   return {
     ...visible,
     loading: state.path !== path || visible.loading,
@@ -330,15 +331,21 @@ export function TerminalCommunication({
 
   const selection = selected?.source === base && selected.id === draft.targetRunId ? selected : undefined;
   const peer = selection?.peer;
+  // 保存过 commandId/版本的草稿代表原请求核对；此时不能用新的接收方检查替换原负载。
   const retrying = !!draft.commandId && Number.isSafeInteger(draft.expectedRevision);
   const canSend =
     !!draft.targetRunId && !!draft.text.trim() && (retrying || (!!peer?.canReceive && !selection?.issue));
+  /** 实际编辑生成新草稿，移除旧命令身份，让下次发送建立新的请求。 */
   const edit = (next: Pick<TerminalCommunicationDraft, 'targetRunId' | 'text'>) => {
     if (next.targetRunId === draft.targetRunId && next.text === draft.text) return;
     changeDraft(next);
     setSendIssue('');
     setNotice('');
   };
+  /**
+   * 首次发送先把 commandId 和来源运行版本写回草稿，未知结果重试沿用该身份。
+   * 成功通知外层按 sent 精确清理草稿；版本明确冲突时只解除同一未修改草稿的请求绑定。
+   */
   const send = async () => {
     if (disabled || sendLock.current || !canSend) return;
     const sent = {
@@ -390,6 +397,7 @@ export function TerminalCommunication({
       if (mounted.current) setSending(false);
     }
   };
+  /** 仅为仍 queued 的消息建立处置草稿；已有另一条含理由或命令身份的草稿必须先处理。 */
   const beginResolution = (item: TerminalCommunicationItem) => {
     if (disabled || resolutionLock.current || item.status !== 'queued') return;
     if (
@@ -411,6 +419,10 @@ export function TerminalCommunication({
     setResolutionRejected(false);
     resolutionEditor.current?.focus();
   };
+  /**
+   * 人工处置绑定消息修订和 commandId。未知结果保留原理由与请求供核对；明确 HTTP 拒绝
+   * 会锁住此处置，要求重新查看消息，而不是按新版本静默重放决定。
+   */
   const resolveMessage = async () => {
     if (disabled || resolutionLock.current || !resolutionDraft?.note.trim() || resolutionRejected) return;
     const sent = { ...resolutionDraft, commandId: resolutionDraft.commandId || crypto.randomUUID() };
@@ -455,6 +467,7 @@ export function TerminalCommunication({
     }
   };
   const visibleMessageCursors = messages.position?.cursors || [];
+  // 分页按钮依据已显示结果的游标链，而非正在请求的新游标，失败时仍可正确返回旧页。
   const visiblePeerCursors = peers.position?.cursors || [];
 
   return (

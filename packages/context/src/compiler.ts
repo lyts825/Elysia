@@ -18,6 +18,7 @@ type LocalCatalogueEntry = {
   source?: string;
   sourceKind?: string;
 };
+/** 按 UTF-8 字节限制目录字段，逐码点遍历以免把多字节字符截成无效文本。 */
 function clipCatalogueText(value: string, limit: number) {
   let result = '',
     bytes = 0;
@@ -29,6 +30,10 @@ function clipCatalogueText(value: string, limit: number) {
   }
   return result;
 }
+/**
+ * 三类目录轮流取同一位置的条目，共享一个序列化字节预算，避免某类独占窗口。
+ * 放不下的条目仅省略内联展示，完整目录仍由后续分页工具访问。
+ */
 function boundedLocalCatalogue(
   entries: Record<'skills' | 'memories' | 'mcp', LocalCatalogueEntry[]>,
   budgetBytes: number,
@@ -100,6 +105,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     },
     Math.floor(catalogueBudgetTokens / factor),
   );
+  // P0 为平台规则，P1 为角色与已加载技能，P2 为合同边界及来源快照；资料始终按数据标记。
   const p0 = prompt('platform'),
     p1 =
       (run.kind === 'chat'
@@ -128,6 +134,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
       permissions: run.contract.permissionProfile,
       snapshots: snapshot.snapshotContents,
     });
+  // 将当前身份和本任务义务明确写入上下文，防止子代理误把全局合同当成自己的全部工作。
   const currentTask = {
     taskId: task.id,
     key: task.spec.key,
@@ -262,6 +269,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     accessibleArtifacts: snapshot.accessibleArtifacts,
     children: snapshot.children,
   });
+  // 配对检查在压缩前后都执行；原始历史哈希用于审计，实际发送历史可包含可回查摘要。
   let history = snapshot.history;
   validatePairs(history);
   const originalHash = hash(stable(history));
@@ -270,6 +278,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
   const estimate = (items: Message[]) =>
     runtimeReserveTokens + fixedTokens + Buffer.byteLength(stable(items), 'utf8') * factor;
   const effective = inputBudgetTokens;
+  // 原文对象引用由内容摘要确定。纯编译只返回待写对象，由调用方先持久化再使用引用。
   const source = stable({
     algorithm: COMPACTION_ALGORITHM,
     runId: run.id,
@@ -303,6 +312,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
   }
   history = compressed.history;
   const estimatedTokens = compressed.afterTokens;
+  // 压缩无法突破不可裁剪内容的最低体积；blocked 交给外层报告限制，不偷偷丢弃最新要求。
   const blocked = estimatedTokens > effective;
   const metrics: ContextRuntimeMetrics = {
     agentId: agent.id,
@@ -339,6 +349,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     updatedAt: snapshot.capturedAt,
     phase: blocked ? 'blocked' : 'compiled',
   };
+  // 累积段哈希可定位固定前缀变化，但不能据此断言供应商缓存命中或失效。
   const segmentHashes = {
     P0: hash(p0 + stable(tools)),
     P1: hash(p0 + stable(tools) + p1),

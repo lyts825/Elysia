@@ -9,6 +9,10 @@ import { ReviewRecord } from './ReviewRecord';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './review-history.css';
 
+/**
+ * 懒读取人工复核历史，列表游标与所选详情分别保存；version 变化刷新列表并取消旧详情读取。
+ * renderNotes 可把只读记录嵌入来源选择流程，查看历史本身不替换当前复核或草稿。
+ */
 export function ReviewHistory({
   runId,
   version,
@@ -66,6 +70,7 @@ export function ReviewHistory({
       });
     return () => controller.abort();
   }, [api, runId, version, open, before, retry]);
+  /** 先取消此前所选详情，准备交付读模型后读取新记录；失败保留上次已读详情供参考。 */
   async function read(id: string) {
     detailRequest.current?.abort();
     const controller = new AbortController();

@@ -59,6 +59,7 @@ export class TerminalCommunication {
     );
   }
 
+  /** 以双向运行、收件 ID、方向和原文共同确认回执，不能仅凭客户端传来的收件 ID 关联。 */
   private boundReceipt(sent: InboxMessage, received: InboxMessage | undefined) {
     return !!(
       received &&
@@ -74,6 +75,7 @@ export class TerminalCommunication {
     );
   }
 
+  /** 发件视图的投递状态来自可核验的收件记录；收件缺失时显示 unavailable，不猜成已处理。 */
   private item(item: InboxMessage): TerminalCommunicationItem {
     const outgoing = item.direction === 'outgoing';
     const other = outgoing ? item.target : item.source;
@@ -141,7 +143,10 @@ export class TerminalCommunication {
     };
   }
 
-  /** 校验消息版本和处理说明，在事务内记录人工处理结果。 */
+  /**
+   * 仅可撤回/忽略仍为 PENDING 的消息；已加入 CLI 输入的内容不能通过修改收件状态撤销。
+   * 以收件记录 revision 校验并发，在同一事务保存说明和双方事件，使发件视图能追溯处置依据。
+   */
   resolve(runId: string, messageId: string, expectedMessageRevision: number, note: string) {
     return this.store.tx(() => {
       const context = this.resolutionContext(runId, messageId);
@@ -200,6 +205,7 @@ export class TerminalCommunication {
     });
   }
 
+  /** 分页列出同项目的其他终端；投影覆盖不完整时拒绝选择，防止隐藏不可读的可接收对象。 */
   async peers(
     runId: string,
     query: z.infer<typeof pageQuery> & { query?: string },
@@ -262,6 +268,7 @@ export class TerminalCommunication {
     };
   }
 
+  /** 按持久 rowid 倒序分页；before 必须仍属于相同运行和过滤集合，否则要求回到最新。 */
   messages(
     runId: string,
     query: z.infer<typeof pageQuery> & { pending?: 'true' },
@@ -302,6 +309,10 @@ export class TerminalCommunication {
     };
   }
 
+  /**
+   * 向同项目未结束的其他终端排队消息，写入收件与发件关联并发布双方事件。
+   * 只进入待处理箱，不注入正在运行的 stdin；接收者必须在后续显式续接中选择消费。
+   */
   send(sourceId: string, targetId: string, text: string, expectedRevision: number) {
     const source = this.run(sourceId),
       target = this.run(targetId);

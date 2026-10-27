@@ -30,6 +30,7 @@ const input = workerData as {
 const cancellation = new Int32Array(input.cancellation);
 let report: number | undefined;
 const record = (value: unknown) => {
+  // 每条 JSONL 都完整写入并 fsync，父进程异常退出后仍能区分删除开始、完成及未配对尾部。
   if (report === undefined) return;
   const bytes = Buffer.from(JSON.stringify(value) + '\n');
   let offset = 0;
@@ -93,5 +94,6 @@ try {
 } finally {
   if (report !== undefined) closeSync(report);
 }
+// done 先传安全结果，再关闭端口；父线程仍等 exit 后释放维护锁，避免文件句柄尚未收束。
 parentPort!.postMessage({ type: 'done', value: response });
 parentPort!.close();

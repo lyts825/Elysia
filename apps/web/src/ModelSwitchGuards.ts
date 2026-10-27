@@ -19,9 +19,11 @@ export function modelTaskCanContinue(task: Task) {
       ))
   );
 }
+/** 返回切换禁用原因，空字符串表示界面允许尝试；最终是否可切换仍由写接口按当前状态决定。 */
 export function modelSwitchReason(detail: SwitchDetail, archived: boolean, taskId: string) {
   return taskBoundaryReason(detail, archived, taskId, false);
 }
+/** 续接共用切换边界，但依赖失败必须先恢复依赖源，且允许已取消的子分支走局部恢复。 */
 export function taskResumeReason(detail: SwitchDetail, archived: boolean, taskId: string) {
   if (detailReadReason(detail)) return detailReadReason(detail);
   const task = detail.tasks.find((item) => item.id === taskId);

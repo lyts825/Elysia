@@ -5,7 +5,10 @@ export type NotificationHealth = { pending: number; failed: number; lastFailureA
 type Notice = { id: string; status: NonNullable<TaskCenterItem['notification']>['status']; revision: number };
 type Entry = Notice & { attempts: number; nextAt: number; createdAt: number };
 
-/** Only current transitions are retried; no task text or historical notifications are retained. */
+/**
+ * 有界、仅内存的通知发件箱：每任务只保留最近状态，投递前重新核对版本与状态。
+ * 超过两分钟的变化丢弃，失败最多尝试三次并退避；只保存数量健康状态，不持久化任务正文。
+ */
 export class NotificationOutbox {
   private entries = new Map<string, Entry>();
   private inheritedFailures = 0;
@@ -48,6 +51,7 @@ export class NotificationOutbox {
     this.entries.delete(id);
     this.publish();
   }
+  /** 逐项处理已到重试时间的变化；取消后停止发布或移除，替换为新版本的旧项也不再投递。 */
   async drain(signal: AbortSignal, now = Date.now()) {
     // 投递前复核任务状态；过期或不再有效的通知直接移除。
     for (const entry of [...this.entries.values()]) {
@@ -77,6 +81,7 @@ export class NotificationOutbox {
     for (const [id, entry] of this.entries) if (entry.attempts >= 3) this.entries.delete(id);
     this.publish();
   }
+  /** 生命周期结束只保留已耗尽重试的失败计数，未投递内容不跨生命周期重放。 */
   stop() {
     this.inheritedFailures = Math.min(
       999,

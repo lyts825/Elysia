@@ -21,6 +21,11 @@ const FilePreview = deferredPanel(
   '产物预览',
 );
 
+/**
+ * 交付验收容器：先准备有界读模型，再读取交付快照；各子面板独立处理证据分页、备注和历史。
+ * readOnly 及回调存在性决定可编辑能力，复核写入期间锁定关闭/修改入口，避免丢失在途决定。
+ * raw 草稿由上层维护，因此读取失败或刷新不会直接覆盖用户尚未保存的意见。
+ */
 export function DeliveryReview({
   runId,
   close,
@@ -63,6 +68,7 @@ export function DeliveryReview({
   const pendingPreviewFocus = useRef<(() => void) | null>(null);
   useEffect(() => () => pendingPreviewFocus.current?.(), []);
   useEffect(() => {
+    // runId/retry 变化只重读服务端快照；取消旧请求并保留同运行已读内容，避免旧响应串入新任务。
     const controller = new AbortController();
     readRequest.current = controller;
     setError('');
@@ -89,6 +95,7 @@ export function DeliveryReview({
       });
     return () => controller.abort();
   }, [api, runId, retry]);
+  // 证据内与独立文件列表复用同一产物展示和下载入口，记录真实打开按钮用于收起后归还焦点。
   const file = (item: SourceArtifact, embedded = false) => (
     <DeliveryFile
       key={item.id}
@@ -278,6 +285,7 @@ export function DeliveryReview({
                           window.removeEventListener('blur', cancel);
                           if (pendingPreviewFocus.current === stop) pendingPreviewFocus.current = null;
                         };
+                        // 仅在焦点仍属于收起动作且用户未转向别处时归还，避免异步抢走新的键盘焦点。
                         const frame = requestAnimationFrame(() => {
                           cleanup();
                           const active = document.activeElement;
@@ -336,6 +344,7 @@ export function DeliveryReview({
   );
 }
 
+/** 显示版本/核验元信息及预览、下载动作；名称可缩略展示，完整名称与哈希仍可展开读取。 */
 function DeliveryFile({
   item,
   href,
@@ -397,6 +406,7 @@ function DeliveryFile({
   );
 }
 
+/** 命令证据展开时才读取权威操作记录，收起/切换身份时取消读取，不用候选摘要冒充执行结果。 */
 function CommandEvidence({ runId, operationId }: { runId: string; operationId: string }) {
   const { api } = useSurfaceClient();
   const [open, setOpen] = useState(false);

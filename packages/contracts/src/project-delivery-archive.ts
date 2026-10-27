@@ -21,6 +21,7 @@ export interface ProjectDeliveryArchiveView {
   manifestHash: string;
   archive: ProjectDeliveryArchive | null;
 }
+/** 归档分页及全集合指纹；setHash 覆盖未显示页，供批量核对与维护预览绑定。 */
 export interface ProjectDeliveryArchiveList {
   projectId: string;
   items: ProjectDeliveryArchive[];

@@ -14,7 +14,10 @@ export const terminalProtocols: Record<TerminalAppId, TerminalConnectionBinding[
   custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
 };
 const image = 'elysia-agents:0.13.0';
-/** 返回内置终端应用目录，包含 CLI 命令、协议和默认预设。 */
+/**
+ * 返回内置 CLI 的显示目录和容器预设；目录仅声明支持形态，不表示镜像已安装或凭据已验证。
+ * 每次生成独立配置对象，后续模板编辑不会直接改写下一次读取的内置预设。
+ */
 export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
   return [
     {
@@ -128,6 +131,7 @@ export function initialTerminalProfiles(): AgentTerminalProfile[] {
     .filter((entry) => entry.id === 'dsh' || entry.id === 'codex')
     .map((entry) => AgentTerminalProfile.parse(entry.preset));
 }
+/** 从经过 schema 校验的模板代理类型确定应用键，不按用户可改的标签或命令名称猜测。 */
 export function terminalAppForProfile(profile: AgentTerminalProfile): TerminalAppId {
   return TerminalAppId.parse(profile.agent);
 }

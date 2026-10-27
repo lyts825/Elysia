@@ -57,6 +57,7 @@ export class TaskCenterReads {
   private delivery: DeliveryReviewReads;
   private projections: ProjectionReads;
   constructor(private store: Store) {
+    // 用小型当前状态投影维护分类与通知序号；历史正文只在显式预热/读取时展开。
     this.projections = projectionReads(store);
     this.delivery = deliveryReviewReads(store);
     const status = state('r');
@@ -179,6 +180,7 @@ export class TaskCenterReads {
       `);
     }
   }
+  /** 触发器复用的投影更新语句；通知版本仅在可通知的状态转换时变化，普通文本更新不重复通知。 */
   private refreshSql(runId: string) {
     // seq is allocated even on upsert, so observations can continue across process restarts.
     const meaningful =
@@ -316,6 +318,7 @@ export class TaskCenterReads {
       .run(through);
     this.store.db.prepare('DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=?').run(through);
   }
+  /** 将投影映射为公开项；不可读分类不附带推测的复核状态，通知也须仍与当前分类一致。 */
   private item(row: Row): TaskCenterItem {
     const unavailable = row.category === 'unavailable';
     const executionHold = this.store.getExecutionHold(row.run_id);
@@ -351,6 +354,10 @@ export class TaskCenterReads {
         : {}),
     };
   }
+  /**
+   * 在预热/可选重试后按过滤条件分页，复核读取与列表组装共享一致性边界。
+   * coverage 单独计入归属不明的损坏记录，不因它们无法匹配标题/项目就把结果声称完整。
+   */
   async list(query: {
     filter: (typeof categories)[number];
     limit: number;
@@ -486,6 +493,10 @@ export class TaskCenterReads {
       return { item: row ? this.item(row) : null };
     }, runId);
   }
+  /**
+   * 读取持久单调序号后的当前变更及删除墓碑；游标早于保留下限或晚于当前序号时要求全量重建。
+   * 首次调用只建立 baseline，不把既有历史误报为刚发生的通知。
+   */
   async changes(after: number | undefined, limit: number): Promise<TaskCenterChanges> {
     await this.warm();
     return this.delivery.read(() => {

@@ -6,6 +6,10 @@ import { Icon } from './Icon';
 import { ModelPicker, type ModelChoice, type SelectableProvider } from './ModelPicker';
 import './composer-model-picker.css';
 
+/**
+ * 在输入区通过原生 popover 提供模型选择，具体值和有效性仍由父组件与 ModelPicker 管理。
+ * 打开后依据上下可用空间定位，滚动/尺寸变化重算；禁用或卸载关闭浮层，显式关闭恢复触发焦点。
+ */
 export function ComposerModelPicker({
   providers,
   value,

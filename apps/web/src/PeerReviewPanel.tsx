@@ -13,6 +13,10 @@ const roundLabels: Record<PeerReviewRound['status'], string> = {
 };
 const verdictLabels = { pass: '通过', fail: '未通过', insufficient: '证据不足' };
 
+/**
+ * 只读展示冻结的评审策略、候选和各轮逐项评分。通过评分与目标完成分别表达：
+ * 只有当前合同候选通过且运行已 DONE 才展示最终确认，历史或 stale 轮次仍可展开核对。
+ */
 export function PeerReviewPanel({ run }: { run: Run }) {
   const id = useId();
   const policy = run.contract.peerReview;

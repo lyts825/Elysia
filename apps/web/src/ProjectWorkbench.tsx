@@ -40,6 +40,11 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } from './DeliveryReadProgress';
 import './project-workbench.css';
 
+/**
+ * 项目交付工作台同时维护服务端看板投影与本地编辑草稿，两者独立读取并保留版本基线。
+ * 只在写操作前使用当前看板修订，成功后重新读取统一投影；轮询不会覆盖草稿。
+ * 计划导入通过命令式生命周期向外层导航门禁报告未处理预览，防止离开时丢失核对意图。
+ */
 export function ProjectWorkbench({
   project,
   cache,
@@ -94,6 +99,7 @@ export function ProjectWorkbench({
   useLayoutEffect(() => setSchedulesOpen(false), [project.id]);
   useLayoutEffect(() => setIntelligenceOpen(false), [project.id]);
   useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
+  /** 导入预览尚未处理时延迟页内导航，获准后才执行原动作。 */
   const leavePlan = (action: () => boolean) => {
     if (planLifecycle.current?.hasPending()) setPendingLeave(() => action);
     else action();
@@ -122,6 +128,7 @@ export function ProjectWorkbench({
       active = false;
     };
   }, [cache, project.id, retry]);
+  // 先完成交付元数据预热再读取看板；后台轮询互斥，且写入期间不混入旧快照。
   useEffect(() => {
     const controller = new AbortController();
     readRequest.current = controller;
@@ -197,6 +204,10 @@ export function ProjectWorkbench({
       return false;
     }
   };
+  /**
+   * 串行提交当前看板版本的动作，按请求来源保留失败提示；成功结果类型不一，因此不
+   * 直接替换 board，而是触发完整重读。只有仍挂载的工作台才消费操作结果。
+   */
   const action = async (path: string, body: Record<string, unknown>, method = 'POST') => {
     // 使用当前看板版本执行写入，结束后重新读取统一投影而不混用不同接口的返回值。
     if (!board || readError || writing.current || board.archived || !live.current) return false;
@@ -227,6 +238,7 @@ export function ProjectWorkbench({
       if (live.current) setBusy(false);
     }
   };
+  /** 打开候选运行时防止重复导航，失败保留工作台及草稿并在本区域显示错误。 */
   const navigate = async (id: string, review?: boolean) => {
     if (opening) return;
     setOpening(true);
@@ -239,6 +251,7 @@ export function ProjectWorkbench({
       if (live.current) setOpening(false);
     }
   };
+  /** 以交付项和看板当前版本建立唯一创建草稿；已有草稿必须由用户先继续或移除。 */
   const prepare = (item: ProjectDeliveryItem) => {
     // 已有创建草稿时不覆盖；新草稿冻结交付项和看板版本供后续核对。
     if (!board || !draft || readError) return;

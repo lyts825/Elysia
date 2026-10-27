@@ -32,6 +32,7 @@ export function readRoleRouting(store: Store, projectId: string): RoleRoutingRec
     throw new AppError('ROUTING_INVALID', '角色路由记录损坏，请恢复备份', false, null, 409);
   }
 }
+/** 获取当前有效且已验证的连接；供冻结、保存和运行期重新核对路由使用。 */
 export function routingProvider(store: Store, providerId: string) {
   // 只接受当前修订已验证、且尚未归档的连接。
   const binding = store.require<ProviderConfig>('providers', providerId);
@@ -86,6 +87,7 @@ export function routeTask(store: Store, run: Run, raw: unknown) {
     'ROUTING_OVERRIDE',
     '按项目角色选择时不要另外指定型号或思考强度',
   );
+  // 决策由宿主根据冻结策略生成，模型不能通过输入自称已按角色路由。
   const decision: RoleRoutingDecision = {
     policyRevision: policy.revision,
     role,

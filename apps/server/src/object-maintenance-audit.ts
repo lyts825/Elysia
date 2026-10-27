@@ -62,7 +62,11 @@ type Binding = {
 };
 
 /** Verifies a receipt against an optional plan, never against current database or file state. */
-/** 读取有大小限制的普通审计文件，并在提供计划时检查绑定关系。 */
+/**
+ * 读取有界 JSONL 审计并可选绑定原执行计划。必须具备完整行分隔和正确的开始/结束顺序；
+ * delete-started 没有对应完成记录时标记 incomplete，不能由退出状态推断文件未被删除。
+ * verified 只证明该回执与给定计划一致，不重新证明当前数据库或对象文件的状态。
+ */
 export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
   try {
     if (!existsSync(filename)) return { available: false as const };

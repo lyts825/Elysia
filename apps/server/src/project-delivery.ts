@@ -111,6 +111,7 @@ function revision(expected: number, actual: number) {
 function readableError(message = '关联交付暂时无法读取，不能确认或冻结'): never {
   throw new AppError('PROJECT_DELIVERY_UNREADABLE', message, true, null, 422);
 }
+/** 缺少工作台记录视为未初始化；已有记录若损坏则明确不可读，不能退回空板覆盖原数据。 */
 function boardRecord(store: Store, projectId: string) {
   const project = store.require<Project>('projects', projectId);
   const row = store.db
@@ -135,6 +136,7 @@ function itemOf(board: StoredBoard, itemId: string) {
   if (!item) throw new AppError('PROJECT_ITEM_NOT_FOUND', '交付项不存在', false, null, 404);
   return item;
 }
+/** 仅业务定义字段影响 itemRevision；关联运行和确认状态变化不伪装成验收要求变更。 */
 function semantic(item: z.infer<typeof ProjectDeliveryItemInput>) {
   return stable({
     title: item.title,
@@ -143,6 +145,10 @@ function semantic(item: z.infer<typeof ProjectDeliveryItemInput>) {
     acceptanceCriteria: item.acceptanceCriteria,
   });
 }
+/**
+ * 保存有界完整定义，以 revision 做比较并交换；并发版本冲突时拒绝覆盖。
+ * 调用方负责事务，使关联表、交付板及命令回执保持同一次提交。
+ */
 function saveBoard(store: Store, projectId: string, expected: number, data: StoredBoard) {
   const json = stable(data);
   invariant(
@@ -194,6 +200,10 @@ function assertLinked(store: Store, projectId: string, itemId: string, runId: st
     '当前关联记录缺失，请重新关联任务后核对',
   );
 }
+/**
+ * 采集当前交付指纹、复核快照和来源意见状态。关键投影读取不完整时直接拒绝确认/冻结，
+ * 不能仅因运行 status=DONE 就推断交付已通过复核或来源意见已解决。
+ */
 function runState(store: Store, projectId: string, runId: string) {
   const reads = projectionReads(store),
     run = reads.require<Run>('runs', runId);
@@ -248,6 +258,7 @@ function runState(store: Store, projectId: string, runId: string) {
   };
   return { run, root, fingerprint, review, reviewId, source, summary };
 }
+/** 列表读取隔离单个关联失败，区分原任务已删除与存在但不可读；数据库自身错误仍向上传递。 */
 function summarize(store: Store, projectId: string, runId: string, title: string): ProjectDeliveryRunSummary {
   if (!store.db.prepare('SELECT 1 FROM runs WHERE id=?').get(runId)) return emptySummary(runId, title, true);
   try {
@@ -257,6 +268,7 @@ function summarize(store: Store, projectId: string, runId: string, title: string
     return emptySummary(runId, title);
   }
 }
+/** 按当前运行、复核、来源反馈和确认指纹逐层计算 readiness；旧确认只展示为失效，不自动迁移。 */
 function itemView(
   item: StoredItem,
   current: ProjectDeliveryRunSummary | null,
@@ -317,6 +329,7 @@ export function projectDeliveryBoard(store: Store, projectId: string): ProjectDe
     },
   };
 }
+/** 只关联本项目未归档的原生任务；切换当前候选时撤销旧确认，历史尝试记录继续保留。 */
 function linkRun(
   store: Store,
   record: ReturnType<typeof boardRecord>,
@@ -358,6 +371,7 @@ export function attachProjectDeliveryRun(store: Store, run: Run, binding: Projec
   invariant(!record.project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目');
   linkRun(store, record, binding.itemId, run, true);
 }
+/** 同时核对存储列、清单正文和稳定序列化哈希，冻结清单损坏时禁止导出。 */
 function manifestRow(store: Store, projectId: string, manifestId: string) {
   store.require<Project>('projects', projectId);
   const row = store.db
@@ -379,6 +393,7 @@ function manifestRow(store: Store, projectId: string, manifestId: string) {
     readableError('冻结清单完整性核验失败，请修复记录后重试');
   }
 }
+/** 冻结内容保持原样，仅附加当前来源可用性，明确原文缺失或后来已变化。 */
 function manifestView(store: Store, manifest: ProjectDeliveryManifest): ProjectDeliveryManifestView {
   const availability = manifest.items.map((item) => {
     const current = summarize(store, manifest.projectId, item.run.id, item.run.title);
@@ -435,6 +450,7 @@ export function registerProjectDelivery(
     CREATE TABLE IF NOT EXISTS project_delivery_manifests_v1(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,title TEXT NOT NULL,created_at TEXT NOT NULL,item_count INTEGER NOT NULL,hash TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
     CREATE INDEX IF NOT EXISTS project_delivery_manifests_project ON project_delivery_manifests_v1(project_id);`);
   registerProjectDeliveryWarm(app, store, (projectId) => {
+    // 元数据预热绑定整个工作台版本；关联集合变化后不能沿用旧读取结果。
     const record = boardRecord(store, projectId);
     return {
       version: hash(stable({ revision: record.revision, data: record.data })),
@@ -465,6 +481,7 @@ export function registerProjectDelivery(
       true,
     );
   });
+  // 编辑定义与关联运行分开处理；仅要求内容变化才递增 itemRevision，使原确认自然失效。
   app.put<{ Params: { id: string } }>('/api/projects/:id/delivery-board', (request) => {
     const body = ProjectDeliveryBoardInput.parse(request.body);
     return store.command(body.commandId, { route: request.url, body }, () => {
@@ -595,6 +612,7 @@ export function registerProjectDelivery(
       });
     },
   );
+  // 人工确认绑定交付项版本、当前候选、正文指纹和复核快照，任一变化都必须重新核对。
   app.post<{ Params: { id: string; itemId: string } }>(
     '/api/projects/:id/delivery-board/items/:itemId/confirm',
     (request) => {
@@ -641,6 +659,7 @@ export function registerProjectDelivery(
       });
     },
   );
+  // 冻结在同一命令事务中验证全部必选项；保存的是不可变元数据快照，文件字节稍后另行打包。
   app.post<{ Params: { id: string } }>('/api/projects/:id/delivery-manifests', (request) => {
     const body = ProjectDeliveryManifestInput.parse(request.body);
     return store.command(body.commandId, { route: request.url, body }, () => {
@@ -745,6 +764,7 @@ export function registerProjectDelivery(
         items: selected,
       };
       const json = stable(snapshot);
+      // hash 字段不参与自身摘要；导出 JSON 的空白格式与此语义哈希无关。
       invariant(
         Buffer.byteLength(json, 'utf8') <= 8 * 1024 * 1024,
         'PROJECT_MANIFEST_LIMIT',
@@ -859,6 +879,7 @@ export function registerProjectDelivery(
       return archives.remove(manifest, expectedObjectHash);
     },
   );
+  // 下载读取持续绑定请求取消信号；流关闭时卸载监听，失败只释放本次已取得的资源。
   app.get<{ Params: { id: string; manifestId: string } }>(
     '/api/projects/:id/delivery-manifests/:manifestId/archive/file',
     async (request, reply) => {
@@ -910,6 +931,7 @@ export function registerProjectDelivery(
       }
     },
   );
+  // 长时检查/下载/保存以 202 作业返回，后续轮询与领取绑定同一会话及冻结清单。
   app.post<{ Params: { id: string; manifestId: string } }>(
     '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs',
     (request, reply) => {

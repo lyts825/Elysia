@@ -21,6 +21,7 @@ const iconPath = path.join(
 const data = path.resolve(
   process.env.ELYSIA_DATA_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'Elysia'),
 );
+// Electron 配置与业务数据共用所选数据目录，但桌面偏好单独放入 desktop 子目录。
 app.setName('Elysia');
 app.setPath('userData', path.join(data, 'desktop'));
 app.setAppUserModelId('local.elysia.desktop');
@@ -37,7 +38,10 @@ const logFile = packaged
   : path.join(root, '.elysia-runtime', 'desktop.log');
 mkdirSync(path.dirname(logFile), { recursive: true });
 const log = (text) => appendFileSync(logFile, new Date().toISOString() + ' ' + text + '\n');
-/** 只执行一次关闭流程：通知服务停止、尽力写完诊断并关闭构建租约。 */
+/**
+ * 只执行一次关闭流程，先通知仍连接的后端安全退出，再尽力刷新诊断和关闭构建租约。
+ * quitting 同时让窗口及 app 的关闭事件放行，避免安全关闭过程中递归触发新的关闭流程。
+ */
 async function shutdown() {
   if (quitting) return;
   quitting = true;
@@ -66,6 +70,7 @@ if (!app.requestSingleInstanceLock()) {
   const launchBuild = packaged
     ? Promise.resolve().then(() => require('./packaged.cjs').packagedBuild(root))
     : waitForLaunchBuild(process, process.env.ELYSIA_LAUNCH_HANDSHAKE === '1');
+  // 安装包直接校验内置资源；源码启动等待启动器返回按输入摘要保存的构建。
   // Attach immediately: a launcher failure may arrive before Electron's ready event.
   launchBuild.catch(() => {});
   app.on('second-instance', () => {
@@ -131,6 +136,7 @@ if (!app.requestSingleInstanceLock()) {
           relaunchDisplayName: 'Elysia',
         });
       }
+      // 默认拒绝浏览器权限、新窗口和 webview；资源预览由受限导航规则控制。
       window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
       window.webContents.session.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -140,6 +146,7 @@ if (!app.requestSingleInstanceLock()) {
         uiOrigin
           ? allowedLocalNavigation(url, window.webContents.getURL(), uiOrigin, main)
           : main && url === startingUrl;
+      // 服务尚未就绪时只能打开固定启动页；就绪后切换为本地服务的导航白名单。
       window.webContents.on('will-frame-navigate', (event) => {
         if (!allowed(event.url, event.isMainFrame)) event.preventDefault();
       });
@@ -154,6 +161,7 @@ if (!app.requestSingleInstanceLock()) {
         }
       });
       await window.loadFile(path.join(__dirname, 'starting.html'));
+      // 先展示轻量窗口再启动后端；偏好和媒体加载不会阻塞服务创建。
       if (!hiddenLaunch) window.show();
       diagnostics.mark('window-visible', hiddenLaunch ? 'skipped' : 'ok');
       const dev = !packaged && process.env.ELYSIA_DEV === '1';
@@ -166,6 +174,7 @@ if (!app.requestSingleInstanceLock()) {
           : {}),
       };
       if (packaged) {
+        // 发行版使用随包 Node 和资源路径，不继承可改变模块解析或启动行为的 Node 配置。
         backendEnvironment.ELYSIA_DEV = '0';
         delete backendEnvironment.NODE_OPTIONS;
         delete backendEnvironment.NODE_PATH;
@@ -185,6 +194,7 @@ if (!app.requestSingleInstanceLock()) {
       );
       if (backend.pid) buildLease?.backend(backend.pid);
       let failed = false;
+      // 后端错误、退出与加载失败可能竞争，只展示一次失败并进入统一关闭流程。
       const fail = (message) => {
         if (failed || quitting) return;
         failed = true;
@@ -207,6 +217,7 @@ if (!app.requestSingleInstanceLock()) {
       });
       backend.on('message', async (message) => {
         if (message?.type === 'desktop-request' && typeof message.id === 'string') {
+          // 后端不能直接使用 Electron 安全存储/系统浏览器，通过带 ID 的请求回执桥调用。
           try {
             const value = await desktopService(message);
             if (backend.connected) backend.send({ type: 'desktop-response', id: message.id, value });
@@ -218,6 +229,7 @@ if (!app.requestSingleInstanceLock()) {
         }
         if (message.type === 'startup-error') return fail(message.message);
         if (message.type !== 'ready') return;
+        // 安装包禁止连接到与清单版本不一致的服务，避免前后端协议混用。
         if (packaged && message.version !== prepared.manifest.version)
           return fail('分发包与本机服务版本不一致');
         diagnostics.mark('backend-ready');
@@ -226,6 +238,7 @@ if (!app.requestSingleInstanceLock()) {
           uiOrigin = origin;
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
           await window.loadURL(message.bootstrapUrl);
+          // 页面加载完成后才向启动器报告 ready，避免把后端启动当作整个桌面已就绪。
           diagnostics.mark('web-loaded');
           ready = true;
           window.setTitle(`Elysia · ${message.version}`);

@@ -5,6 +5,10 @@ import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 import type { KernelStore as Store } from './ports.js';
 
 /** Validate the resolved models inside the same transaction that saves or reserves them. */
+/**
+ * 校验本次候选与既有任务、历史已执行请求的模型隔离。replacingTaskIds 仅排除当前任务选择，
+ * 不抹去其历史实际使用的模型；ledger 可由同事务的调用方传入以避免重复读取。
+ */
 export function assertReviewModelPolicy(
   store: Store,
   run: Run,

@@ -5,6 +5,11 @@ import { Modal } from './Modal';
 import { ReviewModelPolicy } from './ReviewModelPolicy';
 import './execution-config.css';
 import './contract-modal.css';
+/**
+ * 编辑当前已读合同的本地副本，保留原版本作为服务端并发检查依据。
+ * 父级合同更新不会覆盖正在输入的 value；界面明确提示版本差异。同模型复核例外要求
+ * 本次单独确认，权限、累计预算与冻结审核配置不由本表单扩展。
+ */
 export function ContractModal({
   contract,
   planMode,

@@ -33,9 +33,15 @@ const tabs: [Kind, string, string][] = [
   ['mcp', 'MCP', 'tree'],
 ];
 
+/**
+ * 扫描、导入和管理本机技能、记忆及 MCP 连接。扫描候选与已导入目录分开保存，
+ * 用户选择后才提交导入；内容预览与 MCP 工具预览互斥，并保留触发按钮供关闭时恢复焦点。
+ * 所有动作共享可取消请求，卸载后通过 alive 与序号阻止迟到响应继续更新状态。
+ */
 export function LocalAgentSettings({ close }: { close: () => void }) {
   const { api } = useSurfaceClient();
   const identity = useId();
+  /** 修改目录使用命令身份和读取时修订；扫描本身仍是单独的只读候选过程。 */
   const mutate = <T,>(path: string, body: Record<string, unknown>, signal: AbortSignal) =>
     api<T>(path, { commandId: crypto.randomUUID(), ...body }, 'POST', signal);
   // 扫描来源、候选选择、详情读取和配置编辑各自维护状态。
@@ -67,6 +73,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
     if (trigger?.isConnected && !trigger.disabled) trigger.focus();
     else searchInput.current?.focus();
   };
+  /** 读取权威能力目录；调用方可以复用返回值，但只有仍挂载且未取消时才发布到界面。 */
   const reload = async (signal?: AbortSignal) => {
     const value = await api<Overview>('/local-agents', undefined, undefined, signal);
     if (alive.current && !signal?.aborted) setOverview(value);
@@ -98,6 +105,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
     operationError.current?.focus();
     operationError.current?.scrollIntoView({ block: 'nearest' });
   }, [errorFeedback]);
+  /**
+   * 串行执行读取或修改动作，并取消前一请求。失败后尽力重读目录以反映已发生的结果，
+   * 但保留原错误与选择，避免把刷新成功误报为原操作成功。
+   */
   const act = async (label: string, operation: (signal: AbortSignal) => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -124,6 +135,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       if (alive.current) setBusy('');
     }
   };
+  /** 分页读取导入项正文，最多保留最近 64000 字符；只接受当前预览序号的结果。 */
   const inspect = (item: Entry, append = false) =>
     void act('读取内容', async (signal) => {
       const sequence = ++viewSequence.current;
@@ -142,6 +154,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       });
       setTools(undefined);
     });
+  // 搜索只过滤已导入项；扫描候选选择仍单独保持，筛选不改变导入授权或启用状态。
   const rows = (overview?.items || []).filter(
     (item) =>
       item.kind === tab &&

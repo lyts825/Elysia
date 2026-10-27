@@ -70,6 +70,10 @@ type HandoffDraft = {
   reviewSelection?: unknown;
   artifactRevision?: unknown;
 };
+/**
+ * 容错恢复交接草稿：只保留结构可辨认的公开消息和产物，且各最多 10 项。
+ * 该恢复用于表单展示；真正创建任务前仍需核对当前来源、评审指纹和文本字节上限。
+ */
 function readDraft(raw: unknown, run: Run): HandoffDraft {
   const empty: HandoffDraft = {
     projectId: run.projectId || '',
@@ -123,6 +127,7 @@ function readDraft(raw: unknown, run: Run): HandoffDraft {
   }
 }
 
+/** 展示已保存的来源快照及原记录入口；此处内容固定于交接时，不随来源任务更新。 */
 export function SourceSummary({
   source,
   openSource,
@@ -189,6 +194,11 @@ export function SourceSummary({
   );
 }
 
+/**
+ * 将当前运行的明确公开内容选入新项目任务，分“选来源”和“设本次权限/预算”两阶段。
+ * 消息和产物可跨页选择，复核备注及差异必须匹配最新来源指纹；未添加的待处理选择需
+ * 用户明确忽略后才能进入创建阶段，防止把未核对内容隐式带入后续任务。
+ */
 export function RunHandoff({
   run,
   projects,
@@ -222,6 +232,10 @@ export function RunHandoff({
   const draft = useMemo(() => readDraft(value, run), [value, run.id]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  /**
+   * 使用最新 ref 合并局部草稿并在上限内完整序列化；超限整次拒绝而不截断已有来源文本。
+   * 来源选择或阶段退回改变后，撤销对“忽略尚未加入条目”的旧确认。
+   */
   const patch = (next: Partial<HandoffDraft>) => {
     const updated = { ...draftRef.current, ...next };
     const raw = JSON.stringify(updated);
@@ -261,6 +275,7 @@ export function RunHandoff({
   const differencesIssue = artifactRevision
     ? artifactRevisionIssue(artifactRevision)
     : '差异草稿格式无法读取，请返回选择页处理。';
+  // 已添加差异与复核备注不仅要求读取成功，还必须与当前来源指纹一致。
   const differencesReady =
     !differences.length ||
     (!!reviewSource.value &&
@@ -281,6 +296,7 @@ export function RunHandoff({
   const [messageBefore, setMessageBefore] = useState('');
   const [artifactBefore, setArtifactBefore] = useState('');
   const selectedProject = projects.find((project) => project.id === draft.projectId && !project.archived);
+  // 来源消息和产物各有独立游标，但一次响应原子替换 options；旧请求取消后不能写入新页。
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -301,6 +317,7 @@ export function RunHandoff({
     return () => controller.abort();
   }, [api, run.id, messageBefore, artifactBefore, retry]);
   const selectedBytes = sourceTextByteLength(draft.messages, draft.feedback);
+  // 目标项目、明确说明、至少一项来源与总字节限制共同决定是否允许进入任务设置。
   const canContinue =
     !!selectedProject &&
     !!draft.objective.trim() &&

@@ -40,7 +40,11 @@ function checkpoint(value: unknown): ConversationHistoryCheckpoint | undefined {
   };
 }
 
-/** Reading positions stay in this browser window; no message text is stored. */
+/**
+ * 保存本窗口中每个运行的阅读锚点与是否跟随最新消息，不保存消息正文。
+ * 认证范围和入口共同隔离 sessionStorage；最多保留 50 个运行、30 天内的有效检查点，
+ * 浏览器副本损坏或不可用时只放弃位置恢复，不阻止会话读取。
+ */
 export class ConversationHistoryState {
   private scope = '';
   private entries = new Map<string, ConversationHistoryCheckpoint>();
@@ -77,10 +81,12 @@ export class ConversationHistoryState {
       // An unavailable or corrupt browser copy never blocks the conversation.
     }
   }
+  /** 每次返回前重验时效并复制嵌套锚点，调用方不能直接修改缓存内部对象。 */
   get(runId: string) {
     const value = checkpoint(this.entries.get(runId));
     return value ? { ...value, ...(value.anchor ? { anchor: { ...value.anchor } } : {}) } : undefined;
   }
+  /** 接受已经定位的阅读状态；非跟随模式必须有合法锚点，连续滚动写入合并到 150 毫秒。 */
   set(runId: string, value: Omit<ConversationHistoryCheckpoint, 'updatedAt'>) {
     if (this.stopped || !this.scope || !validId(runId)) return;
     const next = checkpoint({ ...value, updatedAt: Date.now() });

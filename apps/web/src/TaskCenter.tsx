@@ -30,6 +30,11 @@ const labels: Record<'all' | TaskCenterCategory, string> = {
   all: '全部',
   ...taskCenterCategoryLabels,
 };
+/**
+ * 按父组件持有的筛选/游标状态读取任务中心，五秒刷新当前页并支持异常投影显式重试。
+ * 行展示使用列表快照，openRun 再读取完整详情决定导航；通知偏好独立从桌面桥读取和保存。
+ * 请求失效、分页失效和焦点恢复各自处理，避免错误页面覆盖用户正在操作的控件。
+ */
 export function TaskCenter({
   state,
   changeState,
@@ -71,6 +76,7 @@ export function TaskCenter({
     },
     [],
   );
+  // 导航失败只在用户尚未离开触发按钮时聚焦错误；后续选择或窗口失焦会取消该意图。
   useLayoutEffect(() => {
     if (!openingError) return;
     const request = openingFocus.current;
@@ -112,11 +118,13 @@ export function TaskCenter({
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
+    // 切换筛选清空旧页，当前查询定时刷新失败则保留已读结果和明确错误。
     setResult(undefined);
     openingFocus.current?.controller.abort();
     openingFocus.current = undefined;
     setOpeningError(undefined);
     const read = async () => {
+      // 定时器可能在慢请求期间触发，pending 防止同一查询并行叠加。
       if (pending || controller.signal.aborted) return;
       pending = true;
       setLoading(true);
@@ -143,6 +151,7 @@ export function TaskCenter({
       } catch (issue) {
         if (!controller.signal.aborted) {
           if (issue instanceof ApiError && issue.code === 'RECORD_CURSOR_MISSING' && state.before)
+            // 删除或重建使旧游标失效时回到首页，不能把旧页码套在新结果上。
             changeState({ ...state, before: '', trail: [] });
           else setError(issue instanceof Error ? issue.message : '任务读取失败，请重试。');
         }
@@ -355,6 +364,7 @@ export function TaskCenter({
                   aria-label={`${item.title}，${presentation.status}，${presentation.action}`}
                   disabled={!!opening}
                   onClick={(event) => {
+                    // 跟踪导航期间的焦点/指针变化；失败反馈不能打断用户已开始的其他操作。
                     openingFocus.current?.controller.abort();
                     const focus = {
                       origin: event.currentTarget,

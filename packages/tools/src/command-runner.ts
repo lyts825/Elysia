@@ -9,20 +9,32 @@ import { Processes } from './processes.js';
 
 export type ProcessRunner = Pick<Processes, 'run'>;
 export interface CommandRequest {
+  /** 操作账本 ID，同时参与确定容器名称，便于取消和中断恢复。 */
   operationId: string;
+  /** 用于归属进程和取消范围，不作为容器内路径。 */
   taskId: string;
+  /** 任务根目录；Docker 后端只挂载该目录。 */
   workspace: string;
+  /** 真实工作目录，必须在 workspace 内，映射为容器的 /workspace 相对路径。 */
   cwd: string;
+  /** 直接执行的程序和独立参数，不作为拼接后的 shell 字符串解释。 */
   program: string;
   args: string[];
+  /** 附着运行阶段的超时毫秒数；容器创建和清理另有各自上限。 */
   timeout: number;
+  /** stdout/stderr 共享的原始字节保留预算。 */
   outputLimit: number;
+  /** 整个工作区是否可写；部分路径写入授权不能提升为整目录可写挂载。 */
   writable: boolean;
+  /** 来自运行冻结合同的后端配置；Docker 失败不会回退本机。 */
   backend: CommandBackendPolicy;
 }
 export interface CommandRunner {
+  /** 启动一次命令并返回结束状态；结果不代表业务副作用已通过验收。 */
   run(request: CommandRequest, signal: AbortSignal): ReturnType<Processes['run']>;
+  /** 未传 taskIds 时停止全部受本实例管理的命令，传入空集合时不匹配任何任务。 */
   cancel(taskIds?: Set<string>): Promise<void>;
+  /** 清理本数据目录遗留的后端资源，不能据此认定历史副作用已经撤销。 */
   recover?(): Promise<void>;
 }
 
@@ -86,6 +98,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
   private readonly scope: string;
   private readonly active = new Map<string, string>();
   private ready?: Promise<void>;
+  /** directory 只用于派生稳定资源标签；admin 独立执行清理，避免随任务取消一起失效。 */
   constructor(
     private processes: ProcessRunner,
     directory: string,
@@ -93,6 +106,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
   ) {
     this.scope = hash(path.resolve(directory)).slice(0, 24);
   }
+  /** 强制移除一个已知容器；不存在视为清理完成，其他错误或超时仍需保留待核验状态。 */
   private async remove(name: string) {
     const result = await this.admin.run(
       'container-cleanup',
@@ -105,6 +119,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
     if (result.timedOut || (result.exitCode !== 0 && !/No such container/i.test(result.stderr)))
       throw new AppError('COMMAND_CLEANUP', '无法确认命令容器已停止：' + result.stderr);
   }
+  /** 并发启动复用一次恢复结果，恢复失败清除 ready 以便后续显式重试。 */
   recover() {
     // 并发调用共享同一次恢复；失败后清除缓存，允许下次重试。
     return (this.ready ??= this.cleanStaleContainers().catch((error) => {
@@ -112,6 +127,10 @@ export class ConfiguredCommandRunner implements CommandRunner {
       throw error;
     }));
   }
+  /**
+   * 只查找当前数据目录标签的容器，核对每个 Docker ID 后逐个移除。
+   * 清单截断、超时或引擎不可用均中止恢复，不能把不完整清单当作已经清空。
+   */
   private async cleanStaleContainers() {
     const result = await this.admin.run(
       'container-recovery',
@@ -131,6 +150,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
       await this.remove(id);
     }
   }
+  /** 所有匹配容器均尝试清理；成功项移出活动表，失败项保留供后续重试并汇总错误。 */
   async cancel(taskIds?: Set<string>) {
     // 等待所有匹配容器的清理结果，失败的容器保留在 active 中以便重试。
     const results = await Promise.allSettled(
@@ -148,6 +168,11 @@ export class ConfiguredCommandRunner implements CommandRunner {
         '命令容器停止未确认',
       );
   }
+  /**
+   * 本机模式直接委托进程执行，Docker 模式先完成遗留恢复和真实路径核验。
+   * 容器先登记并创建，再附着运行；finally 始终清理，清理失败必须向上传递，
+   * 避免把可能仍运行的命令报告成已安全结束。
+   */
   async run(request: CommandRequest, signal: AbortSignal) {
     signal.throwIfAborted();
     if (request.backend.kind === 'local')

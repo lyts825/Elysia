@@ -105,6 +105,10 @@ export function invalidatePeerReview(kernel: Kernel, run: Run, reason: string) {
   });
 }
 
+/**
+ * 将需求、作者绑定/会话、候选摘要、证据当前版本及收件箱状态共同纳入指纹。
+ * 同一证据 ID 的内容或版本改变也会得到新指纹，不能沿用旧轮次的通过结论。
+ */
 function candidateFingerprint(
   store: Store,
   run: Run,
@@ -207,6 +211,7 @@ export function gatePeerReview(
       '请等待其余执行代理停止后再提交评审候选',
     );
     const fingerprint = candidateFingerprint(store, run, task, args);
+    // 已通过且完全相同的候选可放行；同候选评审中只等待，不再创建重复轮次或计费。
     const previous = run.peerReview.rounds.at(-1);
     if (previous?.candidate.fingerprint === fingerprint && previous.status === 'passed') return null;
     if (previous?.candidate.fingerprint === fingerprint && previous.status === 'reviewing') {
@@ -247,6 +252,7 @@ export function gatePeerReview(
         createdAt: now(),
       },
     };
+    // 后续轮次复用评审任务和累计步骤/请求账本，但创建新会话并指向新候选。
     const reviewerTaskIds = [...run.peerReview.reviewerTaskIds];
     for (const [index, binding] of run.peerReview.bindings.entries()) {
       const existing = reviewerTaskIds[index]
@@ -288,6 +294,7 @@ export function gatePeerReview(
           contextPolicy,
           contextPolicyRevision: 1,
         });
+        // 评审只读共享作者工作区，workspaceOwnerTaskId 表示它不拥有独立 checkout。
         store.put<Task>('tasks', {
           id: taskId,
           revision: 0,
@@ -403,6 +410,7 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
       'PEER_REVIEW_CRITERIA',
       '评分必须完整覆盖每个验收项，且不能重复',
     );
+    // 每项必须属于当前候选；通过项至少引用一条该验收项的候选证据，不能借其他项的证据凑数。
     for (const item of submission.items) {
       invariant(
         item.criterion < round.candidate.acceptanceCriteria.length,
@@ -425,6 +433,7 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
         '通过的验收项必须引用候选证据',
       );
     }
+    // 总分只用于展示，真正通过要求所有单项 verdict=pass 且达到最低分。
     const score = {
       ...submission,
       reviewerTaskId: task.id,
@@ -439,6 +448,7 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
     };
     const scores = [...round.scores, score];
     const complete = scores.length === state.bindings.length;
+    // 在全部模型提交之前保持 reviewing，某一模型先通过不能提前结束该轮。
     const status = !complete
       ? 'reviewing'
       : scores.every((entry) => entry.passed)

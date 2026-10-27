@@ -14,6 +14,10 @@ import { ProjectDeliveryArchives } from './ProjectDeliveryArchive';
 import { projectManifestReadiness, type ProjectManifestBlocker } from './project-manifest-readiness';
 import './project-manifests.css';
 
+/**
+ * 为一个交付项分页挑选产物元数据。候选页绑定当前候选运行及修订；读取失败、取消
+ * 或候选变化时保留已选 ID，要求用户刷新工作台后再核对，不能以旧页继续扩充选择。
+ */
 function ArtifactSelection({
   item,
   selected,
@@ -78,6 +82,7 @@ function ArtifactSelection({
       if (currentRead.current === controller) currentRead.current = undefined;
     };
   }, [api, item.current?.runId, item.current?.runRevision, owner, open, intent]);
+  /** 新分页意图取消旧请求，但可见页要等新页校验成功后才替换。 */
   const request = (target: Position) => {
     currentRead.current?.abort();
     setIntent((previous) => ({ owner, position: target, attempt: (previous?.attempt ?? 0) + 1 }));
@@ -241,6 +246,11 @@ function ArtifactSelection({
   );
 }
 
+/**
+ * 准备冻结清单、浏览冻结历史并读取清单详情。准备内容保存在项目工作台草稿中，
+ * 历史页和详情分别校验项目、清单 ID 与哈希；下载只使用已核对详情并在选择变化时取消。
+ * readiness 将冻结阻塞项映射到实际修复入口，而不是仅显示不可提交状态。
+ */
 export function ProjectManifests({
   board,
   draft,
@@ -301,6 +311,7 @@ export function ProjectManifests({
     (!draft.selectedManifestHash || readDetail.manifest.hash === draft.selectedManifestHash)
       ? readDetail
       : undefined;
+  /** 保存清单身份及冻结哈希，并让后续详情读取将焦点移到详情区域。 */
   const selectManifest = (manifestId: string, manifestHash: string) => {
     scrollToDetail.current = true;
     change((value) => ({ ...value, selectedManifest: manifestId, selectedManifestHash: manifestHash }));
@@ -337,6 +348,7 @@ export function ProjectManifests({
       if (listRequest.current === controller) listRequest.current = undefined;
     };
   }, [api, base, board.projectId, intent]);
+  /** 分页意图属于当前项目；成功前继续展示上一页，错误不会伪造新页游标。 */
   const requestHistory = (target: Position) => {
     listRequest.current?.abort();
     setIntent((previous) => ({
@@ -402,6 +414,7 @@ export function ProjectManifests({
   const readiness = manifest
     ? projectManifestReadiness(board, manifest, { busy, unavailable })
     : { canFreeze: false, blockers: [] };
+  /** 将冻结前置条件定位到计划、交付项、复核、标题或对应勾选控件。 */
   const goToBlocker = (blocker: ProjectManifestBlocker) => {
     if (blocker.target === 'plan') return onEditPlan();
     if (blocker.target === 'refresh') return onRefreshBoard();
@@ -420,6 +433,10 @@ export function ProjectManifests({
     target?.scrollIntoView({ block: 'center' });
     target?.focus({ preventScroll: true });
   };
+  /**
+   * 同时只下载一个已核对清单；项目或选择变化会中止请求，迟到的字节不触发下载。
+   * JSON 和 Markdown 都由服务端按冻结清单导出，浏览器只负责创建下载链接。
+   */
   const download = async (format: 'json' | 'markdown') => {
     if (!detail || downloadRequest.current) return;
     const controller = new AbortController();

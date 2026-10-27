@@ -32,6 +32,7 @@ const tooLarge = () =>
   );
 
 // Paths are generated, never taken from objectRef, source or user-supplied directories.
+/** 只取显示名称的最后一段并处理 Windows 保留名；不使用来源路径决定 ZIP 写入位置。 */
 function safeName(name: string) {
   let base = (name.split(/[\\/]/).at(-1) ?? '').replace(/[<>:"|?*\x00-\x1f\x7f]/g, '_');
   base = [...base]
@@ -41,6 +42,7 @@ function safeName(name: string) {
   if (!base || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(base)) base = '_' + base;
   return base;
 }
+/** 按冻结清单顺序生成确定的安全相对路径，并在读取正文前限制交付项/产物总量。 */
 function selections(manifest: ProjectDeliveryManifest): Selection[] {
   if (manifest.version !== 1 || !Array.isArray(manifest.items) || manifest.items.length > 40)
     throw new AppError('PROJECT_BUNDLE_MANIFEST', '冻结清单格式不可导出', false, null, 422);
@@ -69,6 +71,7 @@ function selections(manifest: ProjectDeliveryManifest): Selection[] {
   if (result.length > maxFiles) throw tooLarge();
   return result;
 }
+/** 当前来源必须仍与冻结元数据逐字段一致；绝不把更新后的产物冒充冻结版本打包。 */
 function source(store: Store, projectId: string, selected: Selection) {
   const run = store.get<Run>('runs', selected.file.runId);
   if (!run) throw new AppError('PROJECT_BUNDLE_MISSING', '原任务已删除', false, null, 404);
@@ -89,6 +92,7 @@ function source(store: Store, projectId: string, selected: Selection) {
       );
   return current;
 }
+/** 将单文件读取错误映射为用户可辨别的状态，保留缺失、变化、超限和无法核验的区别。 */
 function failure(error: unknown): { state: PlanFile['state']; reason: string } {
   const code = (error as { code?: string })?.code;
   if (['ENOENT', 'OBJECT_NOT_FOUND', 'PROJECT_BUNDLE_MISSING'].includes(code ?? ''))
@@ -99,6 +103,7 @@ function failure(error: unknown): { state: PlanFile['state']; reason: string } {
     return { state: 'too_large', reason: '产物或完整文件包超过 64 MiB 上限' };
   return { state: 'unavailable', reason: '来源归属、对象引用或正文完整性核验失败' };
 }
+/** 生成冻结元数据、文件索引和校验清单；SHA256SUMS 不对自身求哈希，避免循环定义。 */
 function documents(manifest: ProjectDeliveryManifest, files: PlanFile[]): Document[] {
   const docs = [
     { path: 'manifest.json', bytes: Buffer.from(JSON.stringify(manifest, null, 2) + '\n') },
@@ -154,6 +159,7 @@ function documents(manifest: ProjectDeliveryManifest, files: PlanFile[]): Docume
   return docs;
 }
 const zipOverhead = (name: string) => 30 + 16 + 46 + 2 * Buffer.byteLength(name);
+/** ZIP STORE 不压缩正文，最终大小可由文件字节和固定目录/描述符开销精确计算。 */
 function archiveSize(files: PlanFile[], docs: Document[]) {
   return (
     22 +
@@ -188,6 +194,10 @@ class ZipWriter {
       this.progress?.(this.offset);
     }
   }
+  /**
+   * 流式写入一个条目并同步计算 CRC32 与冻结 SHA-256。大小或摘要不匹配时立即失败，
+   * 该临时 ZIP 不会被宣布就绪；中央目录只保存有界条目元数据，不缓存全部正文。
+   */
   async add(name: string, stream: AsyncIterable<Buffer>, expectedSize: number, expectedHash: string) {
     const filename = Buffer.from(name),
       start = this.offset;
@@ -233,6 +243,7 @@ class ZipWriter {
     filename.copy(central, 46);
     this.entries.push(central);
   }
+  /** 写入中央目录和结束标记后 fsync，确保后续只读流看到完整 ZIP。 */
   async finish() {
     const start = this.offset;
     for (const entry of this.entries) await this.write(entry);
@@ -274,6 +285,7 @@ export class ProjectDeliveryBundleService {
     this.previews = new ArtifactPreviewService(store);
     this.temporary = new BundleJobStorage(store.directory);
   }
+  /** 检查/生成/发送共用两个容量槽；release 幂等，关闭服务可等待所有持有者退出。 */
   private acquire(signal?: AbortSignal) {
     this.lifetime.signal.throwIfAborted();
     if (this.active >= 2)
@@ -297,6 +309,10 @@ export class ProjectDeliveryBundleService {
       },
     };
   }
+  /**
+   * 以剩余预算读取冻结正文。无 ZIP 时只核验摘要；有 ZIP 时边核验边写入。
+   * 读取结束后再次核对数据库元数据，并在所有退出路径销毁流以释放文件句柄。
+   */
   private async consume(
     selected: Selection,
     manifest: ProjectDeliveryManifest,
@@ -336,6 +352,10 @@ export class ProjectDeliveryBundleService {
       await closed;
     }
   }
+  /**
+   * 完整读取每个冻结来源，分别报告可用性并计算归档大小。某个文件失败不会遮蔽其他
+   * 文件状态，但只要有一个不完整，就禁止生成声称完整的文件包。
+   */
   async plan(
     manifest: ProjectDeliveryManifest,
     signal?: AbortSignal,
@@ -414,6 +434,10 @@ export class ProjectDeliveryBundleService {
       job.release();
     }
   }
+  /**
+   * 重新核验来源并生成独占临时 ZIP；预览通过不代替这里的实际字节核验。
+   * 返回只读流及幂等 dispose，容量槽持续占用至流关闭或显式释放，取消也触发同一清理。
+   */
   async bundle(
     manifest: ProjectDeliveryManifest,
     signal?: AbortSignal,
@@ -552,6 +576,7 @@ export class ProjectDeliveryBundleService {
     }
   }
 
+  /** 作业身份绑定清单哈希、服务会话及页面客户端，知道 jobId 不能跨会话领取文件。 */
   private bound(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
     const job = this.tracked.get(jobId);
     if (
@@ -571,6 +596,7 @@ export class ProjectDeliveryBundleService {
       );
     return job;
   }
+  /** 活跃作业超时先取消并清理资源；终态视图短暂保留供页面读到最终结果后再回收。 */
   private expiry(job: ReturnType<ProjectDeliveryBundleService['bound']>, milliseconds: number) {
     clearTimeout(job.timer);
     job.view.expiresAt = new Date(Date.now() + milliseconds).toISOString();
@@ -595,6 +621,10 @@ export class ProjectDeliveryBundleService {
   ): ProjectDeliveryBundleJob {
     return structuredClone(this.bound(manifest, jobId, sessionHash, clientId).view);
   }
+  /**
+   * 建立可轮询的检查、下载或保存作业。同 ID 必须绑定同 kind 和清单；同一客户端的
+   * 新作业会等待旧作业释放资源后再继续。保存记录已提交时，其完成回执优先于迟到取消。
+   */
   async start(
     manifest: ProjectDeliveryManifest,
     input: { jobId: string; kind: 'check' | 'download' | 'save'; clientId?: string },
@@ -770,6 +800,7 @@ export class ProjectDeliveryBundleService {
     void work.finally(() => this.work.delete(work));
     return structuredClone(job.view);
   }
+  /** 只取消尚未终结的作业并等待已建立资源释放，不撤销已经提交的保存包记录。 */
   async cancel(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
     const job = this.bound(manifest, jobId, sessionHash, clientId);
     if (!['completed', 'failed', 'cancelled'].includes(job.view.stage)) {
@@ -781,6 +812,10 @@ export class ProjectDeliveryBundleService {
     }
     return structuredClone(job.view);
   }
+  /**
+   * 将 ready 下载原子切换为 sending，防止同一临时流被重复领取。
+   * 响应读完才标 completed；断开或流错误标 failed，并通过同一 dispose 释放 ZIP。
+   */
   send(
     manifest: ProjectDeliveryManifest,
     jobId: string,

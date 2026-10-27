@@ -81,6 +81,7 @@ export class CodexSubscription {
     }
     return { rpc, version: runtime.version, cwd };
   }
+  /** 同来源的账号/目录操作共享 RPC；连接关闭只删除其自身缓存，旧失败不能清除后建会话。 */
   private session(source: Source) {
     if (!this.sessions.has(source)) {
       const promise = this.open(source)
@@ -174,6 +175,7 @@ export class CodexSubscription {
       !!accountId && [...this.connections.values()].some((c) => c.connected && c.accountId === accountId)
     );
   }
+  /** 每次使用前回读实际登录账号，配置中的账号 ID 不能自动跟随用户在 Codex 中切换身份。 */
   private async requireAccount(id: string) {
     const source = this.source(id),
       state = await this.status(source);
@@ -184,6 +186,7 @@ export class CodexSubscription {
     );
     return source;
   }
+  /** 有界分页读取完整模型目录并拒绝重复游标；型号、思考强度由真实目录而非静态猜测决定。 */
   private async catalog(rpc: CodexRpc): Promise<CodexModel[]> {
     const all: CodexModel[] = [];
     let cursor: string | undefined;
@@ -270,6 +273,11 @@ export class CodexSubscription {
   adapter(config: ProviderConfig): ProviderAdapter {
     return new CodexProvider(config, this);
   }
+  /**
+   * 每次推理建立独立临时只读线程，只允许返回结构化文本与工具意图。
+   * 本机 MCP 和 Codex 原生工具均禁用，实际动作仍交 Elysia 网关；出现意外工具请求即断开。
+   * 发起 turn 后的失败标记 responseStarted，使外部预算账本保守处理可能已消耗的用量。
+   */
   async inference(config: ProviderConfig, request: Record<string, any>, signal: AbortSignal) {
     const source = this.source(config.subscriptionAccountId!);
     const { rpc, cwd } = await this.open(source);

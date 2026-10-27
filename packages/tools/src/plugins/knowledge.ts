@@ -59,6 +59,7 @@ export function knowledgeTools(
     library: Omit<ToolServices['library'], 'scopedLocalItems' | 'readLocalMcpConfig'>;
   },
 ): PluginContributions<ToolContribution> {
+  /** 按工具名选择目录或正文读取，项目身份只取所属运行，不接受模型传入任意项目 ID。 */
   function execute_list_project_memories({ task }: ToolInvocation, args: any, name: string) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
@@ -80,12 +81,14 @@ export function knowledgeTools(
 
     return result;
   }
+  /** 将当前运行传给资源库，由资源库选择冻结技能或当前允许版本；这里只负责调用适配。 */
   function execute_load_skill({ task }: ToolInvocation, args: z.output<typeof schemas.load_skill>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
     result = context.library.loadSkill(args.id, scope);
     return result;
   }
+  /** 共用目录分页，但技能目录和导入记忆使用不同 trust 标记，正文都需要后续显式读取。 */
   function execute_list_skills({ task }: ToolInvocation, args: any, name: string) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
@@ -101,12 +104,14 @@ export function knowledgeTools(
 
     return result;
   }
+  /** 参考文件范围和分页参数由资源库核验；相对路径不在此转换为任意本机路径。 */
   function execute_load_skill_file({ task }: ToolInvocation, args: z.output<typeof schemas.load_skill_file>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);
     result = context.library.loadSkillFile(args.id, args.path, args, scope);
     return result;
   }
+  /** 读取当前运行可见且仍生效的本机记忆，query/offset/limit 仅控制该条资料的返回窗口。 */
   function execute_recall_local_memory(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.recall_local_memory>,
@@ -116,6 +121,7 @@ export function knowledgeTools(
     result = context.library.readLocalMemory(args.id, args, scope);
     return result;
   }
+  /** 根据编译上下文保留的引用回查历史，任务身份用于限制可访问范围。 */
   async function execute_recall_context(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.recall_context>,

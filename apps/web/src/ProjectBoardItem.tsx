@@ -21,6 +21,10 @@ export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
   unavailable: '部分记录无法读取',
   ready: '可纳入项目交付',
 };
+/**
+ * 展示一个交付项的标准、当前候选和全部关联尝试。尝试页必须匹配项目、项 ID 和看板修订，
+ * 计划变化后旧页不能继续作为确认依据；关联、确认和重开动作由外层统一版本门禁执行。
+ */
 export function ProjectBoardItem({
   board,
   item,

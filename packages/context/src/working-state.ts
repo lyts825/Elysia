@@ -12,16 +12,19 @@ export type WorkingStateContext = { run: Run; task: Task };
 export const WORKING_STATE_REQUIREMENTS_MAX_CHARS = 16_000;
 const MAX_EVIDENCE = 40;
 
+/** 合同、任务规范及合同版本共同确定当前需求；执行状态变化不使需求摘要失效。 */
 function requirementsHash({ run, task }: WorkingStateContext) {
   return hash(stable({ contract: run.contract, spec: task.spec, contractVersion: task.contractVersion }));
 }
 
+/** 草稿摘要覆盖版本、来源和事实快照，供批准时确认用户核对的是同一份内容。 */
 function draftHash(draft: Omit<TaskWorkingStateDraft, 'snapshotHash'> | TaskWorkingStateDraft) {
   return hash(
     stable({ version: draft.version, revision: draft.revision, source: draft.source, state: draft.state }),
   );
 }
 
+/** 将用户确认的有效要求与批准命令绑定到草稿，防止保存后单独改写确认内容。 */
 function approvedHash(state: ApprovedTaskWorkingState) {
   return hash(
     stable({
@@ -206,6 +209,7 @@ export function validateTaskWorkingState(
 }
 
 /** Current operational facts are still supplied by the normal task context. This checkpoint is explicitly dated. */
+/** 生成明确带时间的历史检查点；其中的子任务状态和证据不代表当前仍然有效。 */
 export function workingStateMemory(state: ApprovedTaskWorkingState, originalRef: string) {
   return {
     revision: state.revision,
@@ -251,6 +255,10 @@ export function readTaskWorkingState(store: Store, runId: string, taskId: string
   }
 }
 
+/**
+ * 按 expectedRevision 做乐观并发保存；批准快照须正好对应下一个修订及同一运行/任务。
+ * approved 为 null 表示清除当前批准内容，但修订仍递增，避免旧页面覆盖新决定。
+ */
 export function saveTaskWorkingState(
   store: Store,
   runId: string,

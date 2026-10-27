@@ -1,7 +1,10 @@
 /* 提供代理显示顺序相关的处理逻辑。 */
 import type { Agent } from '../../../packages/contracts/src/index';
 
-/** Keep siblings in their creation order while placing each child after its own parent. */
+/**
+ * 保持兄弟节点输入顺序并深度优先放在父代理之后，不修改原数组。
+ * 父项缺失的记录作为根显示；最后再遍历未访问项，使损坏的无根环也完整保留且不会无限递归。
+ */
 export function agentOrder(agents: Agent[]): Agent[] {
   // 按输入顺序收集兄弟节点，再深度优先放置子代理；孤儿和环也必须保留。
   const ids = new Set(agents.map((agent) => agent.id));

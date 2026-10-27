@@ -19,6 +19,7 @@ const subscribe = (notify: () => void) => {
   preference.addEventListener('change', notify);
   return () => preference.removeEventListener('change', notify);
 };
+/** 共享系统减少动态效果偏好；使用外部存储订阅，避免每个组件维护重复媒体状态。 */
 export function useReducedMotion() {
   return useSyncExternalStore(subscribe, () => preference.matches);
 }
@@ -35,7 +36,10 @@ const timing = (node: HTMLElement, exit = false): KeyframeAnimationOptions => {
 
 const PresenceContext = createContext({ present: true, remove: () => {} });
 
-// Retain only the outgoing surface. Its focus and hit testing end immediately.
+/**
+ * 子树消失后仅保留一份退出中的元素供动画使用；present 立即变 false，子组件应同时
+ * 移除焦点与命中能力。若退出完成前重新显示，旧 remove 不会误删新内容。
+ */
 export function Presence({ children }: { children: ReactElement | null | false }) {
   const [retained, setRetained] = useState(children);
   if (children && children !== retained) setRetained(children);
@@ -50,6 +54,10 @@ export function Presence({ children }: { children: ReactElement | null | false }
   );
 }
 
+/**
+ * 根据 Presence 状态执行入场/退场；中断时从屏幕上的当前样式继续，而不是跳回起点。
+ * 面板或弹窗完成退出后移除保留子树，scrim 不单独移除；减少动态效果时直接完成生命周期。
+ */
 export function usePresenceMotion<T extends HTMLElement>(
   ref: RefObject<T | null>,
   kind: 'dialog' | 'panel' | 'scrim',
@@ -87,6 +95,7 @@ export function usePresenceMotion<T extends HTMLElement>(
   return present;
 }
 
+/** motionKey 改变时对新内容执行轻微入场；反复切换时从正在显示的位置接续。 */
 export function MotionContent({
   motionKey,
   children,
@@ -130,7 +139,10 @@ export function MotionContent({
   );
 }
 
-// Measure before the React update; successive presses start at the on-screen position.
+/**
+ * change(update) 在 React 更新前测量位置，布局提交后用反向位移过渡到新位置。
+ * 连续点击会取消旧动画并从当前屏幕位置接续；宽度未实际导致横向移动时不创建动画。
+ */
 export function usePositionMotion<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const previous = useRef<DOMRect | null>(null);
@@ -162,6 +174,7 @@ export function usePositionMotion<T extends HTMLElement>() {
   return { ref, change };
 }
 
+/** 选中按钮的尺寸驱动标签底板；选项切换可动画，ResizeObserver 重排只校正位置。 */
 export function MotionTabs({
   value,
   label,

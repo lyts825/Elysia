@@ -92,6 +92,7 @@ export class DeliveryReviewReads {
       }
     });
   }
+  /** 只读已构建摘要；调用方需先 ensure/read 保证脏记录已处理，错误码另行表达未知结论。 */
   cached(runId: string): DeliveryReviewSummary {
     const row = this.store.db
       .prepare('SELECT review_status,reviewed_at,issue_code FROM delivery_review_summary_v1 WHERE run_id=?')
@@ -103,6 +104,7 @@ export class DeliveryReviewReads {
       ...(row?.issue_code ? { reviewIssue: unreadable } : {}),
     };
   }
+  /** 显式将失败项重新标脏，不修改原始交付/复核正文；下一次 ensure 才真正重建。 */
   retryFailures(runId?: string) {
     this.store.db
       .prepare(
@@ -110,6 +112,7 @@ export class DeliveryReviewReads {
       )
       .run(...(runId ? [runId] : []));
   }
+  /** 单条坏记录只回滚自身刷新并保存不可读标记；数据库错误仍中止整次读取。 */
   private refreshSafely(runId: string) {
     this.store.db.exec('SAVEPOINT delivery_review_item');
     try {
@@ -126,6 +129,7 @@ export class DeliveryReviewReads {
         .run(unreadable.code, runId);
     }
   }
+  /** 只为已完成的原生项目任务生成复核状态，旧投影按需回填；指纹不符的旧结论标 stale。 */
   private refresh(runId: string) {
     const row = this.store.db.prepare('SELECT data FROM runs WHERE id=?').get(runId) as
       | { data: string }
@@ -181,6 +185,7 @@ export class DeliveryReviewReads {
       )
       .run(status, reviewedAt, runId);
   }
+  /** 指定运行仅刷新该项；全量预热共享一个 Promise，分批让出事件循环。 */
   async ensure(runId?: string) {
     if (runId) {
       if (
@@ -215,6 +220,7 @@ export class DeliveryReviewReads {
       if (result.ready) return result.value;
     }
   }
+  /** 每批最多32条、同批事务提交；持续读取脏队列直到当前没有待处理项。 */
   private async batches() {
     for (;;) {
       const rows = this.store.db

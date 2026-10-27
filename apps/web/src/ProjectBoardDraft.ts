@@ -103,6 +103,7 @@ export const emptyBoardDraft = (): ProjectBoardDraft => ({
   freeOpen: false,
   editing: false,
 });
+/** 恢复本地编辑工作台；合法空值使用默认状态，解析失败抛错以保护原文和导出机会。 */
 export function readProjectBoardDraft(raw: unknown): ProjectBoardDraft {
   // 空缓存使用默认值，损坏或超限则抛错并保留原始缓存，不能直接覆盖。
   if (raw === undefined || raw === '') return emptyBoardDraft();
@@ -124,7 +125,10 @@ export function readProjectBoardBackupDraft(raw: string): ProjectBoardDraft {
     throw Error('备份中的草稿格式或版本无法读取，或包含未知字段。当前原稿未改动。');
   }
 }
-/** Prepare without writing so import previews use the exact persistence rules. */
+/**
+ * 只准备序列化结果、不写缓存，供普通编辑和导入容量预览共用。
+ * 超限时仅允许省略可选比较基线，不截断用户输入或导入前撤销原稿；仍超限则整体拒绝。
+ */
 export function prepareProjectBoardDraft(draft: ProjectBoardDraft) {
   let value = draft;
   if (!shape.safeParse(value).success)
@@ -153,6 +157,7 @@ export function prepareProjectBoardDraft(draft: ProjectBoardDraft) {
     throw Error('项目工作台草稿超过 200000 字符，未覆盖原稿。请缩短本次输入后重试。');
   return { value, raw };
 }
+/** 读取缓存最新草稿，应用更新并通过统一容量规则后一次写入，返回规范化后实际保存的值。 */
 export function writeProjectBoardDraft(
   cache: WorkbenchCache,
   projectId: string,
@@ -183,6 +188,7 @@ export const boardToEdit = (board: ProjectDeliveryBoard): ProjectBoardEdit => {
   const baseline = boardSnapshot(board);
   return { basedOn: board.revision, ...structuredClone(baseline), baseline };
 };
+/** 为交付项创建草稿组合项目目标/范围与项标准；实际任务权限和预算由创建表单另行确认。 */
 export const itemLaunchContent = (
   board: ProjectDeliveryBoard,
   item: ProjectDeliveryBoard['items'][number],

@@ -5,9 +5,11 @@ import type { TaskCenterChanges, TaskCenterItem } from '../../../packages/contra
 import { NotificationOutbox, type NotificationHealth } from './NotificationOutbox';
 
 type Surface = 'native' | 'terminal';
+/** 通知健康计数按入口和工作台作用域隔离，作用域未就绪时使用独立的 pending 键。 */
 function healthKey(client: SurfaceClient) {
   return client.surfaceStorageKey('elysia.notification.health.v1:' + (client.workbenchScope() || 'pending'));
 }
+/** 从当前窗口缓存恢复有界计数；该缓存只供提示，不能作为历史通知已成功投递的证明。 */
 export function readNotificationHealth(client: SurfaceClient): NotificationHealth {
   // 只恢复数量和失败时间，不持久化任务正文；损坏缓存回退到空状态。
   try {
@@ -24,6 +26,7 @@ export function readNotificationHealth(client: SurfaceClient): NotificationHealt
   } catch {}
   return { pending: 0, failed: 0 };
 }
+/** 尽力写窗口缓存并广播入口内健康变化；存储不可用时仍可通过内存事件更新面板。 */
 function publishHealth(client: SurfaceClient, health: NotificationHealth) {
   try {
     sessionStorage.setItem(healthKey(client), JSON.stringify(health));
@@ -32,28 +35,36 @@ function publishHealth(client: SurfaceClient, health: NotificationHealth) {
     new CustomEvent('elysia.task-notification-error', { detail: { surface: client.surface, health } }),
   );
 }
+/** 清除已读失败计数并通知活动发件箱同步；待处理队列和任务原文保持各自状态。 */
 export function dismissTaskNotificationFailures(client: SurfaceClient) {
   publishHealth(client, { ...readNotificationHealth(client), failed: 0 });
   window.dispatchEvent(
     new CustomEvent('elysia.task-notification-dismiss', { detail: { surface: client.surface } }),
   );
 }
+/** 从桌面桥读取某入口偏好及系统可用性；普通浏览器返回两个 false。 */
 export async function readTaskNotificationSettings(surface: Surface) {
   // 桌面通知桥不可用时明确报告不可用，普通浏览器不会假定通知已开启。
   const settings = await window.elysia?.readTaskNotifications?.();
   return { enabled: settings?.[surface] === true, available: settings?.available === true };
 }
+/** 只有系统可用且用户显式启用时，通知观察器才可开始工作。 */
 export async function readTaskNotificationPreference(surface: Surface) {
   const settings = await readTaskNotificationSettings(surface);
   return settings.available && settings.enabled;
 }
+/** 等待桌面偏好保存成功后广播设置变化；无法调用桌面桥时明确失败，不假设已保存。 */
 export async function setTaskNotificationPreference(surface: Surface, enabled: boolean) {
   if (!window.elysia?.setTaskNotifications) throw Error('桌面通知不可用');
   const preferences = await window.elysia.setTaskNotifications({ surface, enabled });
   window.dispatchEvent(new CustomEvent('elysia.task-notification-settings', { detail: { surface } }));
   return preferences[surface] === true;
 }
-/** Lives outside Activity so an explicitly enabled entry can report new background states. */
+/**
+ * 独立于工作台 Activity 的通知观察器，显式启用的隐藏入口也能报告新状态。
+ * 首次读取和游标重置仅建立基线，不回放历史；后续变化先入队，投递前重新核验当前任务。
+ * 读取失败从最后成功游标重连，关闭偏好或卸载会取消读取并停止发件箱。
+ */
 export function TaskNotifications({ client, ready }: { client: SurfaceClient; ready: boolean }) {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -61,6 +72,7 @@ export function TaskNotifications({ client, ready }: { client: SurfaceClient; re
     let generation = 0;
     const read = () =>
       void (() => {
+        // 设置读取可能重叠，generation 保证迟到的旧偏好不能重新启用已关闭的入口。
         const current = ++generation;
         return readTaskNotificationPreference(client.surface)
           .then((value) => {
@@ -90,6 +102,7 @@ export function TaskNotifications({ client, ready }: { client: SurfaceClient; re
       new NotificationOutbox(
         {
           verify: async (notice) => {
+            // 真正投递前重新检查版本和状态，轮询队列中的旧变化不能直接变成系统通知。
             const { item } = await client.api<{ item: TaskCenterItem | null }>(
               '/task-center/' + notice.id,
               undefined,
@@ -115,6 +128,7 @@ export function TaskNotifications({ client, ready }: { client: SurfaceClient; re
       if ((event as CustomEvent).detail?.surface === client.surface) box?.dismissFailures();
     };
     window.addEventListener('elysia.task-notification-dismiss', dismiss);
+    // 完成后再安排下一轮，积压分页短间隔读取，普通轮询保持五秒，不叠加慢请求。
     const poll = async () => {
       let next = 5000;
       try {
@@ -132,6 +146,7 @@ export function TaskNotifications({ client, ready }: { client: SurfaceClient; re
         );
         if (controller.signal.aborted) return;
         if (before !== undefined && !result.baseline && !result.resetRequired) {
+          // 初次读取或日志重置只建立观察基线，不能把已有历史全部通知一遍。
           for (const change of result.items) {
             if (controller.signal.aborted) return;
             if (change.item) box.enqueue(change.item, before);

@@ -21,6 +21,11 @@ type Candidate = { seq: number; payload: string; compressed_bytes: number | null
 /** 从运行和代理记录构造上下文快照，限制代理必须属于指定运行。 */
 export class ContextPreviewReads {
   constructor(private store: Store) {}
+  /**
+   * 获取单代理的轻量展示快照：只接受与当前会话、窗口策略、冻结模型及版本一致的最近指标。
+   * 旧事件正文仅在压缩/原始长度可证明有界时回读；找不到有效指标时返回未知量而非估造数据。
+   * 预览永远 safeToConfigure=false，完整上下文配置仍须走独立读取和执行边界检查。
+   */
   snapshot(runId: string, agentId?: string): ContextSnapshot {
     const run = this.store.require<Run>('runs', runId);
     const agent = this.store.require<Agent>('agents', agentId ?? run.coordinatorAgentId);
@@ -38,6 +43,7 @@ export class ContextPreviewReads {
       .all(runId, agent.taskId) as Candidate[];
     let metrics: ContextRuntimeMetrics | null = null;
     for (const row of candidates) {
+      // 优先使用专门的轻量投影；历史正文不可控时跳过该候选，继续查更早的可核验指标。
       let payload: any;
       try {
         payload = JSON.parse(row.payload);

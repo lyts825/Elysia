@@ -71,6 +71,7 @@ export function matchesReplyReceipt(
   );
 }
 
+/** 原样重建同一次发送负载；不能刷新 expectedRevision 或重新生成 commandId 后称为原请求重试。 */
 export const replyReceiptPayload = (receipt: ReplyReceipt) => ({
   commandId: receipt.commandId,
   expectedRevision: receipt.expectedRevision,

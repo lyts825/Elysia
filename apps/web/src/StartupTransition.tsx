@@ -21,6 +21,7 @@ function useReducedMotion() {
   return reduced;
 }
 
+/** 将六位背景色转为线性亮度后选择黑/白前景，生成独立于全局主题的启动页颜色变量。 */
 export function startupColors(config: StartupPreferences): CSSProperties {
   // 根据背景亮度选择适合的前景颜色，并以 CSS 变量传给启动视觉。
   const rgb = [1, 3, 5].map((offset) => parseInt(config.background.slice(offset, offset + 2), 16) / 255);
@@ -37,6 +38,10 @@ export function startupColors(config: StartupPreferences): CSSProperties {
   } as CSSProperties;
 }
 
+/**
+ * 显示配置动画或本地导入预览；禁用、跳过或系统减少动态效果时使用静态标记。
+ * 媒体读取和视频生命周期独立清理，失败回退内置视觉并可报告诊断，不能阻塞工作台连接。
+ */
 export function StartupVisual({
   config,
   skipped = false,
@@ -143,6 +148,7 @@ export function StartupVisual({
   );
 }
 
+/** 启动等待界面复用共享偏好；桌面已展示过开屏动画时跳过重复播放，但保留连接状态与操作。 */
 export function StartupTransition({
   children,
   className = '',

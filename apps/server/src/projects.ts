@@ -48,6 +48,10 @@ export async function inspectFolder(input: string, processes: Processes) {
   };
 }
 export const projectTextEncodings = textFileEncodings;
+/**
+ * 将项目相对路径解析为真实文件。词法路径和真实路径都排除敏感/依赖目录，
+ * 每个现有路径段拒绝 symlink/junction，不能借项目内部链接读取授权目录之外的资料。
+ */
 async function projectFilename(store: Store, id: string, input: string) {
   const project = store.require<Project>('projects', id);
   invariant(
@@ -106,7 +110,10 @@ export async function projectResource(
   }
   return resource;
 }
-/** 读取项目目录或分页文本，目录列表排除符号链接及约定的忽略项。 */
+/**
+ * 目录返回排序后的有界元数据，超出 300 条显式标记截断；文本以版本化字节分页读取。
+ * 图片/PDF/二进制只返回资源 URL，文本解码完成后再次核验路径，防止读取期间被重定向。
+ */
 export async function projectFiles(
   store: Store,
   id: string,

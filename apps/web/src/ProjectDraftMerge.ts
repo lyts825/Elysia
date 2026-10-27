@@ -31,6 +31,7 @@ export const launchLabels = {
   acceptanceCriteria: '本次验收标准',
 } as const;
 
+/** 字段合并器记录每项差异；缺少基线时不能推断单方修改，因此不一致值都需明确选择。 */
 function merger(choices: MergeChoices, unknownBaseline: boolean) {
   const differences: ProjectDraftDifference[] = [];
   function field<T extends Value>(key: string, label: string, original: T, current: T, mine: T): T {
@@ -45,7 +46,11 @@ function merger(choices: MergeChoices, unknownBaseline: boolean) {
   return { differences, field };
 }
 
-/** Field-level three-way merge, including additions and deletion-versus-edit conflicts. */
+/**
+ * 按字段进行基线/当前/本人草稿三方合并，交付项以稳定 ID 配对。
+ * 单方修改可直接采用，双方不同修改或删除与编辑相遇时要求选择；当前计划顺序优先，
+ * 本人新增项随后追加。result 只是暂定预览，unresolved 非零时调用方必须阻止提交。
+ */
 export function mergeProjectPlan(
   edit: ProjectBoardEdit,
   current: ProjectPlanSnapshot,
@@ -91,6 +96,7 @@ export function mergeProjectPlan(
   return { result, differences, unresolved: differences.filter((row) => row.conflict && !row.choice).length };
 }
 
+/** 创建草稿使用同一三方规则，但只合并目标、标题、交付物和标准，不改模型与预算配置。 */
 export function mergeProjectLaunch(
   original: ProjectLaunchContent | undefined,
   current: ProjectLaunchContent,

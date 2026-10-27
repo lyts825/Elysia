@@ -22,7 +22,7 @@ export class ExecutionAdmissions {
     ready: () => void,
     failed: (error: unknown) => void,
   ): Promise<void> {
-    // Mark the entire round before invoking a plugin or allowing any dispatch.
+    // 先标记全部资源域再开始异步准备，否则某个快速回调可能在其他域尚未标记时提前派发。
     for (const admission of admissions) this.states.set(admission, 'execution-preparing');
     const results = await Promise.allSettled(
       [...admissions].map(async (admission) => {
@@ -41,7 +41,7 @@ export class ExecutionAdmissions {
         ready();
       }),
     );
-    // A host callback failure must not let shutdown overtake other in-flight preparations.
+    // 就绪/失败回调也可能抛错，必须等待全部资源域收束后再向宿主报告，避免关闭越过在途准备。
     const errors = results.filter((result) => result.status === 'rejected');
     if (errors.length)
       throw new AggregateError(

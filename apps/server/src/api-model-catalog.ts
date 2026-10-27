@@ -56,6 +56,7 @@ export function parseApiModels(data: unknown, provider: ProviderConfig): Availab
 
 const catalogByteLimit = 2 * 1024 * 1024;
 
+/** 按实际到达字节限制目录为 2 MiB，取消时终止 reader 并在所有退出路径释放锁。 */
 async function catalogText(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string> {
   invariant(body, 'MODEL_CATALOG', '模型目录响应为空，请检查 API 端点');
   const reader = body.getReader();
@@ -105,6 +106,7 @@ function catalogHttpFailure(status: number): AppError {
   );
 }
 
+/** 只保留白名单网络错误码，区分连接/正文中断和用户取消，不把远端原文或端点回显到诊断。 */
 function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'connect' | 'body'): AppError {
   const codes = new Set([
     'ENOTFOUND',
@@ -157,7 +159,10 @@ function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'conn
 }
 
 /** Listing uses the verified credential without spending inference tokens. */
-/** 使用所选凭据请求未归档的服务商模型目录；限制请求时间并校验响应。 */
+/**
+ * 使用所选凭据读取 /models，不发送推理请求。凭据取消与 20 秒超时共同约束下载，
+ * 拒绝重定向并分别报告连接、HTTP、正文和 JSON/目录结构错误，失败不自动切换型号。
+ */
 export async function apiModels(
   provider: ProviderConfig,
   keys: Pick<ProviderKeys, 'credential'>,

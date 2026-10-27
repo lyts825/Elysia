@@ -29,6 +29,10 @@ export function ReasoningPanel(props: ReasoningPanelProps) {
   return <ReasoningRecord key={props.identity} {...props} />;
 }
 
+/**
+ * 单条公开推理的展示状态：支持受控或本地展开、按需首次读取、复制和阅读位置恢复。
+ * 展示只消费传入 text，不触碰供应商私有载荷；同一 identity 的增量尽量复用 Text 节点。
+ */
 function ReasoningRecord({
   identity,
   text,
@@ -81,12 +85,14 @@ function ReasoningRecord({
     };
   }, []);
   useEffect(() => {
+    // 自动读取每条记录最多发起一次；显式重试与读取更多由按钮回调决定，避免错误后无限请求。
     if (!open || text !== undefined || loading || error || !onLoad || requested.current) return;
     requested.current = true;
     onLoad();
   }, [open, text, loading, error, onLoad]);
 
   useLayoutEffect(() => {
+    // React 不直接替换 pre 的正文节点：追加保持浏览器选区，非前缀替换也尽量恢复原选区边界。
     const element = content.current,
       scroller = viewport.current;
     if (!element || !scroller) return;
@@ -199,6 +205,7 @@ function ReasoningRecord({
               aria-label={partial ? '复制已显示内容' : `复制${label}`}
               onClick={async () => {
                 if (copying.current) return;
+                // 复制固定点击时的内容；流继续增长后提示已复制的是旧片段，不能声称新内容也已复制。
                 const value = text;
                 copying.current = true;
                 setCopy({ state: 'pending' });

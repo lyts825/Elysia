@@ -56,6 +56,7 @@ export function readCurrentQuestions(
       ELSE length(CAST(payload AS BLOB))>${CURRENT_QUESTION_LIMITS.bodyBytes} END oversized
     FROM events WHERE run_id=? AND seq=? AND task_id=?`);
   const decode = (row: EventRow, task: Task): Record<string, unknown> => {
+    // 每条正文单独有界读取，整个请求还共享剩余解压预算，坏压缩数据也要消耗其尝试额度。
     if (remaining <= 0) throw new UnavailableQuestion(true);
     const stored = body.get(run.id, row.seq, task.id) as EventBody | undefined;
     if (!stored) throw new UnavailableQuestion();
@@ -98,6 +99,7 @@ export function readCurrentQuestions(
     }
   };
   const state = (row: EventRow, task: Task) => {
+    // 事件外层索引与正文身份都要匹配，防止错行或旧格式正文把其他任务的问题带入当前列表。
     const value = decode(row, task);
     if (
       value.id !== task.id ||
@@ -167,6 +169,7 @@ export function readCurrentQuestions(
         }
       }
       if (answered) continue;
+      // 没看到状态离开等待，并不证明截断范围以外没有回答；超限必须报告无法确认。
       if (after.length > CURRENT_QUESTION_LIMITS.eventsPerType) throw new UnavailableQuestion(true);
       result.items.push({
         eventId: candidate.row.event_id,

@@ -6,6 +6,10 @@ import { FileContentView, fileEncodingOptions } from './FileContentView';
 import { useFilePage } from './useFilePage';
 import './project-files.css';
 
+/**
+ * 浏览项目源文件，目录和文件由统一分页读取 Hook 提供。路径、编码和锚点一起形成选择，
+ * 项目改变立即回根目录；读取期间明确保留上次来源，不能把旧正文误标为新路径内容。
+ */
 export function ProjectFiles({ projectId }: { projectId: string }) {
   // 选择状态绑定项目 ID；切换项目时从根目录重新开始。
   const fileListId = useId();

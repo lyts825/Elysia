@@ -8,7 +8,11 @@ import { Icon } from './Icon';
 import './home.css';
 import './workspace-home.css';
 
-/** 展示当前项目的输入和模型选择；草稿及启动动作由父组件持有。 */
+/**
+ * 首页输入区只展示父级持有的草稿、模型/终端模板和上下文就绪状态。
+ * 独立对话可直接开始，项目任务由父级打开创建设置；终端没有项目时先引导选择项目。
+ * 按钮与 Ctrl/Cmd+Enter 共用就绪门禁，输入法合成期间不触发快捷提交。
+ */
 export function WorkspaceHome({
   project,
   providers,

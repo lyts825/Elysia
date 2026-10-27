@@ -40,6 +40,7 @@ export type TaskCenterPage = {
   /** Unknown execution records before state/review filtering; query membership may also be unknown. */
   projectionCoverage?: ProjectionReadCoverage;
 };
+/** 从 cursor 续读轻量变更；resetRequired 要求重建基线，item=null 表示该条已离开当前结果。 */
 export type TaskCenterChanges = {
   items: { id: string; changeRevision: number; item: TaskCenterItem | null }[];
   cursor: number;
@@ -47,6 +48,7 @@ export type TaskCenterChanges = {
   baseline?: boolean;
   resetRequired?: boolean;
 };
+/** 搜索只返回可定位摘要，完整消息正文和上下文需单独读取。 */
 export type MessageSearchPage = {
   items: { messageId: string; revision: number; role: Message['role']; snippet: string }[];
   page: RecordPage;

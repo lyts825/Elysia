@@ -1,6 +1,7 @@
 // 应用准备状态及可执行引导操作的契约。
 import { z } from 'zod';
 
+/** 受限的界面导航建议；读取准备状态不会自动触发模型验证或修改项目配置。 */
 export const ReadinessAction = z
   .object({
     kind: z.enum([

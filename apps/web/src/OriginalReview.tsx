@@ -9,6 +9,10 @@ import { ReviewRecord } from './ReviewRecord';
 import { ReviewSourceNoteBody } from './ReviewSourceNotes';
 import './original-review.css';
 
+/**
+ * 以 portal 弹窗核对备注携带的来源复核；响应必须匹配运行与复核 ID。
+ * 来源删除或暂不可读时仍展示本任务保存的备注快照，两者不相互覆盖，也不修改当前复核草稿。
+ */
 export function OriginalReview({
   runId,
   note,

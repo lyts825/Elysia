@@ -19,6 +19,7 @@ const states: Record<ProjectionTable, readonly string[]> = {
 
 /** 记录投影读取问题，同时保留原始业务正文，供修复后重试。 */
 export class ProjectionReads {
+  /** 建立问题表和失效触发器；正文修复会解除旧问题并使任务中心、历史搜索重新预热。 */
   constructor(private store: Store) {
     store.tx(() => {
       store.db.exec(`CREATE TABLE IF NOT EXISTS projection_read_issues_v1(
@@ -52,12 +53,15 @@ export class ProjectionReads {
           ON CONFLICT(kind,scope) DO UPDATE SET revision=revision+1; END;`);
     });
   }
+  /** 生成排除已知问题行的 SQL 片段；table 来自固定表枚举，alias 仅供内部查询拼接。 */
   available(table: ProjectionTable, alias = table) {
     return `NOT EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.table_name='${table}' AND p.record_id=${alias}.id)`;
   }
+  /** 判断投影版本或 readModel 对象缺失，用于选取需要从权威正文重建的行。 */
   missing(table: ProjectionTable, alias = table) {
     return `(json_extract(${alias}.data,'$.readModelVersion') IS NOT 1 OR json_type(${alias}.data,'$.readModel') IS NOT 'object')`;
   }
+  /** 判断是否已登记不可读问题；不尝试读取或修复正文。 */
   has(table: ProjectionTable, id: string) {
     return !!this.store.db
       .prepare('SELECT 1 FROM projection_read_issues_v1 WHERE table_name=? AND record_id=?')
@@ -144,6 +148,7 @@ export class ProjectionReads {
   async warm(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) await new Promise<void>((resolve) => setImmediate(resolve));
   }
+  /** 在必须同步完成的初始化路径逐批预热；正常交互应使用会让出事件循环的 warm。 */
   warmSync(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) {}
   }
@@ -184,6 +189,7 @@ export class ProjectionReads {
   }
 }
 const instances = new WeakMap<Store, ProjectionReads>();
+/** 每个 Store 复用一个读取器；WeakMap 不延长已释放 Store 的生命周期。 */
 export function projectionReads(store: Store) {
   let value = instances.get(store);
   if (!value) {

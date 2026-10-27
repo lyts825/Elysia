@@ -15,6 +15,10 @@ const statuses: Record<string, string> = {
   VERIFYING: '待核验',
   DRAFT: '待开始',
 };
+/**
+ * 按需展开来源链和修订页，两种读取独立报告错误并保留成功结果。
+ * 打开某条关系前重新读取运行头；关系快照只提供标识，不保证目标仍存在或仍可访问。
+ */
 export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (run: Run) => void }) {
   const { api } = useSurfaceClient();
   // 原始来源与后续修订分开保存，列表分页及打开任务各自跟踪读取状态。
@@ -70,6 +74,7 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
     });
     return () => controller.abort();
   }, [api, runId, open, before, retry]);
+  /** 同时仅允许一个目标导航；关闭面板或切换运行会取消读取，过期回调不得跳转。 */
   async function navigate(id: string) {
     if (navigation.current || !open) return;
     const controller = new AbortController();

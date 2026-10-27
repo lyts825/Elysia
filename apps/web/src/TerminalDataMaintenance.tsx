@@ -43,12 +43,14 @@ export function TerminalDataMaintenance({
     [eligibility, setEligibility] = useState<TerminalBackupEligibility | null>(null);
   const planRef = useRef<TerminalMaintenancePlan | null>(null),
     historyStarted = useRef(false),
+    // 待取消集合保留尚未收到服务端确认的计划，不能因关闭预览就遗忘远端计划。
     pendingPlanCancellation = useRef(new Set<string>()),
     planCancellation = useRef<Promise<void> | null>(null);
   const selectedBackup = backups.find((backup) => backup.id === backupId);
   const planHeading = useRef<HTMLHeadingElement>(null);
   const errorElement = useRef<HTMLParagraphElement>(null);
   const [feedbackFocus, setFeedbackFocus] = useState<{ target: 'plan' | 'error'; origin: Element | null }>();
+  // 异步结果只在焦点仍停留于触发位置时接管焦点，避免打断用户已转向的输入。
   useEffect(() => {
     if (!feedbackFocus) return;
     if (document.activeElement !== document.body && document.activeElement !== feedbackFocus.origin) return;
@@ -79,6 +81,7 @@ export function TerminalDataMaintenance({
       if (planCancellation.current === request) planCancellation.current = null;
     }
   }
+  /** 选择、查询或目标改变后立即撤下旧预览；远端取消失败明确提示，下一次预览前重试。 */
   function cancelPlanForChange() {
     void clearPlan().catch((issue) =>
       setError(
@@ -113,6 +116,7 @@ export function TerminalDataMaintenance({
       return;
     }
     const controller = new AbortController(),
+      // 查询输入防抖；游标变化也使用同一路径，过期读取由 cleanup 中止。
       timer = setTimeout(() => {
         setHistoryBusy(true);
         void readHistory(historyQuery, historyCursor, controller.signal)
@@ -129,6 +133,7 @@ export function TerminalDataMaintenance({
       controller.abort();
     };
   }, [api, historyQuery, historyCursor]);
+  // 快照资格随历史版本改变而失效，不能沿用早先“可恢复”的结果生成新计划。
   useEffect(() => {
     setEligibility(null);
     if (!backupId) return;
@@ -151,6 +156,7 @@ export function TerminalDataMaintenance({
   const controllerRef = useRef<AbortController | null>(null),
     scanIdRef = useRef<string | null>(null);
   const scanning = scan?.status === 'running';
+  /** 当前扫描失败后中止本地轮询并尽力取消远端任务；已有取消信号的旧请求不更新界面。 */
   function failedScan(controller: AbortController, issue: unknown, fallback: string) {
     if (controller.signal.aborted) return;
     const scanId = scanIdRef.current;
@@ -195,6 +201,7 @@ export function TerminalDataMaintenance({
     if (current.status !== 'completed') throw new Error(current.message || '维护扫描未完成');
     return current;
   }
+  /** 建立新的扫描身份和占位进度，取消旧读取并使任何旧维护计划失效。 */
   function beginScan() {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -217,6 +224,10 @@ export function TerminalDataMaintenance({
     );
     return controller;
   }
+  /**
+   * 刷新历史首页后并行读取占用扫描和可选运行列表，成功结果才替换 overview。
+   * 外部 signal 转发到本次扫描；focusFeedback 只用于用户主动刷新失败后的可访问性反馈。
+   */
   async function load(signal?: AbortSignal, focusFeedback = false) {
     const origin = document.activeElement;
     const controller = beginScan(),
@@ -243,6 +254,7 @@ export function TerminalDataMaintenance({
       if (controllerRef.current === controller) controllerRef.current = null;
     }
   }
+  /** 先停止本地等待，再向已知服务端扫描发送取消；取消未确认时保留错误提示供刷新核验。 */
   async function cancelScan() {
     const scanId = scanIdRef.current;
     controllerRef.current?.abort();
@@ -259,6 +271,7 @@ export function TerminalDataMaintenance({
     const controller = new AbortController();
     void load(controller.signal);
     return () => {
+      // 卸载或入口客户端变化时撤销全部读取，并尽力释放已知扫描及预览计划。
       controller.abort();
       controllerRef.current?.abort();
       const scanId = scanIdRef.current;
@@ -269,7 +282,10 @@ export function TerminalDataMaintenance({
         void api(endpoint + '/plans/' + id + '/cancel', {}).catch(() => {});
     };
   }, [api]);
-  /** 取消旧计划后，按操作类型取得必要的运行版本并生成新预览。 */
+  /**
+   * 必须先确认旧计划已取消，再为所选操作创建扫描预览。备份/恢复取最新运行 revision，
+   * 重试清理绑定旧清理记录 revision；返回的计划是后续提交的唯一依据，不在此修改数据。
+   */
   async function preview(
     kind: TerminalMaintenancePlan['kind'],
     retry?: TerminalMaintenanceOverview['pendingCleanup'][number],
@@ -312,7 +328,10 @@ export function TerminalDataMaintenance({
       if (controllerRef.current === controller) controllerRef.current = null;
     }
   }
-  /** 按预览类型提交计划 ID 和版本，完成后重新读取维护状态。 */
+  /**
+   * 按预览类型选择提交端点，只传计划 ID 与其 revision，由服务端重新核验预览前提。
+   * perform 统一管理外层禁用与错误；成功后清空计划和选择并重新扫描，失败保留待核对状态。
+   */
   async function apply() {
     if (!plan) return;
     await perform(async () => {

@@ -48,6 +48,7 @@ class RecoveryReadError extends Error {
 /** 管理跨进程重启保留的执行暂停及恢复问题，不改写不可读的业务正文。 */
 export class ExecutionRecovery {
   constructor(private store: Store) {}
+  /** 读取独立暂停记录并附带当前不可读问题数量；暂停存在与否不取决于业务正文能否解压。 */
   get(runId: string): ExecutionHold | undefined {
     const row = this.store.db
       .prepare(
@@ -81,6 +82,7 @@ export class ExecutionRecovery {
     this.assertReadable(runId);
     this.store.db.prepare('DELETE FROM execution_holds_v1 WHERE run_id=?').run(runId);
   }
+  /** 按 SQL 归属定位运行，在同事务登记问题与持久暂停；孤立或缺失行返回 false。 */
   private issue(table: RecoveryTable, id: string) {
     const row = this.store.db
       .prepare(`SELECT ${table === 'runs' ? 'id' : 'run_id'} runId FROM ${table} WHERE id=?`)
@@ -98,6 +100,11 @@ export class ExecutionRecovery {
   read<T extends Entity>(table: RecoveryTable, id: string, retry = false): T {
     return this.readRecord<T>(table, id, retry, true);
   }
+  /**
+   * 检查正文与 SQL 的 ID、revision、run_id 以及各表执行必需字段。
+   * checkScope=false 只用于关系核验的第二层读取，避免 task/agent 双向关系造成无限递归。
+   * 已知问题默认短路失败；SQLite 本身的错误不会包装成业务数据损坏。
+   */
   private readRecord<T extends Entity>(
     table: RecoveryTable,
     id: string,
@@ -149,6 +156,10 @@ export class ExecutionRecovery {
       throw new RecoveryReadError(table, id);
     }
   }
+  /**
+   * 交叉验证根任务、代理、执行尝试与运行的所属关系；仅字段形状正确不足以恢复执行。
+   * 关联行以不再递归展开关系的方式读取，当前实体负责核对本层必需的双向标识。
+   */
   private assertScope(table: RecoveryTable, value: any, retry: boolean) {
     const related = (ownerTable: RecoveryTable, key: string) =>
       this.readRecord<any>(ownerTable, key, retry, false);

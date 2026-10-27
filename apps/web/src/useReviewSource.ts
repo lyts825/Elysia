@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import type { DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
 
-/** 按运行及刷新条件读取交付来源；依赖变化时取消旧请求，避免过期结果覆盖新状态。 */
+/**
+ * 按运行、运行版本、交接阶段和显式重试代次重新读取当前交付来源。
+ * 每次开始先清空旧 value，enabled=false 时不请求；清理取消旧读取，避免用旧指纹继续确认来源。
+ */
 export function useReviewSource(
   runId: string,
   enabled: boolean,

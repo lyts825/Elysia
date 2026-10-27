@@ -25,6 +25,7 @@ type Scan = {
   touched: number;
 };
 
+/** 解析 URI 锚点或 Lx-Ly 行范围；无效转义、控制字符和过大范围直接拒绝。 */
 function targetAnchor(input: string) {
   let anchor: string;
   try {
@@ -48,6 +49,7 @@ function targetAnchor(input: string) {
   );
   return { anchor, line, endLine };
 }
+/** 与前端 Markdown 可见标题使用相同 slug 规则，保留重复标题的序号匹配基础。 */
 function headingSlug(text: string) {
   // Same visible-text slug convention as MarkdownDocument; HTML is skipped there.
   return text
@@ -83,6 +85,11 @@ function headingSlug(text: string) {
 /** 按文件及作用域定位锚点，保留有期限的扫描游标供后续请求续读。 */
 export class FileLocator {
   private cursors = new Map<string, Scan>();
+  /**
+   * 每次最多扫描 8 MiB，以不透明游标保存文件版本、编码、行状态和标题重复计数。
+   * 续读必须匹配相同作用域、文件和锚点；扫描后重查文件版本，防止返回混合版本的位置。
+   * Markdown 围栏代码中的标题被忽略，超长行仅保留定位所需的有界状态。
+   */
   async locate(filename: string, scope: string, options: FileLocationOptions): Promise<FileLocation> {
     const target = targetAnchor(options.anchor),
       signal = options.signal;

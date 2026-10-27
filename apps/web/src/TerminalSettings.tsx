@@ -48,6 +48,7 @@ export function TerminalSettings({
 }) {
   const { api, mutation } = useSurfaceClient();
   const [baseline, setBaseline] = useState(() => structuredClone(initial));
+  // latest 跟踪后台新版本，baseline 固定用户开始编辑时的依据，两者不可在脏草稿中自动合并。
   const [latest, setLatest] = useState(initial);
   const [profiles, setProfiles] = useState(() => structuredClone(baseline.profiles));
   const [defaultProfileId, setDefaultProfileId] = useState(baseline.defaultProfileId);
@@ -77,6 +78,7 @@ export function TerminalSettings({
           : connectionOptions
             ? '指定连接已失效或不兼容，请重选'
             : '模板指定连接（当前未提供连接目录）';
+  /** 手动定位模板后把编辑标题滚入视口并聚焦，帮助键盘和读屏用户确认切换目标。 */
   function revealEditor() {
     editorTitle.current?.scrollIntoView({ block: 'start' });
     editorTitle.current?.focus({ preventScroll: true });
@@ -87,6 +89,7 @@ export function TerminalSettings({
       revealEditor();
     }
   }, [selectedId]);
+  /** 只消费一次外部定位意图，避免父组件刷新后反复抢夺用户选中项。 */
   function finishFocus() {
     focusIntent.current.handled = true;
     setFocusIssue('');
@@ -124,6 +127,7 @@ export function TerminalSettings({
     if (!changed && latest.revision !== baseline.revision) adopt(latest);
   }, [latest, baseline.revision, changed]);
   useEffect(() => dirtyChanged?.(changed), [changed, dirtyChanged]);
+  // 定位到另一模板前保留所有 profiles 草稿；若当前有改动则显示独立的切换确认。
   useEffect(() => {
     if (focusIntent.current.id !== focusProfileId || focusIntent.current.request !== focusRequest)
       focusIntent.current = { id: focusProfileId, request: focusRequest, handled: false };
@@ -138,6 +142,7 @@ export function TerminalSettings({
     else setSelectedId(focusProfileId);
     finishFocus();
   }, [focusProfileId, focusRequest, profiles, changed, selectedId, busy]);
+  /** 独立对话框关闭需要脏状态确认；嵌入模式的离开保护交给外层终端控制中心。 */
   const requestClose = () => {
     if (busy) return;
     if (!embedded && changed) setConfirmClose(true);
@@ -147,6 +152,7 @@ export function TerminalSettings({
     <form
       className="terminal-profile-settings"
       onSubmit={async (event) => {
+        // ref 立即加锁，保存带编辑基线 revision；后台冲突只更新 latest，不覆盖当前草稿。
         event.preventDefault();
         if (submitting.current || !valid || !changed) return;
         submitting.current = true;
@@ -172,6 +178,7 @@ export function TerminalSettings({
                 : '无法保存终端设置，请重试。',
           );
           if (issue instanceof ApiError && issue.code === 'REVISION_CONFLICT') {
+            // 读取新版供用户比较/重新采用，保留原有输入及 baseline，不能悄悄重试覆盖。
             try {
               setLatest(await api<SurfaceTerminalSettings>('/terminal/settings'));
             } catch {}

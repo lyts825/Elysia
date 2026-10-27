@@ -10,6 +10,7 @@ export function deliveryArtifactRows(store: Store, runId: string) {
   return cachedDeliveryRead(store, `artifacts:${runId}`, () => store.artifactDeliveryMetadata(runId));
 }
 
+/** 从缓存行提取交付语义字段，排除运行归属等不参与产物内容比较的存储字段。 */
 export function deliveryArtifactMetadata(
   store: Store,
   runId: string,
@@ -64,6 +65,7 @@ export function deliveryFingerprintFromArtifacts(
       '}',
   );
 }
+/** 读取当前产物元数据后计算内容指纹；不读文件字节，也不把人工复核本身纳入指纹。 */
 export function deliveryFingerprint(store: Store, run: Pick<Run, 'id'>, root: Task) {
   return deliveryFingerprintFromArtifacts(run, root, deliveryArtifactMetadata(store, run.id));
 }

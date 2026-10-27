@@ -28,7 +28,12 @@ export type ObjectWorkerResult = {
 };
 
 // The caller holds both service locks until this promise settles, including worker failure.
-/** 在工作线程中执行对象清理计划或清理操作，支持取消及进度回调。 */
+/**
+ * 在 worker 中执行有界对象维护，调用方必须持有双方入口锁直到本 Promise 收束。
+ * 取消先通过共享内存协作；宽限期后只有仍处于只读阶段才能原子取得终止门并强制结束，
+ * 一旦进入删除预检就只允许协作取消，避免在文件删除与审计登记之间强杀。
+ * 最终结果在 worker exit 后返回，而非收到 done 消息即释放锁。
+ */
 export function runObjectMaintenance(
   input: {
     directory: string;
@@ -85,6 +90,7 @@ export function runObjectMaintenance(
       resolve(value);
     };
     const stoppedBeforePreflight = (): ObjectWorkerResult => {
+      // 只有赢得只读阶段原子门才可证明删除数为零；不能从最后一条进度猜测未发生副作用。
       const plan = input.action === 'cleanup' ? ObjectCleanupPlan.safeParse(input.plan) : undefined;
       const state: ObjectMaintenanceProgress = progress ?? {
         phase: 'integrity',

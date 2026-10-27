@@ -12,7 +12,10 @@ export interface ProjectManifestBlocker {
   runId?: string;
 }
 
-/** Known blockers only; the server checks revisions and selected metadata again when freezing. */
+/**
+ * 仅根据当前看板和冻结草稿列出已知阻塞项及修复目标：项是否存在、候选是否就绪、
+ * 必需项与产物选择是否满足条件。这里的可冻结是界面门禁，服务端仍需重新校验版本和元数据。
+ */
 export function projectManifestReadiness(
   board: ProjectDeliveryBoard,
   manifest: NonNullable<ProjectBoardDraft['manifest']>,

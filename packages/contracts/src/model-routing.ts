@@ -28,6 +28,7 @@ export interface RoleRoutingView {
     currency: string | null;
   }[];
 }
+/** 内核实际解析路由后写入的来源记录，不能由模型输入冒充。 */
 export interface RoleRoutingDecision {
   policyRevision: number;
   role: 'worker' | 'reviewer';
@@ -35,6 +36,7 @@ export interface RoleRoutingDecision {
   model: string;
   reason: string;
 }
+/** 创建运行时冻结角色选择与连接；unavailable 保留当时不可用原因，不能自动换成新连接。 */
 export interface RoleRoutingSnapshot {
   projectId: string;
   revision: number;

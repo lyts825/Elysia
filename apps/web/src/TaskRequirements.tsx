@@ -14,6 +14,10 @@ export const validRequirements = (deliverables: string, criteria: string, requir
     );
   });
 
+/**
+ * 受控编辑交付物与验收标准原文，以逐行计数显示输入限制；不在输入时删改用户换行或空白。
+ * required 由执行模式决定，真正创建合同前使用同一规范化函数和完整校验再次检查。
+ */
 export function TaskRequirements({
   deliverables,
   criteria,

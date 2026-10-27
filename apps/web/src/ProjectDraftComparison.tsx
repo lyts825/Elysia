@@ -2,6 +2,10 @@
 import { differenceText, type MergeChoice, type ProjectDraftDifference } from './ProjectDraftMerge';
 import './project-draft-comparison.css';
 
+/**
+ * 纯展示三方字段差异和采用结果，不修改合并结果本身。
+ * 每个冲突的选择以稳定 key 回传，父组件负责将选择绑定到当次完整比较身份。
+ */
 export function ProjectDraftComparison({
   differences,
   choose,

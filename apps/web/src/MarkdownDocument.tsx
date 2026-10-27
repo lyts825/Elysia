@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './markdown.css';
 
+/** 递归抽取 React 子节点中的文字，用于标题锚点和代码复制，忽略非文本节点属性。 */
 function plainText(children: ReactNode): string {
   return Children.toArray(children)
     .map((child): string =>
@@ -52,6 +53,7 @@ function localImageUrl(src: string, sourcePath: string, resourceBase?: string | 
   return scope + path.split('/').map(encodeURIComponent).join('/');
 }
 
+/** 代码块保留原内容并提供复制反馈；反馈定时器在卸载时清理，剪贴板失败不影响正文。 */
 function CodeBlock({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -107,6 +109,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
+/** Markdown 图片仅映射到当前本地资源范围；外部或越界图片显示占位而不发起加载。 */
 function DocumentImage({
   src,
   alt,
@@ -140,6 +143,11 @@ function DocumentImage({
   );
 }
 
+/**
+ * 渲染 GFM 文档但跳过原始 HTML，重写标题、代码块、表格、图片和链接的交互。
+ * 每个实例使用独立标题前缀，重名标题附加序号；文件锚点只在本实例根节点内定位，
+ * 分页定位可用服务端标题行号固定目标，缺失目标交给调用方提示或切换源码。
+ */
 export const MarkdownDocument = memo(function MarkdownDocument({
   text,
   sourcePath = '',
@@ -164,6 +172,7 @@ export const MarkdownDocument = memo(function MarkdownDocument({
   const prefix = 'md-' + useId().replace(/[^\w-]/g, '') + '-';
   const root = useRef<HTMLElement>(null);
   const scrolledAnchor = useRef('');
+  /** 同时尝试编码和解码的锚点形式，但必须验证目标属于当前 Markdown 根节点。 */
   const scrollToAnchor = (value: string) => {
     const raw = value.replace(/^#/, '');
     let decoded: string;

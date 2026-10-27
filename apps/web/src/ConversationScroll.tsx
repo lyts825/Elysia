@@ -9,6 +9,11 @@ import {
 } from './HistoryScroll';
 import type { HistoryAnchor } from './HistoryScroll';
 
+/**
+ * 对话视口区分“跟随最新”和“查看历史”两种模式：流式增高时前者贴底，后者恢复可见锚点。
+ * positionKey 改变会重建位置；initialAnchor 可等待异步消息出现后再定位。
+ * 自动加载旧页需要近期真实滚动意图和可见视口，尺寸变化本身不会连续拉取历史。
+ */
 export function ConversationScroll({
   children,
   positionKey,
@@ -87,6 +92,10 @@ export function ConversationScroll({
       if (!restoring.current) anchor.current = captureAnchor(node);
     }
   }, [positionKey, startAtLatest, initialAnchor]);
+  /**
+   * 在内容或几何变化后校正位置。真实滚动优先于旧锚点；旧页插入时若找不到锚点，
+   * 以插入前后总高度差回退定位。恢复完成前不发布新的阅读检查点。
+   */
   const sync = () => {
     const node = viewport.current;
     if (!node) return;
@@ -114,6 +123,7 @@ export function ConversationScroll({
   };
   const syncRef = useRef(sync);
   syncRef.current = sync;
+  /** 一帧内合并尺寸同步与检查点回调，避免每个流片段都查询布局和写入位置。 */
   const scheduleFrame = () => {
     if (frame.current !== undefined) return;
     frame.current = requestAnimationFrame(() => {

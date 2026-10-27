@@ -3,8 +3,9 @@ import { useId } from 'react';
 import './terminal-recovery.css';
 
 /**
- * 收集用户对中断操作的实际核验说明和结论。
- * disabled 或说明为空时不能提交；submit 接收去除首尾空白后的说明。
+ * 受控收集用户对中断操作的实际核验说明和结论，不自行读取文件或推断副作用是否发生。
+ * note/changeNote 由外层保存草稿，disabled 或说明为空时禁止两个结果按钮。
+ * submit 接收去除首尾空白后的说明与 confirmed/not_applied 结果；容器停止和状态变更由外层完成。
  */
 export function TerminalRecovery({
   disabled,

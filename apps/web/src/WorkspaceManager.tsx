@@ -25,6 +25,11 @@ function ManagementOrigin({ label, values }: { label: string; values: [string, s
   );
 }
 
+/**
+ * 管理平级空间、项目、运行及归档记录。可编辑名称和移动目标仅是本地草稿，动作提交
+ * 携带列表中已读修订；项目永久删除还需核对保存包集合，避免删除确认漏掉新保存内容。
+ * 列表可由外层服务端分页搜索驱动，未提供该能力时才在当前已读记录上本地过滤。
+ */
 export function WorkspaceManager({
   spaces,
   projects,
@@ -98,6 +103,10 @@ export function WorkspaceManager({
   }, [tab, changeListArchive]);
   const searchValue = changeListQuery ? listQuery || '' : search;
   const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : undefined);
+  /**
+   * 串行执行管理动作，成功关闭确认区；版本冲突刷新列表但不自动重试。
+   * 原生项目删除的保存包确认保留在当前流程内，要求用户重新核对集合后再提交。
+   */
   const perform = async (action: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -128,11 +137,13 @@ export function WorkspaceManager({
       setBusy(false);
     }
   };
+  /** 按当前项目版本更新，父组件负责重新协调列表与选中项。 */
   const updateProject = (p: Project, changes: Record<string, unknown>) =>
     perform(async () => {
       await mutation('/projects/' + p.id, { expectedRevision: p.revision, ...changes }, 'PATCH');
       await updated();
     });
+  /** 运行修改使用同一版本检查；服务端拒绝后保留输入供核对。 */
   const updateRun = (r: RunListItem, changes: Record<string, unknown>) =>
     perform(async () => {
       await mutation('/runs/' + r.id, { expectedRevision: r.revision, ...changes }, 'PATCH');

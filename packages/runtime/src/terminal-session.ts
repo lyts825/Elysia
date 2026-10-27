@@ -13,6 +13,7 @@ export interface TerminalSessionView {
   sessionId?: string;
   lastOperationId?: string;
 }
+/** 持久会话身份与待续接请求；ready 只表示上一轮可靠完成，能否 resume 还须验证私有状态。 */
 export const TerminalSessionRecordSchema = z.object({
   revision: z.number().int().nonnegative(),
   runId: z.string().uuid(),
@@ -24,6 +25,7 @@ export const TerminalSessionRecordSchema = z.object({
   lastOperationId: z.string().uuid(),
   ready: z.boolean(),
   sessionId: z.string().max(200).optional(),
+  // 私有 rollout 的相对路径和内容摘要用于防止会话文件被替换后继续沿用旧身份。
   state: z.object({ path: z.string().max(1000), hash: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
   pending: z
     .object({
@@ -95,7 +97,7 @@ export function terminalSessionIdentity(run: Run, task: Task) {
     ),
   };
 }
-/** Called only after the exact immutable image's help has confirmed this argv shape. */
+/** 仅在固定镜像的帮助信息已确认 resume 形态后使用；保留原命令权限参数并替换会话输入形式。 */
 export function codexResumeProfile(profile: AgentTerminalProfile, sessionId: string): AgentTerminalProfile {
   return {
     ...profile,

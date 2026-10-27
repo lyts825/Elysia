@@ -48,6 +48,7 @@ export function TerminalContinuation({
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingReadKey, setPendingReadKey] = useState('');
   const sessionKey = `${run.id}:${run.revision}:${readAttempt}`;
+  // 能力和待处理列表分别绑定读取版本；保留旧显示不等于旧结果仍可用于新提交。
   const pendingKey = `${sessionKey}:${messageRevision}`;
   const sessionReady = !!session && !sessionLoading && !issue && sessionReadKey === sessionKey;
   const pendingReady = !!pending && !pendingLoading && !pendingIssue && pendingReadKey === pendingKey;
@@ -94,6 +95,7 @@ export function TerminalContinuation({
   useEffect(() => {
     const controller = new AbortController();
     setSessionLoading(true);
+    // 能力响应还必须携带当前运行 revision，否则提示重新检查而不启用继续按钮。
     setIssue('');
     void api<Session>(`/runs/${run.id}/terminal/session`, undefined, undefined, controller.signal)
       .then((value) => {
@@ -299,6 +301,7 @@ export function TerminalContinuation({
                 (mode === 'resume' ? !session?.canResume : !session?.canStartNew)))
           }
           onClick={() => {
+            // ref 防止 React 尚未渲染禁用态前的双击，commandId 在发送前写回持久草稿。
             if (submitting.current) return;
             submitting.current = true;
             void act(async () => {
@@ -319,6 +322,7 @@ export function TerminalContinuation({
                 });
                 submitted(sent);
               } catch (error) {
+                // 明确的客户端 HTTP 拒绝可放弃旧命令身份；断连/服务错误仍可能已执行，须保留原 ID 重试。
                 if (error instanceof ApiError && error.kind === 'http' && (error.status ?? 500) < 500) {
                   if (current.current.commandId === sent.commandId)
                     changeDraft({ ...current.current, commandId: undefined, expectedRevision: undefined });

@@ -43,7 +43,11 @@ class PanelBoundary extends Component<{ children: ReactNode; label: string }, { 
     return this.props.children;
   }
 }
-/** Optional panels load only when visible; a failed chunk leaves the conversation usable. */
+/**
+ * 创建一个共享 React.lazy 包装器，使可选面板只有挂载时才加载代码。
+ * Suspense 展示读取状态，错误边界隔离 chunk 或渲染失败；恢复入口明确重载整个页面，
+ * 不把局部失败传播为外层会话崩溃。
+ */
 export function deferredPanel<P extends object>(load: () => Promise<ComponentType<P>>, label: string) {
   // 缓存 React.lazy 包装器；面板显示前只展示加载状态。
   const View = React.lazy(async () => ({ default: await load() }));

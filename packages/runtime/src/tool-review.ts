@@ -22,6 +22,11 @@ export class ToolCallReviewer {
     private kernel: Kernel<Store>,
     private adapterFactory: (agent: Agent) => ProviderAdapter,
   ) {}
+  /**
+   * 发送独立无工具审核请求，复用任务及祖先预算和账号 RPM/TPM/并发账本。
+   * 审核绑定 input.fingerprint，不在此执行工具；响应必须是严格决定，超时/格式失败均拒绝调用，
+   * 已产生的供应商用量仍结算，不能因决定不可解析而免计费。
+   */
   async review(input: ToolReviewInput, signal: AbortSignal): Promise<ToolReviewReceipt> {
     const store = this.kernel.store,
       run = store.require<Run>('runs', input.task.runId),
@@ -94,6 +99,7 @@ export class ToolCallReviewer {
     let completed: Extract<ProviderEvent, { type: 'completed' }> | undefined,
       partial = '';
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(45000)]);
+    // 外部取消与审核超时共用信号；只有调用方取消保留原异常，其余失败包成明确的审核失败。
     try {
       for await (const event of adapter.stream(request, bounded)) {
         bounded.throwIfAborted();

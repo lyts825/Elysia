@@ -97,16 +97,19 @@ const fieldNames: Record<string, string> = {
   version: '版本',
   limitation: '核验范围',
 };
+/** 仅将非数组对象作为结构化工具结果，字符串和空值仍按原文展示。 */
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
+/** 字符串原样显示，其他值以缩进 JSON 保留字段；undefined 明确显示尚无结果。 */
 function format(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined) return '暂无结果';
   return JSON.stringify(value, null, 2) ?? '';
 }
+/** 组装便于阅读的命令摘要，为含空白参数加 JSON 引号；此文本只展示，不用于再次执行。 */
 function command(args: Record<string, unknown>): string {
   const program = typeof args.program === 'string' ? args.program : '';
   const parameters = Array.isArray(args.args)
@@ -114,6 +117,7 @@ function command(args: Record<string, unknown>): string {
     : [];
   return [program, ...parameters].join(' ');
 }
+/** 格式化非负有限字节数；未知/异常值不生成虚假大小。 */
 function size(bytes: unknown): string {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
   return bytes < 1024
@@ -122,6 +126,10 @@ function size(bytes: unknown): string {
       ? `${(bytes / 1024).toFixed(1)} KB`
       : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+/**
+ * 结合工具语义生成摘要，优先区分等待登记、截断和命令退出状态。
+ * 摘要仅描述本次回执，不把当时进入等待当作任务现在仍在等待，也不代替完整结果。
+ */
 function resultSummary(name: string, outcome: unknown): string {
   const result = record(outcome);
   if (!result) return '已返回结果';
@@ -165,11 +173,13 @@ function resultSummary(name: string, outcome: unknown): string {
   };
   return summaries[name] || '已返回结果';
 }
+/** 只有声明支持等待的工具才解释 waiting 字段，防止任意结果字段改变界面状态。 */
 function registeredWait(name: string, result: Record<string, unknown> | null): boolean {
   return (
     ['clarify', 'propose_plan', 'join_tasks', 'submit_result'].includes(name) && result?.waiting === true
   );
 }
+/** 命令元数据、stdout 和 stderr 分区显示；未知结构保留原文，空输出与字段缺失分别处理。 */
 function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
   const value = record(outcome);
   if (name !== 'exec' || !value)
@@ -211,6 +221,11 @@ function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
   );
 }
 
+/**
+ * 将模型调用、操作账本和工具消息合并成可展开记录。账本结果优先，旧消息回执作为兼容来源。
+ * 摘要缺省正文时仅在展开后补读，严格匹配运行/操作/调用身份与版本，保留原摘要供失败时查看。
+ * DONE 只代表动作有结果，命令退出失败和 MCP isError 仍应显示失败。
+ */
 export function ToolActivity({
   call,
   operation: summaryOperation,
@@ -236,6 +251,7 @@ export function ToolActivity({
   const readErrorRef = useRef<HTMLParagraphElement>(null);
   const retryFocus = useRef(false);
   const [focusRequest, setFocusRequest] = useState<{ target: 'summary' | 'error' }>();
+  /** 完整缓存必须匹配当前摘要的全部可用身份，不能跨修订或模型回复复用同名工具结果。 */
   const sameRecord = (value: Operation | null) =>
     !!value &&
     !!summaryOperation &&
@@ -259,6 +275,7 @@ export function ToolActivity({
     setFull(null);
     setReadError('');
   }, [summaryOperation?.runId, summaryOperation?.id, summaryOperation?.revision]);
+  // 仅按需读取被省略的正文；展开状态、调用身份和重试号变化会取消上一请求。
   useEffect(() => {
     if (!summaryOperation || !omitted || !detailsOpen || loaded) {
       setLoading(false);
@@ -355,6 +372,7 @@ export function ToolActivity({
       : returned && 'result' in returned
         ? returned.result
         : response;
+  // 操作已完成并不保证程序成功：退出码、超时和 MCP 错误属于具体结果语义，需额外判断。
   const result = record(outcome);
   const waiting = registeredWait(call.name, result);
   const mcpFailed = call.name === 'mcp_call' && record(result?.result)?.isError === true;
@@ -371,6 +389,7 @@ export function ToolActivity({
     tone = 'pending',
     statusIcon = 'history';
   if (operation?.status === 'UNCERTAIN') {
+    // 未知副作用优先于其他错误显示，不能因存在旧回执就降为普通失败或成功。
     status = '待核验';
     tone = 'uncertain';
     statusIcon = 'lock';

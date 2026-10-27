@@ -35,7 +35,10 @@ type Job = {
 };
 
 /** Project jobs own subscriptions to shared Run work, rather than cancelling another window's reader. */
-/** 注册项目交付数据预热接口，按项目来源组织各运行的预热任务。 */
+/**
+ * 项目预热作业绑定工作台来源版本、各运行 epoch 和会话，只持有共享运行读取的订阅。
+ * 取消一个项目作业只撤销其子订阅，不中止其他窗口的读取；定义/产物变化使旧作业失效。
+ */
 export function registerProjectDeliveryWarm(
   app: FastifyInstance,
   store: Store,
@@ -88,6 +91,7 @@ export function registerProjectDeliveryWarm(
     jobs.clear();
     removeCloseHook();
   });
+  /** 每轮和等待后都核对来源集合及正文 epoch，避免把旧候选的预热完成结果套到新工作台。 */
   const requireCurrent = (job: Job) => {
     job.controller.signal.throwIfAborted();
     if (
@@ -119,6 +123,7 @@ export function registerProjectDeliveryWarm(
       return null;
     }
   };
+  /** 逐运行推进并聚合进度；不可读运行计入 unavailableRuns，而非把项目结果误报全部可读。 */
   const drain = async (job: Job) => {
     const timeout = setTimeout(() => cancel(job), 300_000);
     timeout.unref();

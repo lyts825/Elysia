@@ -37,6 +37,10 @@ export function peerReviewSetupIssue(
   return '';
 }
 
+/**
+ * 编辑 1–3 个独立评审型号、逐项通过分数及轮次上限，按规范化型号身份去重。
+ * 已选择但失效的连接保留为可移除项，不能因刷新目录而静默替换评审者；策略在任务创建时冻结。
+ */
 export function PeerReviewSetup({
   value,
   providers,

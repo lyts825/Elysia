@@ -6,6 +6,7 @@ export function requestDifference(
   current: Record<string, unknown>,
 ) {
   if (!previous) return { changes: ['首次请求'], cause: 'unknown' };
+  // 只比较 current 拥有的字段，删除的旧字段不列入 changes；这是一份局部结构差异说明。
   return {
     changes: Object.keys(current).filter((k) => stable(current[k]) !== stable(previous[k])),
     cause: '结构差异已观测；缓存失效原因未经供应商确认',

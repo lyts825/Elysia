@@ -130,6 +130,7 @@ const version = new RegExp(`^${versionPattern}$`);
 const mismatchMessage = new RegExp(
   `^实际 CLI 版本 (${versionPattern}) 与请求版本 (${versionPattern}) 不一致，请重新安装；未应用镜像$`,
 );
+/** 仅接受结构化版本字段或精确匹配旧版错误模板的内容，防止任意远端诊断进入界面。 */
 function versions(details: unknown): { actualVersion: string; requestedVersion: string } | undefined {
   if (typeof details === 'string' && details.length <= 240) {
     const match = mismatchMessage.exec(details);

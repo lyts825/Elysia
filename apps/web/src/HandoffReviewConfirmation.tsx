@@ -2,6 +2,10 @@
 import { useId } from 'react';
 import './handoff-review-confirmation.css';
 
+/**
+ * 明确区分已加入与仍待加入的备注/差异数量。存在待处理内容时由父级记录本次忽略选择，
+ * 此组件只报告决定，不能自动把待处理内容加入创建负载或删除原备注。
+ */
 export function HandoffReviewConfirmation({
   added,
   pending,

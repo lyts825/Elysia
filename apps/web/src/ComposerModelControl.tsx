@@ -35,7 +35,11 @@ export type ComposerModelControlProps = {
   onOpenContext?: () => void;
 };
 
-/** The caller supplies live projections and owns reads; opening details is separate. */
+/**
+ * 显示当前模型和上下文估算。父组件拥有读取、型号切换和设置操作；本控件只管理轻量弹层。
+ * 弹层使用入口根节点 portal，按 visualViewport 与触发按钮布局，支持缩放、滚动和软键盘；
+ * 切换代理会关闭旧投影，点击外部或焦点离开关闭，Esc 关闭并恢复触发器焦点。
+ */
 export function ComposerModelControl({
   modelLabel,
   providerLabel,
@@ -57,6 +61,7 @@ export function ComposerModelControl({
   const id = useId();
   const input = finiteCount(projection?.estimatedInputTokens);
   const budget = finiteCount(projection?.inputBudgetTokens);
+  // 缺失或非法计数保留为未知，不用零伪造上下文占用率。
   const ratio = input != null && budget != null && budget > 0 ? input / budget : null;
   const used = ratio == null ? null : Math.round(ratio * 100);
   const effort = reasoningEffort ? effortLabels[reasoningEffort] || reasoningEffort : '';

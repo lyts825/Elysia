@@ -51,6 +51,7 @@ export type ConversationMessageLinks = {
   callId?: string;
   calls?: { id: string }[];
 };
+/** 抽取会话配对所需的标识，不将工具参数和完整回复复制到查询投影。 */
 function conversationLinks(message: ConversationMessageLinks): ConversationMessageLinks {
   return {
     ...(message.requestId ? { requestId: message.requestId } : {}),
@@ -62,6 +63,10 @@ export const STORAGE_SCHEMA_VERSION = 10;
 export const STORAGE_MIN_READER_VERSION = '1.21.0';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
+/**
+ * 从权威请求记录生成轻量账本。预算、账号调度和用量统计只需这些字段，
+ * 因此查询时无需解压模型输入清单或流式正文；缺少用量时明确保存 null。
+ */
 function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
   return {
     id: entity.id,
@@ -93,6 +98,7 @@ function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
       : null,
   };
 }
+/** 优先采用 ELYSIA_DATA_DIR，否则按平台用户数据目录返回绝对路径；此函数不创建目录。 */
 export function dataDirectory() {
   return path.resolve(
     process.env.ELYSIA_DATA_DIR ||
@@ -106,6 +112,7 @@ const legacyObjectPattern = /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/;
 const sqliteObjectPattern = /^sqlite:[a-f0-9]{64}$/;
 const compress = (value: unknown) => gzipSync(Buffer.from(stable(value)), { level: 6 });
 const expand = (value: Uint8Array) => JSON.parse(gunzipSync(value).toString('utf8'));
+/** 兼容旧任务 result.resumeAt；显式存在新版 rateLimit 字段时不再读取旧字段。 */
 function rateResumeAt(task: Task) {
   const value =
     task.rateLimit === undefined
@@ -113,6 +120,11 @@ function rateResumeAt(task: Task) {
       : task.rateLimit?.resumeAt;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
+/**
+ * 为实体生成可用 SQLite JSON 索引读取的投影，完整实体仍以压缩正文为准。
+ * 各类版本标记供读取器识别缺失投影；交付语义哈希只覆盖影响交付判断的字段，
+ * 使无关字段变化不必重建整个交付视图。
+ */
 function projection(table: Table, entity: any) {
   const readModel =
     table === 'runs'
@@ -221,6 +233,7 @@ function projection(table: Table, entity: any) {
     ...(readModel ? { readModelVersion: 1, readModel } : {}),
   });
 }
+/** 递归收集以 Ref 结尾字段中的合法存储引用，避免把正文中的相似字符串当成对象根。 */
 function objectRefs(value: unknown, refs = new Set<string>(), field = ''): Set<string> {
   if (
     typeof value === 'string' &&
@@ -233,6 +246,7 @@ function objectRefs(value: unknown, refs = new Set<string>(), field = ''): Set<s
     for (const [key, item] of Object.entries(value)) objectRefs(item, refs, key);
   return refs;
 }
+/** 递归检查值中是否包含目标实体标识，供删除时核实命令关联；匹配完整字符串。 */
 function references(value: unknown, identifiers: Set<string>): boolean {
   if (typeof value === 'string') return identifiers.has(value);
   if (Array.isArray(value)) return value.some((item) => references(item, identifiers));
@@ -240,6 +254,10 @@ function references(value: unknown, identifiers: Set<string>): boolean {
     value && typeof value === 'object' && Object.values(value).some((item) => references(item, identifiers)),
   );
 }
+/**
+ * SQLite 与对象文件的统一持久化入口。业务实体保存权威压缩正文和可重建查询投影；
+ * 状态写入、事件追加由同步事务协调，外部进程和异步文件工作由上层安排。
+ */
 export class Store {
   readonly recovery: ExecutionRecovery;
   db: DatabaseSync;
@@ -253,6 +271,10 @@ export class Store {
   private requestReadProjectionUpdate?: ReturnType<DatabaseSync['prepare']>;
   private closeHooks = new Set<() => void>();
   private closed = false;
+  /**
+   * 创建数据子目录并打开数据库，启用外键和 WAL 后执行迁移与派生索引初始化。
+   * 任一初始化步骤失败都会关闭数据库句柄，避免留下半初始化的 Store 实例。
+   */
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
     this.directory = realpathSync(directory);
@@ -302,6 +324,11 @@ export class Store {
       throw error;
     }
   }
+  /**
+   * 按旧 user_version 顺序迁移到当前格式。每个阶段独立提交，新格式数据库直接拒绝打开。
+   * 压缩正文迁移先保留清理标记，提交并核验后才清理旧文件；中断后可继续完成清理。
+   * 调用方在打开业务读写之前执行本方法，版本提升同时防止旧客户端绕过新增执行约束。
+   */
   migrate() {
     const version = Number((this.db.prepare('PRAGMA user_version').get() as any).user_version);
     if (version > STORAGE_SCHEMA_VERSION)
@@ -503,6 +530,11 @@ export class Store {
       this.db.prepare("DELETE FROM storage_meta WHERE key='migration_cleanup'").run();
     }
   }
+  /**
+   * 执行同步工作单元并返回 fn 的结果；最外层使用 BEGIN IMMEDIATE 取得写锁。
+   * 嵌套调用复用外层事务，不创建保存点；异常未被工作函数捕获并传播至最外层时才回滚。
+   * 异步工作不应放入 fn，若需单条失败独立回滚则由调用方显式使用保存点。
+   */
   tx<T>(fn: () => T): T {
     if (this.depth) return fn();
     this.db.exec('BEGIN IMMEDIATE');
@@ -518,29 +550,35 @@ export class Store {
       this.depth--;
     }
   }
+  /** 读取宿主元数据原文；键不存在时返回 undefined，由对应业务模块自行解析。 */
   metadata(key: string): string | undefined {
     return (
       this.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as { value: string } | undefined
     )?.value;
   }
+  /** 原样替换单个元数据值；需要与业务状态共同提交时，由调用方包在 tx 中。 */
   setMetadata(key: string, value: string) {
     this.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(key, value);
   }
+  /** 只读取显式依赖边的目标 ID，不包含父子任务关系或递归的间接依赖。 */
   taskDependencies(taskId: string): string[] {
     return this.db
       .prepare('SELECT dependency_id id FROM task_edges WHERE task_id=?')
       .all(taskId)
       .map((row) => String(row.id));
   }
+  /** 保存一条依赖边；重复边和不存在的实体由数据库约束拒绝，业务环检查由内核负责。 */
   addTaskDependency(taskId: string, dependencyId: string) {
     this.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dependencyId);
   }
+  /** 先用元数据索引定位最新事件序号，再读取该事件正文；没有匹配项时返回 undefined。 */
   latestEvent(runId: string, taskId: string, type: string): Event | undefined {
     const row = this.db
       .prepare('SELECT seq FROM events WHERE run_id=? AND task_id=? AND type=? ORDER BY seq DESC LIMIT 1')
       .get(runId, taskId, type) as { seq: number } | undefined;
     return row ? this.events(runId, row.seq - 1, { limit: 1 })[0] : undefined;
   }
+  /** 通过轻量状态投影判断任务是否仍有待核验的工具操作，不读取操作结果正文。 */
   hasUncertainOperation(runId: string, taskId: string): boolean {
     return !!this.db
       .prepare(
@@ -550,18 +588,22 @@ export class Store {
       )
       .get(runId, taskId);
   }
+  /** 按主键读取并还原完整实体；不存在返回 undefined，损坏或旧对象读取失败则向上抛错。 */
   get<T>(table: Table, key: string): T | undefined {
     const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
     return row && this.decodeRow(table, row);
   }
+  /** 返回跨重启保留的运行暂停原因；与实体当前 status 分开保存。 */
   getExecutionHold(runId: string) {
     return this.recovery.get(runId);
   }
+  /** get 的必需记录版本：缺失时统一抛出 404，供业务入口避免继续使用空实体。 */
   require<T>(table: Table, key: string): T {
     const value = this.get<T>(table, key);
     if (!value) throw new AppError('NOT_FOUND', `${table} 记录不存在`, false, null, 404);
     return value;
   }
+  /** 按插入顺序还原整批实体；runId 为空时读取全表，因此大列表应优先使用专用分页投影。 */
   all<T>(table: Table, runId?: string): T[] {
     return (
       runId
@@ -573,10 +615,14 @@ export class Store {
   artifactDeliveryMetadata(runId: string) {
     return this.tx(() => this.artifactDeliveryReads.read(runId));
   }
+  /** 在短事务内修复一批交付产物元数据，返回扫描、补齐及剩余数量。 */
   artifactDeliveryWarmBatch(runId: string, limit = 32) {
     return this.tx(() => this.artifactDeliveryReads.warmBatch(runId, limit));
   }
-  /** Budget and scheduling reads never expand request manifests or stream text. */
+  /**
+   * 按提供的过滤项取交集读取请求账本，since 为严格晚于的开始时间。
+   * 直接使用轻量投影并覆盖数据库当前 revision，不解压输入清单和流式文本。
+   */
   requestLedger(
     filters: {
       runId?: string;
@@ -607,6 +653,7 @@ export class Store {
         .all(...values) as { data: string; revision: number }[]
     ).map((row) => ({ ...JSON.parse(row.data).requestLedger, revision: row.revision }));
   }
+  /** 返回任务最近一条非工具审核请求的完整记录；独立审核不应覆盖普通模型请求的显示。 */
   latestTaskRequest(runId: string, taskId: string): RequestRecord | undefined {
     const row = this.db
       .prepare(
@@ -615,6 +662,7 @@ export class Store {
       .get(runId, taskId) as any;
     return row ? this.decodeRow('requests', row) : undefined;
   }
+  /** 限定运行和会话读取完整历史；保留数据库行顺序，由需要严格 ordinal 的调用方排序。 */
   sessionMessages(runId: string, sessionId: string): Message[] {
     return (
       this.db
@@ -624,6 +672,7 @@ export class Store {
         .all(runId, sessionId) as any[]
     ).map((row) => this.decodeRow('messages', row));
   }
+  /** 只统计指定会话的消息数量，用于分页或状态判断，不解压消息。 */
   sessionMessageCount(runId: string, sessionId: string): number {
     return Number(
       this.db
@@ -631,6 +680,10 @@ export class Store {
         .get(runId, sessionId)?.total ?? 0,
     );
   }
+  /**
+   * 按插入顺序倒序分页读取来源运行的修订，before 必须是同一来源下仍存在的运行 ID。
+   * 多取一条判断 hasMore；无效游标返回冲突错误，要求调用方从新列表重新读取。
+   */
   runRevisions(sourceRunId: string, limit = 20, before?: string) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 40)
       throw new AppError('PAGE_LIMIT', '修订分页数量无效');
@@ -670,6 +723,7 @@ export class Store {
     if (!row) throw new AppError('NOT_FOUND', 'requests 记录不存在', false, null, 404);
     return this.decodeRow('requests', row, false);
   }
+  /** 为 RESERVED 请求创建权威分块流，并在同一事务中将请求清单切换到新版存储标记。 */
   startRequestStream(key: string) {
     this.tx(() => {
       const request = this.require<RequestRecord>('requests', key);
@@ -686,23 +740,32 @@ export class Store {
       });
     });
   }
+  /** 事务提交正文增量；expectedOffset 不匹配时拒绝追加，避免重复或遗漏文本。 */
   appendRequestText(key: string, text: string, expectedOffset: number) {
     this.tx(() => this.requestStreams.append(key, text, expectedOffset));
   }
+  /** 提交推理展示增量，返回实际保留的片段与显示偏移，接收偏移由缓存层独立校验。 */
   appendRequestReasoning(key: string, text: string, offset: number, kind: ReasoningKind) {
     return this.tx(() => this.reasoningStreams.append(key, text, offset, kind));
   }
+  /** 用最终公开推理文本替换增量展示缓存；不修改原始供应商消息。 */
   completeRequestReasoning(key: string, text: string) {
     this.tx(() => this.reasoningStreams.complete(key, text));
   }
+  /** 只读取推理展示的长度、类别和完整状态，供界面决定是否分页加载。 */
   requestReasoningMetadata(key: string) {
     return this.reasoningStreams.metadata(key);
   }
+  /** 先核对请求归属，再按 UTF-16 偏移读取展示页；返回值中的 nextOffset 用于下一次读取。 */
   requestReasoningPage(runId: string, requestId: string, offset: number, limit: number): ReasoningPage {
     if (!this.db.prepare('SELECT 1 FROM requests WHERE id=? AND run_id=?').get(requestId, runId))
       throw new AppError('NOT_FOUND', '模型请求不存在', false, null, 404);
     return { runId, requestId, ...this.reasoningStreams.page(requestId, offset, limit) };
   }
+  /**
+   * 优先读取与消息关联的完整推理缓存，旧消息则有界读取公开正文后分页。
+   * 不展开供应商私有原文；核对运行归属、长度和字符边界，防止跨运行读取或拆开代理对。
+   */
   messageReasoningPage(runId: string, messageId: string, offset: number, limit: number): ReasoningPage {
     if (
       !Number.isInteger(offset) ||
@@ -772,6 +835,10 @@ export class Store {
       nextOffset: end < (reasoning?.characters ?? 0) ? end : null,
     };
   }
+  /**
+   * 建立可重建的文本索引、待更新队列和范围版本号。触发器只登记变化，
+   * 不在业务写入中解压正文；范围版本用于发现搜索扫描过程中发生的并发更新。
+   */
   private historySearchSchema() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS history_search_v1(
@@ -823,6 +890,10 @@ export class Store {
       `);
     }
   }
+  /**
+   * 为仍保持相同 revision 的实体写入小写搜索文本；旧快照不能覆盖新版索引。
+   * 成功写入后才移除待处理队列项，让竞争更新仍有机会触发下一轮索引。
+   */
   private historySearchProjection(table: 'runs' | 'messages', entity: Run | Message) {
     const isRun = table === 'runs';
     const text = isRun ? `${(entity as Run).title} ${(entity as Run).objective}` : (entity as Message).text;
@@ -849,7 +920,10 @@ export class Store {
         .prepare('DELETE FROM history_search_pending_v2 WHERE kind=? AND record_id=?')
         .run(isRun ? 'run' : 'message', entity.id);
   }
-  /** Missing legacy indexes are populated only by an explicit search, in yielding small batches. */
+  /**
+   * 显式搜索时才补齐旧数据索引，每批 32 条并让出事件循环；相同范围共享在途工作。
+   * 初次扫描持久保存 rowid 进度，取消后可续扫；随后清空变化队列，返回稳定时的范围版本。
+   */
   async ensureHistorySearch(kind: 'run' | 'message', runId?: string, signal?: AbortSignal): Promise<number> {
     const table = kind === 'run' ? 'runs' : 'messages';
     const reads = kind === 'run' ? projectionReads(this) : undefined;
@@ -901,6 +975,7 @@ export class Store {
             this.db.prepare('DELETE FROM storage_meta WHERE key=?').run(progress);
           });
         }
+        // 初次扫描结束后继续消化触发器登记的更新，避免把旧索引误报为就绪。
         for (;;) {
           searchCancelled(workSignal);
           const pending = this.db
@@ -935,6 +1010,7 @@ export class Store {
       signal,
     );
   }
+  /** 读取运行列表或单个会话的搜索版本；尚无变更记录的范围使用 0。 */
   private historySearchEpoch(kind: 'run' | 'message', runId?: string) {
     return Number(
       (
@@ -944,7 +1020,11 @@ export class Store {
       )?.revision ?? 0,
     );
   }
-  /** Exact Unicode substring search with bounded result memory and yielding scans. */
+  /**
+   * 对已规范化的查询执行字面子串搜索，倒序扫描并只保留一页 ID 和用户指定的匹配 ID。
+   * before 是同一范围中的真实记录标识；扫描前后核对范围版本，变化时最多重试三轮。
+   * total 独立统计全部匹配项，不以当前页长度代替；持续变化则明确返回可重试冲突。
+   */
   async historySearch(
     kind: 'run' | 'message',
     query: {
@@ -1028,7 +1108,10 @@ export class Store {
       signal,
     );
   }
-  /** Upgrade redundant read metadata without changing compressed business content or revision. */
+  /**
+   * 用已读取实体刷新冗余查询投影，不改变权威正文和业务 revision。
+   * UPDATE 同时匹配 ID 与 revision，防止旧实体覆盖并发更新；产物投影与元数据同事务刷新。
+   */
   refreshReadProjection(
     table: 'runs' | 'tasks' | 'artifacts' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
     entity: Entity,
@@ -1048,7 +1131,11 @@ export class Store {
     };
     return table === 'artifacts' ? this.tx(refresh) : refresh();
   }
-  /** Filter redundant state before expanding bodies. Legacy projections are warmed once. */
+  /**
+   * 先用投影过滤状态、等待原因、恢复时间和暂停范围，再解压候选正文核对真实状态。
+   * 缺少旧投影的行仍纳入候选并顺便刷新，避免因投影不全漏掉可执行任务。
+   * 返回值只是候选，不授予调度租约；调用方仍须在执行边界重新核验和预约。
+   */
   stateCandidates<T extends Entity>(
     table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'inbox',
     statuses: string[],
@@ -1120,13 +1207,18 @@ export class Store {
         : [];
     });
   }
+  /** 取得未归档且未终结的运行以及 READY 任务；后续准入还需检查依赖、预算和持久暂停。 */
   schedulerCandidates(): { runs: Run[]; tasks: Task[] } {
     return {
       runs: this.stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true }),
       tasks: this.stateCandidates<Task>('tasks', ['READY']),
     };
   }
-  /** Pick maintenance work from redundant metadata before expanding any idle history. */
+  /**
+   * 找出需要调度维护的运行：包括活动任务、待处理收件箱、已结束子任务和到期限流等。
+   * 先排除持久暂停、归档和调用方已处理的运行，再还原正文；SQL 只筛选候选，
+   * 不在这里改变任务状态或启动执行，以免扫描闲置历史产生副作用。
+   */
   schedulerRunCandidates(at = Date.now(), excludeRunIds: readonly string[] = []): Run[] {
     const status = (alias: string) =>
       `COALESCE(json_extract(${alias}.data,'$.status'),json_extract(${alias}.data,'$.readModel.status'))`;
@@ -1181,6 +1273,7 @@ export class Store {
       return !run.archived && !['DONE', 'CANCELLED'].includes(run.status) ? [run] : [];
     });
   }
+  /** 旧投影缺少 status 时也视作待检查；由后续收件箱处理核实实际状态。 */
   hasPendingInbox(runId: string) {
     return Boolean(
       this.db
@@ -1190,7 +1283,10 @@ export class Store {
         .get(runId),
     );
   }
-  /** Return only real message links within this Run, never retained message bodies. */
+  /**
+   * 批量读取当前运行内实际消息的请求/调用配对信息，上限为 240 个 ID。
+   * 投影缺失时读取该条正文并补齐；找不到或属于其他运行的 ID 不会返回占位关联。
+   */
   messageConversationLinks(runId: string, identifiers: string[]): ConversationMessageLinks[] {
     if (identifiers.length > 240) throw new AppError('MESSAGE_LINK_LIMIT', '消息关联读取数量无效');
     if (!identifiers.length) return [];
@@ -1206,6 +1302,10 @@ export class Store {
       return conversationLinks(message);
     });
   }
+  /**
+   * 以 before 消息为排他边界向旧历史取一页，返回的消息重新排为时间正序以便显示。
+   * 额外读取一条确定 hasMore；游标归属错误或已删除时抛冲突，防止悄悄跳到其他位置。
+   */
   messagePage<T>(runId: string, limit: number, before?: string) {
     let boundary: number | undefined;
     if (before) {
@@ -1237,6 +1337,10 @@ export class Store {
       messagePage: { hasMore, nextBefore: hasMore ? selected[0]?.id : null, before: before ?? null, limit },
     };
   }
+  /**
+   * 将锚点放在窗口中部附近，复用 messagePage 读取；尾部不足时自然回到最新页。
+   * hasNewer 告诉界面当前窗口是否还存在更新消息，锚点必须属于当前运行。
+   */
   messageAroundPage<T>(runId: string, limit: number, anchor: string) {
     const target = this.db
       .prepare('SELECT rowid position FROM messages WHERE id=? AND run_id=?')
@@ -1252,6 +1356,10 @@ export class Store {
       messagePage: { ...result.messagePage, anchorMessageId: anchor, hasNewer: Boolean(before) },
     };
   }
+  /**
+   * 为请求、工具操作、产物或运行提供倒序分页，limit 限为 1 至 160。
+   * total 是整个过滤范围的数量；before 只限定当前页，不影响总数计算。
+   */
   entityPage<T>(
     table: 'requests' | 'tool_operations' | 'artifacts' | 'runs',
     limit: number,
@@ -1298,6 +1406,7 @@ export class Store {
       },
     };
   }
+  /** 先还原权威正文，再以 SQL 投影的当前 revision 覆盖正文内旧版本，最后补齐兼容字段。 */
   private decodeRow(table: Table, row: { data: string; content?: Uint8Array }, includeStream = true) {
     const metadata = JSON.parse(row.data);
     const entity = row.content ? expand(row.content) : metadata;
@@ -1305,6 +1414,10 @@ export class Store {
     entity.revision = metadata.revision;
     return this.hydrate(table, entity, includeStream);
   }
+  /**
+   * 将旧版实体适配为当前内存模型，并按需拼接消息对象或在途流内容。
+   * 这里的默认值只作用于本次读取，不自动迁移原始正文；includeStream=false 用于元数据读取。
+   */
   private hydrate(table: Table, entity: any, includeStream = true) {
     // Legacy classification is ignored; execution directory and baseline references are retained.
     if (table === 'projects') {
@@ -1330,6 +1443,11 @@ export class Store {
       entity.manifest.partialText = includeStream ? this.requestStreams.read(entity.id) : '';
     return entity;
   }
+  /**
+   * 新增或替换完整实体并递增数据库当前 revision，返回实际保存的版本。
+   * expectedRevision 用于可选乐观锁；正文、查询投影、对象引用和搜索索引同事务更新。
+   * 新版请求正文保留在分块表，只有 partialText=null 才清除流；消息则消除旧对象间接引用。
+   */
   put<T extends Entity>(table: Table, entity: T, expectedRevision?: number): T {
     const previous =
       table === 'requests'
@@ -1349,6 +1467,7 @@ export class Store {
     const stored: any = { ...next };
     let clearStream = false;
     if (table === 'requests' && stored.manifest?.partialTextStorage === REQUEST_STREAM_FORMAT) {
+      // 避免把读取时拼接出的完整流再次压入每个请求版本，降低逐片段更新的写入量。
       stored.manifest = { ...stored.manifest };
       if (stored.manifest.partialText === null) {
         clearStream = true;
@@ -1379,6 +1498,10 @@ export class Store {
     };
     return this.tx(save);
   }
+  /**
+   * 为运行分配递增 seq 并保存事件的完整压缩正文，同时更新对象引用根。
+   * context.updated 额外保留有界轻量预览；需要与业务变化原子提交时在外层 tx 中调用。
+   */
   event(
     runId: string,
     type: string,
@@ -1412,6 +1535,7 @@ export class Store {
     });
     return e;
   }
+  /** 顺序读取 seq 严格大于 after 的完整事件；可按任务和类型过滤，单次最多 1000 条。 */
   events(runId: string, after = 0, filter: { taskId?: string; type?: string; limit?: number } = {}): Event[] {
     const conditions = ['run_id=?', 'seq>?'];
     const bindings: (string | number)[] = [runId, after];
@@ -1440,7 +1564,11 @@ export class Store {
         occurredAt: r.occurred_at,
       }));
   }
-  /** SSE notifications have a fixed batch and bounded decompression; full bodies stay in record reads. */
+  /**
+   * 为 SSE 返回最多 32 条有界通知，单条解压上限为 48 KiB，推理正文仅返回预览。
+   * 已知的正文损坏或超限改为 run.updated 失效通知，让客户端补读投影；
+   * 其他数据库或程序错误继续暴露，不能被当作正常事件吞掉。
+   */
   eventNotifications(runId: string, after: number): Event[] {
     const rows = this.db
       .prepare('SELECT * FROM events WHERE run_id=? AND seq>? ORDER BY seq LIMIT 32')
@@ -1494,12 +1622,17 @@ export class Store {
       };
     });
   }
+  /** 兼容早期仅保存 externalPayloadRef 的事件；只有单字段引用对象才展开外部正文。 */
   private eventPayload(value: string) {
     const payload = JSON.parse(value);
     return payload && Object.keys(payload).length === 1 && typeof payload.externalPayloadRef === 'string'
       ? JSON.parse(this.readObject(payload.externalPayloadRef).toString())
       : payload;
   }
+  /**
+   * 在同步事务内执行幂等命令：同 ID、同参数直接重放已保存结果，不再调用 fn。
+   * 同 ID 被用于不同 payload 时抛 409；首次结果与运行引用一并保存，异常时整体回滚。
+   */
   command<T>(commandId: string, payload: unknown, fn: () => T): T {
     const fingerprint = hash(stable(payload));
     return this.tx(() => {
@@ -1517,6 +1650,7 @@ export class Store {
       return result;
     });
   }
+  /** 从命令参数和结果递归提取运行标识，兼容实体和 API 路由形式，用于删除运行时清理回执。 */
   private commandRunRefs(payload: unknown, result: unknown) {
     const refs = new Set<string>();
     const visit = (value: any) => {
@@ -1533,6 +1667,10 @@ export class Store {
     visit(result);
     return [...refs];
   }
+  /**
+   * 删除单个非运行实体，并清理其命令回执与无引用压缩对象。
+   * 默认/受保护空间、非空空间和仍有对话的项目拒绝删除；运行必须走专用级联流程。
+   */
   delete(table: Table, key: string) {
     if (table === 'runs') throw new AppError('DELETE_RUN_REQUIRED', '请使用 deleteRun 删除对话及其关联记录');
     const entity = this.get<any>(table, key);
@@ -1688,6 +1826,7 @@ export class Store {
     }[])
       objectRefs(row.object_ref, retained, 'objectRef');
     const queue = [...retained];
+    // 对象本身也可能引用其他对象，必须展开引用闭包后才能判定哪些压缩对象可删除。
     for (let i = 0; i < queue.length; i++) {
       const row = this.db
         .prepare('SELECT hash,raw_size,content FROM compressed_objects WHERE ref=?')
@@ -1725,6 +1864,10 @@ export class Store {
     for (const row of this.db.prepare('SELECT ref FROM compressed_objects').all() as any[])
       if (!retained.has(row.ref)) this.db.prepare('DELETE FROM compressed_objects WHERE ref=?').run(row.ref);
   }
+  /**
+   * 按内容摘要保存不可变对象并返回引用；字符串压缩进 SQLite，Buffer 保存在 objects 文件树。
+   * 重复内容复用同一引用。来源是外部大文件且需并发完整性检查时应使用 publishFileObject。
+   */
   object(content: string | Buffer): { hash: string; objectRef: string } {
     if (typeof content === 'string') {
       const bytes = Buffer.from(content),
@@ -1746,9 +1889,15 @@ export class Store {
     }
     return { hash: digest, objectRef: ref };
   }
+  /** 以调用方给出的摘要和大小发布来源文件，流式核验和原子发布由文件对象模块执行。 */
   publishFileObject(source: string, expected: { hash: string; size: number }, signal?: AbortSignal) {
     return publishFileObject(this.directory, source, expected, signal);
   }
+  /**
+   * 读取合法内容寻址引用，兼容 SQLite 压缩对象和历史文件对象，返回原始字节。
+   * maxBytes 同时约束压缩内容与解压输出；读取后核对大小/摘要，文件引用还须检查真实路径。
+   * 缺失、越界或损坏均抛错，不能将不完整内容交给调用方继续使用。
+   */
   readObject(ref: string, maxBytes?: number): Buffer {
     if (!legacyObjectPattern.test(ref) && !sqliteObjectPattern.test(ref))
       throw new AppError('INVALID_OBJECT', '无效对象引用');
@@ -1779,6 +1928,7 @@ export class Store {
     if (hash(data) !== path.basename(ref)) throw new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
     return data;
   }
+  /** 注册同步释放回调并返回取消注册函数；Store 已关闭时立即调用该回调。 */
   onClose(hook: () => void) {
     if (this.closed) {
       hook();
@@ -1789,6 +1939,10 @@ export class Store {
       this.closeHooks.delete(hook);
     };
   }
+  /**
+   * 幂等关闭：逐一执行释放回调，即使部分失败仍取消搜索并关闭数据库。
+   * 所有清理结束后再抛出首个回调错误，避免失败回调阻断其余资源释放。
+   */
   close() {
     if (this.closed) return;
     this.closed = true;
@@ -1810,6 +1964,10 @@ export class Store {
     if (failure) throw failure;
   }
 }
+/**
+ * 用独占锁文件保护一个数据目录。只在旧 PID 明确不存在时移除旧锁，读取损坏或权限不明时保留。
+ * 返回释放函数只删除本次 token 对应的锁，避免误删后来进程建立的锁。
+ */
 export function acquireLock(directory: string) {
   mkdirSync(directory, { recursive: true });
   const file = path.join(directory, 'service.lock');

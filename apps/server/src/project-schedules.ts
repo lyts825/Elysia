@@ -116,6 +116,7 @@ function conflict(expected: number, current: number) {
       409,
     );
 }
+/** 读取并核验单项目的全部定时记录；摘要、归属或计数损坏时整组拒绝调度并保留原文。 */
 function readSchedules(store: Store, projectId: string): ProjectSchedule[] {
   const row = store.db
     .prepare('SELECT value FROM storage_meta WHERE key=?')
@@ -158,6 +159,7 @@ function readSchedules(store: Store, projectId: string): ProjectSchedule[] {
     );
   }
 }
+/** 保存经过 schema 校验且有界的元数据；空列表删除索引，避免遗留空项目占用全局容量。 */
 function writeSchedules(store: Store, projectId: string, schedules: ProjectSchedule[]) {
   if (!schedules.length) {
     store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(projectSchedulesKey(projectId));
@@ -190,6 +192,7 @@ function mutableProject(store: Store, projectId: string, assertMutable: Schedule
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复项目再核对定时任务');
   return project;
 }
+/** 模板仅允许有界、无来源输入且连接已验证的任务；这些限制在读取旧记录时同样适用。 */
 function validateTemplate(template: ProjectScheduleTemplate) {
   invariant(
     Buffer.byteLength(stable(template)) <= PROJECT_SCHEDULE_LIMITS.templateBytes,
@@ -212,6 +215,7 @@ function validateTemplate(template: ProjectScheduleTemplate) {
     '请先验证模板使用的模型连接',
   );
 }
+/** 截止时间必须覆盖下次间隔且不超过最大天数；修改设置不能把累计创建次数清零。 */
 function validateSettings(settings: ProjectScheduleSettings, at: number, count = 0) {
   const until = Date.parse(settings.until);
   invariant(
@@ -226,6 +230,7 @@ function validateSettings(settings: ProjectScheduleSettings, at: number, count =
     '最多创建次数必须大于已经创建的次数；累计次数不会清零',
   );
 }
+/** 未结算请求、未核验操作和持久暂停均阻止自动续跑；可选择只检查结果未知而非正在进行。 */
 function hasUncertainState(store: Store, runId: string, includePending = true) {
   return (
     !!store.getExecutionHold(runId) ||
@@ -246,6 +251,10 @@ function providerFingerprint(provider: ProviderConfig) {
   const { checkedAt: _checkedAt, ...settings } = provider;
   return hash(stable(settings));
 }
+/**
+ * 冻结影响执行授权的环境指纹：项目目录/基线、能力、记忆、角色路由、主模型及审核模型。
+ * 移除仅表示采集时间的字段并规范排序，避免无权限影响的时间变化使定时模板失效。
+ */
 function environment(
   store: Store,
   project: Project,
@@ -339,6 +348,7 @@ export class ProjectScheduler {
       /* Diagnostics cannot interrupt other projects. */
     }
   }
+  /** 隔离单个损坏项目；全局数量无法证明满足上限时返回空清单，禁止继续自动创建。 */
   private inventory() {
     const result: { projectId: string; schedules: ProjectSchedule[] }[] = [];
     try {
@@ -360,7 +370,10 @@ export class ProjectScheduler {
     }
     return result;
   }
-  /** 读取项目和来源运行，生成创建定时任务前可核对的预览。 */
+  /**
+   * 在同一事务中捕获来源任务、主模型和执行环境。来源必须属于该原生项目且没有外部
+   * 输入/快照及未知副作用；captureHash 是保存和启用时核对完整模板的依据。
+   */
   preview(projectId: string, sourceRunId: string): ProjectSchedulePreview {
     return this.store.tx(() => {
       const project = mutableProject(this.store, projectId, this.hooks.assertMutable);
@@ -590,7 +603,10 @@ export class ProjectScheduler {
       },
     };
   }
-  /** 基于预览创建定时任务；使用命令 ID、来源版本和捕获哈希校验请求。 */
+  /**
+   * 重新生成来源预览并核对版本与摘要，再以幂等命令创建 draft 记录。
+   * 创建不等于启用；全局计数遇到不可读项目时预留其最大容量，避免绕过数量上限。
+   */
   create(projectId: string, body: ProjectScheduleCreate, at = Date.now()) {
     const result = this.store.command(
       body.commandId,
@@ -644,7 +660,10 @@ export class ProjectScheduler {
     this.arm();
     return result;
   }
-  /** 按项目及定时任务版本更新设置，并通过命令账本处理重复请求。 */
+  /**
+   * 以 expectedRevision 防止覆盖其他窗口修改。pause 不停止已创建的任务；refresh 更换
+   * 模板后退回 draft 并保留累计次数；enable 重新校验完整指纹、上轮结果和自动执行确认。
+   */
   update(projectId: string, scheduleId: string, body: ProjectScheduleUpdate, at = Date.now()) {
     const result = this.store.command(
       body.commandId,
@@ -732,6 +751,7 @@ export class ProjectScheduler {
     this.arm();
     return result;
   }
+  /** 比较当前环境与创建时的冻结指纹，连接、能力或目录变化必须先由用户重新核对。 */
   private assertEnvironment(schedule: ProjectSchedule, project: Project) {
     const source = this.store.get<Run>('runs', schedule.template.sourceRunId);
     invariant(
@@ -747,6 +767,7 @@ export class ProjectScheduler {
       '项目目录、能力、记忆、角色路由或模型配置已变化，请重新核对后启用',
     );
   }
+  /** 上轮未完成只返回 false 以跳过时段；丢失、归档、失败或结果未知则抛错并暂停计划。 */
   private assertPriorRun(schedule: ProjectSchedule, enabling = false) {
     if (!schedule.lastRunId) return true;
     const previous = this.store.get<Run>('runs', schedule.lastRunId);
@@ -771,7 +792,7 @@ export class ProjectScheduler {
     if (enabling) invariant(done, 'SCHEDULE_PREVIOUS_ACTIVE', '上次任务尚未结束，暂不能重新启用定时任务');
     return done;
   }
-  /** Advance missed slots before any timer starts; restarting never launches overdue work. */
+  /** 服务重启先推进并统计错过时段；过期时段不补跑，避免离线期间积累的任务突发执行。 */
   recover(at = Date.now()) {
     for (const { projectId } of this.inventory()) {
       try {
@@ -818,6 +839,7 @@ export class ProjectScheduler {
     this.recover();
     this.arm();
   }
+  /** 最近到期时间只决定唤醒时刻；真实派发由 tick 重读记录，写入失败时至少退避一秒。 */
   private arm(minimumDelay = 0) {
     if (!this.running) return;
     if (this.timer) clearTimeout(this.timer);
@@ -855,7 +877,10 @@ export class ProjectScheduler {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
-  /** 检查已启用计划的到期状态，在事务中重新读取并处理可调度的记录。 */
+  /**
+   * 每个到期记录在事务中重读，消费时段与创建任务原子提交；上一轮未结束或漏过多个
+   * 时段时只计入 skippedCount。执行模式在事务提交后唤醒执行器，review 模式仅创建暂停任务。
+   */
   tick(at = Date.now()) {
     for (const { projectId, schedules } of this.inventory()) {
       for (const record of schedules) {

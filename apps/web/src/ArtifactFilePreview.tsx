@@ -12,6 +12,11 @@ export interface TerminalLogContext {
   runId: string;
   taskId: string;
 }
+/**
+ * 读取指定产物的有界预览，并按产物/检查点恢复编码和阅读位置。
+ * logContext 可由调用方直接提供；缺省时只在允许且有运行检查点的情况下查询日志能力，
+ * 普通产物不因此获得终端日志搜索权限。
+ */
 export function ArtifactFilePreview({
   id,
   logContext,
@@ -45,6 +50,7 @@ export function ArtifactFilePreview({
       ? resolvedContext
       : null;
   const context = logContext || currentResolvedContext?.value || undefined;
+  // 解析结果以运行与产物双重身份缓存；切换对象时取消旧请求，不让迟到结果覆盖当前上下文。
   useEffect(() => {
     if (!resolveLogContext || logContext || !checkpointKey || currentResolvedContext) return;
     const controller = new AbortController();
@@ -74,6 +80,7 @@ export function ArtifactFilePreview({
   }, [client, savedKey, encoding]);
   const [searchOpen, setSearchOpen] = useState(false),
     [query, setQuery] = useState('');
+  // query 是正在输入的文字，intent 才是已提交搜索；继续搜索沿用已读关键词与日志版本。
   const [intent, setIntent] = useState<{
     query: string;
     cursor: number;
@@ -84,6 +91,7 @@ export function ArtifactFilePreview({
   const [searchPage, setSearchPage] = useState<TerminalLogSearchPage | null>(null);
   const [searchBusy, setSearchBusy] = useState(false),
     [searchError, setSearchError] = useState('');
+  // intent.id 区分同一关键词的显式重试，completed 阻止 effect 重渲染重复提交已结束请求。
   const completed = useRef('');
   const [target, setTarget] = useState<(TerminalLogMatch & { requestId: string; version: string }) | null>(
     null,
@@ -104,6 +112,7 @@ export function ArtifactFilePreview({
       .then((page) => {
         if (controller.signal.aborted) return;
         completed.current = intent.id;
+        // 只有同一查询、同一文件版本才能追加；按字节起点去重并保留最近 300 条匹配。
         setSearchPage((old) =>
           intent.append && old?.query === page.query && old.version === page.version
             ? {
@@ -128,6 +137,7 @@ export function ArtifactFilePreview({
     return () => controller.abort();
   }, [intent, id, context?.runId, context?.taskId]);
   useEffect(() => {
+    // 日志匹配使用 UTF-8 字节定位，先等对应编码页就绪；文件版本变动后旧匹配不再可定位。
     if (!target || loading || !value?.page || value.encoding !== 'utf-8') return;
     if (target.version !== value.page.version) {
       setTarget(null);

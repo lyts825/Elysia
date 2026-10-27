@@ -5,6 +5,7 @@ import { defaultSurfaceClient, type SurfaceClient } from './api';
 export type NavigationState = { spaceId: string; projectId: string; runId: string };
 export const initialNavigation: NavigationState = { spaceId: 'default', projectId: '', runId: '' };
 
+/** 认证选择范围与入口共同生成存储键；范围未知时不恢复或写入导航。 */
 export function navigationKey(scope: string | undefined, client: SurfaceClient = defaultSurfaceClient) {
   return scope ? client.surfaceStorageKey(`elysia.navigation.v1:${scope}`) : undefined;
 }
@@ -35,6 +36,10 @@ export function writeNavigation(key: string | undefined, value: NavigationState)
   }
 }
 
+/**
+ * 把缓存选择解析为当前可访问的空间、项目和运行。运行必须归属有效项目，聊天则脱离项目；
+ * 恢复旧导航时排除归档项，普通刷新可保留用户当前正在查看的归档记录。
+ */
 export function resolveNavigation(
   value: NavigationState,
   projects: Project[],

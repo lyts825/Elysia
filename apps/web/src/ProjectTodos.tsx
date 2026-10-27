@@ -97,6 +97,10 @@ export function projectTodo(item: ProjectDeliveryItem): Todo | undefined {
   }
 }
 
+/**
+ * 从每个交付项当前首个阻塞条件生成下一步入口，必需项优先且不尝试推断后续完成状态。
+ * unavailable 表示看板尚未重新确认，此时显示读取缺口；待办只导航，不直接执行任务或验收。
+ */
 export function ProjectTodos({
   board,
   unavailable,

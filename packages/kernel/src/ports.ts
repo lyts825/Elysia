@@ -6,8 +6,10 @@ import type { ProjectCapabilitySnapshot } from '../../contracts/src/project-inte
 
 export type RecoveryTable = 'runs' | 'tasks' | 'agents' | 'attempts' | 'requests' | 'tool_operations';
 export interface ExecutionRecoveryPort {
+  /** 使用轻量状态投影选候选；具体记录读取后还必须验证身份和所属关系。 */
   candidates(table: RecoveryTable, statuses: readonly string[], runId?: string): string[];
   read<T extends Entity>(table: RecoveryTable, id: string, retry?: boolean): T;
+  /** 将单条恢复工作包在隔离回滚边界内，失败后记录问题并返回 false。 */
   apply<T extends Entity>(
     table: RecoveryTable,
     id: string,
@@ -21,15 +23,18 @@ export interface UnitOfWork {
 }
 // 实体读取与写入由存储实现；expectedRevision 可用于并发冲突检查。
 export interface EntityRepository {
+  /** get 允许缺失，require 缺失时失败；两者均返回权威业务实体。 */
   get<T>(table: Table, key: string): T | undefined;
   require<T>(table: Table, key: string): T;
   all<T>(table: Table, runId?: string): T[];
   put<T extends Entity>(table: Table, entity: T, expectedRevision?: number): T;
 }
+/** 按运行及会话隔离的消息历史，ordinal 的分配以同一会话计数为准。 */
 export interface SessionHistory {
   sessionMessages(runId: string, sessionId: string): Message[];
   sessionMessageCount(runId: string, sessionId: string): number;
 }
+/** 面向预算和限流的轻量请求视图，避免每次累计都展开完整请求正文。 */
 export interface RequestLedger {
   requestLedger(filters?: {
     runId?: string;
@@ -41,6 +46,7 @@ export interface RequestLedger {
     status?: RequestLedgerRow['status'];
   }): RequestLedgerRow[];
 }
+/** 内核只依赖这些持久化能力；接口不暴露 SQLite 连接或文件系统句柄。 */
 export interface KernelStore extends UnitOfWork, EntityRepository, SessionHistory, RequestLedger {
   metadata(key: string): string | undefined;
   setMetadata(key: string, value: string): void;
@@ -56,6 +62,7 @@ export interface KernelStore extends UnitOfWork, EntityRepository, SessionHistor
     attemptId?: string | null,
   ): Event;
   events(runId: string, after?: number, filter?: { taskId?: string; type?: string; limit?: number }): Event[];
+  /** 内容寻址保存并返回可回查引用；readObject 可选择限制实际读取字节数。 */
   object(content: string | Buffer): { hash: string; objectRef: string };
   readObject(reference: string, maxBytes?: number): Buffer;
   getExecutionHold(runId: string): ExecutionHold | undefined;

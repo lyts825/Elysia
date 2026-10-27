@@ -12,6 +12,7 @@ export class ProviderKeys {
   private loaded?: Promise<z.infer<typeof Vault>>;
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private desktop?: DesktopServices) {}
+  /** 合并首次保险库读取；失败清除缓存，后续操作可在系统密钥环恢复后重新尝试。 */
   private async load() {
     invariant(this.desktop, 'DESKTOP_REQUIRED', '加密保存密钥需要桌面入口；也可使用环境变量');
     return (this.loaded ??= this.desktop
@@ -37,7 +38,10 @@ export class ProviderKeys {
     invariant(token, 'API_KEY_MISSING', '请保存 API Key 或配置所选环境变量');
     return { token, signal: new AbortController().signal };
   }
-  /** 串行写入保险库并返回新凭据 ID，已有任务继续引用原凭据。 */
+  /**
+   * 串行写入保险库并返回新的不可变凭据 ID。只有系统保存成功才更新内存缓存，
+   * 轮换保留旧 ID，使已有任务继续使用其冻结引用；此处不重写旧任务或删除旧密钥。
+   */
   save(key: string): Promise<string> {
     const result = this.queue.then(async () => {
       const vault = await this.load(),

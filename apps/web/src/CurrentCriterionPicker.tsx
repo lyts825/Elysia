@@ -5,6 +5,10 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import './review-note-linking.css';
 import './current-criterion-picker.css';
 
+/**
+ * 在固定交付快照中分页选择当前验收项，可选 null 表示整体备注。
+ * 翻页同时核对运行、根修订、指纹及偏移；版本变化后保留原选择，但禁止用旧候选页继续选择。
+ */
 export function CurrentCriterionPicker({
   initial,
   selected,

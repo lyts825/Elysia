@@ -1,6 +1,7 @@
 // 终端收件箱消息及处理结果的数据契约。
 import type { Entity } from './index.js';
 
+/** 冻结的对端说明用于追溯消息来源；不是对另一个运行的访问授权。 */
 export interface TerminalInboxPeer {
   runId: string;
   title: string;
@@ -30,6 +31,7 @@ export interface InboxMessage extends Entity {
   source?: TerminalInboxPeer;
   direction?: 'incoming' | 'outgoing';
   target?: TerminalInboxPeer;
+  /** 出站记录关联目标入站记录，用于核对排队、纳入上下文或撤回结果。 */
   targetInboxId?: string;
   resolution?: TerminalInboxResolution;
 }

@@ -12,10 +12,15 @@ import { officialDeepSeek, retiredDeepSeekModelIssue } from './deepseek.js';
 export { officialDeepSeek, deepSeekModelReplacement, retiredDeepSeekModelIssue } from './deepseek.js';
 import { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
 export { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
+/** 非有限数值不参与费用与用量运算，统一保留为未知。 */
 function numeric(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 // 将供应商用量字段统一为共享格式；输入或价格不足时保留未知费用。
+/**
+ * 将两种协议的 token 分类归一化并按冻结价格计算费用；所有未知分类保持 null。
+ * 仅在普通输入、缓存读取、输出及所需缓存写入信息完整时计算 cost，单价单位为每百万 token。
+ */
 export function normalizeUsage(
   kind: string,
   raw: any,
@@ -37,6 +42,7 @@ export function normalizeUsage(
   const reasoning = numeric(
     raw.output_tokens_details?.reasoning_tokens ?? raw.completion_tokens_details?.reasoning_tokens,
   );
+  // 不同服务可能将缓存写入包含在输入总量内或单独统计；只有可识别字段才判断包含关系。
   const writeIncluded =
     cacheWrite === null ? null : numeric(raw.input_tokens_details?.cache_write_tokens) !== null;
   let cost: number | null = null;
@@ -119,6 +125,7 @@ export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSi
     reader.releaseLock();
   }
 }
+/** SSE data 必须为 JSON 对象；无效内容不能作为可自动重试的正常协议事件吞掉。 */
 function parseSseData(data: string): any {
   try {
     const event = JSON.parse(data);
@@ -128,6 +135,7 @@ function parseSseData(data: string): any {
   error.retryable = false;
   throw error;
 }
+/** 官方路由使用 thinking 开关及受支持强度；兼容端点保留通用 reasoning_effort。 */
 function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
   const effort = provider.reasoningEffort;
   if (!effort) return {};
@@ -143,6 +151,7 @@ function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
           : 'high',
   };
 }
+/** 失败路径只携带输入、输出均完整的可核验用量，解析异常或部分用量返回 null。 */
 function failureUsage(kind: string, raw: unknown, config: ProviderConfig, ttft: number | null): Usage | null {
   try {
     const usage = normalizeUsage(kind, raw, config, ttft);
@@ -175,6 +184,11 @@ export class NativeProvider implements ProviderAdapter {
     public config: ProviderConfig,
     private credential?: () => Promise<{ token: string; signal: AbortSignal; onUsageLimit?: () => void }>,
   ) {}
+  /**
+   * 将共享上下文映射成协议请求，不读取凭据、不发网络请求。
+   * OpenAI 复用同供应商原生条目；DeepSeek 保留工具批次需要的 reasoning_content。
+   * 订阅和 API 的工具命名空间、缓存参数及输出限制按各自协议生成。
+   */
   compile(ctx: CompiledContext) {
     const p = this.config;
     const retiredModel = retiredDeepSeekModelIssue(p);
@@ -186,6 +200,7 @@ export class NativeProvider implements ProviderAdapter {
       const allowed = subscription
         ? ['prompt_cache_key']
         : ['prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options'];
+      // 只传协议明确允许的缓存键，避免通用设置注入未知的供应商参数。
       const cache = Object.fromEntries(
         Object.entries(p.cache.parameters).filter(([k]) => allowed.includes(k)),
       );
@@ -214,6 +229,7 @@ export class NativeProvider implements ProviderAdapter {
         ...cache,
       };
     }
+    // 官方 DeepSeek 工具历史要求 reasoning_content；空串也明确表达当前记录无正文。
     const requiredReasoningReplay = !!ctx.tools.length && officialDeepSeek(p);
     return {
       model: p.model,
@@ -250,6 +266,12 @@ export class NativeProvider implements ProviderAdapter {
       ...(ctx.tools.length ? { tools: ctx.tools.map((t) => ({ type: 'function', function: t })) } : {}),
     };
   }
+  /**
+   * 执行一次 HTTP 流请求，逐步产出正文/推理片段，完成时一次返回工具调用、原生项及用量。
+   * 调用方取消、凭据失效和协议超时共享取消链；读取成功 HTTP 响应的流期间，
+   * 非调用方主动取消的异常保守标记为已开始，供上层保留计费和中断核验。
+   * 成功响应无 body 的早期拒绝与调用方取消直接重抛，不经过这条异常标记路径。
+   */
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
     const p = this.config;
     const retiredModel = retiredDeepSeekModelIssue({
@@ -296,6 +318,7 @@ export class NativeProvider implements ProviderAdapter {
       throw new ProviderError('PROVIDER_NETWORK', '模型网络请求失败或超时', 0);
     }
     if (!response.ok) {
+      // Retry-After 同时支持秒数和 HTTP 日期；响应正文只保留有界诊断，不直接回显任意远端文本。
       const retry = response.headers.get('retry-after');
       const parsedRetry = retry
         ? /^\d+(\.\d+)?$/.test(retry)
@@ -327,6 +350,7 @@ export class NativeProvider implements ProviderAdapter {
       rawUsage: any = null,
       native: any[] = [],
       completed = false;
+    // DeepSeek 按流片段 index 累积参数；OpenAI 在完成事件中取得最终原生调用。
     const calls = new Map<number, any>();
     try {
       for await (const event of sseData(response.body, signal)) {
@@ -393,6 +417,7 @@ export class NativeProvider implements ProviderAdapter {
             if (c.function?.arguments) old.arguments += c.function.arguments;
             calls.set(c.index, old);
           }
+          // 只有明确正常结束的原因可进入 completed，长度截断、过滤或未知原因不能伪装完成。
           if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter')
             throw new ProviderError('PROVIDER_INCOMPLETE', '模型输出被截断或过滤', 400);
           if (choice.finish_reason === 'insufficient_system_resource' || choice.finish_reason === 'aborted')
@@ -417,6 +442,7 @@ export class NativeProvider implements ProviderAdapter {
       error.usage = failureUsage(p.kind, rawUsage, p, ttft);
       throw error;
     }
+    // 工具参数暂保留原始字符串；这里只核验调用身份和字段类型，JSON schema 由工具网关检查。
     const toolCalls: ToolCall[] =
       p.kind === 'openai'
         ? native
@@ -455,6 +481,10 @@ export class NativeProvider implements ProviderAdapter {
     };
   }
 }
+/**
+ * 将 HTTP/流错误转换为稳定错误码及有界诊断，并附供应商请求 ID 便于追查。
+ * 明确的订阅资格或额度错误停止自动重试；额度错误同时通知凭据服务更新账号状态。
+ */
 function providerFailure(
   code: unknown,
   status: number,

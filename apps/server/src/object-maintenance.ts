@@ -443,7 +443,11 @@ function checkedObject(directory: string, ref: string, scan: Scan): Candidate | 
 }
 
 // Call only while holding both service locks. The CLI acquires them before reaching here.
-/** 扫描所选数据入口并构造对象清理计划；扫描过程支持取消和进度报告。 */
+/**
+ * 在双方入口锁下读取完整存活引用，再枚举规范内容寻址对象作为候选。
+ * 仅无引用且身份/内容可核验的普通文件入选；未知条目跳过，每入口最多列出 1000 项，
+ * truncated 明确表示还有未列出的候选，不能把计划当成已扫描到的全部可删文件。
+ */
 export function createObjectCleanupPlan(
   directory: string,
   selection: Selection,
@@ -534,7 +538,11 @@ export function createObjectCleanupPlan(
 
 // A plan is an explicit selection, not authority to delete arbitrary paths. Recheck all
 // selected objects and the complete live reference set before the first unlink.
-/** 重新校验清理计划后处理候选对象；取消不会回滚已删除的对象。 */
+/**
+ * 将计划当作显式选择而非删除权限：先重新读取全部引用、数据库身份和所有候选文件，
+ * 任何冲突都在第一次 unlink 前阻止执行；实际删除每一项前再核对身份/摘要。
+ * 删除前后分别写审计记录，取消不回滚已删除项，返回已完成的数量与剩余范围供恢复。
+ */
 export function executeObjectCleanup(
   directory: string,
   supplied: unknown,
@@ -582,6 +590,7 @@ export function executeObjectCleanup(
       }
     }
     let priorSurface: Surface | undefined;
+    // 所有入口预检完成才进入删除阶段，避免第二个入口有冲突时第一个入口已经部分删除。
     for (const { surface, target, candidate } of selected) {
       if (surface !== priorSurface) {
         scan.phase('delete', surface);

@@ -15,12 +15,14 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
   const notifications = createTaskNotifications(window, directory);
   let bootVisualShown = false;
   const startingUrl = pathToFileURL(path.join(__dirname, 'starting.html')).href;
+  /** 同时校验发送窗口、主框架和本地服务根页面，阻止预览 iframe 借用桌面桥。 */
   const trusted = (event) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
       throw new Error('不允许子页面调用本机功能');
     const url = new URL(event.senderFrame.url);
     if (url.origin !== getOrigin() || url.pathname !== '/') throw new Error('页面来源无效');
   };
+  /** 仅对读取启动资源等有限操作额外接受固定 file 启动页，其他页面仍走完整来源校验。 */
   const startupTrusted = (event) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
       throw new Error('不允许子页面调用本机功能');
@@ -45,6 +47,7 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
     const allowed = starting
       ? ['preferences-ready', 'media-ready']
       : ['preferences-ready', 'auth-ready', 'lists-ready', 'messages-ready', 'media-ready', 'web-loaded'];
+    // 页面只能上报对应阶段及有界结构，主进程的构建/后端阶段不接受 renderer 伪造。
     if (
       !value ||
       !allowed.includes(value.stage) ||
@@ -104,6 +107,7 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
       message.operation.includes('key-vault-') ? 'api-keys.bin' : 'chatgpt.bin',
     );
     if (message.operation === 'open-auth') {
+      // 后端提供的登录 URL 仍需核对固定来源和路径，不能让此桥成为任意外链启动器。
       const url = new URL(message.value);
       if (
         url.origin !== 'https://auth.openai.com' ||
@@ -120,6 +124,7 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
       (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
     )
       throw new Error('系统加密存储不可用，请使用 API Key 或启用系统密钥环');
+    // 缺少密钥文件与解密失败区分：前者表示尚未登录，后者不能自动覆盖原凭据。
     if (
       message.operation === 'vault-read' ||
       message.operation === 'key-vault-read' ||

@@ -72,6 +72,7 @@ export function workspaceTools(
     'store' | 'path' | 'snapshot' | 'artifact' | 'diff' | 'definitions' | 'processes' | 'runCommand'
   > & { kernel: Pick<ToolServices['kernel'], 'permissions' | 'ancestors'> },
 ): PluginContributions<ToolContribution> {
+  /** 返回授权目录的前 200 项和链接标记，隐藏 .git；目录列表不代表已读取其中文件。 */
   async function execute_list({ task }: ToolInvocation, args: z.output<typeof schemas.list>) {
     let result: unknown;
 
@@ -269,12 +270,14 @@ export function workspaceTools(
 
     return result;
   }
+  /** 将解析后的程序、参数及操作身份交给网关命令入口，冻结后端和路径边界在那里统一核验。 */
   async function execute_exec(
     { task, operation, signal }: ToolInvocation,
     args: z.output<typeof schemas.exec>,
   ) {
     return context.runCommand(task, operation, args, signal);
   }
+  /** 仅把任务自身工作区内、大小合规的文件注册为产物；源文件内容被复制为可回查对象。 */
   async function execute_artifact({ task }: ToolInvocation, args: z.output<typeof schemas.artifact>) {
     let result: unknown;
 
@@ -286,6 +289,7 @@ export function workspaceTools(
 
     return result;
   }
+  /** 返回网关生成的基线差异产物，保留取消信号与真实命令结果。 */
   async function execute_diff({ task, signal }: ToolInvocation) {
     return await context.diff(task, signal);
   }

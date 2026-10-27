@@ -17,6 +17,7 @@ const matches = (expected: Snapshot, actual: Snapshot) =>
   expected.rootRevision === actual.rootRevision;
 const changed = '交付记录已变化。已读内容保留，请重新读取后继续核对。';
 
+/** 单实例串行分页读取器：取消卸载请求，并在运行/根修订不匹配时通知父面板建立新基线。 */
 function usePageRead(snapshot: Snapshot, stale: () => void) {
   // 分页读取与首屏绑定同一运行和根版本；不一致时保留已读页并提示刷新。
   const { api } = useSurfaceClient();
@@ -52,6 +53,7 @@ function usePageRead(snapshot: Snapshot, stale: () => void) {
   return { read, busy, error };
 }
 
+/** 以首屏交付为固定快照分页标准；旧页在错误时保留，但 stale 会禁止继续使用旧版本翻页。 */
 export function DeliveryCriteria({
   initial,
   evidence,
@@ -140,6 +142,7 @@ export function DeliveryCriteria({
   );
 }
 
+/** 单项证据独立分页，读取结果除快照修订外还必须匹配当前 criterion 索引。 */
 function CriterionEvidence({
   criterion,
   snapshot,

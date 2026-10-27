@@ -37,6 +37,10 @@ const taskStatus = (task: TaskGraphDetail['tasks'][number]) =>
       ? '重复错误暂停'
       : statusLabels[task.status];
 
+/**
+ * 根据已读任务和依赖边绘制分层状态图，未接受计划以候选计划单独提示，不伪造已创建子任务。
+ * 任务读取不完整时明确降低图的完整性声明；selectTask 只定位现有任务，不执行状态操作。
+ */
 export function TaskGraph({
   detail,
   archived = false,
@@ -59,6 +63,7 @@ export function TaskGraph({
   const ended = ['DONE', 'CANCELLED'].includes(detail.run.status);
   const awaitingPlan =
     pendingPlan && !readOnly && detail.run.status === 'WAITING' && detail.run.reason === 'plan';
+  // 兼容计划 key 与持久任务 ID 的引用，但所有展示名称仍来自本次实际读取的任务。
   const findTask = (reference: string) =>
     detail.tasks.find((task) => task.id === reference) ||
     detail.tasks.find((task) => task.spec.key === reference);
@@ -69,6 +74,7 @@ export function TaskGraph({
       .filter((task): task is TaskGraphDetail['tasks'][number] => !!task);
   const ranks = new Map<string, number>();
   const visiting = new Set<string>();
+  /** 用最长依赖路径确定显示层；缓存已求层级，遇到环只中断本次递归，不把图显示当作业务校验。 */
   const rankOf = (task: TaskGraphDetail['tasks'][number]): number => {
     const known = ranks.get(task.id);
     if (known !== undefined) return known;

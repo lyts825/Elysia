@@ -14,15 +14,24 @@ type PartialResponse = TextStream & {
   reasoningActive?: boolean;
 };
 export type LiveReasoning = ReasoningDisplay & { requestId: string; text: string; missing: boolean };
+/**
+ * 维护运行界面的临时流状态。正文与推理按请求身份独立合并，服务端快照用来补缺口；
+ * 此类只保存显示副本，不能替代请求账本或已完成消息的权威正文。
+ */
 export class RunStream {
   // 每个任务仅保留一个活动请求；completed 用于忽略迟到的流片段。
   private partials: Record<string, PartialResponse> = {};
   private completed = new Set<string>();
 
+  /** 切换运行或完全重建详情时清除片段和已完成集合，防止不同运行的任务 ID 串入显示。 */
   clear() {
     this.partials = {};
     this.completed.clear();
   }
+  /**
+   * 合并正文增量，带偏移时支持重发和乱序；旧式无偏移事件按到达顺序追加。
+   * 返回 false 表示仍有文本缺口，需要调用方安排持久快照补读，而非直接展示乱序片段。
+   */
   delta(value: { taskId: string; text: string; requestId?: string; offset?: number }) {
     // 返回 false 表示存在尚未补齐的偏移缺口，调用方应读取可靠快照。
     if (!value.taskId || typeof value.text !== 'string') return true;
@@ -39,6 +48,7 @@ export class RunStream {
     this.partials[value.taskId] = partial;
     return partial.chunks.length === 0;
   }
+  /** 按偏移排序，只追加与已有前缀相接或重叠的未读后缀，缺口后的片段继续保留。 */
   private merge(partial: TextStream) {
     const missing: TextStream['chunks'] = [];
     // 片段可能乱序或重发：保留缺口后的片段，只追加尚未收到的后缀。
@@ -49,6 +59,11 @@ export class RunStream {
     }
     partial.chunks = missing;
   }
+  /**
+   * 合并公开推理片段，并验证重叠内容一致。超出显示上限的尾部忽略，乱序队列另设数量/长度上限。
+   * live=false 用于持久化补读，不把已经结束的推理显示重新激活为实时状态。
+   * false 表示偏移或内容冲突，需要重新补读；不能靠拼接冲突内容猜测原文。
+   */
   reasoningDelta(value: ReasoningDelta, live = true) {
     // 推理正文与普通回复分别合并，显示长度受上限约束。
     if (
@@ -93,17 +108,23 @@ export class RunStream {
     this.partials[value.taskId] = partial;
     return !missing;
   }
+  /** 只向仍匹配的活动请求注入补读推理，保持原显示类别与活动状态。 */
   seedReasoning(taskId: string, requestId: string, text: string, offset: number) {
     // 仅给仍匹配的请求补读持久化内容，避免恢复数据污染新请求。
     const partial = this.partials[taskId];
     if (this.completed.has(requestId) || partial?.requestId !== requestId || !partial.display) return;
     this.reasoningDelta({ runId: '', taskId, requestId, kind: partial.display.kind, text, offset }, false);
   }
+  /** 已记录的 assistant 消息完成对应请求；标记完成后迟到事件不能重新建立局部流。 */
   complete(taskId: string, message: Message) {
     if (message.role !== 'assistant') return;
     if (message.requestId) this.completed.add(message.requestId);
     if (this.partials[taskId]?.requestId === message.requestId) delete this.partials[taskId];
   }
+  /**
+   * 将请求快照与本地增量协调：结束已结算请求、每任务选最新 RESERVED 请求，再补齐正文。
+   * 仅包含部分历史的快照不能证明旧局部请求已结束；落后的短快照也不能覆盖更长的实时正文。
+   */
   sync(requests: RequestRecord[]) {
     // 每个任务选择最新的在途请求；服务端快照也负责结束已结算的本地流。
     const active = new Map<string, RequestRecord>();
@@ -158,11 +179,13 @@ export class RunStream {
       this.partials[taskId] = next;
     }
   }
+  /** 返回按任务索引的连续正文前缀；缺口后的缓存片段不提前显示。 */
   texts() {
     return Object.fromEntries(
       Object.entries(this.partials).map(([taskId, partial]) => [taskId, partial.text]),
     );
   }
+  /** 导出推理展示状态，missing 指出尚未补齐的内容；普通正文已开始时将推理显示视作完成。 */
   reasonings(): Record<string, LiveReasoning> {
     return Object.fromEntries(
       Object.entries(this.partials).flatMap(([taskId, partial]) =>

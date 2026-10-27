@@ -51,11 +51,13 @@ export interface ProjectScheduleTemplate {
     toolReviewProviderHash?: string;
   };
 }
+/** 保存前的模板捕获及摘要，提交时必须核对相同来源修订和 captureHash。 */
 export interface ProjectSchedulePreview {
   projectId: string;
   template: ProjectScheduleTemplate;
   captureHash: string;
 }
+/** 定时计划持久状态；创建次数和跳过次数累计，暂停或刷新不会自动清零。 */
 export interface ProjectSchedule extends ProjectSchedulePreview {
   version: 1;
   id: string;
@@ -104,6 +106,7 @@ export interface ProjectScheduleHistoryItem {
     message: string;
   } | null;
 }
+/** 历史读取同时报告关联覆盖情况；无法追踪的分发记录不能计作已核验任务。 */
 export interface ProjectScheduleHistory {
   projectId: string;
   scheduleId: string;
@@ -132,6 +135,7 @@ export const ProjectScheduleCreate = z
     settings: ProjectScheduleSettings,
   })
   .strict();
+/** enable/refresh 可要求重新核对捕获摘要；自动执行必须有显式确认字段。 */
 export const ProjectScheduleUpdate = z
   .object({
     commandId: z.string().uuid(),

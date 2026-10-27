@@ -16,6 +16,7 @@ export const PeerReviewPolicy = z
   );
 export type PeerReviewPolicy = z.infer<typeof PeerReviewPolicy>;
 
+/** 模型提交的逐项判断；验收项完整性、候选归属和证据引用由内核进一步交叉核验。 */
 export const PeerReviewSubmission = z
   .object({
     candidateId: z.string().uuid(),
@@ -38,6 +39,7 @@ export const PeerReviewSubmission = z
   .strict();
 export type PeerReviewSubmission = z.infer<typeof PeerReviewSubmission>;
 
+/** 本轮冻结候选；指纹绑定当前作者、需求和证据版本，使变化后的候选必须重新评审。 */
 export interface PeerReviewCandidate {
   id: string;
   round: number;
@@ -52,6 +54,7 @@ export interface PeerReviewCandidate {
   authorModel: string;
   createdAt: string;
 }
+/** 内核在模型提交之外添加真实评审身份、平均分与逐项阈值通过结果。 */
 export interface PeerReviewScore extends PeerReviewSubmission {
   reviewerTaskId: string;
   reviewerProviderId: string;
@@ -60,6 +63,7 @@ export interface PeerReviewScore extends PeerReviewSubmission {
   passed: boolean;
   submittedAt: string;
 }
+/** 一轮必须收齐所有冻结评审模型；stale 表示需求或执行条件变化使旧结论不能复用。 */
 export interface PeerReviewRound {
   candidate: PeerReviewCandidate;
   status: 'reviewing' | 'passed' | 'changes_requested' | 'limit_reached' | 'stale';

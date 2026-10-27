@@ -69,6 +69,10 @@ type RevisionContext = {
   change: (entries: ArtifactRevisionEntry[]) => boolean;
 };
 const Context = createContext<RevisionContext | null>(null);
+/**
+ * 为同一运行的差异编辑器提供草稿能力。原始草稿格式损坏、上层无保存回调或已禁用时
+ * 不暴露写接口，避免为了修改差异清单而覆盖来源不明的完整续接草稿。
+ */
 export function ArtifactRevisionProvider({
   runId,
   raw,
@@ -109,6 +113,7 @@ export function ArtifactRevisionProvider({
                   setError('差异草稿最多保留 40 项，请先移除不再需要的内容。');
                   return false;
                 }
+                // 从 ref 取最新整体草稿再只替换 artifactRevision，保留其他面板刚写入的字段。
                 let latest: Record<string, unknown> = {};
                 try {
                   if (rawRef.current) latest = JSON.parse(String(rawRef.current));
@@ -144,6 +149,10 @@ export function ArtifactRevisionProvider({
     </Context.Provider>
   );
 }
+/**
+ * 编辑一项差异的要求。输入文字只保存待加入状态，明确点击加入后才参与后续提交；
+ * 当前交付指纹变化使旧选择过期，必须核对并重新加入。
+ */
 export function ArtifactRevisionEditor({
   runId,
   reviewId,

@@ -28,7 +28,10 @@ const reasons: Record<string, { action: string; hint: string }> = {
   terminal_unavailable: { action: '查看', hint: '终端环境未就绪，请检查后恢复。' },
 };
 
-/** Row copy is a summary; navigation resolves the latest run detail after opening. */
+/**
+ * 把列表快照转换为状态标签、动作和提示，区分执行结束与用户复核。
+ * 持久暂停优先显示停止调度原因，读取异常不伪造执行状态；真正打开后仍须重新读取详情决定目标。
+ */
 export function taskCenterPresentation(item: TaskCenterItem): {
   status: string;
   action: string;

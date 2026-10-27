@@ -1,5 +1,9 @@
 /* 协调重复读取、取消过期请求并限制读取时间。 */
-/** One read per selection. Repeated refreshes share work; a new selection cancels the old one. */
+/**
+ * 一次只管理一个选择的读取：同 key 共享 Promise，换 key 取消旧信号。
+ * trailing 只保留最后一次刷新函数，在当前读取成功后执行；读取抛错时不继续尾随循环。
+ * 取消本身不保证回调停止，读取函数仍需在发布结果前检查 signal。
+ */
 export class ReadCoordinator {
   private pending?: {
     key: string;
@@ -47,6 +51,7 @@ export class ReadCoordinator {
   }
 }
 
+/** 将调用方取消与内部读取期限合并；clear 由调用方在读取成功或失败后释放计时器。 */
 export class ReadDeadline {
   // 同时响应调用方取消和内部计时；expired 仅标识内部超时。
   readonly signal: AbortSignal;

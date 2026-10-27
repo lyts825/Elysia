@@ -10,7 +10,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.22.4';
+export const VERSION = '1.22.5';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -32,6 +32,7 @@ export const Permissions = z.object({
   read: z.boolean().default(true),
   write: z.boolean().default(false),
   exec: z.boolean().default(false),
+  /** 网络工具逐个核对允许的目标；模型提供一个 URL 本身不产生授权。 */
   urls: z.array(z.string().url()).max(40).default([]),
   writePaths: z.array(z.string().min(1)).default(['.']),
 });
@@ -55,6 +56,7 @@ export const Limits = z.object({
 export type Limits = z.infer<typeof Limits>;
 // 合同汇集目标、范围、交付和验收标准，以及权限、预算和可选执行策略。
 export const Contract = z.object({
+  /** 需求重新规划时递增；任务和计划必须引用同一合同版本。 */
   version: z.number().int().positive().default(1),
   objective: z.string().min(1),
   scope: z.array(z.string()).min(1),
@@ -63,6 +65,7 @@ export const Contract = z.object({
   deliverables: z.array(z.string()).min(1),
   acceptanceCriteria: z.array(z.string()).min(1),
   constraints: z.array(z.string()),
+  /** 普通执行/复核隔离的显式例外，不适用于独立同行评分模式。 */
   allowSameModelReview: z.boolean().default(false),
   peerReview: PeerReviewPolicy.optional(),
   toolReview: ToolReviewPolicy.optional(),
@@ -134,10 +137,12 @@ export const ContextRuntimeMetrics = z.object({
   runtimeReserveTokens: z.number().int().nonnegative(),
   inputBudgetTokens: z.number().int().nonnegative(),
   minimumWindowTokens: z.number().int().positive(),
+  /** 系统规则、任务和工具等固定内容的保守估算，不是供应商 tokenizer 的测量值。 */
   fixedTokens: z.number().int().nonnegative(),
   historyTokens: z.number().int().nonnegative(),
   estimatedInputTokens: z.number().int().nonnegative(),
   streamingOutputTokens: z.number().int().nonnegative(),
+  /** 供应商已报告的输入/输出；未返回时为 null，不能用估算值伪装实测。 */
   observedInputTokens: z.number().nonnegative().nullable(),
   observedOutputTokens: z.number().nonnegative().nullable(),
   compression: z.object({
@@ -185,6 +190,7 @@ export interface ContextSnapshot {
   runRevision: number;
   agents: ContextProjection[];
 }
+/** 可由模型提出的任务规范；真实 ID、父子关系、工作区和授权由内核另行创建。 */
 export const TaskSpec = z.object({
   key: z.string().min(1),
   title: z.string().min(1),
@@ -196,6 +202,7 @@ export const TaskSpec = z.object({
     .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
     .nullable()
     .optional(),
+  /** 计划内引用 key，创建后由内核解析为任务 ID 并检查依赖环。 */
   dependsOn: z.array(z.string()).default([]),
   deliverables: z.array(z.string()).min(1),
   acceptanceCriteria: z.array(z.string()).min(1),
@@ -204,6 +211,7 @@ export const TaskSpec = z.object({
   contextWindowTokens: z.number().int().min(4096).max(CONTEXT_MAX_WINDOW_TOKENS).optional(),
 });
 export type TaskSpec = z.infer<typeof TaskSpec>;
+/** 待用户接受的下一版计划；contractVersion 绑定需求，version 绑定本次计划修订。 */
 export const Plan = z.object({
   version: z.number().int().positive(),
   contractVersion: z.number().int().positive(),
@@ -212,6 +220,10 @@ export const Plan = z.object({
   summary: z.string().min(1),
 });
 export type Plan = z.infer<typeof Plan>;
+/**
+ * 模型连接与资源/价格声明。运行创建和子任务分配时保存完整绑定副本，
+ * 后续编辑当前配置不会改写历史任务；revision 与 checkedRevision 在持久类型中补充。
+ */
 export const ProviderConfig = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
@@ -228,18 +240,21 @@ export const ProviderConfig = z
     model: z.string().min(1),
     baseUrl: z.string().url(),
     apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+    /** 并发和限流的账号域标识；同账号多个配置仍共享运行时账号额度。 */
     account: z.string().min(1),
     contextLimit: z.number().int().min(4096),
     outputLimit: z.number().int().min(256),
     concurrency: z.number().int().min(1).max(2).default(2),
     rpm: z.number().int().positive().default(60),
     tpm: z.number().int().positive().default(200000),
+    /** 缓存声明及协议参数，不代表当前请求已经命中缓存。 */
     cache: z.object({
       mode: z.enum(['automatic', 'configured', 'unknown']),
       minTokens: z.number().nullable(),
       ttl: z.string().nullable(),
       parameters: z.record(z.string(), z.unknown()).default({}),
     }),
+    /** 每百万 token 单价；未知为 null，订阅连接不套用 API 单价。 */
     prices: z
       .object({
         version: z.string(),
@@ -294,6 +309,7 @@ export const ModelChoice = z.object({
     .optional(),
 });
 export type ModelChoice = z.infer<typeof ModelChoice>;
+/** CLI 模板：记录命令、输出协议、资源和连接；创建终端任务时冻结为 ExecutionBinding。 */
 export const AgentTerminalProfile = z.object({
   id: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
@@ -309,6 +325,7 @@ export const AgentTerminalProfile = z.object({
   resourcePreset: z.enum(terminalResourcePresets).optional(),
   connectionId: z.string().uuid().nullable().optional(),
   connection: TerminalConnectionBinding.optional(),
+  /** 允许传递的环境变量名称清单，值在执行时从受控环境取得。 */
   environment: z
     .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
     .max(12)
@@ -319,6 +336,7 @@ export const AgentTerminalProfile = z.object({
 });
 export type AgentTerminalProfile = z.infer<typeof AgentTerminalProfile>;
 export type WorkspaceSurface = 'native' | 'terminal';
+/** 终端入口的模板集合，修订用于编辑并发检查，默认 ID 必须存在于集合。 */
 export const SurfaceTerminalSettings = z
   .object({
     revision: z.number().int().nonnegative(),
@@ -337,6 +355,7 @@ export const SurfaceTerminalSettings = z
       });
   });
 export type SurfaceTerminalSettings = z.infer<typeof SurfaceTerminalSettings>;
+/** 按入口冻结执行方式；历史字段名 docker-agent 同时作为终端执行的持久标识。 */
 export const ExecutionBinding = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('native') }),
   z.object({ kind: z.literal('docker-agent'), profile: AgentTerminalProfile }),
@@ -366,8 +385,10 @@ export interface Run extends Entity {
   coordinatorAgentId: string;
   rootTaskId: string;
   limits: Limits;
+  /** 是否已获当前执行授权；计划模式还必须核对 acceptedPlanVersion。 */
   authorized: boolean;
   acceptedPlanVersion: number | null;
+  /** 累计运行时限的起点；任务暂停不会把它重置为新的完整时长。 */
   startedAt: number | null;
   createdAt: string;
   reason?: string;
@@ -379,6 +400,7 @@ export interface Run extends Entity {
 // 任务绑定代理与工作区，额外保留依赖阻塞、限流和无进展等等待信息。
 export interface Task extends Entity {
   peerReview?: { candidateId: string; reviewerProviderId: string };
+  /** 创建任务时适用的合同版本，防止旧子任务混入新需求的执行或上下文。 */
   contractVersion: number;
   runId: string;
   parentTaskId: string | null;
@@ -391,6 +413,7 @@ export interface Task extends Entity {
   /** Read-only alias of another task's workspace, never an independently owned checkout. */
   workspaceOwnerTaskId?: string;
   baseline: string | null;
+  /** WAITING 的具体原因决定可执行的恢复动作，不能仅凭 WAITING 自动重启。 */
   waitReason?: string;
   waitingFor: string[];
   /** Failed dependency paths, retained while the selected branch is being recovered. */
@@ -416,6 +439,7 @@ export interface Task extends Entity {
   };
   result?: unknown;
 }
+/** 任务的模型实例与独立会话；providerBinding 是执行时使用的冻结副本。 */
 export interface Agent extends Entity {
   routingDecision?: RoleRoutingDecision;
   runId: string;
@@ -423,6 +447,7 @@ export interface Agent extends Entity {
   taskId: string;
   providerId: string;
   providerBinding: ProviderConfig;
+  /** 显式模型切换创建新会话，旧供应商的私有重放数据不跨会话复用。 */
   sessionId: string;
   status: Status;
   profileVersion: string;
@@ -437,11 +462,13 @@ export interface Attempt extends Entity {
   agentId: string;
   sequence: number;
   status: 'ACTIVE' | 'WAITING' | 'DONE' | 'FAILED' | 'CANCELLED';
+  /** 活动尝试的截止 epoch 毫秒；等待或结束时清空。 */
   lease: number | null;
   steps: number;
   checkpointRef: string | null;
   error?: string;
 }
+/** 模型返回的原始工具调用；arguments 保留 JSON 字符串，执行前由工具 schema 校验。 */
 export interface ToolCall {
   id: string;
   name: string;
@@ -462,8 +489,10 @@ export interface Message extends Entity {
   ordinal: number;
   role: 'user' | 'assistant' | 'tool';
   text: string;
+  /** 仅 assistant 消息持有调用；后续 tool 消息逐个按 callId 回答。 */
   calls?: ToolCall[];
   callId?: string;
+  /** 当前供应商协议所需的原生重放项，不等同于公开正文或通用交接资料。 */
   native?: unknown[];
   reasoningContent?: string;
   providerKind?: string;
@@ -479,6 +508,7 @@ export interface Usage {
   cost: number | null;
   ttftMs: number | null;
   rawUsage: unknown;
+  /** 区分缓存写入是否已包含在 inputTotal，避免重复计费；未知时保持 null。 */
   cacheWriteIncludedInInput: boolean | null;
 }
 const metric = z.number().nonnegative().nullable();
@@ -511,10 +541,12 @@ export interface RequestRecord extends Entity {
   runId: string;
   taskId: string;
   attemptId: string;
+  /** 同一个逻辑请求的标识，与每次实际请求记录的 id 分开。 */
   logicalId: string;
   providerId: string;
   providerBinding: ProviderConfig;
   manifest: Record<string, unknown>;
+  /** 输入估算加完整输出预留；UNKNOWN 状态继续占用，直到核验后结算或释放。 */
   reservedTokens: number;
   reservedCost: number | null;
   status: 'RESERVED' | 'SETTLED' | 'UNKNOWN' | 'RELEASED';
@@ -522,6 +554,7 @@ export interface RequestRecord extends Entity {
   startedAt: number;
   error?: string;
 }
+/** 已登记的内容寻址产物；verified 是验收标记，登记成功本身不代表验收通过。 */
 export interface Artifact extends Entity {
   runId: string;
   taskId: string;
@@ -533,6 +566,7 @@ export interface Artifact extends Entity {
   verified: boolean;
   mediaType: string;
 }
+/** 对外部文件/页面读取结果的冻结快照，来源正文始终作为不可信资料处理。 */
 export interface Snapshot extends Entity {
   runId: string;
   taskId: string;
@@ -543,6 +577,7 @@ export interface Snapshot extends Entity {
   trust: 'untrusted';
   version: number;
 }
+/** 工具副作用账本：先登记 INTENT，完成或失败后保存回执，中断时可能转为 UNCERTAIN。 */
 export interface Operation extends Entity {
   review?: ToolReviewReceipt;
   runId: string;
@@ -555,9 +590,11 @@ export interface Operation extends Entity {
   args: Record<string, unknown>;
   status: 'INTENT' | 'DONE' | 'FAILED' | 'UNCERTAIN';
   result?: unknown;
+  /** 例如写入前后哈希或命令后端信息，用于中断后的结果核验。 */
   evidence?: Record<string, unknown>;
   error?: string;
 }
+/** 同一运行内 seq 单调排序，供 SSE 续读；eventId 为事件身份，不作为跨运行游标。 */
 export interface Event {
   runId: string;
   seq: number;
@@ -568,6 +605,7 @@ export interface Event {
   payload: unknown;
   occurredAt: string;
 }
+/** 带稳定错误码、重试提示、诊断详情及 HTTP 状态的应用错误。 */
 export class AppError extends Error {
   constructor(
     public code: string,
@@ -579,13 +617,16 @@ export class AppError extends Error {
     super(message);
   }
 }
+/** 统一拒绝违反领域前提的操作；成功时向 TypeScript 收窄 condition。 */
 export function invariant(condition: unknown, code: string, message: string): asserts condition {
   if (!condition) throw new AppError(code, message);
 }
+/** 用户命令的幂等身份与可选乐观并发修订。 */
 export const Command = z.object({
   commandId: z.string().uuid(),
   expectedRevision: z.number().int().nonnegative().optional(),
 });
+/** 将一条验收标准索引绑定到实际文件、产物或命令；哈希用于核验引用内容未变化。 */
 export const Evidence = z.object({
   criterion: z.number().int().nonnegative(),
   type: z.enum(['file', 'artifact', 'command']),

@@ -156,6 +156,7 @@ function configuration(store: Store) {
   });
   return { settings: canonicalSettings, apps: canonicalApps, preferred };
 }
+/** 读取规范化后的模板配置；旧设置与应用选择由 configuration 同步为一致视图。 */
 export function terminalSettings(store: Store): SurfaceTerminalSettings {
   return configuration(store).settings;
 }
@@ -166,6 +167,7 @@ function remember(preferred: PreferredProfiles, settings: SurfaceTerminalSetting
   const selected = settings.profiles.find((profile) => profile.id === settings.defaultProfileId)!;
   return { ...preferred, [terminalAppForProfile(selected)]: selected.id };
 }
+/** 删除或换类型的模板不再被项目选用；仅清理失效选择，不删除仍兼容的项目连接。 */
 function cleanProjectPreferences(store: Store, settings: SurfaceTerminalSettings) {
   const connections = read(store, connectionsKey, z.array(TerminalConnectionBinding)) ?? [];
   for (const project of store.all<Project>('projects')) {
@@ -189,7 +191,10 @@ function cleanProjectPreferences(store: Store, settings: SurfaceTerminalSettings
       });
   }
 }
-/** 在事务中检查配置版本并保存终端配置和默认配置 ID。 */
+/**
+ * 比较设置版本后同步保存模板、默认应用、可见入口和各应用偏好的模板。
+ * 不兼容/已删除的连接选择退回环境模式，项目偏好仅清理失效引用；旧任务冻结配置不受影响。
+ */
 export function writeTerminalSettings(
   store: Store,
   input: { expectedRevision: number; profiles: AgentTerminalProfile[]; defaultProfileId: string },
@@ -272,6 +277,7 @@ export function writeTerminalProfileImage(
     return saved;
   });
 }
+/** 切换应用入口时按需补齐预设模板，并恢复该应用上次选择的有效模板，相关设置同事务提交。 */
 export function writeTerminalControlApps(
   store: Store,
   input: { expectedRevision: number; defaultAppId: TerminalAppId; entries: TerminalControlApps['entries'] },

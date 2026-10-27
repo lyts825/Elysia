@@ -74,8 +74,11 @@ const validEntry = (entry: unknown): entry is CacheEntry => {
   );
 };
 
-// Keep an immediate browser recovery copy and serialize per-key writes to the local service.
-// Only unsaved values override the server when reopening; old saved copies never do.
+/**
+ * 工作台草稿同步器：内存持有当前编辑值，浏览器只备份尚未保存的内容，服务端保存版本基线。
+ * generation 隔离认证工作区，owner 隔离删除后重新建立的同名键，change 隔离用户后续编辑；
+ * 每次异步读写和冲突决策都核对这些身份，不能将迟到结果恢复为当前内容。
+ */
 export class WorkbenchCache {
   private scope = '';
   private recoverySlot: string;
@@ -133,6 +136,7 @@ export class WorkbenchCache {
   private get running() {
     return this.runningGeneration === this.generation;
   }
+  /** 内容或结果发生变化时失效该键已有的人工核对令牌。 */
   private touch(key: string) {
     this.changes.set(key, (this.changes.get(key) || 0) + 1);
     this.inspections.delete(key);
@@ -157,6 +161,10 @@ export class WorkbenchCache {
       recovery: { ...this.recoveryState, pendingCount: this.dirty.size },
     });
   }
+  /**
+   * 仅备份 dirty 项并读回核验。恢复副本同时绑定认证范围和窗口槽位；存储不可用时
+   * 明确降级为 memory-only，不能因 localStorage 写入抛错就丢掉内存原稿。
+   */
   private backup() {
     let failure = '';
     try {
@@ -217,7 +225,10 @@ export class WorkbenchCache {
       return {};
     }
   }
-  /** Called only after session authentication, before any draft read or editing. */
+  /**
+   * 认证完成后绑定工作区。范围改变先备份旧范围，取消全部读取并递增 generation，
+   * 再恢复新范围中结构有效的待保存项；已保存浏览器副本不会覆盖服务端版本。
+   */
   bindScope(scope: string | undefined) {
     if (!scope || !/^[a-f0-9]{64}$/.test(scope) || this.scope === scope) return;
     this.backup();
@@ -256,6 +267,7 @@ export class WorkbenchCache {
     if (this.dirty.size) this.backup();
     this.publish();
   }
+  /** 首先只读取偏好；并发 load 共享同一请求，完成后才允许后台写入草稿。 */
   async load(overwrite = false) {
     if (this.preferenceRequest) return this.preferenceRequest;
     if (this.preferenceLoaded && !overwrite) return;
@@ -273,11 +285,13 @@ export class WorkbenchCache {
       if (this.preferenceRequest === request) this.preferenceRequest = undefined;
     }
   }
+  /** 声明当前活动草稿键并按需补读；批次最多 64 项，同一键的读取共享在途请求。 */
   async ensureKeys(keys: string[], overwrite = false) {
     const wanted = [...new Set(keys.filter((key) => typeof key === 'string' && validKey(key)))];
     this.activeKeys = new Set(wanted);
     await this.readKeys(wanted, overwrite);
   }
+  /** 单项读取用于即将编辑或发送的草稿；reload 强制重新确认服务端基线。 */
   async ensureKey(key: string, reload = false) {
     this.activeKeys.add(key);
     if (reload) this.loadedKeys.delete(key);
@@ -302,6 +316,10 @@ export class WorkbenchCache {
       ...new Set(wanted.map((key) => this.keyRequests.get(key)).filter((request) => !!request)),
     ]);
   }
+  /**
+   * 将局部服务端读取与本地 dirty 值合并。读取开始记录 owner，期间删除的键不复活；
+   * 同值可确认保存，不同值且版本变化则标为冲突。失败记录到具体键，阻止未经核对的写入。
+   */
   private async read(path: string, keys: string[] | undefined) {
     const generation = this.generation;
     const owners = new Map(this.owners);
@@ -393,6 +411,7 @@ export class WorkbenchCache {
   get(key: string) {
     return this.entries[key]?.value;
   }
+  /** 立即更新内存和浏览器恢复副本；未读过的草稿先补读版本，再延迟尝试服务端保存。 */
   set(key: string, value: string | boolean) {
     if (this.entries[key]?.value === value) return;
     this.entries[key] = { value, revision: this.entries[key]?.revision || 0 };
@@ -405,6 +424,7 @@ export class WorkbenchCache {
       void this.readKeys([key]).catch(() => {});
     this.schedule();
   }
+  /** 从本地生命周期移除键并递增 owner，让先前的读写结果不能恢复已删内容。 */
   remove(keys: string[]) {
     for (const key of keys) {
       delete this.entries[key];
@@ -422,6 +442,7 @@ export class WorkbenchCache {
     this.backup();
     this.publish();
   }
+  /** 仅在拥有完整实体集合时清理已删除实体草稿；分页运行列表必须传 runsComplete=false。 */
   prune(projectIds: Set<string>, runIds: Set<string>, runsComplete = true) {
     const obsolete = Object.keys(this.entries).filter((key) => {
       const selection = /^settings:selected-terminal-profile:(.+)$/.exec(key);
@@ -455,6 +476,10 @@ export class WorkbenchCache {
     if (this.stopped) return;
     this.timer = setTimeout(() => void this.flush(), 250);
   }
+  /**
+   * 串行保存可处理的 dirty 项。读取失败、范围未确认或已有写入时暂停；冲突项只等待人工核对。
+   * 每个成功响应必须匹配发送值且修订递增，新输入仅更新版本基线，不能被发送时的旧值覆盖。
+   */
   async flush() {
     clearTimeout(this.timer);
     if (
@@ -514,6 +539,7 @@ export class WorkbenchCache {
       if (generation !== this.generation && this.dirty.size) this.schedule();
     }
   }
+  /** 重试网络等可恢复问题前先重读服务端；冲突不在自动重试范围内。 */
   async retry(key?: string) {
     if (this.retrying || this.running || this.loading) return;
     this.retrying = true;
@@ -557,6 +583,7 @@ export class WorkbenchCache {
     this.backup();
     this.publish();
   }
+  /** 生成包含当前范围和待保存原文的导出对象，不清除或改变保存状态。 */
   exportPending() {
     return {
       format: 'elysia-workbench-unsaved' as const,
@@ -648,6 +675,10 @@ export class WorkbenchCache {
       this.readers.delete(controller);
     }
   }
+  /**
+   * 读取冲突远端值，固定本地内容身份并签发一次核对 token。
+   * 读取期间编辑、删除、切范围或发起更新核对都会使本次结果失效。
+   */
   async inspectIssue(key: string): Promise<WorkbenchInspection> {
     const local = this.entries[key];
     if (this.stopped || !this.scope || !local || !this.dirty.has(key) || !this.issues.has(key))
@@ -697,6 +728,7 @@ export class WorkbenchCache {
       throw Error('核对后的本地内容或所属工作区已变化，请重新核对此项。');
     return inspection;
   }
+  /** 使用仍有效的核对 token 选择本地或远端；应用前再次核验远端，避免覆盖核对后的变化。 */
   async resolveIssue(key: string, token: string, choice: 'local' | 'remote') {
     const inspection = this.requireInspection(key, token);
     if (this.resolving.has(key) || this.running) throw Error('正在保存草稿，请稍后重新核对此项。');
@@ -762,6 +794,7 @@ export class WorkbenchCache {
       if (this.dirty.size) this.schedule();
     }
   }
+  /** 最终卸载时取消请求与定时器，并保留未保存内容的恢复副本。 */
   stop() {
     this.stopped = true;
     clearTimeout(this.timer);

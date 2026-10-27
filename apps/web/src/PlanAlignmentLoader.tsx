@@ -8,6 +8,10 @@ import './plan-alignment-loader.css';
 type Panel = ComponentType<PlanAlignmentProps>;
 let pending: Promise<Panel> | undefined;
 let attempt = 0;
+/**
+ * 加载同源固定内置面板并校验模块身份。并发共享 Promise；失败移除缓存并递增 URL
+ * 查询参数，让浏览器不复用失败的模块加载结果。此重试只加载界面，不改写计划。
+ */
 function loadPanel(): Promise<Panel> {
   // 仅从同源入口导入；并发请求共享 Promise，失败后改变 URL 以允许重试。
   const url = new URL(entryUrl, location.href);
@@ -31,6 +35,7 @@ function loadPanel(): Promise<Panel> {
     }));
 }
 
+/** 将面板渲染异常隔离为可重试状态；key 中的运行与计划版本使新计划重建错误边界。 */
 class PanelBoundary extends Component<
   { children: ReactNode; retry: () => void; version: number; taskCount: number },
   { failed: boolean }
@@ -72,6 +77,7 @@ function LoadFailure({
   );
 }
 
+/** 仅任务存在计划时懒加载确认界面；加载期间显示已读计划身份，错误不会移除计划记录。 */
 export function PlanAlignmentLoader(props: PlanAlignmentProps & { anchorRef?: Ref<HTMLDivElement> }) {
   const [Panel, setPanel] = useState<Panel | null>(null);
   const [failed, setFailed] = useState(false);

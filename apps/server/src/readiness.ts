@@ -192,7 +192,10 @@ function terminalChecks(store: Store, project?: Project): ReadinessCheck[] {
   return checks;
 }
 
-/** 汇总当前入口、项目和配置的就绪检查，供界面解释缺失项。 */
+/**
+ * 只读汇总本机已登记配置，区分缺失、需复核和未知状态；不启动进程或发外部认证请求。
+ * 无法解析部分配置时增加明确的 review 项，不能用静态记录声称 Docker/API 已真实可用。
+ */
 export function readinessSnapshot(
   store: Store,
   surface: WorkspaceSurface,

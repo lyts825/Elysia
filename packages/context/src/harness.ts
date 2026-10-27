@@ -32,6 +32,7 @@ export function terminalHarnessPrompt(taskInput: string) {
   );
 }
 
+/** 按阶段和评审身份生成一次继续提示；它只说明下一类动作，不修改任务完成状态。 */
 export function nativeContinuationNotice(task: Pick<Task, 'phase' | 'spec' | 'peerReview'>) {
   if (task.phase === 'planning')
     return 'The current phase is planning. Gather necessary information with available tools, use clarify for critical gaps, and call propose_plan when ready to present a version for acceptance. Plain text does not submit a plan or change task state.';
@@ -42,6 +43,10 @@ export function nativeContinuationNotice(task: Pick<Task, 'phase' | 'spec' | 'pe
   return 'This execution task has not submitted a result. Choose the next available tool based on actual progress. Routine implementation, fixes, and necessary checks do not need repeated confirmation. Once all acceptance criteria and required children are complete, submit real evidence through submit_result. For a critical blocker, use clarify to explain existing results and the input needed. Plain text does not change completion state.';
 }
 
+/**
+ * 根据实际入口、阶段、授权版本及可用工具生成结构化执行指导。
+ * toolNames 由网关计算，提示文本不能增加工具或权限；environment 仅描述宿主以指导命令语法。
+ */
 export function nativeHarnessPolicy(
   run: Run,
   task: Task,

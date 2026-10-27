@@ -145,6 +145,10 @@ export class TerminalCliManagement {
       this.checks.delete(controller);
     }
   }
+  /**
+   * 在幂等命令中创建安装作业后异步执行；同 commandId 重试返回该作业的最新状态。
+   * 只允许一个安装/收尾同时进行，安装成功不自动修改模板，需用户另行应用。
+   */
   install(rawAppId: string, input: unknown, route: string) {
     const appId = TerminalAppId.parse(rawAppId);
     const body = Command.extend({ profileId: z.string().uuid().optional(), version: version.optional() })
@@ -229,6 +233,7 @@ export class TerminalCliManagement {
   restore(rawId: string, input: unknown, route: string) {
     return this.applyImage(rawId, input, route, true);
   }
+  /** 将完成作业的固定镜像写回原模板；核对模板版本、CLI 类型和当前镜像，拒绝覆盖并发编辑。 */
   private applyImage(rawId: string, input: unknown, route: string, restore: boolean) {
     const id = z.string().uuid().parse(rawId);
     const body = Command.extend({
@@ -270,6 +275,7 @@ export class TerminalCliManagement {
       });
     });
   }
+  /** 安装 Promise 生命周期拥有活动槽，取消可先显示，但必须等管理器清理结束后才删除 active。 */
   private start(job: TerminalCliInstallationJob) {
     const controller = new AbortController();
     const promise = Promise.resolve().then(async () => {

@@ -31,6 +31,7 @@ export function TerminalSetup({
     environmentHelpId = useId();
   const { api } = useSurfaceClient();
   const [argv, setArgv] = useState(() => JSON.stringify(value.command)),
+    // 命令编辑框保留尚未成为合法 JSON 的原文，不强制把用户输入格式化回 props。
     [issue, setIssue] = useState(''),
     [checking, setChecking] = useState(false),
     [status, setStatus] = useState('');
@@ -195,6 +196,7 @@ export function TerminalSetup({
                   patch({ command });
                   setIssue('');
                 } catch {
+                  // 无效原文仍留在 argv；向外清空命令让整个配置无法保存，避免误用上一次有效命令。
                   patch({ command: [] });
                   setIssue('请输入包含程序与参数的 JSON 数组，例如 ["agent", "--json"]。');
                 }
@@ -293,6 +295,7 @@ export function TerminalSetup({
           className="secondary"
           disabled={disabled || checking || !AgentTerminalProfile.safeParse(value).success}
           onClick={async () => {
+            // 请求发起时拍下配置指纹；用户继续编辑后，旧检查结论不能挂到新配置上。
             const checkedProfile = JSON.stringify(value);
             setChecking(true);
             setStatus('');

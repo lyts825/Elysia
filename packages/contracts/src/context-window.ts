@@ -1,7 +1,10 @@
 // 计算上下文窗口与运行时预留的共享预算。
 import { CONTEXT_SAFETY_TOKENS, effectiveContextWindowTokens, type Agent } from './index.js';
 
-/** Shared by compilation and bounded UI projections. Values are estimates, not tokenizer counts. */
+/**
+ * 编译与界面共用的窗口预算：总窗口先减输出和安全预留，运行时预留另行计入输入估算。
+ * factor 按 UTF-8 字节估算 token，Codex 采用更保守倍率；不能作为供应商实测用量。
+ */
 export function contextWindowBudget(agent: Agent) {
   const provider = agent.providerBinding;
   const windowTokens = effectiveContextWindowTokens(agent);

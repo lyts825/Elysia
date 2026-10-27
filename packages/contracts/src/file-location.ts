@@ -9,6 +9,10 @@ export type FileLocationOptions = {
   cursor?: string;
   signal?: AbortSignal;
 };
+/**
+ * 分段扫描结果：found 携带位置，missing 仅在扫描确认后表示未找到，continue 要求沿 cursor 续读。
+ * offset/scannedUntil 使用文件字节范围，line/endLine 是供编辑器展示的行号。
+ */
 export type FileLocation = {
   status: 'found' | 'missing' | 'continue';
   version: string;

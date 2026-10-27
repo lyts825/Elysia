@@ -17,7 +17,10 @@ export function useViewportMatch(query: string) {
   );
 }
 
-// Keep navigation mounted so searches, menus and drafts survive resizing.
+/**
+ * 为保持挂载的响应式抽屉管理焦点。仅当前入口的最上层 dialog 可处理 Tab/Esc，
+ * portal 菜单保留自身键盘控制；关闭后只在原元素仍可用且没有遮罩时恢复焦点。
+ */
 export function useDrawerFocus(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
   // 抽屉打开时接管焦点；关闭后仅在原元素可用且没有其他遮罩时恢复焦点。
   const surfaceRoot = useSurfaceRoot();

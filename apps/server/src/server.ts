@@ -91,6 +91,7 @@ const textPageQuery = z.object({
     .optional(),
   encoding: z.enum(projectTextEncodings).default('auto'),
 });
+/** 下载中断或响应提前关闭时取消文件读取；正常发送完成不误判为取消。 */
 function fileRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -101,6 +102,7 @@ function fileRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   });
   return controller.signal;
 }
+/** 将已校验文件资源的范围、版本和长度信息传给 HTTP 层，不在此重新解释路径。 */
 function sendFileResource(reply: FastifyReply, resource: FileResource) {
   reply
     .code(resource.status)
@@ -156,7 +158,11 @@ export function defaultProviders(): ProviderConfig[] {
     },
   ];
 }
-/** 装配本地 Fastify 服务、执行器、供应商和各业务路由。 */
+/**
+ * 为一个数据目录和界面入口装配 HTTP 服务、内核及执行器。可注入已有 Fastify 实例，
+ * prefix 用于共享监听器下的路径归属，surface 决定原生/终端能力边界；鉴权在路由前统一执行。
+ * 本函数只创建服务对象，监听端口和上层关闭由调用方管理。
+ */
 export function createServer(
   store: Store,
   options: {
@@ -190,6 +196,7 @@ export function createServer(
       ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
       : undefined;
   const nativeService = <T extends object>(factory: () => T): T =>
+    // 终端入口连原生凭据服务都不实例化；误调用通过代理立即失败，避免隐藏的账号访问。
     options.surface === 'terminal'
       ? new Proxy({} as T, {
           get() {
@@ -233,6 +240,7 @@ export function createServer(
   const runService = new RunApplicationService(kernel, executor, (runId, projectId) =>
     management.assertMutable(runId, projectId),
   );
+  /** 优先绑定项目明确选择且协议兼容的连接；最终由控制服务冻结凭据引用而非复制明文。 */
   const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
     if (!terminalControl) return profile;
     if (profile.connectionId === undefined && projectId) {
@@ -266,8 +274,10 @@ export function createServer(
       .map((v) => v.trim())
       .find((v) => v.startsWith('elysia_session='))
       ?.slice(15);
+  // 第一层边界：本机 Host/Origin → 会话 Cookie → 修改请求 CSRF → 入口能力与旧历史只读。
   app.addHook('onRequest', async (request, reply) => {
     const address = app.server.address();
+    // 端口可由系统分配，鉴权集合必须采用实际监听端口，而不是启动参数中的旧占位端口。
     if (address && typeof address !== 'string') {
       hosts.delete(`127.0.0.1:${options.port}`);
       origins.delete(`http://127.0.0.1:${options.port}`);
@@ -316,6 +326,7 @@ export function createServer(
         );
     }
   });
+  // 普通工作台使用统一 CSP；资源预览保留其更严格的沙箱策略，避免外部正文获得应用权限。
   app.addHook('onSend', async (_request, reply, payload) => {
     const url = localUrl(_request.url);
     if (url === null) return payload;
@@ -329,6 +340,7 @@ export function createServer(
       );
     return payload;
   });
+  // 原生入口保留旧终端历史时禁止通过项目级归档/删除间接修改这批只读历史。
   app.addHook('preHandler', async (request) => {
     if (options.surface !== 'native' || ['GET', 'HEAD'].includes(request.method)) return;
     const url = localUrl(request.url);
@@ -349,6 +361,7 @@ export function createServer(
         409,
       );
   });
+  // 统一业务错误与输入校验的 HTTP 形态；范围错误保留 Content-Range 供客户端正确恢复读取。
   app.setErrorHandler((error, _request, reply) => {
     const e = error as any;
     const code =
@@ -372,10 +385,12 @@ export function createServer(
       });
   });
   if (options.surface !== 'terminal') registerLocalAgentRoutes(app, store, executor.gateway, prefix);
+  /** 修改入口的幂等包装：commandId 绑定路由和原始正文，重试返回已提交结果。 */
   const command = <T>(body: unknown, route: string, fn: (b: any) => T) => {
     const b = Command.parse(body);
     return store.command(b.commandId, { route, body }, () => fn(body));
   };
+  /** 对覆盖式修改执行乐观并发检查，客户端缺失版本时不能按“最新”默默提交。 */
   const revision = (body: any, entity: { revision: number }) => {
     invariant(Number.isInteger(body.expectedRevision), 'REVISION_REQUIRED', '需要 expectedRevision');
     if (body.expectedRevision !== entity.revision)
@@ -387,6 +402,7 @@ export function createServer(
         409,
       );
   };
+  /** 运行中的代理只能查看上下文，必须等当前请求和副作用结束后才允许配置窗口。 */
   const contextBoundaries = (snapshot: ContextSnapshot): ContextSnapshot => ({
     ...snapshot,
     agents: snapshot.agents.map((context) =>
@@ -905,6 +921,7 @@ export function createServer(
       },
       assertMutable: assertTerminalMutable,
     });
+  // 终端验收采用准备/提交两阶段；异步核对完成后，命令事务内仍重查所有可变边界。
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/accept', async (request) => {
     const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).parse(request.body);
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
@@ -969,6 +986,7 @@ export function createServer(
       return terminal.sessionView(run.id);
     },
   );
+  // 续接只消费用户明确选择的待收消息，事务提交后才释放本地停止标记并唤醒调度器。
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/continue', async (request) => {
     const body = Command.extend({
       expectedRevision: z.number().int().nonnegative(),
@@ -1004,6 +1022,7 @@ export function createServer(
     executor.resume(run.id);
     return result;
   });
+  // 创建流程先解析模型和冻结执行配置，再在幂等事务中创建合同、来源和项目交付关联。
   app.post('/api/runs', async (request) => {
     const body = z
       .object({
@@ -1313,6 +1332,7 @@ export function createServer(
         .all(run.id),
     };
   });
+  // 普通消息可基于较早版本追加；合同/重规划属于覆盖式修改，必须匹配当前版本。
   app.post<{ Params: { id: string } }>('/api/runs/:id/messages', async (request) => {
     const body = z
       .object({
@@ -1380,6 +1400,7 @@ export function createServer(
       executor.resume(request.params.id);
     return result;
   });
+  // 模型目录解析和计划模块加载在事务外，最终 accept 负责重新验证计划版本及模型绑定。
   app.post<{ Params: { id: string } }>('/api/runs/:id/plan/accept', async (request) => {
     const body = z
       .object({
@@ -1429,6 +1450,7 @@ export function createServer(
     executor.resume(request.params.id);
     return result;
   });
+  // start/pause/resume 等状态规则交给应用服务；宿主取消和唤醒放在状态提交之后执行。
   app.post<{ Params: { id: string } }>('/api/runs/:id/actions', async (request) => {
     const body = z
       .object({
@@ -1471,6 +1493,7 @@ export function createServer(
       } satisfies RunStopCurrentResult;
     }
     if (body.action === 'stop_current') {
+      // 停止优先于严格版本匹配：允许用户根据较早但真实的视图及时阻止当前副作用。
       const run = store.require<Run>('runs', request.params.id);
       management.assertMutable(run.id, run.projectId);
       invariant(!body.taskId, 'STOP_RUN_SCOPE', '停止当前执行作用于本机当前任务，不能指定其他代理');
@@ -1510,6 +1533,7 @@ export function createServer(
     await runService.afterAction(request.params.id, body, releasedFinishedHold);
     return result;
   });
+  // 这里只处理原生工具和请求的人工核验；容器停止及文件证据必须走终端专用核验入口。
   app.post<{ Params: { id: string } }>('/api/runs/:id/decisions', async (request) => {
     const body = z
       .object({
@@ -1596,6 +1620,7 @@ export function createServer(
       return decision;
     });
   });
+  // 持久事件通过游标补读，临时文本增量只供实时展示；两者都受每连接输出预算约束。
   const streams = new Map<string, Set<any>>();
   const boundedStreams = new WeakMap<object, BoundedEventStream>();
   const management = registerManagement(
@@ -1650,6 +1675,7 @@ export function createServer(
       offset = end;
     }
   };
+  // Last-Event-ID 优先于查询游标；只有帧成功交给有界流时才推进 after，防止背压时漏事件。
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/api/runs/:id/events',
     async (request, reply) => {
@@ -1737,6 +1763,7 @@ export function createServer(
         details: null,
       }),
     );
+  // 先停止新定时任务并关闭事件连接，再并行等待凭据通道和执行器退出；局部失败仍尝试其余关闭。
   app.addHook('preClose', async () => {
     scheduler?.stop();
     for (const set of streams.values()) for (const stream of set) stream.end();

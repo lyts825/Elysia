@@ -53,6 +53,7 @@ export interface TaskWorkingStateDraft {
   snapshotHash: string;
 }
 
+/** 用户明确核对有效要求后的批准快照，后续新增消息仍保留原文且不在此批准范围内。 */
 export interface ApprovedTaskWorkingState extends TaskWorkingStateDraft {
   currentRequirements: string;
   approval: {
@@ -64,11 +65,13 @@ export interface ApprovedTaskWorkingState extends TaskWorkingStateDraft {
   };
 }
 
+/** 保存修订与当前批准内容；清除批准也递增修订，防止旧确认覆盖新状态。 */
 export interface TaskWorkingStateRecord {
   revision: number;
   approved: ApprovedTaskWorkingState | null;
 }
 
+/** 将当前草稿、是否可确认和旧批准是否仍有效分开，供界面在提交前核对。 */
 export interface TaskWorkingStateView extends TaskWorkingStateRecord {
   draft: TaskWorkingStateDraft;
   canApprove: boolean;

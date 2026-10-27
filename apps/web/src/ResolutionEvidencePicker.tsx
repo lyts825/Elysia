@@ -8,6 +8,10 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import './resolution-evidence.css';
 export type ChosenEvidence = DeliveryEvidence & { index: number };
+/**
+ * 分页手选当前验收项的登记证据，索引按整个证据集合编号，跨页最多选择 10 条。
+ * 每页必须与 delivery 的运行/根修订匹配，最终保存仍由服务端重新核验并冻结引用。
+ */
 export function ResolutionEvidencePicker({
   delivery,
   criterion,
@@ -68,6 +72,7 @@ export function ResolutionEvidencePicker({
       {!!page?.evidence.length && (
         <div className="resolution-evidence-list" role="region" aria-label="本页登记证据" tabIndex={0}>
           {page.evidence.map((item, i) => {
+            // 页内位置加 offset 才是提交所需证据索引，避免翻页后将第一个条目误当成同一证据。
             const index = page.page.offset + i,
               checked = selected.some((e) => e.index === index);
             return (

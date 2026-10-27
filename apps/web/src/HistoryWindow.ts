@@ -1,6 +1,7 @@
 /* 限制运行与消息历史窗口，并合并分页结果。 */
 import type { Message, RunListItem } from '../../../packages/contracts/src/index';
 
+// 页面大小控制单次读取，窗口上限控制客户端累计保留量；两者不是服务端记录总量。
 export const runHistoryPageSize = 30;
 export const runHistoryWindowLimit = 300;
 export const messageHistoryPageSize = 40;

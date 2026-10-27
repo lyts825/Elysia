@@ -6,6 +6,10 @@ import { CurrentCriterionPicker } from './CurrentCriterionPicker';
 import './review-note-linking.css';
 import './unlinked-review-notes.css';
 
+/**
+ * 将无法自动匹配新标准的旧备注交给用户手工关联，先选择目标并预览完整合并文字。
+ * 确认只追加到本机草稿；只有上层 change 成功才移除旧条目，不自动改变原复核历史。
+ */
 export function UnlinkedReviewNotes({
   value,
   draft,
@@ -41,6 +45,7 @@ export function UnlinkedReviewNotes({
   const current = target ? draft.criteriaNotes.find((note) => note.index === target.index) : undefined;
   const original = target === null ? draft.note : current?.note || '';
   const merged = original ? original + '\n\n' + addition : addition;
+  // undefined 表示未选择，null 表示整体备注；逐项目标还需核对已有标准文字与合并后的容量。
   const issue =
     target === undefined
       ? '请明确选择目标。'

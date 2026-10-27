@@ -68,6 +68,10 @@ export class BundleJobStorage {
     const current = rootSchema.parse(await this.json(path.join(this.root, 'owner.json')));
     if (JSON.stringify(current) !== JSON.stringify(this.owner)) throw unavailable();
   }
+  /**
+   * 只认领本服务命名空间和已存在的有效 owner 标记；旧未知临时目录不接管。
+   * 启动时仅清理可证明 PID 已不存在且完整归属匹配的作业，PID 复用或权限不明保守保留。
+   */
   private async initialize() {
     try {
       const store = await fs.realpath(this.storeDirectory);
@@ -123,6 +127,7 @@ export class BundleJobStorage {
       throw unavailable();
     }
   }
+  /** 根标记、直属目录名和作业字段共同证明归属；出现 job.json/delivery.zip 之外内容即拒绝清理。 */
   private async owned(directory: string) {
     await this.rootValid();
     if (!samePath(path.dirname(path.resolve(directory)), this.root)) throw unavailable();
@@ -139,6 +144,7 @@ export class BundleJobStorage {
     for (const name of entries) await this.plain(path.join(directory, name), false);
     return marker;
   }
+  /** 删除前重新核对所有标记，只 unlink 两个已知平面文件，不递归跟随不可信子树。 */
   private async remove(directory: string, expected: Marker) {
     const marker = await this.owned(directory);
     if ((Object.keys(marker) as (keyof Marker)[]).some((key) => marker[key] !== expected[key]))
@@ -150,6 +156,7 @@ export class BundleJobStorage {
     await fs.unlink(path.join(directory, 'job.json'));
     await fs.rmdir(directory);
   }
+  /** 建立当前服务实例专属目录并返回 ZIP 路径与精确清理函数，调用方仍负责生成和验证正文。 */
   async create(binding: Pick<Marker, 'jobId' | 'projectId' | 'manifestId' | 'manifestHash' | 'sessionHash'>) {
     await this.ready;
     await this.rootValid();

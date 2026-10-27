@@ -30,7 +30,11 @@ export class RunApplicationService {
       ([id, active]) => active.runId === runId && (!taskId || id === taskId),
     );
   }
-  /** 检查运行及模型切换条件后应用控制动作；后续异步操作由 afterAction 处理。 */
+  /**
+   * 在调用方命令事务内校验版本、归档和活动边界并修改领域状态。
+   * 显式恢复把持久停止解除与状态动作一同提交；结束运行的恢复只解除 hold，不重新执行任务。
+   * 模型切换只能发生在该代理没有活动请求时，避免旧模型响应写入新会话。
+   */
   apply(runId: string, body: RunAction, binding?: ProviderConfig) {
     const { kernel, executor } = this,
       store = kernel.store;
@@ -99,6 +103,7 @@ export class RunApplicationService {
     })();
     return { result, releasedFinishedHold };
   }
+  /** 状态提交后的宿主副作用：暂停/取消等待进程停止，允许继续的动作才触发调度。 */
   async afterAction(runId: string, body: RunAction, releasedFinishedHold: boolean) {
     const switching = body.action === 'switch_model' || body.providerId !== undefined;
     if (!switching && ['pause', 'cancel'].includes(body.action))

@@ -3,6 +3,10 @@ import { useId, useState } from 'react';
 import { Modal } from './Modal';
 import './workflow-policy-confirmation.css';
 
+/**
+ * 管理当前表单的同型号复核例外：开启先进入本地确认态，确认后才调用 change(true)。
+ * pendingChanged 让外层阻止在未处理确认时提交；关闭确认不代表持久保存合同。
+ */
 export function ReviewModelPolicy({
   allowed,
   disabled = false,

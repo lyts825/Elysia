@@ -50,6 +50,7 @@ const media: Record<string, string> = {
 
 const extension = (name: string) => /\.([^./\\]+)$/.exec(name)?.[1]?.toLowerCase() || '';
 
+/** 用 NUL 字节或已知二进制扩展名判断展示方式；这是预览策略，不是完整文件格式验证。 */
 export function isBinaryFile(name: string, content: Uint8Array) {
   return (
     content.includes(0) ||
@@ -57,6 +58,7 @@ export function isBinaryFile(name: string, content: Uint8Array) {
   );
 }
 
+/** 优先使用已知扩展名的媒体类型；未知类型按二进制判定回退到 octet-stream 或 UTF-8 文本。 */
 export function fileMediaType(name: string, content?: Uint8Array) {
   return (
     media[extension(name)] ||

@@ -11,7 +11,10 @@ import { stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactChanges, savedReviewSnapshot } from './delivery-review-history.js';
 
 /** Only server-derived, version-pinned comparison metadata can become a source instruction. */
-/** 校验所选产物差异的数量、文本大小及交付版本，并捕获修订来源。 */
+/**
+ * 以服务器保存的复核基线重新计算每个选中产物的变化，只接受版本固定且仍可唯一比较的项。
+ * 客户端只提供修改要求，不提供可信比较元数据；输出绑定原复核和当前交付双指纹。
+ */
 export function captureArtifactChanges(store: Store, run: Run, selection: RunSourceSelection) {
   const selected = selection.artifactChanges ?? [];
   if (!selected.length) return {};

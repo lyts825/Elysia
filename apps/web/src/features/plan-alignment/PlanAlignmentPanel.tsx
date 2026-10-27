@@ -20,6 +20,11 @@ export const manifest = {
   title: '计划对齐',
 } as const;
 
+/**
+ * 只读展示已接受分工，或为待接受计划选择一级子代理模型和窗口。
+ * 待定选择优先采用本次 assignments，其次采用计划建议；缺省窗口继承父级并受目标模型上限限制。
+ * 接受前同时检查各选择就绪、上下文有效和执行/复核型号隔离，实际准入仍交由内核确认。
+ */
 export function PlanAlignmentPanel({
   detail,
   providers,
@@ -42,6 +47,7 @@ export function PlanAlignmentPanel({
   const parent = detail.agents.find((agent) => agent.taskId === run.rootTaskId);
   const pendingChoice = (task: TaskSpec) =>
     Object.hasOwn(assignments, task.key) ? assignments[task.key] : proposedChoice(task);
+  /** 本次窗口优先，其次计划建议；两者均未指定时继承父级与模型上限中的较小值。 */
   const pendingPolicy = (task: TaskSpec): ContextPolicy => {
     const choice = pendingChoice(task);
     if (choice.contextPolicy) return choice.contextPolicy;

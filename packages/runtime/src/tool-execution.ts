@@ -23,7 +23,11 @@ export class ToolExecutionService {
     readonly kernel: Kernel<Store>,
     readonly gateway: ToolGateway,
   ) {}
-  /** 执行单个工具调用；assistantMessageId 用于将调用绑定到产生它的助手消息。 */
+  /**
+   * 在执行器共享工具槽中调用网关，assistantMessageId 绑定产生调用的持久助手消息。
+   * 普通校验错误转成模型可读的恢复提示；预算、取消及副作用待核验则抛出中断当前步骤，
+   * 不能作为普通工具失败让模型立即再试。
+   */
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
     while (this.toolActive >= limit) {
@@ -77,7 +81,8 @@ export class ToolExecutionService {
   }
   /**
    * 执行同一轮工具调用并按原始顺序保存结果，随后记录无进展失败和检查点。
-   * 仅当每个工具策略都显式允许并行时才并发执行。
+   * 仅当每个工具策略都显式允许并行时才并发执行；未知工具保守串行。
+   * 并行分支等待全部执行收束，再按模型顺序写结果，保证上下文中的调用/结果配对稳定。
    */
   async executeCalls(
     task: Task,
@@ -191,6 +196,7 @@ export class ToolExecutionService {
       if (task.status !== 'RUNNING') return;
       const run = store.require<Run>('runs', task.runId);
       const progressKey = hash(
+        // 将实际领域状态和有进展的成功操作纳入指纹；单纯 READY/RUNNING 轮转不能重置失败计数。
         stable({
           contract: run.contract,
           authorized: run.authorized,
@@ -261,7 +267,10 @@ export class ToolExecutionService {
       if (stopped && warnedBefore) this.kernel.wait(store.require<Task>('tasks', task.id), 'no_progress');
     });
   }
-  /** 从持久消息中找出尚未配对结果的调用，恢复前先校验调用序列。 */
+  /**
+   * 从持久消息找出尚未配对结果的调用，并交回同一网关路径核验/重放。
+   * 重放不是无条件重跑；网关会复用 DONE/FAILED 操作，对 UNCERTAIN 保持人工核验。
+   */
   async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
     const sequence = inspectToolCalls(this.kernel.history(task));
     if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);

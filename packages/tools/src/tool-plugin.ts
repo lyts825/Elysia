@@ -6,9 +6,13 @@ import type { pluginServices } from './plugin-services.js';
 
 /** Only the gateway can create an authorized invocation and record its outcome. */
 export interface ToolInvocation {
+  /** 网关已重读并校验为可执行状态的任务快照。 */
   task: Task;
+  /** 本次工具调用所属的模型执行尝试。 */
   attempt: Attempt;
+  /** 预先分配的操作身份；外部动作开始前由网关持久记录 INTENT。 */
   operation: Operation;
+  /** 执行器取消信号，具体工具须传递给支持取消的 I/O。 */
   signal: AbortSignal;
 }
 
@@ -26,8 +30,11 @@ export interface ToolPolicy {
 export interface ToolContribution {
   readonly name: string;
   readonly policy: Readonly<ToolPolicy>;
+  /** 模型可见定义，调用者应获得可独立调整的副本。 */
   definition(): ToolDefinition;
+  /** 将不可信 JSON 参数解析成该工具接受的输入；失败时不能执行。 */
   parse(input: unknown): Record<string, unknown>;
+  /** 仅执行动作；操作账本和成功/失败事件由网关统一提交。 */
   execute(invocation: ToolInvocation, args: any): unknown;
 }
 

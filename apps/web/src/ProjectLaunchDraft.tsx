@@ -18,6 +18,11 @@ export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
     acceptanceCriteria: setup?.acceptanceCriteria ?? launch.acceptanceCriteria,
   };
 }
+/**
+ * 对照交付项创建草稿与当前计划，版本前进后要求按字段核对，保留本次自定义要求和配置。
+ * 对照身份包含当前看板、来源项和完整草稿，任一变化都不沿用旧选择；无法解析的 setupRaw
+ * 只显示原稿问题，不能用项目标准静默覆盖实际创建表单中的需求。
+ */
 export function ProjectLaunchDraft({
   board,
   draft,

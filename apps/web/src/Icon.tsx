@@ -2,6 +2,7 @@
 import type React from 'react';
 import { BrandGlyph } from './Brand';
 
+/** 统一尺寸和描边的装饰图标；可访问名称由外层按钮或可见文本提供，图标不重复朗读。 */
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   // 品牌标记使用专用组件，其余名称从统一的 SVG 路径表选择。
   if (name === 'spark') return <BrandGlyph size={size} />;

@@ -49,6 +49,7 @@ export function importedLibrary(store: Store): LocalLibrary {
     throw new AppError('LOCAL_LIBRARY_INVALID', '本机同步目录损坏，请恢复备份', false, null, 409);
   }
 }
+/** 保存库记录；修订递增、来源扫描和冲突校验由上层同步服务负责，此处只执行序列化写入。 */
 export function writeImportedLibrary(store: Store, library: LocalLibrary) {
   store.db
     .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
@@ -101,6 +102,7 @@ export function scopedLocalItems(store: Store, scope?: CapabilityScope): LocalSt
     ];
   });
 }
+/** 按作用域、身份和可选类型查询资源项；默认拒绝禁用项，不从冻结快照绕过当前撤销。 */
 export function localItem(
   store: Store,
   id: string,
@@ -131,6 +133,7 @@ export function localItemText(store: Store, item: LocalStoredItem) {
     throw new AppError('LOCAL_CONTENT_CHANGED', '同步项正文哈希不一致，请重新同步', false, null, 409);
   return bytes.toString('utf8');
 }
+/** 只列出当前范围内启用的记忆元数据，目录响应不携带完整正文或内部对象引用。 */
 export function listLocalMemories(store: Store, scope?: CapabilityScope) {
   return scopedLocalItems(store, scope)
     .filter((item) => item.kind === 'memory' && item.enabled)
@@ -174,6 +177,7 @@ export function pageLocalText(
     trust: 'untrusted',
   };
 }
+/** 先校验记忆可见性及内容摘要，再按 UTF-16 偏移读取一页不可信资料。 */
 export function readLocalMemory(
   store: Store,
   id: string,
@@ -183,6 +187,10 @@ export function readLocalMemory(
   const item = localItem(store, id, 'memory', false, scope);
   return pageLocalText(item, localItemText(store, item), options);
 }
+/**
+ * 读取已同步技能的入口或显式资源。拒绝绝对路径、目录跳转与控制字符；有快照时只使用
+ * 该快照捕获的正文和资源，未冻结文件不能自动从更新后的本机来源补入。
+ */
 export function loadLocalSkillFile(
   store: Store,
   id: string,
@@ -223,6 +231,7 @@ export function loadLocalSkillFile(
     path: normalized,
   });
 }
+/** 返回当前授权范围内 MCP 配置副本；读取配置本身不启动进程、不连接远端。 */
 export function readLocalMcpConfig(store: Store, id: string, scope?: CapabilityScope): LocalMcpConfig {
   const item = localItem(store, id, 'mcp', false, scope);
   if (!item.config) throw new AppError('MCP_CONFIG_MISSING', 'MCP 配置不存在');

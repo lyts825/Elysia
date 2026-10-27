@@ -1,6 +1,7 @@
 /* 处理模型目录、文本能力和默认模型选择。 */
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 
+/** 供应商目录的能力提示；可选字段允许兼容旧目录，不代表连接或当前型号已通过实际调用。 */
 export type CatalogModel = {
   id: string;
   name?: string;

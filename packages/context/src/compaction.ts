@@ -36,6 +36,7 @@ function blocks(messages: Message[]) {
   return result;
 }
 
+/** 从工具 JSON 中摘取可定位结果的标量字段；解析失败只省略摘要，原文仍由引用保留。 */
 function outcome(text: string): unknown {
   try {
     const parsed = JSON.parse(text);
@@ -99,6 +100,7 @@ function memory(
   excerptSize: number,
   approvedState?: ApprovedTaskWorkingState,
 ) {
+  // 未经用户批准的要求不得改写或概括；只对完全相同的正文合并索引与出现次数。
   const requirements: { indexes: number[]; text: string; occurrences: number; lastIndex: number }[] = [];
   const seen = new Map<string, number>();
   const records: MemoryRecord[] = [];
@@ -167,7 +169,9 @@ function memory(
 }
 
 export type CompactionResult = {
+  /** 实际可发送的历史视图，不修改存储中的原始 Message。 */
   history: Message[];
+  /** 有裁剪或摘要时指向完整原文，否则为 null。 */
   originalRef: string | null;
   memory: unknown | null;
   prunedToolMessages: number;
@@ -200,19 +204,22 @@ export function compactHistory(
     beforeTokens,
     afterTokens: beforeTokens,
   };
+  // 低于触发比率时不为压缩而改写上下文，保留稳定的历史前缀。
   if (beforeTokens <= options.inputBudget * COMPACTION_TRIGGER || !history.length) return result;
   const groups = blocks(history);
+  // 批准的工作状态必须仍绑定同一合同和消息前缀，否则继续逐字保存原始用户要求。
   const approvedState =
     options.approvedState &&
     options.workingStateContext &&
     validateTaskWorkingState(options.approvedState, { ...options.workingStateContext, history }).valid
       ? options.approvedState
       : undefined;
-  // Retain at least the last four complete exchanges, never a suffix of a tool batch.
+  // 至少保留最近四个消息块；普通消息各算一块，工具调用及其连续结果合为一块，不能只留后半批。
   const recentStart = Math.min(
     groups[Math.max(0, groups.length - 4)].start,
     groups.find((group) => !group.closed)?.start ?? history.length,
   );
+  // 第一层只裁剪旧的大工具结果，保留最近至少四个消息块以及所有未闭合工具批次。
   const working = history.map((message, index) => {
     if (index >= recentStart || message.role !== 'tool' || Array.from(message.text).length <= 8192)
       return message;
@@ -234,6 +241,7 @@ export function compactHistory(
   }
   if (result.afterTokens <= options.inputBudget * COMPACTION_TARGET || recentStart === 0) return result;
   const target = options.inputBudget * COMPACTION_TARGET;
+  // 第二层只能在完整交互块之间切断；批准检查点也只允许覆盖其确认的历史前缀。
   const boundaries = groups
     .filter(
       (group) =>
@@ -275,6 +283,7 @@ export function compactHistory(
       };
       const candidate = [summary, ...working.slice(cut)];
       const afterTokens = options.estimate(candidate);
+      // 只接受真正减小估算体积且仍通过配对验证的候选；即使达不到目标也保留最佳结果。
       if (afterTokens < result.afterTokens) {
         options.validate(candidate);
         result.history = candidate;

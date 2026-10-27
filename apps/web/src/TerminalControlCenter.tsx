@@ -91,6 +91,7 @@ const protocolLabels: Record<TerminalConnectionProtocol, string> = {
   gemini: 'Gemini API',
 };
 const message = (error: unknown) => (error instanceof Error ? error.message : '操作未完成，请重试。');
+/** 新建连接只有本地身份和空密钥，应用预设不代表已建立或验证远端连接。 */
 const newConnection = (index = 0): ConnectionDraft => ({
   id: crypto.randomUUID(),
   revision: 0,
@@ -98,6 +99,7 @@ const newConnection = (index = 0): ConnectionDraft => ({
   credentialMode: 'vault',
   apiKey: '',
 });
+/** 从安全视图生成表单草稿；服务端不会返回原始密钥，因此 apiKey 始终从空值开始。 */
 const connectionDraft = (item: TerminalConnectionView): ConnectionDraft => ({
   id: item.id,
   revision: item.revision,
@@ -109,6 +111,7 @@ const connectionDraft = (item: TerminalConnectionView): ConnectionDraft => ({
   apiKeyEnv: item.auth.kind === 'environment' ? item.auth.env : 'ELYSIA_TERMINAL_API_KEY',
   apiKey: '',
 });
+/** 规范化可编辑字段用于脏检查；本机存储模式忽略环境变量名，密钥输入去除首尾空白。 */
 const connectionValues = (draft: ConnectionDraft | null) =>
   draft &&
   JSON.stringify({
@@ -120,8 +123,10 @@ const connectionValues = (draft: ConnectionDraft | null) =>
     apiKeyEnv: draft.credentialMode === 'environment' ? draft.apiKeyEnv : '',
     apiKey: draft.apiKey.trim(),
   });
+/** 只比较项目可编辑选择，排除 revision 等服务端元数据，避免误报未保存修改。 */
 const preferenceValues = (value: TerminalProjectPreferences | null) =>
   value && JSON.stringify({ defaultProfileId: value.defaultProfileId, connectionId: value.connectionId });
+/** 优先取该应用当前默认模板，否则回退同应用的首个模板，不跨应用借用配置。 */
 const appProfile = (settings: SurfaceTerminalSettings, appId: TerminalAppId) =>
   settings.profiles.find((profile) => profile.id === settings.defaultProfileId && profile.agent === appId) ||
   settings.profiles.find((profile) => profile.agent === appId);
@@ -206,6 +211,7 @@ export function TerminalControlCenter({
   const editorFocus = useRef(false);
   const submitting = useRef(false);
   const drafts = useRef({ projectDraft, projectBaseline });
+  // 读取完成时使用最新草稿比较，不能靠请求发起时捕获的旧闭包判断用户是否有修改。
   drafts.current = { projectDraft, projectBaseline };
   const profileKeys = useRef<Partial<Record<TerminalAppId, string>>>({});
   const [reads, setReads] = useState<Record<ReadRegion, ReadState>>(
@@ -217,6 +223,7 @@ export function TerminalControlCenter({
   const readControllers = useRef<Partial<Record<ReadRegion, AbortController>>>({});
   const latestData = useRef({ overview, preferences });
   latestData.current = { overview, preferences };
+  // 指纹同时含模板、应用绑定和连接 revision，配置来源变化后诊断结果必须重新检查。
   profileKeys.current = Object.fromEntries(
     (overview?.catalog || []).map((item) => {
       const binding = overview?.apps.entries.find((entry) => entry.id === item.id)?.connectionId;
@@ -314,6 +321,7 @@ export function TerminalControlCenter({
     };
   }, [project?.id]);
   const running = jobs.some((job) => job.status === 'running');
+  // 只在安装进行中轮询；一次读取结束后再安排下一次，避免慢请求重叠。
   useEffect(() => {
     if (!running) return;
     const controller = new AbortController();
@@ -354,6 +362,7 @@ export function TerminalControlCenter({
       activity(false);
     }
   }
+  /** 按应用设置修订保存默认应用和连接绑定，再重读由服务端同步生成的终端模板。 */
   async function saveApps(next: TerminalControlApps) {
     if (!overview) return;
     const apps = await mutation<TerminalControlApps>(
@@ -370,6 +379,7 @@ export function TerminalControlCenter({
     savedSettings(await api<SurfaceTerminalSettings>('/terminal/settings'));
     controlUpdated(control);
   }
+  /** 所有模板保存都通过此入口同步本面板和外层任务创建器的配置。 */
   function savedSettings(next: SurfaceTerminalSettings) {
     setSettings(next);
     updated(next);
@@ -380,6 +390,7 @@ export function TerminalControlCenter({
   useEffect(() => {
     if (pending?.kind === 'close' && !connectionDirty && !projectDirty && !templateDirty) setPending(null);
   }, [pending, connectionDirty, projectDirty, templateDirty]);
+  /** 建立新编辑基线；只有明确切换或已确认保存时调用，刷新不得覆盖脏草稿。 */
   function replaceConnection(next: ConnectionDraft) {
     setDraft(next);
     setConnectionBaseline(next);
@@ -399,6 +410,7 @@ export function TerminalControlCenter({
       replaceConnection(next);
     }
   }
+  /** 汇总连接、项目和模板三处脏状态，任意未保存内容都需要离开确认。 */
   function requestClose() {
     if (busy) return;
     if (connectionDirty || projectDirty || templateDirty) {
@@ -416,6 +428,7 @@ export function TerminalControlCenter({
   useEffect(() => {
     if (error && !busy) operationError.current?.focus();
   }, [error, busy]);
+  /** 分类切换仅清除操作反馈，保留各表单草稿；模板首次访问后保持挂载以保留编辑状态。 */
   function selectTab(next: typeof tab) {
     setInitialFocus(undefined);
     if (next === 'templates') setTemplateVisited(true);
@@ -423,6 +436,7 @@ export function TerminalControlCenter({
     setError('');
     setNotice('');
   }
+  /** 把安装失败的可修复原因映射到版本字段、检查按钮或模板，不自动重新安装。 */
   function repairInstallation(job: TerminalCliInstallationJob, action: TerminalCliInstallRepair) {
     if (busy || running) return;
     if (action === 'template') {
@@ -450,6 +464,7 @@ export function TerminalControlCenter({
       setNotice('请检查网络和 Docker 后，点击该应用的安装或更新按钮重试。');
     }
   }
+  /** 保存诊断来源与修复目标，切换到对应编辑页；修复完成后可回到原模板重新核对。 */
   function repairDiagnostic(target: TerminalDiagnosticRepair, origin: 'apps' | 'project') {
     setRepairTarget({ target, origin, request: Date.now() });
     if (target.kind === 'connection') {
@@ -486,6 +501,7 @@ export function TerminalControlCenter({
     if (selectedConnection && !connectionDirty && draft?.revision !== selectedConnection.revision)
       replaceConnection(connectionDraft(selectedConnection));
   }, [selectedConnection, connectionDirty, draft?.revision]);
+  // 外部诊断定位等待目录读取成功后执行，不用尚未加载的空列表判定连接已删除。
   useEffect(() => {
     if (
       initialFocus?.kind !== 'connection' ||
@@ -498,6 +514,7 @@ export function TerminalControlCenter({
     const target = overview?.connections.find((connection) => connection.id === initialFocus.id);
     if (target) selectConnection(connectionDraft(target));
   }, [initialFocus, overview, reads.control, busy]);
+  // 提交体带连接修订；仅在本机存储模式且新输入非空时附上原始 API Key。
   const draftBody = draft
     ? {
         expectedRevision: draft.revision,
@@ -512,6 +529,7 @@ export function TerminalControlCenter({
         ...(draft.credentialMode === 'vault' && draft.apiKey.trim() ? { apiKey: draft.apiKey.trim() } : {}),
       }
     : null;
+  // Schema 有效仍不代表已验证连接；本机存储模式还必须有新密钥或已有安全凭据。
   const validConnection =
     !!draftBody &&
     TerminalConnectionWrite.safeParse({ ...draftBody, commandId: crypto.randomUUID() }).success &&
@@ -522,6 +540,7 @@ export function TerminalControlCenter({
     settings.profiles.find((entry) => entry.agent === overview?.apps.defaultAppId);
   const projectProtocols =
     overview?.catalog.find((entry) => entry.id === projectProfile?.agent)?.protocols || [];
+  // 只显示当前分类依赖区域的读取错误，其他区域的独立失败不会阻塞当前表单。
   const visibleRegions: ReadRegion[] =
     tab === 'apps'
       ? ['control', 'settings', 'installations', 'capabilities']
@@ -887,6 +906,7 @@ export function TerminalControlCenter({
                                     expectedRevision: settings.revision,
                                   },
                                 );
+                                // 安装成功与采用镜像分开；只有用户点击应用后才更新未来任务的模板。
                                 savedSettings(next);
                                 finishRepair('install');
                                 setNotice('镜像已保存，供新任务使用。');
@@ -904,6 +924,7 @@ export function TerminalControlCenter({
                         data-cli-check={item.id}
                         disabled={busy || !!checking || job?.status === 'running'}
                         onClick={async () => {
+                          // 只把结果关联到检查发起时的配置指纹，期间修改绑定后迟到结果作废。
                           setChecking(item.id);
                           setError('');
                           try {
@@ -941,6 +962,7 @@ export function TerminalControlCenter({
                                     : {}),
                                 },
                               );
+                              // 这里只确认后台安装任务已建立，最终成功/失败由独立轮询与历史读取给出。
                               setJobs((current) => [
                                 installed,
                                 ...current.filter((value) => value.id !== installed.id),
@@ -1098,6 +1120,7 @@ export function TerminalControlCenter({
                   event.preventDefault();
                   if (!validConnection) return;
                   void perform(async () => {
+                    // draftBody 绑定原连接 revision；成功后从安全返回值重建草稿，立即清除密钥输入。
                     const saved = await mutation<TerminalConnectionView>(
                       `/terminal/control/connections/${draft.id}`,
                       draftBody!,
@@ -1293,6 +1316,7 @@ export function TerminalControlCenter({
                             { expectedRevision: draft.revision },
                             'DELETE',
                           );
+                          // 删除可能改变项目默认关联，先保留未保存项目草稿，再以新服务端基线重建有效选择。
                           const editedProject = projectDirty ? projectDraft : null;
                           setDraft(null);
                           setConnectionBaseline(null);
@@ -1329,6 +1353,7 @@ export function TerminalControlCenter({
               onSubmit={(event) => {
                 event.preventDefault();
                 void perform(async () => {
+                  // 项目偏好独立使用自己的 revision，只保存模板和连接选择，不改已有任务的冻结配置。
                   const saved = await mutation<TerminalProjectPreferences>(
                     `/terminal/control/projects/${project.id}/preferences`,
                     {

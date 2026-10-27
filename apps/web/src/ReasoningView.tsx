@@ -10,6 +10,7 @@ import { ReasoningPanel } from './ReasoningPanel';
 
 type Reading = { text?: string; expanded: boolean; scrollTop: number };
 export type ReasoningReadings = Map<string, Reading>;
+/** 优先按 request ID 定位，使同一流转为历史消息后仍复用读取、展开和滚动状态。 */
 export const reasoningIdentity = (runId: string, requestId?: string, messageId?: string) =>
   JSON.stringify([runId, requestId ? 'request' : 'message', requestId || messageId]);
 
@@ -34,6 +35,10 @@ export function ReasoningView(props: {
   return <ReasoningReader key={identity} {...props} identity={identity} />;
 }
 
+/**
+ * 公开推理的分页读取器。已读正文与实时流只按一致前缀合并，状态缓存在上层有界 Map 中。
+ * readUnavailable 的新一代标记会使此前的远端核验失效，必须再次读取才能解除不可读提示。
+ */
 function ReasoningReader({
   identity,
   runId,
@@ -64,6 +69,7 @@ function ReasoningReader({
   const scrollPosition = useRef(reading.scrollTop);
   const current = useRef({ text, reading, onPage });
   current.current = { text, reading: { ...reading, scrollTop: scrollPosition.current }, onPage };
+  // 删除再插入按最近使用排序，最多保留 64 条，避免长会话无限积累阅读正文。
   const remember = useCallback(
     (value: Reading) => {
       readings.delete(identity);
@@ -85,6 +91,7 @@ function ReasoningReader({
   const path = messageId
     ? `/runs/${runId}/messages/${messageId}/reasoning`
     : `/runs/${runId}/requests/${requestId}/reasoning`;
+  // pending 同步阻止重复点击，offset 取发起时的已读长度；响应后再与实时增长的前缀核对。
   const load = useCallback(async () => {
     if (pending.current) return;
     pending.current = true;
@@ -102,6 +109,7 @@ function ReasoningReader({
         abort.signal,
       );
       if (!alive.current || abort.signal.aborted) return;
+      // 除 HTTP 成功外还验证身份、页大小、元数据和连续偏移，不能将异常页拼接进已读文本。
       if (
         !page ||
         page.runId !== runId ||
@@ -123,6 +131,7 @@ function ReasoningReader({
       )
         throw new Error('思考内容的读取位置无法核对，请重新读取。');
       const prior = current.current.text ?? '';
+      // 请求期间实时流可能已覆盖本页前缀；核对重叠区后仅追加尚未显示的后缀。
       const overlap = Math.min(page.text.length, Math.max(0, prior.length - offset));
       if (offset > prior.length || prior.slice(offset, offset + overlap) !== page.text.slice(0, overlap))
         throw new Error('思考内容已更新，请重试读取。');

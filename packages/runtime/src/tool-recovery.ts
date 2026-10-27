@@ -15,7 +15,10 @@ export interface ToolRecovery {
 }
 
 /** Advice for the next model step, never permission changes or automatic retries. */
-/** 根据工具错误码生成恢复建议，并附上去重排序后的可用工具列表。 */
+/**
+ * 将错误语义映射为下一模型步骤可读的纠正建议，并附当前真实可用工具列表。
+ * 返回值不修改权限、不替用户解除停止，也不自动重试；未知副作用始终要求先核验原操作。
+ */
 export function toolRecovery(code: string, tool: string, toolNames: string[]): ToolRecovery {
   const availableTools = [...new Set(toolNames)].sort();
   const advice = (kind: ToolRecovery['kind'], nextAction: string): ToolRecovery => ({

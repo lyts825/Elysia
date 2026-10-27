@@ -60,6 +60,11 @@ function RoutingSelection({
 export function ProjectModelRouting(props: { projectId: string; cache: WorkbenchCache; archived?: boolean }) {
   return <RoutingEditor key={props.projectId} {...props} />;
 }
+/**
+ * 编辑项目默认角色模型，草稿嵌在项目能力容器中，更新时必须保留容器其他字段。
+ * 读取基线过期时禁用新保存；发送前持久化精确请求，未知结果仅允许原样核对。
+ * 保存只影响后续任务，已有任务的模型绑定由服务端冻结记录决定。
+ */
 function RoutingEditor({
   projectId,
   cache,
@@ -111,6 +116,7 @@ function RoutingEditor({
       active = false;
     };
   }, [cache, key, retry]);
+  /** 读取最新草稿容器而不从 render 快照拼接，避免覆盖同期编辑的能力或记忆内容。 */
   function container() {
     const raw = cache.get(key);
     const value = raw === undefined || raw === '' ? { version: 1 } : JSON.parse(String(raw));
@@ -182,6 +188,7 @@ function RoutingEditor({
     update((value) => ({ ...(value ?? draft), policy: { ...(value?.policy ?? draft.policy), ...patch } }));
     setNotice('');
   }
+  /** 核对当前基线与策略后保存；成功仅清理相同命令及未变化策略，明确拒绝使读取失效。 */
   async function save(request: Request) {
     if (writing.current || archived || !live.current) return;
     if (

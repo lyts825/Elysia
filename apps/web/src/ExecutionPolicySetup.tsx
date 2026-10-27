@@ -22,6 +22,10 @@ export function executionPolicyIssue(
     return '请选择已验证的审核连接。';
   return '';
 }
+/**
+ * 编辑创建时冻结的工具审核与 exec 命令后端，字段变化只回传策略，不直接发起审核或容器。
+ * 规则审核、模型审核和后端隔离不扩大原授权；实际可执行性仍由创建及调用时的服务端门禁决定。
+ */
 export function ExecutionPolicySetup({
   review,
   backend,

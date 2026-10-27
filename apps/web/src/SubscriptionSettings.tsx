@@ -19,6 +19,11 @@ type State = {
   accounts: Account[];
   attempt?: { id: string; status: string; accountId?: string; message?: string };
 };
+/**
+ * 管理兼容的直接订阅授权流程。账号状态持续轮询，只有本面板发起的 attempt 完成才
+ * 自动选择其账号；模型目录绑定账号、计划资格、额度阻塞和刷新代次，旧目录不能继续证明就绪。
+ * 所有选择通过 change 回传供应商草稿，账号连接与配置保存仍是两个独立步骤。
+ */
 export function SubscriptionSettings({
   accountId,
   model,
@@ -121,6 +126,7 @@ export function SubscriptionSettings({
   }, [accountId, selected?.connected, selected?.planEnabled, selected?.usageBlocked, reload]);
   const chosenModel = models.find((item) => item.id === model);
   const catalogCurrent = loadedCatalog === catalogKey;
+  // 就绪同时要求当前账号可用、目录当前、型号支持文字，且没有在途操作或读取错误。
   const valid =
     !!selected?.connected &&
     selected.planEnabled &&
@@ -147,6 +153,7 @@ export function SubscriptionSettings({
       setBusy(false);
     }
   };
+  /** 保存登录 attempt 身份，后续轮询只消费这一明确请求的成功结果。 */
   const login = (id?: string, consent = false) =>
     act(async () => {
       const result = await mutation('/subscription/login', { accountId: id, consent });

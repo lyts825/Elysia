@@ -1,4 +1,5 @@
 // 识别评审模型与执行模型之间的身份冲突。
+/** 比较实际型号身份所需的最小分配信息，key/title 用于定位冲突的具体任务。 */
 export interface ReviewModelAssignment {
   key: string;
   title: string;

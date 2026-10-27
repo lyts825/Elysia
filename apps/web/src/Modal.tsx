@@ -6,6 +6,11 @@ import { usePresenceMotion } from './Motion';
 
 export const ModalErrorContext = createContext('');
 
+/**
+ * 通用模态容器：在当前入口内隔离背景交互，顶层弹窗拥有 Tab 环和 Esc 行为。
+ * busy 阻止背景点击和 Esc 关闭；退出动画期间立即取消交互，销毁后恢复原 inert 和焦点。
+ * 最新 close/busy 保存在 ref 中，使长期键盘监听不捕获过期回调。
+ */
 export function Modal({
   title,
   subtitle,

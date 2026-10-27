@@ -69,6 +69,7 @@ export function TerminalInstallHistory({
   const [busy, setBusy] = useState(false),
     [readRequest, setReadRequest] = useState(0);
   const [readPage, setReadPage] = useState<{ number: number; appId: TerminalAppId } | null>(null);
+  // readPage 记录已经成功显示的数据来源，翻页失败时不会把旧结果标成新页。
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -135,6 +136,7 @@ export function TerminalInstallHistory({
         </p>
       )}
       {page?.items.map((job) => {
+        // 安装记录可绑定原模板；没有固定模板的历史任务需用户从同应用模板中明确选择。
         const profile = job.profileId
           ? settings.profiles.find((value) => value.id === job.profileId && value.agent === appId)
           : settings.profiles.find((value) => value.id === targets[job.id] && value.agent === appId);

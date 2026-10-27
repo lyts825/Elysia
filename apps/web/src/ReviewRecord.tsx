@@ -6,6 +6,10 @@ import { ArtifactChanges } from './ArtifactChanges';
 import './review-history.css';
 import './review-record.css';
 
+/**
+ * 展示单份不可编辑的历史结论及相对当前交付的差异，renderNotes 可替换为备注选择器。
+ * 旧标准没有文字快照时明确提示缺失，不能用当前同索引的标准补写历史。
+ */
 export function ReviewRecord({
   value,
   reload,

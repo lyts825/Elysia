@@ -58,6 +58,7 @@ export function equalDeliveryArtifactMetadata(a: DeliveryArtifactMetadata, b: De
   );
 }
 
+/** 校验投影字段及其行身份，避免仅 JSON 可解析就接受错行或畸形缓存。 */
 function valid(value: DeliveryArtifactMetadata, id: string) {
   return (
     value?.id === id &&
@@ -77,6 +78,10 @@ function valid(value: DeliveryArtifactMetadata, id: string) {
  * Even an older writer or another SQLite connection clears it on raw body/data repair. */
 export class ArtifactDeliveryMetadataReads {
   private save: StatementSync;
+  /**
+   * 建立投影与脏队列触发器。readBody 读取权威产物，refresh 用于正文语义已变化的投影修复；
+   * 旧库首次建立队列时只登记缺失或版本/语义不匹配的行，不立即解压全部产物。
+   */
   constructor(
     private db: DatabaseSync,
     private readBody: (id: string) => Artifact,
@@ -197,6 +202,10 @@ export class ArtifactDeliveryMetadataReads {
     };
   }
 
+  /**
+   * 先核对缓存摘要与字段，可信时直接返回；否则用完整产物重新构建。
+   * 原正文与 SQL 行的运行归属不一致则失败，不能靠重建投影掩盖错误关联。
+   */
   private readRow(row: MetadataRow): DeliveryArtifactRead {
     let metadata: DeliveryArtifactMetadata | undefined;
     if (row.metadata_json && hash(row.metadata_json) === row.semantic_hash) {

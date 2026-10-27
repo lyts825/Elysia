@@ -19,6 +19,7 @@ export const ProjectDeliveryItemInput = z
   })
   .strict();
 export type ProjectDeliveryItemInput = z.infer<typeof ProjectDeliveryItemInput>;
+/** 看板整体编辑命令，expectedRevision 防止覆盖其他窗口对目标或条目的修改。 */
 export const ProjectDeliveryBoardInput = z
   .object({
     commandId: z.string().uuid(),
@@ -29,10 +30,12 @@ export const ProjectDeliveryBoardInput = z
     items: z.array(ProjectDeliveryItemInput).max(40),
   })
   .strict();
+/** 将一次任务绑定到某交付项，绑定前必须仍匹配看板修订。 */
 export const ProjectDeliveryBinding = z
   .object({ itemId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
   .strict();
 export type ProjectDeliveryBinding = z.infer<typeof ProjectDeliveryBinding>;
+/** 用户确认的是特定条目修订及运行交付指纹，后续任一内容变化可使该确认过期。 */
 export interface ProjectDeliveryConfirmation {
   itemRevision: number;
   runId: string;
@@ -49,6 +52,7 @@ export interface ProjectDeliverySourceNotes {
   stale: number;
   unavailable: number;
 }
+/** 交付项关联任务的轻量当前视图；无法核验时用 missing/issue 表达，而非伪造已完成状态。 */
 export interface ProjectDeliveryRunSummary {
   runId: string;
   title: string;
@@ -63,6 +67,7 @@ export interface ProjectDeliveryRunSummary {
   issue?: string;
   executionHold?: ExecutionHold;
 }
+/** ready 需任务结束、人工审核/确认和来源反馈均有效；其他值说明阻止冻结的具体阶段。 */
 export type ProjectDeliveryReadiness =
   | 'unlinked'
   | 'unconfirmed'
@@ -93,6 +98,7 @@ export interface ProjectDeliveryBoard {
   items: ProjectDeliveryItem[];
   counts: { total: number; required: number; ready: number; requiredReady: number; unavailable: number };
 }
+/** 单项交付的历次任务关联，current 指出当前采用的尝试，其余保留供追溯。 */
 export interface ProjectDeliveryAttempts {
   projectId: string;
   itemId: string;
@@ -172,6 +178,7 @@ export interface ProjectDeliveryManifestList {
   items: { id: string; title: string; createdAt: string; itemCount: number; hash: string }[];
   page: RecordPage;
 }
+/** 冻结内容与当前可用性分开返回，记录后来变化不改写已冻结清单。 */
 export interface ProjectDeliveryManifestView {
   manifest: ProjectDeliveryManifest;
   /** Current record metadata only. No file bytes are read or verified by this view. */
@@ -220,6 +227,7 @@ export const ProjectDeliveryBundleJobInput = z
     kind: z.enum(['check', 'download', 'save']),
   })
   .strict();
+/** 临时导出工作进度；completed 仅表示本次工作结束，是否保存本地归档由 archive 单独证明。 */
 export interface ProjectDeliveryBundleJob {
   id: string;
   clientId: string | null;

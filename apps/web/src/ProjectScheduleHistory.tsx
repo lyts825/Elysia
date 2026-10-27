@@ -23,6 +23,10 @@ export function ProjectScheduleHistory(props: Props) {
   return <ScheduleHistory key={`${surface}:${props.projectId}:${props.scheduleId}`} {...props} />;
 }
 
+/**
+ * 保留最后成功历史页，目标游标与可见位置分开维护，取消或错误不会推进显示页码。
+ * 每页核对项目、定时任务、页码及基本形状，打开运行也是可失败的独立动作。
+ */
 function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props) {
   const { api } = useSurfaceClient();
   const identity = useId();
@@ -35,6 +39,7 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
     live = useRef(true),
     target = useRef<Position>(first());
 
+  /** 同类新读取取消旧请求；仅最新 controller 的成功结果可提交 display。 */
   async function read(position: Position) {
     reader.current?.abort();
     const controller = new AbortController();

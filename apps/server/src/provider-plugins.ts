@@ -9,7 +9,10 @@ import type { CodexSubscription } from './codex-subscription.js';
 import type { SubscriptionService } from './subscription.js';
 import type { ProviderKeys } from './provider-keys.js';
 
-/** 为 API 密钥、ChatGPT 订阅和 Codex 订阅装配匹配的供应商适配器。 */
+/**
+ * 在服务边界注入 API 密钥和订阅凭据能力，按协议/认证方式精确注册适配器。
+ * 配置编译时不提前读取密钥；实际请求时通过闭包取冻结绑定的凭据，避免运行时直接访问账号服务。
+ */
 /** Server-owned account capabilities stay out of the runtime and of the terminal surface. */
 export function serverProviderPlugins(services: {
   codex: Pick<CodexSubscription, 'adapter'>;

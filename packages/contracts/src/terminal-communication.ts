@@ -67,6 +67,7 @@ const resolutionDraft = z
   })
   .strict();
 
+/** 恢复本地核验草稿的完整原条目快照；格式或身份字段损坏时返回 null，不发起处理操作。 */
 export function readTerminalResolutionDraft(
   value: string | boolean | undefined,
 ): TerminalResolutionDraft | null {
@@ -89,6 +90,10 @@ export type TerminalPeerPage = {
   page: { total: number; hasMore: boolean; nextBefore: string | null };
 };
 
+/**
+ * 从不可信浏览器缓存恢复待发送正文与目标，限制文本长度并保留有效的命令身份。
+ * 解析失败回到空草稿；返回值仍须用户提交并由服务端验证，读取缓存不会发送消息。
+ */
 export function readTerminalCommunicationDraft(
   value: string | boolean | undefined,
 ): TerminalCommunicationDraft {

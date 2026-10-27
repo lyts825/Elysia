@@ -12,6 +12,7 @@ type Chunk = { chunk_index: number; characters: number; content: Uint8Array };
 
 /** 持久化请求中正在生成的权威正文；文本提交后才可展示，每次最多重写一个旧尾块。 */
 export class RequestStreams {
+  /** 建立请求级长度元数据和按序分块表，外键使清除请求或流记录时同步删除其块。 */
   constructor(private db: DatabaseSync) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS request_streams_v1(
@@ -30,6 +31,7 @@ export class RequestStreams {
   start(requestId: string) {
     this.db.prepare('INSERT INTO request_streams_v1 VALUES(?,0,0)').run(requestId);
   }
+  /** 按单块的最大 JSON 编码长度限制解压，并核对块声明的字符数与实际文本。 */
   private decode(row: Chunk): string {
     const text: unknown = JSON.parse(
       gunzipSync(row.content, { maxOutputLength: REQUEST_STREAM_CHUNK_CHARS * 6 + 2 }).toString('utf8'),
@@ -43,6 +45,7 @@ export class RequestStreams {
       throw new AppError('REQUEST_STREAM_CORRUPT', '模型流正文分块不完整，请保留数据并检查备份');
     return text;
   }
+  /** 读取权威长度和块数；流记录缺失意味着持久正文不可证明完整，必须报错。 */
   private state(requestId: string): Stream {
     const stream = this.db
       .prepare('SELECT characters,chunk_count FROM request_streams_v1 WHERE request_id=?')

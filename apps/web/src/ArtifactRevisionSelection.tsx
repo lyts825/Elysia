@@ -58,6 +58,7 @@ function RevisionMetadata({ label, value }: { label: string; value: DeliveryArti
   );
 }
 
+/** 只展示差异元数据和要求，可嵌入其他面板；不将 removed 项解释成仍可读取的旧文件。 */
 export function ArtifactRevisionSummary({
   items,
   embedded = false,
@@ -140,6 +141,10 @@ export function ArtifactRevisionSummary({
     </section>
   );
 }
+/**
+ * 管理续接草稿中的差异清单；每项保留选取时的交付指纹。
+ * 当前指纹变化后可单项重读最新比较结果，已输入的修改要求仍由草稿保存。
+ */
 export function ArtifactRevisionSelection({
   runId,
   raw,
@@ -176,6 +181,7 @@ export function ArtifactRevisionSelection({
       request.current = null;
     };
   }, [runId, fingerprint]);
+  /** 按旧复核和产物 ID 查询当前差异，响应必须匹配当前运行、复核和指纹才能供用户重新确认。 */
   async function reread(entry: ArtifactRevisionEntry) {
     if (!fingerprint || busy || disabled) return;
     const controller = new AbortController();

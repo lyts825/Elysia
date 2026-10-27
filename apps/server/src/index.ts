@@ -47,6 +47,7 @@ try {
   const surfaces = await createSurfaceServer(store, terminalStore, { port: preferredPort });
   server = surfaces.native;
   terminalServer = surfaces.terminal;
+  // 恢复先核验领域记录，再处理网关和容器副作用；这期间执行器尚未启动，不能抢跑新任务。
   server.kernel.recover();
   await server.executor.gateway.recoverOperations();
   await server.terminal.recover();
@@ -74,6 +75,7 @@ try {
     server.allowFrontendOrigin(origin);
   }
   server.executor.start();
+  // 两入口共享 HTTP 监听，但各自启动自己的执行器与数据恢复结果。
   terminalServer.executor.start();
   server.scheduler?.start();
   const bootstrapUrl = `${origin}/#bootstrap=${server.bootstrapToken}`;
@@ -95,6 +97,7 @@ try {
   });
   process.on('disconnect', requestClose);
   interval = setInterval(() => {
+    // 停止文件需匹配当前服务锁随机 token，过期锁或其他实例留下的文件不能停止本次服务。
     const stop = path.join(directory, 'stop.request');
     if (!existsSync(stop)) return;
     try {

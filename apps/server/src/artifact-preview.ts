@@ -166,6 +166,7 @@ export class ArtifactPreviewService {
       !!this.store.db.prepare('SELECT 1 FROM compressed_objects WHERE ref=?').get(artifact.objectRef)
     );
   }
+  /** 同版本对象共享一次完整性核验；缓存只保存成功结果，失败 Promise 退出后可重新尝试。 */
   private async verify(key: string, work: () => Promise<void>) {
     invariant(!this.closed, 'PREVIEW_CLOSED', '预览服务已关闭');
     if (this.verified.has(key)) {
@@ -192,6 +193,7 @@ export class ArtifactPreviewService {
     const changed = this.store.db.prepare('SELECT total_changes() AS changes').get() as { changes: number };
     return `${version.data_version}:${changed.changes}`;
   }
+  /** 内容寻址磁盘对象必须满足引用格式、实际路径、版本、大小和完整 SHA-256，路径存在并不够。 */
   private async disk(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     invariant(
       /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/.test(artifact.objectRef),
@@ -225,6 +227,10 @@ export class ArtifactPreviewService {
     signal?.throwIfAborted();
     return { filename, info };
   }
+  /**
+   * 取得压缩对象快照并流式核验原始字节；缓存键绑定数据库变化计数与压缩大小，
+   * 采集期间数据库变化时加入随机键以禁止复用可能过时的验证结果。
+   */
   private async compressed(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     const valid = /^sqlite:[a-f0-9]{64}$/.test(artifact.objectRef)
       ? artifact.objectRef.slice(7) === artifact.hash
@@ -267,6 +273,7 @@ export class ArtifactPreviewService {
       throw error;
     }
   }
+  /** 按检测出的文件类型返回文本页或二进制元信息；退出时关闭解压读取器和快照，不长期持有正文。 */
   async preview(
     artifact: Artifact,
     encoding: TextFileEncoding = 'auto',
@@ -363,6 +370,10 @@ export class ArtifactPreviewService {
       snapshot?.close();
     }
   }
+  /**
+   * 返回已验证的原始资源流。磁盘对象支持 Range；压缩对象只提供完整流，随机文本访问
+   * 走 preview。流关闭即释放快照，服务关闭信号与单请求取消共同约束读取。
+   */
   async resource(
     artifact: Artifact,
     options: { range?: string; signal?: AbortSignal; maxBytes?: number } = {},

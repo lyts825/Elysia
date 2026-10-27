@@ -156,6 +156,10 @@ function createStartupStore(directory) {
     issue = '';
   const mediaCache = new Map();
   const assetPath = (media) => path.join(assets, media.id + '.' + extensionFor(media.mime));
+  /**
+   * 先验证并保存上传媒体，再以临时文件替换配置。已存在的同摘要媒体必须重新核验，
+   * 配置保存失败时只删除本次新建的媒体，不能删除其他调用已经保存的对象。
+   */
   async function persist(config, upload) {
     await safeDirectory(parent);
     let created;
@@ -191,6 +195,10 @@ function createStartupStore(directory) {
     }
     return config;
   }
+  /**
+   * 优先读取新版小配置；只有新版文件不存在才尝试迁移旧内联媒体配置。
+   * 损坏配置不覆盖原文件，返回默认外观并保留 issue，供界面提示用户重新保存。
+   */
   async function load() {
     try {
       return normalizeStartup(JSON.parse((await readBounded(file, 8192)).toString('utf8')));
@@ -229,6 +237,10 @@ function createStartupStore(directory) {
     get issue() {
       return issue;
     },
+    /**
+     * 串行写偏好，避免并发保存删除彼此仍引用的媒体。未带上传内容时只能复用当前媒体，
+     * 新配置落盘后更新读取缓存，再尽力清理已不引用的旧媒体。
+     */
     write(value, upload) {
       const config = normalizeStartup(value);
       const job = writing
@@ -262,6 +274,10 @@ function createStartupStore(directory) {
       writing = job;
       return job;
     },
+    /**
+     * 只读取当前配置仍引用的媒体，核对类型、大小和 SHA-256 后返回本地 data URL。
+     * 相同摘要共享在途读取；失败会移除对应缓存，之后可重新核验读取。
+     */
     async readMedia(value) {
       const media = normalizeMedia(value),
         config = await read();
@@ -289,6 +305,7 @@ function createStartupStore(directory) {
       mediaCache.set(media.id, job);
       return job;
     },
+    /** 将用户选中的本地媒体转为待上传结构；这里只读文件，不自动保存启动偏好。 */
     async import(filePath) {
       const extension = path.extname(filePath).slice(1).toLowerCase(),
         mime = types[extension];

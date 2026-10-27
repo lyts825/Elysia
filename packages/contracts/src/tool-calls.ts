@@ -2,6 +2,7 @@
 import type { Message, ToolCall } from './index.js';
 
 export interface ToolCallOccurrence {
+  /** 拥有调用身份的持久 assistant 消息，供应商 call ID 只在此响应内唯一。 */
   message: Message;
   call: ToolCall;
   result?: Message;
@@ -11,6 +12,7 @@ export interface ToolCallOccurrence {
 /** 返回遇到的调用、仍在等待的调用和首个配对错误；同一响应内的调用 ID 必须唯一。 */
 export function inspectToolCalls(messages: readonly Message[]) {
   const occurrences: ToolCallOccurrence[] = [];
+  // waiting 只包含当前 assistant 响应；全部结果消费后，后续响应可合法复用供应商 ID。
   const waiting = new Map<string, ToolCallOccurrence>();
   let error: { code: string; message: string } | null = null;
   for (const message of messages) {

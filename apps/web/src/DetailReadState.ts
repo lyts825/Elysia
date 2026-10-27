@@ -5,6 +5,7 @@ import type {
   EventPreviewCoverage,
 } from '../../../packages/contracts/src/run-reads';
 
+/** 服务端投影读取覆盖与持久执行暂停分别记录；事件预览缺口不等同于业务实体不可读。 */
 export type DetailReadState = {
   readOnly?: boolean;
   readOnlyReason?: string | null;

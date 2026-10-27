@@ -34,6 +34,10 @@ const stageLabels: Record<StartupStage, string> = {
   'media-ready': '动画就绪',
 };
 
+/**
+ * 本次编辑使用独立草稿和待上传媒体，预览不立即写入偏好。
+ * 共享配置更新只在当前草稿未编辑时跟随；导入先完成实际解码，保存成功才清除 dirty 和上传对象。
+ */
 export function StartupSettings({ close }: { close: () => void }) {
   const { config, loaded, error: readError } = useStartupPreferences();
   const fieldsId = useId();
@@ -62,6 +66,7 @@ export function StartupSettings({ close }: { close: () => void }) {
     setError('');
     setDraft((previous) => ({ ...previous, ...value }));
   }
+  /** 浏览器 File 或桌面选择器统一校验为媒体上传对象；卸载后不回写表单。 */
   async function importMedia(file?: File) {
     setBusy(true);
     setError('');
@@ -80,6 +85,7 @@ export function StartupSettings({ close }: { close: () => void }) {
       if (mounted.current) setBusy(false);
     }
   }
+  /** 保存共享偏好，失败保留草稿及媒体以便修正或重试。 */
   async function save() {
     setBusy(true);
     setError('');

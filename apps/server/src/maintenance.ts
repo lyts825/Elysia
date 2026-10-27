@@ -103,7 +103,11 @@ if (
 if (terminalActions.includes(action) && hasSelection && selection !== 'terminal')
   throw new Error('terminal-* 维护操作只能用于 terminal 入口');
 
-/** 打开终端存储并执行所选维护命令，结束时释放网关等资源。 */
+/**
+ * 使用禁用 Docker、CLI 环境和 API 凭据访问的终端服务执行纯文件维护。
+ * 预览输出封装 plan 与 commandId；应用前重建并验证计划，已提交命令则直接重放原回执。
+ * 调用方持有双方入口锁，退出时取消扫描并释放网关和 Store。
+ */
 async function terminalMaintenance(directory: string) {
   assertSurfacePath(directory, 'terminal');
   const target = surfaceDirectory(directory, 'terminal');
@@ -130,6 +134,7 @@ async function terminalMaintenance(directory: string) {
     isActive: (runId) => store.all<any>('tasks', runId).some((task) => task.status === 'RUNNING'),
   });
   function input() {
+    // 维护计划作为不可信本地输入，同样拒绝链接、特殊文件及过大的 JSON。
     if (!argument) throw new Error(action + ' 需要预览输入或计划 JSON 文件路径');
     const filename = path.resolve(argument),
       stat = lstatSync(filename);
@@ -207,6 +212,7 @@ async function terminalMaintenance(directory: string) {
 }
 
 const configuredDirectory = dataDirectory();
+// 审计查看不取得服务锁，只验证回执绑定；真正备份/恢复/清理必须在下方持锁分支执行。
 if (action === 'objects-audit') {
   if (!argument || hasSelection) throw new Error('objects-audit 需要审计 JSONL 文件，不接受 --surface');
   const report = path.resolve(argument);

@@ -19,6 +19,7 @@ export function BrandIcon({ className = 'brand-mark' }: { className?: string }) 
   );
 }
 
+/** 以 CSS mask 复用单色品牌路径，颜色由调用位置继承，size 同时控制宽高。 */
 export function BrandGlyph({ size = 18 }: { size?: number }) {
   return (
     <span

@@ -1,6 +1,10 @@
 /* 生成终端代理配置的预设值。 */
 import type { AgentTerminalProfile } from '../../../packages/contracts/src/index';
-/** 按代理类型选择命令、协议和所需环境变量名，并为新配置分配独立 ID。 */
+/**
+ * 生成独立可编辑模板：按代理类型选择非交互命令、结果协议和环境变量名，分配新 ID。
+ * 数组复制避免修改预设共享值；镜像与标准资源只是初始值，创建任务时还需冻结并核验。
+ * 环境数组保存变量名称，不包含任何凭据原文，函数也不会启动 CLI 或下载镜像。
+ */
 export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): AgentTerminalProfile {
   const choices = {
     dsh: {

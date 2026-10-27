@@ -43,6 +43,7 @@ const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
   restricted: '路径不允许预览',
   'not-file': '路径不是文件',
 };
+/** 外部文件定位请求；requestId 区分重复打开同一路径和锚点的独立操作。 */
 export interface PreviewFileTarget {
   taskId: string;
   path: string;
@@ -63,6 +64,11 @@ type Props = {
   selectTask: (id: string) => void;
   close: () => void;
 };
+/**
+ * 展示一个任务工作区的文件、源码和实时执行资料。目录快照与文件正文分别读取，文件选择、
+ * 编码、分页及滚动位置按运行/任务/文件身份保存；只在文件版本匹配时恢复阅读位置。
+ * embedded 模式由外层 Dock 管理面板动画，其余读取与权限规则保持一致。
+ */
 export function PreviewPanel({
   embedded = false,
   runId,
@@ -91,6 +97,7 @@ export function PreviewPanel({
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
   const taskId = task?.id || '',
     agent = agents.find((a) => a.taskId === taskId);
+  // 首次有任务列表时恢复上次选中任务；明确传入的文件定位请求优先，不被旧偏好覆盖。
   const restoredTask = useRef(false);
   useEffect(() => {
     if (restoredTask.current || !tasks.length) return;
@@ -173,6 +180,10 @@ export function PreviewPanel({
   const listedEntry = current?.files.find((file) => file.path === selected);
   const currentUnlistedEntry = unlistedEntry?.key === entryKey ? unlistedEntry : null;
   const selectedEntry = listedEntry || currentUnlistedEntry?.value;
+  /**
+   * 单独核对未出现在有界目录列表中的文件。相同身份共享在途读取，切换文件取消旧请求；
+   * 结果还需匹配 selectedRef，防止慢请求把其他文件的元信息发布到当前选择。
+   */
   const readEntry = useCallback(
     (next: PreviewSnapshot, name: string) => {
       if (!next.workspace || !name || next.taskId !== taskId) return Promise.resolve();
@@ -222,6 +233,7 @@ export function PreviewPanel({
     current?.baseline,
     current?.renderBase,
   ]);
+  // 元信息版本决定旧检查点是否可复用；正文分页的 version 还会由服务端进一步核对。
   const selectedVersion = JSON.stringify(
     selectedEntry ? [selectedEntry.size, selectedEntry.modifiedAt, selectedEntry.change] : null,
   );
@@ -269,6 +281,7 @@ export function PreviewPanel({
       if (savedPosition?.view && !obsoletePosition) setView(savedPosition.view);
     }
   }, [checkpointKey, selectedVersion]);
+  /** 转到字节页并保留最多 128 个返回位置，继续使用当前正文的稳定版本。 */
   const moveTo = (
     offset: number,
     history = [...position.history, content?.page?.offset ?? position.offset],
@@ -281,6 +294,7 @@ export function PreviewPanel({
     });
     setFileNotice('');
   };
+  /** 选择文件时清除旧定位和大 HTML 许可；有锚点时创建独立定位意图。 */
   const chooseFile = useCallback(
     (path: string, anchor = '') => {
       selectedRef.current = path;
@@ -293,6 +307,7 @@ export function PreviewPanel({
     },
     [taskId],
   );
+  /** Markdown 等内容中的本地链接在预览内选择文件，路径与锚点分开交由定位接口处理。 */
   const followLocalLink = useCallback(
     (path: string) => {
       const hash = path.indexOf('#');
@@ -335,6 +350,10 @@ export function PreviewPanel({
     setFileNotice('');
     setRefresh((value) => value + 1);
   }, [fileTarget?.requestId, taskId, runId, chooseFile]);
+  /**
+   * 将标题或行号锚点解析为服务端分页偏移。扫描可能分批返回 cursor，只有当前定位身份
+   * 的结果可改变页面；文件变化时保留明确提示，要求重新打开链接。
+   */
   useEffect(() => {
     if (
       !pendingAnchor ||
@@ -399,6 +418,7 @@ export function PreviewPanel({
       });
     return () => controller.abort();
   }, [pendingAnchor?.requestId, readScope, position.encoding, locationCursor]);
+  // 目录快照按任务轮询；自动模式使用完成后定时，避免慢读取叠加并发请求。
   useEffect(() => {
     if (!taskId) return;
     const controller = new AbortController();
@@ -451,6 +471,10 @@ export function PreviewPanel({
       clearTimeout(timer);
     };
   }, [runId, taskId, auto, refresh, readEntry]);
+  /**
+   * 正文读取只依赖完整 readKey 和手动刷新计数。新页先丢弃不匹配正文；自动模式最多
+   * 尝试三次且不并发。FILE_CHANGED 使旧检查点失效，并从第一页重新取得新版本。
+   */
   useEffect(() => {
     setContent((old) =>
       old?.selectionContext === context &&
@@ -560,6 +584,7 @@ export function PreviewPanel({
       : current?.files || [];
   const visible = pickerFiles.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase()));
   const selectedIndex = visible.findIndex((file) => file.path === selected);
+  // 目录、文件、请求页和编码全部吻合才显示正文，避免短暂展示上一个选择的内容。
   const selectedFile =
     selectedEntry &&
     content?.selectionContext === context &&
@@ -601,6 +626,7 @@ export function PreviewPanel({
     ]),
     !!selectedFile && !loading,
   );
+  // 高亮位置必须与当前正文页的 scope、版本及偏移一致，否则不复用旧定位结果。
   const located =
     location?.status === 'found' &&
     location.scope === readScope &&
@@ -634,6 +660,7 @@ export function PreviewPanel({
       selected.split('/').slice(0, -1).map(encodeURIComponent).join('/') +
       (selected.includes('/') ? '/' : '')
     : null;
+  // 超过 8 MiB 的 HTML 需要本次文件版本的显式许可，许可不会跨版本或跨文件继承。
   const htmlPermissionKey = JSON.stringify([context, selectedVersion, selectedFile?.page?.version]);
   const htmlBytes = Math.max(selectedEntry?.size || 0, selectedFile?.page?.totalBytes || 0);
   const largeHtmlBlocked =

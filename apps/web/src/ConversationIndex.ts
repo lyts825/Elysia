@@ -12,6 +12,11 @@ function firstBy<T>(values: readonly T[] | undefined, key: (value: T) => string 
 
 export const conversationCallKey = (messageId: string, callId: string) => JSON.stringify([messageId, callId]);
 
+/**
+ * 为当前可见详情建立实体与工具配对索引。会话可交错、调用 ID 可跨回复复用，因此
+ * 工具结果必须配到所属 assistant 消息；无法配对的原始回执保持独立显示。
+ * 返回 boundResponses 供时间线隐藏已经嵌入调用组的回执，避免重复展示。
+ */
 export function conversationIndex(
   detail: {
     requests: RequestRecord[];

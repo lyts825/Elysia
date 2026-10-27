@@ -26,6 +26,11 @@ export function boardEditPayload(edit: ProjectBoardEdit) {
     })),
   };
 }
+/**
+ * 编辑项目计划并对照服务端最新快照。草稿基线过期时先完成字段级合并选择，
+ * Schema 错误映射到具体字段；保存按钮只在当前负载有效且版本对齐时开放。
+ * 新增/删除交付项后通过 ID 恢复焦点，计划导入的临时预览生命周期交给外层导航保护。
+ */
 export function ProjectBoardEditor({
   edit,
   busy,

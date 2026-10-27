@@ -22,6 +22,7 @@ export interface LocalAgentSource {
   name: string;
   syncedAt?: string;
 }
+/** 扫描阶段发现的候选元数据；未被导入且启用之前不能作为运行能力。 */
 export interface LocalAgentCandidate {
   id: string;
   kind: LocalItemKind;
@@ -36,6 +37,7 @@ export interface LocalAgentCandidate {
   modelInvocable?: boolean;
   userInvocable?: boolean;
 }
+/** 导入记录保留当前内容摘要与显式启用状态，来源扫描哈希和存储内容摘要分别保存。 */
 export interface LocalAgentItem extends LocalAgentCandidate {
   enabled: boolean;
   importedAt: string;
@@ -49,6 +51,7 @@ export interface LocalAgentOverview {
   items: LocalAgentItem[];
   defaults: { kind: LocalAgentKind; roots: string[] }[];
 }
+/** 有有效期的只读扫描结果，用户选定后才能导入；warnings 说明未能完整扫描的部分。 */
 export interface LocalAgentScan {
   scanId: string;
   source: LocalAgentSource;
@@ -56,6 +59,7 @@ export interface LocalAgentScan {
   warnings: string[];
   expiresAt: string;
 }
+/** UTF-16 文字页及下一偏移，hash 绑定正文版本；正文中的命令仍按不可信资料处理。 */
 export interface LocalContentPage {
   id: string;
   text: string;

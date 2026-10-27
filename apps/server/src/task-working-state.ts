@@ -33,6 +33,7 @@ export function registerTaskWorkingStateRoutes(
   assertMutable: (runId: string | null, projectId?: string | null) => void,
   assertExecutionReadable: (runId: string) => void,
 ) {
+  /** 核验运行、任务、代理及会话的双向归属，工作状态不得引用另一代理的历史。 */
   function entities(params: Params) {
     const runId = z.string().uuid().parse(params.runId);
     const taskId = z.string().uuid().parse(params.taskId);
@@ -49,6 +50,10 @@ export function registerTaskWorkingStateRoutes(
     return { run, task, agent, history: store.sessionMessages(runId, agent.sessionId) };
   }
 
+  /**
+   * 根据当前权威状态重新生成草稿，并独立检查旧批准快照是否仍有效。
+   * 工具配对、执行边界或删除锁不安全时仅允许查看；终端自管上下文不支持批准替换。
+   */
   function view(params: Params): TaskWorkingStateView {
     const { run, task, agent, history } = entities(params);
     const record = readTaskWorkingState(store, run.id, task.id);
@@ -110,6 +115,7 @@ export function registerTaskWorkingStateRoutes(
     action: z.literal('revoke'),
   }).strict();
 
+  // 批准同时绑定记录版本和原始快照哈希，用户修改的“当前需求”不能掩盖批准期间历史已变化。
   app.post<{ Params: Params }>(route, (request) => {
     const body = z.union([approve, revoke]).parse(request.body);
     return store.command(body.commandId, { route, params: request.params, body }, () => {

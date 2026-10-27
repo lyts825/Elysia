@@ -3,6 +3,10 @@ import './peer-review.css';
 import type { Run } from '../../../packages/contracts/src/index';
 import { ToolReviewDecision } from '../../../packages/contracts/src/execution-policy';
 
+/**
+ * 展示创建运行时冻结的审核/命令策略，以及当前已载入事件中的最近十条有效审核决定。
+ * 不主动补读全部审核历史，也不把“允许调用”当作“调用已经成功”，操作结果另由账本显示。
+ */
 export function ToolReviewPanel({
   run,
   events,

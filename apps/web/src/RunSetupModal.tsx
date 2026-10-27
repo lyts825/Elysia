@@ -35,6 +35,12 @@ import type { RunSetupDraft } from './RunSetupDraft';
 export type { RunSetupDraft } from './RunSetupDraft';
 const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
 
+/**
+ * 组合一次任务创建的模型、上下文、权限、预算、交付要求和可选审核策略。
+ * initial 只初始化本次草稿，changed 将后续修改交由外层持久化；创建时重新校验全部门禁。
+ * 原生、独立聊天和终端分别采用不同校验与提交字段，终端配置在创建时形成独立快照。
+ * 恢复草稿不能恢复同模型复核授权，该例外始终要求用户本次重新确认。
+ */
 export function RunModal({
   providers,
   objective,
@@ -137,6 +143,7 @@ export function RunModal({
       urls: lines(urls),
       writePaths: lines(writePaths),
     }).success;
+  // “配置有效”与“需求/审核有效”分开计算，提交时必须全部满足，避免折叠区漏掉门禁。
   const setupReady = terminal
     ? AgentTerminalProfile.safeParse(terminalProfile).success
     : modelReady &&
@@ -147,6 +154,7 @@ export function RunModal({
   const requirementsReady =
     chat || terminal || validRequirements(deliverables, acceptanceCriteria, !planMode);
   const compact = !chat && !terminal && !!appliedDefaults && setupReady && !expanded;
+  // 向外层报告的完整草稿保留表单原值；转换为权限数组和执行合同只发生在提交时。
   const currentDraft: RunSetupDraft = {
     choice,
     planMode,
@@ -170,6 +178,7 @@ export function RunModal({
     commandBackend,
   };
   const changedRef = useRef(changed);
+  // 回调身份变化不应单独触发表单回写，使用 ref 取最新版回调而仅以表单字段作为 effect 依赖。
   changedRef.current = changed;
   useEffect(() => {
     changedRef.current?.(currentDraft);
@@ -194,6 +203,7 @@ export function RunModal({
     toolReview,
     commandBackend,
   ]);
+  /** 载入项目默认只影响可复用配置；若用户已编辑则展开核对，执行权限仍由本次表单确认。 */
   const applyDefaults = (defaults: NativeProjectDefaults) => {
     setAppliedDefaults(defaults);
     if (edited.current) setExpanded(true);
@@ -219,6 +229,7 @@ export function RunModal({
         }}
         onSubmit={(e) => {
           e.preventDefault();
+          // 在创建负载之前统一检查各个折叠区域的门禁，不能只依赖按钮 disabled 状态。
           if (
             busy ||
             defaultsBusy ||
@@ -233,6 +244,7 @@ export function RunModal({
           )
             return;
           edited.current = true;
+          // 创建负载按入口显式构造：聊天无执行权限，终端冻结模板，原生任务保留本次细分授权。
           submit(
             {
               ...(terminal ? {} : { ...choice, contextPolicy: context }),
@@ -260,6 +272,7 @@ export function RunModal({
                   ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
                   : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
               budget: { maxRequests, maxTokens, maxCost },
+              // 此处形成新运行的累计限制；一次继续或重试不会据此自动重置旧运行限制。
               limits: {
                 maxDepth: chat ? 0 : 2,
                 maxAgents: chat ? 1 : 12,

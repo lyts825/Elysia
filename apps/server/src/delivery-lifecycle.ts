@@ -28,11 +28,13 @@ import {
 export { deliveryFingerprint } from './delivery-fingerprint.js';
 
 const isNative = (run: Run) => (run.execution?.kind ?? 'native') === 'native';
+/** 复核和修订只在原生入口处理；历史记录也不得借此跨入终端执行数据。 */
 function nativeRun(store: Store, runId: string) {
   const run = store.require<Run>('runs', runId);
   invariant(isNative(run), 'DELIVERY_SURFACE', '交付复核和修订查询仅支持原生任务');
   return run;
 }
+/** 保存前比较客户端看到的修订，并把当前修订附在409诊断中供重新核对。 */
 function revision(expected: number, actual: number) {
   if (expected !== actual)
     throw new AppError(
@@ -115,6 +117,10 @@ export function runRevisions(store: Store, runId: string, before?: string): RunR
     page: page.page,
   };
 }
+/**
+ * 装配复核历史、交付摘要、差异和谱系路由。只读大元数据先预热；保存结论通过幂等命令
+ * 核对运行/根版本、交付指纹和验收项索引，再在同次提交中保留历史并更新当前结论。
+ */
 export function registerDeliveryLifecycle(
   app: FastifyInstance,
   store: Store,
@@ -209,6 +215,7 @@ export function registerDeliveryLifecycle(
           'CRITERION_SCOPE',
           '逐项备注必须对应现有验收项，且不能重复',
         );
+        // 先保存尚未迁移的旧结论，再追加本次带完整基线的新结论，避免覆盖唯一旧记录。
         ensureCurrentReviewSnapshot(store, run);
         const review: DeliveryUserReview = {
           reviewId: id(),

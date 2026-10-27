@@ -2,6 +2,7 @@
 import type { DeliveryChangeSummary } from '../../../packages/contracts/src/workflow';
 import './delivery-changes.css';
 
+/** 渲染服务端确认的比较结果，只有 changed 才列变化范围；缺失基线不被转换为零变化。 */
 export function DeliveryChanges({ value }: { value?: DeliveryChangeSummary | null }) {
   // 未知比较结果保留原因；只有服务端确认一致时才显示未变化。
   if (!value) return null;

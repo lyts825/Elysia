@@ -23,6 +23,10 @@ const baseFor = (target: Target) =>
     : `/projects/${target.id}/delivery/artifact-warm`;
 
 /** A reader owns one subscription; cancelling it never selects another window's latest job. */
+/**
+ * 为本读取者创建独立预热订阅，并轮询到完成后才允许正式交付读取。
+ * 取消时精确删除自己的 jobId；即使 POST 尚未结束也先等待创建收束，防止误取消其他窗口的工作。
+ */
 export async function prepareDeliveryRead(
   api: SurfaceClient['api'],
   target: Target,
@@ -84,6 +88,7 @@ export async function prepareDeliveryRead(
   }
 }
 
+/** 展示已处理记录与任务数，取消只影响本次读取准备，不撤销已回填数据或代表交付已验收。 */
 export function DeliveryReadProgress({
   progress,
   cancel,

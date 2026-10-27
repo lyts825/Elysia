@@ -144,7 +144,11 @@ export function sourceNoteResolutionsFor(store: Store, run: Run, root: Task, fin
   return view(store, sourceState(store, run.id, { run, root, fingerprint }));
 }
 /** Manual follow-up conclusions are independent of execution and saved acceptance decisions. */
-/** 注册来源备注读取和人工处理接口；处理结果独立于执行和验收决定。 */
+/**
+ * 保存用户对来源意见的逐项复验，绑定来源快照、当前交付指纹和复验记录自己的版本。
+ * 证据只能来自手工选定的当前验收项；交付变化后旧结论显示 stale，不自动宣告继续有效。
+ * “已解决”是独立人工结论，不修改执行状态或替代已保存的验收决定。
+ */
 export function registerSourceNoteResolutions(
   app: FastifyInstance,
   store: Store,

@@ -14,6 +14,11 @@ export const fileEncodingOptions = [
   ['gb18030', 'GB18030 / GBK'],
 ] as const;
 
+/**
+ * 按媒体类型呈现已读片段：Markdown 可切文档/源码，图片与 PDF 使用受限资源 URL，
+ * 其他二进制仅提示下载。搜索命中强制采用源码显示，但不覆盖用户保存的显示偏好。
+ * 阅读位置还绑定文件版本、页偏移和编码，正文未 ready 时不恢复或写入滚动位置。
+ */
 export function FileContentView({
   file,
   onLocalLink,
@@ -46,6 +51,7 @@ export function FileContentView({
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const highlighted = useRef<HTMLElement>(null);
   const scrolledHighlight = useRef('');
+  // 搜索给出的是 UTF-8 字节区间，先扣除首页 BOM 再转换成 JavaScript 字符索引。
   const range = useMemo(() => {
     if (
       !highlight ||
@@ -216,7 +222,10 @@ export function FileContentView({
   );
 }
 
-// Highlight a source range without creating one DOM element per file line.
+/**
+ * 高亮服务端已定位到片段开头的行范围，不为全文每行创建 DOM 节点。
+ * requestId 保证同一定位只滚动一次；文字变化但请求不变不会反复夺走用户阅读位置。
+ */
 export function SourceText({
   text,
   line,

@@ -26,6 +26,7 @@ import {
   recoverPreparedInstall,
 } from './maintenance-storage.js';
 
+/** 只读探测已存在数据库的 schema；缺失允许创建，未知高版本不能尝试降级打开。 */
 function schema(directory: string) {
   const file = path.join(directory, 'state.db');
   if (!existsSync(file)) return undefined;
@@ -43,7 +44,10 @@ function schema(directory: string) {
 }
 
 // Called with both service locks held; snapshots remain readable by the pre-upgrade application.
-/** 启动前恢复未完成安装并检查入口数据库版本，按需准备升级。 */
+/**
+ * 调用方持有两个入口锁时运行：先恢复中断安装，再备份所有已有入口并在独立目录升级。
+ * 备份清单最后发布，使旧版本仍可读取升级前快照；任一入口准备失败都不替换当前数据。
+ */
 export async function prepareStartupUpgrade(directory: string, surfaces: Surface[] = ['native', 'terminal']) {
   recoverPreparedInstall(directory);
   const versions = surfaces.map((surface) => {
@@ -112,7 +116,10 @@ export async function prepareStartupUpgrade(directory: string, surfaces: Surface
   }
 }
 
-/** 先获取入口锁，再准备升级并打开原生和终端存储。 */
+/**
+ * 获取双方入口锁，完成升级后才打开 Store。成功返回 release 给服务全生命周期持有；
+ * 中途失败按终端→原生→锁的顺序尽力释放，防止下次启动被半开的资源阻挡。
+ */
 export async function openStartupStores(configuredDirectory: string) {
   const release = acquireSurfaceLocks(configuredDirectory);
   let native: Store | undefined, terminal: Store | undefined;

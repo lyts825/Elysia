@@ -10,6 +10,7 @@ const OriginalReview = deferredPanel(
   '原复核记录',
 );
 
+/** 将备注来源、原标准、正文和版本分开呈现；compact 仅折叠长文，不修改其内容。 */
 export function ReviewSourceNoteBody({
   note,
   compact = false,
@@ -67,6 +68,10 @@ export function ReviewSourceNoteBody({
     </div>
   );
 }
+/**
+ * 展示明确加入续接来源的备注，可由上层移除；只对保存记录提供原复核查看入口。
+ * 弹出的来源必须仍在当前 notes 集合且属于相同 sourceRunId，否则不再展示旧选择。
+ */
 export function ReviewSourceNotes({
   notes,
   remove,

@@ -58,6 +58,7 @@ function verifyDistribution(appRoot, full = false) {
   for (const relative of critical)
     if (!Object.hasOwn(manifest.files, relative)) throw new Error('分发包清单缺少必要文件：' + relative);
   if (full) {
+    // 全量核验还检查“磁盘上多出来”的文件，不能只验证清单列出的那些路径。
     const pending = [directory];
     while (pending.length) {
       for (const entry of fs.readdirSync(pending.pop(), { withFileTypes: true })) {
@@ -76,6 +77,7 @@ function verifyDistribution(appRoot, full = false) {
     }
   }
   for (const relative of full ? Object.keys(manifest.files) : critical) {
+    // 正常启动只核验关键入口以控制开销；打包验收选择 full，遍历全部摘要。
     const entry = manifest.files[relative];
     if (
       !entry ||
@@ -111,6 +113,7 @@ function packagedBuild(appRoot) {
 }
 module.exports = { packagedBuild, verifyDistribution };
 if (require.main === module) {
+  // 独立运行使用包内 Node 做全量验证，stdout 仅在全部通过后输出 verified=true。
   try {
     const manifest = verifyDistribution(path.resolve(__dirname, '../..'), true);
     if (process.version !== manifest.nodeVersion) throw new Error('核验进程与包内 Node 版本不一致');

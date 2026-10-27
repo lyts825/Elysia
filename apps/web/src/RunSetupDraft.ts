@@ -31,7 +31,7 @@ export type RunSetupDraft = {
   commandBackend?: CommandBackendPolicy;
 };
 
-// Drafts may contain incomplete input. Validate their shape here; the form validates execution values.
+// 缓存允许保留尚未完成的输入，所以字段类型校验比执行配置宽松；恢复成功不等于可创建运行。
 const draftShape = z.object({
   planMode: z.boolean(),
   executionKind: z.enum(['native', 'docker-agent']),
@@ -75,7 +75,10 @@ const draftShape = z.object({
     .optional(),
 });
 
-/** 恢复版本 1 草稿；允许未完成的表单值，但拒绝损坏或超长的缓存。 */
+/**
+ * 读取版本 1 的完整表单缓存，空值表示没有草稿；超长、非法 JSON 或未知版本明确抛错。
+ * 调用方应保留无法读取的原文，不能用空草稿静默覆盖。可执行范围由表单提交前再次校验。
+ */
 export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {
   if (raw === undefined || raw === '') return;
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('创建配置草稿格式无法读取，原文仍保留。');

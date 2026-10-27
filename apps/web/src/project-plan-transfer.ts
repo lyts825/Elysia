@@ -60,6 +60,7 @@ function validate(value: unknown): ProjectPlanTransfer {
   return result.data;
 }
 
+/** 按 UTF-8 字节限制读取 JSON，保留校验通过的原始文字供预览，不返回经过修剪的保存负载。 */
 export function readProjectPlanTransfer(raw: string): ProjectPlanTransfer {
   if (new TextEncoder().encode(raw).byteLength > PROJECT_PLAN_FILE_LIMIT)
     throw Error('计划文件超过 192 KiB，未读取或截断内容。原草稿未改动。');
@@ -96,7 +97,10 @@ export function exportProjectPlan(edit: ProjectBoardEdit): string {
   return raw;
 }
 
-/** This is still a local edit on its original baseline; server CAS and merging stay intact. */
+/**
+ * 将可复用计划放入原编辑基线，全部交付项获得新 ID，避免误继承其他项目的历史关联。
+ * 本函数不写服务端或缓存；原 basedOn/baseline 保留，保存时仍需版本比较与冲突合并。
+ */
 export function importProjectPlan(
   file: ProjectPlanTransfer,
   original: ProjectBoardEdit,
@@ -137,6 +141,7 @@ export type ProjectPlanImportPreflight =
   | { canApply: true; characters: number; baselineOmitted: boolean }
   | { canApply: false; error: string };
 
+/** 按正式保存规则预演含撤销原稿的总容量；使用等长占位 ID，不分配真实编号或改变草稿。 */
 export function projectPlanImportPreflight(
   draft: ProjectBoardDraft,
   file: ProjectPlanTransfer,

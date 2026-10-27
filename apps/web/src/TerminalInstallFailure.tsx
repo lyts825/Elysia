@@ -14,7 +14,11 @@ const actionLabels: Record<TerminalCliInstallRepair, string> = {
   template: '编辑镜像模板',
   retry: '定位重试入口',
 };
-/** 只为失败的安装任务显示诊断和修复操作；repair 负责导航，不自动重试安装。 */
+/**
+ * 只为 failed 安装记录解释已知错误类别、安装目标及可行修复入口，其他状态直接不渲染。
+ * 保留原错误与记录版本供核对；repair 回传原 job 和选择的修复类别，由外层导航或安排操作。
+ * disabled 只阻止修复按钮，不隐藏失败证据；此组件不会自动重试或采用新镜像。
+ */
 export function TerminalInstallFailure({
   job,
   disabled,

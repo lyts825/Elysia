@@ -173,6 +173,7 @@ export class CodexRpc extends EventEmitter {
   private send(message: unknown) {
     if (!this.closed) this.child.stdin.write(JSON.stringify(message) + '\n');
   }
+  /** 为单次 RPC 分配递增 ID 和独立超时；迟到响应找不到 pending 时忽略，不归属给后续请求。 */
   call(method: string, params: unknown, timeout = 30000): Promise<any> {
     if (this.closed) return Promise.reject(new AppError('CODEX_DISCONNECTED', 'Codex 连接已关闭'));
     return new Promise((resolve, reject) => {
@@ -185,6 +186,7 @@ export class CodexRpc extends EventEmitter {
       this.send({ id, method, params });
     });
   }
+  /** 完成协议初始化再发 initialized 通知，调用方必须等待后才能使用账号和推理接口。 */
   async initialize() {
     await this.call('initialize', {
       clientInfo: { name: 'elysia', title: 'Elysia', version: VERSION },
@@ -192,6 +194,7 @@ export class CodexRpc extends EventEmitter {
     });
     this.send({ method: 'initialized' });
   }
+  /** 幂等结束进程、拒绝全部在途 RPC 并清监听器；进程退出不被当作有效空响应。 */
   close(error = new AppError('CODEX_CLOSED', 'Codex 连接已关闭')) {
     if (this.closed) return;
     this.closed = true;

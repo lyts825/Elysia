@@ -22,6 +22,7 @@ class ProbeFailure extends Error {
 function fail(code: string, message: string): never {
   throw new ProbeFailure({ status: 'failed', code, message });
 }
+/** 在已保存基础地址上添加协议路径，避免重复追加已有版本段；不自动跳到其他供应商端点。 */
 function endpoint(binding: TerminalConnectionBinding, suffix: string, version?: string): URL {
   const url = new URL(binding.baseUrl);
   const root = url.pathname.replace(/\/+$/, '');
@@ -138,6 +139,7 @@ async function readJson(
     fail('TERMINAL_API_RESPONSE', '服务未返回有效的协议响应，请检查 API 协议和端点');
   return parsed as Record<string, unknown>;
 }
+/** 构造用户显式触发的最小非流式推理检查；此操作会使用少量真实模型用量。 */
 function testRequest(binding: TerminalConnectionBinding, credential: string) {
   const prompt = 'Reply with OK. This is an explicit connection check.';
   let url: URL;
@@ -252,6 +254,10 @@ function catalogEndpoint(binding: TerminalConnectionBinding, credential: string)
     pagination: 'none' as const,
   };
 }
+/**
+ * 读取协议对应的模型目录，最多四页和 2000 个去重型号；页间共享 2 MiB 响应预算。
+ * 游标重复/含凭据/超长立即失败，达到上限标记 truncated 而不声称目录完整。
+ */
 async function models(
   binding: TerminalConnectionBinding,
   credential: string,
@@ -317,7 +323,10 @@ async function models(
     truncated,
   };
 }
-/** 验证连接与凭据后执行连接检查或模型目录查询；请求和读取受信号约束。 */
+/**
+ * 验证绑定与密钥形态后执行显式 check 或只读 models。两种操作不相互替代：目录可读不等于
+ * 所选模型已响应，检查成功也不表示已枚举目录。全部失败转换为安全结果，不透传远端原文。
+ */
 export async function terminalConnectionProbe(
   rawBinding: TerminalConnectionBinding,
   credential: string,

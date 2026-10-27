@@ -63,6 +63,10 @@ function Totals({ value, compact = false }: { value: ProjectUsageTotals; compact
     </dl>
   );
 }
+/**
+ * 按项目汇总请求、Token 和分币种已知费用。分页带 expectedVersion，使不同统计快照
+ * 不能混在同一翻页过程；失败或取消保留上一成功页及其游标，刷新从新快照首页开始。
+ */
 export function ProjectUsage({ projectId, openRun }: { projectId: string; openRun: (id: string) => void }) {
   const { api } = useSurfaceClient();
   const identity = useId();

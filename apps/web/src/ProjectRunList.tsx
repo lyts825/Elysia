@@ -21,6 +21,10 @@ export const reviewLabels = {
   changes_requested: '需修改',
   stale: '需重新复核',
 };
+/**
+ * 分页读取当前项目的任务，既可浏览也可作为交付项关联选择器。
+ * 项目或查询变化清空游标，新读取取消旧请求；不可读记录仍显示缺口但禁止选择关联。
+ */
 export function ProjectRunList({
   projectId,
   query,

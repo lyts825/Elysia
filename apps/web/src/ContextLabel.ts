@@ -4,7 +4,7 @@ import {
   CONTEXT_TOKEN_UNIT,
   type ContextPolicy,
 } from '../../../packages/contracts/src/index';
-/** 整千窗口显示为 K，最大窗口显示为 1M，其余保留具体 Token 数量。 */
+/** 整千窗口显示为十进制 K（1000 token），应用最大窗口显示为 1M，其余保留具体 token 数量。 */
 export const contextWindowSizeLabel = (tokens: number) =>
   tokens === CONTEXT_MAX_WINDOW_TOKENS
     ? '1M'

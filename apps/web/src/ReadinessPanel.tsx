@@ -35,6 +35,10 @@ export function ReadinessPanel(props: ReadinessPanelProps) {
   // 入口或项目改变时重置内部快照，避免沿用另一范围的准备状态。
   return <ReadinessContent key={`${surface}:${props.projectId ?? ''}`} {...props} />;
 }
+/**
+ * 只整理当前入口/项目已保存的配置和检查记录，不执行模型探测。
+ * 刷新先把旧快照标为 stale，成功通过 Schema 和所属验证后才视为当前记录；取消保留旧结果。
+ */
 function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
   const { api, surface } = useSurfaceClient();
   const identity = useId();
@@ -51,6 +55,7 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
     errorRef.current?.focus({ preventScroll: true });
     errorRef.current?.scrollIntoView({ block: 'nearest' });
   }, [errorFocus]);
+  /** 取消旧请求并核对返回的入口及项目；显式重试失败时将焦点移到完整错误说明。 */
   const load = async (focusFailure = false) => {
     controller.current?.abort();
     const request = new AbortController();

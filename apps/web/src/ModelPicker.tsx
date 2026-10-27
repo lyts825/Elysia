@@ -54,6 +54,11 @@ export function defaultChoice(providers: SelectableProvider[], preferred?: strin
     reasoningEffort: provider?.reasoningEffort,
   };
 }
+/**
+ * 选择模型连接、型号和思考强度，并将当前有效性报告给父表单。
+ * 订阅和 DeepSeek 目录按客户端/连接修订共享读取；普通 API 使用已保存的冻结型号。
+ * preserveInvalid 用于恢复旧草稿：保留失效选择让用户核对，不能自动替换成其他可用型号。
+ */
 export function ModelPicker({
   providers,
   value,
@@ -83,6 +88,7 @@ export function ModelPicker({
     [error, setError] = useState(''),
     [refresh, setRefresh] = useState(0),
     [loadedCatalog, setLoadedCatalog] = useState('');
+  // 手动刷新也参与身份，旧目录在新读取完成前不得继续证明当前选择有效。
   const catalogKey = `${selected?.id}:${selected?.revision}:${refresh}`;
   const catalogReady = loadedCatalog === catalogKey && !loading && !error;
   const verified = !!selected?.keyConfigured && selected.checkedRevision === selected.revision;
@@ -123,6 +129,7 @@ export function ModelPicker({
         reasoningEffort: value.reasoningEffort,
       })
     : '';
+  // 凭据与配置修订通过检查只是前提；目录选择还要支持文字与当前思考强度。
   const valid =
     !retiredModelIssue &&
     verified &&

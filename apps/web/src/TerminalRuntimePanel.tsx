@@ -40,7 +40,10 @@ function runtimeTime(timestamp: number) {
     <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>
   );
 }
-/** 展示执行队列、终端阶段和资源预约；任务名称从调用方提供的列表中匹配。 */
+/**
+ * 将宿主快照分为排队原因、终端执行阶段与资源预约展示；此组件本身不轮询或修改运行。
+ * 本地计时器只刷新活动阶段经过时间，资源“暂留”与任务仍运行分开呈现，避免误判资源已释放。
+ */
 export function TerminalRuntimePanel({
   snapshot,
   tasks,
@@ -67,6 +70,7 @@ export function TerminalRuntimePanel({
   };
   const names = new Map(tasks.map((task) => [task.id, task.spec.title]));
   const resource = snapshot.terminal.resources;
+  // held 记录可能保留给尚待清理的容器，即使队列已空也应继续告知用户。
   const held = resource.reservations.filter((item) => item.held);
   return (
     <details className="terminal-activity terminal-runtime">

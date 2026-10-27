@@ -19,7 +19,11 @@ const sizeLabel = (bytes: number | null) =>
         ? `${(bytes / 1024).toFixed(1)} KiB`
         : `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 
-/** Mount one instance per immutable manifest; leaving the selection cancels all work. */
+/**
+ * 为不可变冻结清单检查文件或生成 ZIP。每窗口保存 clientId，所有作业响应同时核对作业、
+ * 客户端、项目、清单及哈希；切换清单卸载后取消本地读取并尽力删除服务端作业。
+ * 文件检查和下载分别创建作业，不能用较早检查通过代替下载时的重新核验。
+ */
 export function ProjectDeliveryBundle({
   manifest,
   archived,
@@ -80,6 +84,7 @@ export function ProjectDeliveryBundle({
     )
       throw Error('返回的文件包作业不属于当前清单，请重新检查。');
   };
+  /** 创建后轮询同一作业；即使 POST 迟到，也等待取得作业身份后明确取消，避免遗留后台工作。 */
   const prepare = async (kind: 'check' | 'download', controller: AbortController, jobId: string) => {
     // Let creation finish so even a late POST result can be explicitly cancelled.
     let job = await api<ProjectDeliveryBundleJob>(
@@ -123,6 +128,7 @@ export function ProjectDeliveryBundle({
       assertJob(job, jobId, kind);
     }
   };
+  /** 按声明长度有界接收文件，每收到新块重置 15 秒空闲期限，超长或中断均不产生下载。 */
   const receive = async (job: ProjectDeliveryBundleJob, controller: AbortController) => {
     let idle: ReturnType<typeof setTimeout>;
     const reading = new AbortController();

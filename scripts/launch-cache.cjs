@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
+/** 仅接受真实目录；create 只创建当前一级，不能把链接或特殊文件当作缓存容器。 */
 function directory(filename, create = false) {
   if (create && !fs.existsSync(filename)) fs.mkdirSync(filename);
   const stat = fs.lstatSync(filename);
@@ -33,6 +34,7 @@ function createBuildLease(buildDirectory) {
     state: 'active',
     startedAt: new Date().toISOString(),
   };
+  // 复用独占打开的描述符，截短、完整写入并同步，确保正常关闭标记能够持久保存。
   const save = () => {
     const bytes = Buffer.from(JSON.stringify(state));
     fs.ftruncateSync(fd, 0);
@@ -47,11 +49,13 @@ function createBuildLease(buildDirectory) {
     throw error;
   }
   return {
+    /** 服务进程启动后补记 PID；只有桌面和服务均已退出，缓存才可能进入可复核状态。 */
     backend(pid) {
       if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('启动服务 PID 无效');
       state.backendPid = pid;
       save();
     },
+    /** 幂等标记正常关闭并释放描述符，保留租约文件作为历史证据。 */
     close() {
       if (closed) return;
       closed = true;
@@ -103,6 +107,7 @@ function footprint(root) {
   }
   return { bytes, files, unknown };
 }
+/** 读取有界、单硬链接的普通元数据文件；共享文件或链接的来源无法核验时拒绝解析。 */
 function readJson(file, limit = 64 * 1024) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > limit)

@@ -29,6 +29,11 @@ function download(raw: string, name: string, type = 'application/json;charset=ut
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 }
+/**
+ * 完整备份与恢复项目工作台草稿，绑定项目、入口及认证数据范围。
+ * 预览固定当前原文和已有恢复前副本；恢复前必须确认仍未变化，并先保存且读回原稿副本。
+ * 等待浏览器独占锁时允许取消，进入同步临界区后完成核验与应用；恢复和删除副本互斥。
+ */
 export function ProjectDraftBackup({
   projectId,
   cache,
@@ -135,6 +140,7 @@ export function ProjectDraftBackup({
     setDeleteConfirmed(false);
     setDownloadedProtection(null);
   }, [protectedRaw]);
+  /** 固定“待恢复备份、当前原文、已有保护副本”三者，后续确认与执行都基于同一快照。 */
   const prepare = (backup: ProjectDraftBackupPreview) => {
     // 预览绑定当前原稿和已有保护副本，恢复时再次比较这些快照。
     const protection = readProtection();
@@ -202,6 +208,7 @@ export function ProjectDraftBackup({
       setError(issue instanceof Error ? issue.message : '备份操作失败，当前原稿未改动。');
     }
   };
+  /** 在独占锁内重新核对当前身份与原文；成功只替换本地工作台草稿，不保存项目计划。 */
   const restore = async () => {
     // 恢复与删除互斥；进入临界区后仍核对界面代次和工作台作用域。
     if (!preview || restoringNow.current || deletingNow.current) return;

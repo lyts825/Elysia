@@ -25,6 +25,7 @@ export const reviewSourceTextLimitBytes = 16 * 1024;
 export const reviewSourceSnapshotLimitBytes = 32 * 1024;
 export const artifactChangeTextLimitBytes = 16 * 1024;
 export const artifactChangeSnapshotLimitBytes = 32 * 1024;
+/** 用户明确选择的历史产物差异与修改要求，不自动选择旧产物字节。 */
 export const ArtifactChangeSelection = z
   .object({
     reviewId: z.string().uuid(),
@@ -60,6 +61,7 @@ export const ReviewSourceNote = z
   .strict()
   .refine((value) => value.origin !== 'draft' || !value.reviewId, '本机备注资料不能冒用已保存复核记录标识');
 export type ReviewSourceNote = z.infer<typeof ReviewSourceNote>;
+/** 单独累计用户选择的备注正文预算，不把备注元数据误算为可编辑反馈。 */
 export function reviewSourceTextByteLength(notes: readonly Pick<ReviewSourceNote, 'note'>[]): number {
   const encoder = new TextEncoder();
   return notes.reduce((bytes, item) => bytes + encoder.encode(item.note).length, 0);
@@ -135,6 +137,7 @@ export interface DeliveryReviewSummary {
   reviewIssue?: DeliveryReviewIssue;
 }
 export const RunDeliveryItems = z.array(z.string().trim().min(1).max(2000)).min(1).max(40);
+/** 人工复核命令同时绑定运行、根任务和交付指纹，避免把旧页面的接受意见用于新内容。 */
 export const DeliveryReviewInput = z
   .object({
     commandId: z.string().uuid(),
@@ -159,6 +162,7 @@ export interface DeliveryUserReview {
   rootTaskId: string;
   rootRevision: number;
 }
+/** 基线不可读时返回 unknown；不能把无法比较表达成“无变化”。 */
 export interface DeliveryChangeSummary {
   baseline: 'known' | 'unknown';
   status: 'unchanged' | 'changed' | 'unknown';
@@ -182,6 +186,7 @@ export interface DeliveryArtifactMetadata {
   mediaType: string;
   verified: boolean;
 }
+/** 历史与当前元数据比较；removed 仅证明旧记录存在，不承诺旧文件还可读取。 */
 export interface DeliveryArtifactChange {
   artifactId: string;
   kind: 'added' | 'removed' | 'changed';
@@ -198,6 +203,7 @@ export interface SourceArtifactChange extends DeliveryArtifactChange {
 }
 export const SourceNoteResolutionStatus = z.enum(['pending', 'resolved', 'needs_changes']);
 export type SourceNoteResolutionStatus = z.infer<typeof SourceNoteResolutionStatus>;
+/** 来源备注处理命令绑定来源快照、当前交付和该备注处理修订，防止跨版本误标已解决。 */
 export const SourceNoteResolutionInput = z
   .object({
     commandId: z.string().uuid(),
@@ -214,6 +220,7 @@ export const SourceNoteResolutionInput = z
   })
   .strict();
 export type SourceNoteResolutionInput = z.infer<typeof SourceNoteResolutionInput>;
+/** 一次备注处理结论与当时选中的验收证据；当前交付变化后 stale 可使结论失效。 */
 export interface SourceNoteResolution {
   revision: number;
   status: SourceNoteResolutionStatus;
@@ -253,6 +260,7 @@ export interface DeliveryReviewHistoryItem {
   origin: 'saved' | 'legacy_snapshot';
   baselineAvailable: boolean;
 }
+/** 保留审核历史及兼容记录的覆盖说明，possibleGaps 不能被列表为空掩盖。 */
 export interface DeliveryReviewHistory {
   runId: string;
   items: DeliveryReviewHistoryItem[];
@@ -291,6 +299,7 @@ export interface RunRevisions {
   items: RunRevisionItem[];
   page: RecordPage;
 }
+/** 按冻结来源追溯祖先；缺失记录、扫描上限和环路分别表达，不能无限追溯。 */
 export interface RunLineage {
   runId: string;
   ancestors: {
@@ -321,6 +330,7 @@ export interface SourceArtifact {
   mediaType: string;
   verified: boolean;
 }
+/** 创建续接任务前可选的公开消息与产物目录，分页结果不表示整个历史已加载。 */
 export interface SourceOptions {
   runId: string;
   runRevision: number;
@@ -330,6 +340,10 @@ export interface SourceOptions {
   artifacts: SourceArtifact[];
   artifactPage: RecordPage;
 }
+/**
+ * 新任务创建时冻结的选定来源资料。importedId 是新任务内的产物身份，bundleArtifactId
+ * 指向完整来源说明；旧权限、预算、内部工具调用和供应商私有状态不随资料继承。
+ */
 export interface RunSourceSnapshot {
   version: 1;
   runId: string;
@@ -346,6 +360,7 @@ export interface RunSourceSnapshot {
   bundleArtifactId: string;
   hash: string;
 }
+/** 一条展示证据及可选产物元数据；正文需按其真实类型通过专用入口读取。 */
 export interface DeliveryEvidence {
   type: 'file' | 'artifact' | 'command';
   ref: string;
@@ -360,6 +375,7 @@ export interface DeliveryPage {
   hasMore: boolean;
   nextOffset: number | null;
 }
+/** 验收项只内联当前证据页，evidenceTotal 和 evidencePage 表达尚未读取的部分。 */
 export interface DeliveryCriterion {
   index: number;
   text: string;
@@ -376,6 +392,7 @@ export interface DeliveryEvidencePage {
   evidence: DeliveryEvidence[];
   page: DeliveryPage;
 }
+/** 人工验收视图：当前执行结果、证据分页、产物目录和用户复核状态共同呈现。 */
 export interface DeliveryReview extends DeliveryReviewState {
   runId: string;
   runRevision: number;

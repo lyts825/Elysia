@@ -17,6 +17,7 @@ const shape = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .nullable(),
 });
+/** pending 与 added 分离，fingerprint 记录整组选取时的比较基线。 */
 export type ReviewSourceState = z.infer<typeof shape>;
 export const emptyReviewSource = (): ReviewSourceState => ({
   version: 1,
@@ -24,6 +25,7 @@ export const emptyReviewSource = (): ReviewSourceState => ({
   added: [],
   fingerprint: null,
 });
+/** 保留可验证来源字段并统一缺省值，避免相同备注因属性顺序或缺省 reviewId 生成不同身份。 */
 export const normalizeReviewNote = (note: ReviewSourceNote): ReviewSourceNote => ({
   origin: note.origin,
   reviewId: note.reviewId ?? null,
