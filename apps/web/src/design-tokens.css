@@ -1,5 +1,11 @@
-/* 定义界面共用的颜色、间距和其他设计变量。 */
-/* Shared by both execution surfaces and every feature module. */
+/*
+ * 共享设计变量：在 :root 集中定义颜色、背景、边框、间距、圆角、阴影及动态参数，供两个执行入口和功能模块引用。高对比度覆盖仍使用同名变量，组件可继承偏好而无需逐个重写颜色。
+ * EN: Shared design tokens: defines root colors, surfaces, borders, spacing, radii, shadows, and motion parameters for both execution surfaces/features. High-contrast overrides preserve token names so components inherit the preference without individual color rewrites.
+ */
+/*
+ * 由两个执行入口和所有功能模块共用。
+ * EN: Shared by both execution surfaces and every feature module.
+ */
 :root {
   color-scheme: light;
   --font-sans: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
@@ -85,7 +91,10 @@
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
 
-/* 高对比度模式覆盖共享的文字、边框和焦点环颜色，供各组件继续引用。 */
+/*
+ * 高对比度模式覆盖共享的文字、边框和焦点环颜色，供各组件继续引用。
+ * EN: Overrides shared text, border, and focus-ring colors in high-contrast mode so components keep using the same tokens.
+ */
 @media (prefers-contrast: more) {
   :root {
     --muted: #40343d;

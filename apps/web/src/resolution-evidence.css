@@ -1,4 +1,7 @@
-/* 定义 resolution-evidence 对应界面的样式与布局。 */
+/*
+ * 处理结论证据选择：排列证据列表、条目说明和已选状态。实际复选框状态驱动选中样式，长证据在局部区域滚动，让用户可核对正文后再选择。
+ * EN: Resolution evidence: arranges selectable evidence, descriptions, and selected states. Actual checkbox state drives highlighting; bounded reading lets users inspect long evidence before choosing.
+ */
 .resolution-evidence {
   min-width: 0;
   padding: 0;
@@ -18,7 +21,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .resolution-evidence-list {
   max-height: min(32rem, 60dvh);
   overflow: auto;
@@ -38,7 +44,10 @@
 .resolution-evidence-item .workflow-note-choice {
   margin: var(--space-2) 0;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .resolution-evidence-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;

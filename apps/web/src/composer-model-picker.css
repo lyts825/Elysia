@@ -1,4 +1,7 @@
-/* 定义 composer-model-picker 对应界面的样式与布局。 */
+/*
+ * 输入区模型选择器：布局品牌、模型标签、次级说明和展开箭头，并限制菜单内选项区域的滚动。展开背景直接使用 aria-expanded，避免视觉状态与组件的可访问状态分离。
+ * EN: Composer model picker: arranges brand, model label, secondary text, and chevron, with bounded menu scrolling. The open background follows aria-expanded so visual and accessible state share one source.
+ */
 .composer-picker-trigger {
   display: flex;
   align-items: center;
@@ -38,12 +41,18 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-/* 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。 */
+/*
+ * 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。
+ * EN: Shares the hover/open background; aria-expanded supplies the open state.
+ */
 .composer-picker-trigger:hover:not(:disabled),
 .composer-picker-trigger[aria-expanded='true'] {
   background: var(--surface-hover);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .composer-picker-panel {
   position: fixed;
   inset: auto;

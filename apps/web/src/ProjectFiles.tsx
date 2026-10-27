@@ -1,4 +1,8 @@
-/* 展示项目文件。 */
+/**
+ * 展示项目文件。
+ * 提供项目资源浏览、筛选及文件/目录切换，统一文档片段定位和编码读取；内容读取由分页Hook及受控视图处理。
+ * EN: Displays source files within a project. Browses and filters project resources with file/directory selection, fragment location, and encoding; paginated hooks and controlled views handle content reads.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
@@ -9,9 +13,13 @@ import './project-files.css';
 /**
  * 浏览项目源文件，目录和文件由统一分页读取 Hook 提供。路径、编码和锚点一起形成选择，
  * 项目改变立即回根目录；读取期间明确保留上次来源，不能把旧正文误标为新路径内容。
+ * EN: Use one paged-read hook for directories/bodies. Selection contains path/encoding/anchor. Project changes return to root; retain prior source identity while reading so old content is not mislabeled.
  */
 export function ProjectFiles({ projectId }: { projectId: string }) {
-  // 选择状态绑定项目 ID；切换项目时从根目录重新开始。
+  /**
+   * 选择状态绑定项目 ID；切换项目时从根目录重新开始。
+   * EN: Bind selection to project ID and restart at root after a project change.
+   */
   const fileListId = useId();
   const [selection, setSelection] = useState({
     projectId,
@@ -41,6 +49,10 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: 'nearest' });
   }, [loading, error, path]);
+  /**
+   * 清空过滤并把路径与片段拆成文件选择和锚点，同时记录项目与编码，供后续读取和文档内定位。
+   * EN: Clears filtering and separates a path fragment into file selection and anchor while recording project and encoding for later reads and in-document navigation.
+   */
   const choose = (next: string, isFile: boolean, nextEncoding = 'auto') => {
     setFilter('');
     const hash = next.indexOf('#');

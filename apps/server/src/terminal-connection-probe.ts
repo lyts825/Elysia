@@ -1,4 +1,8 @@
-/** 探测终端连接并整理失败结果。 */
+/**
+ * 探测终端连接并整理失败结果。
+ * 显式执行最小推理或有界目录读取，按协议检查响应并只返回安全摘要；目录与推理分别证明各自操作，不互相代替。
+ * EN: Probes terminal connections and normalizes safe failures. Explicitly performs minimal inference or bounded catalogs with protocol validation/safe summaries; each check establishes its own operation only.
+ */
 import { z } from 'zod';
 import {
   TerminalConnectionBinding,
@@ -15,26 +19,45 @@ type Outcome = Pick<
   'status' | 'code' | 'message' | 'httpStatus' | 'resolvedModel' | 'models' | 'truncated'
 >;
 class ProbeFailure extends Error {
+  /**
+   * 把已经安全规范化的探测结果绑定为异常，内部控制流可抛出后由外层转换回 Outcome。
+   * EN: Wraps an already sanitized probe outcome as an exception for internal control flow and outer Outcome conversion.
+   */
   constructor(readonly outcome: Outcome) {
     super(outcome.message);
   }
 }
+/**
+ * 抛出不含远端原文的标准探测失败，统一终止协议校验。
+ * EN: Throws a standardized probe failure without remote bodies to stop protocol validation.
+ */
 function fail(code: string, message: string): never {
   throw new ProbeFailure({ status: 'failed', code, message });
 }
-/** 在已保存基础地址上添加协议路径，避免重复追加已有版本段；不自动跳到其他供应商端点。 */
+/**
+ * 在已保存基础地址上添加协议路径，避免重复追加已有版本段；不自动跳到其他供应商端点。
+ * EN: Appends protocol paths to the saved base URL without duplicating versions or switching provider endpoints.
+ */
 function endpoint(binding: TerminalConnectionBinding, suffix: string, version?: string): URL {
   const url = new URL(binding.baseUrl);
   const root = url.pathname.replace(/\/+$/, '');
   url.pathname = root + (version && !root.endsWith('/' + version) ? '/' + version : '') + suffix;
   return url;
 }
+/**
+ * 按保存的协议生成最小认证头；凭据只进入请求，不进入返回的健康摘要。
+ * EN: Builds protocol-specific minimal auth headers; secrets enter requests, not health summaries.
+ */
 function headers(binding: TerminalConnectionBinding, credential: string): Record<string, string> {
   if (binding.protocol === 'anthropic-messages')
     return { 'x-api-key': credential, 'anthropic-version': '2023-06-01' };
   if (binding.protocol === 'gemini') return { 'x-goog-api-key': credential };
   return { Authorization: 'Bearer ' + credential };
 }
+/**
+ * 校验模型 ID 为安全的 schema 字符串且不包含本次凭据；无效远端字段以固定错误拒绝。
+ * EN: Validates model IDs against schema and embedded-credential checks, rejecting invalid remote fields with a fixed error.
+ */
 function modelText(value: unknown, credential: string): string {
   if (typeof value !== 'string' || value.includes(credential))
     fail('TERMINAL_API_RESPONSE', '服务返回了无效的模型信息，请检查 API 协议和端点');
@@ -42,6 +65,10 @@ function modelText(value: unknown, credential: string): string {
   if (!result.success) fail('TERMINAL_API_RESPONSE', '服务返回了无效的模型信息，请检查 API 协议和端点');
   return result.data;
 }
+/**
+ * 把 HTTP 状态映射为安全探测结果；目录的 404/405/501 单列为不支持，不能误报所选模型不可用。
+ * EN: Maps HTTP status to safe outcomes; catalog 404/405/501 means unsupported listing, not proof the selected model is unavailable.
+ */
 function httpFailure(status: number, operation: 'check' | 'models'): Outcome {
   if (operation === 'models' && [404, 405, 501].includes(status))
     return {
@@ -64,14 +91,20 @@ function httpFailure(status: number, operation: 'check' | 'models'): Outcome {
               : ['TERMINAL_API_REQUEST', '服务未接受请求，请检查协议、模型和 API 地址'];
   return { status: 'failed', code, message: `HTTP ${status}：${advice}`, httpStatus: status };
 }
-/** 把探测错误转换为安全的状态和错误码，不透传可能含凭据的原始错误。 */
+/**
+ * 把探测错误转换为安全的状态和错误码，不透传可能含凭据的原始错误。
+ * EN: Maps probe failures to safe status/codes without leaking potentially secret-bearing raw errors.
+ */
 export function terminalProbeFailure(error: unknown, signal: AbortSignal): Outcome {
   if (error instanceof ProbeFailure) return error.outcome;
   if (signal.aborted)
     return signal.reason?.name === 'TimeoutError'
       ? { status: 'failed', code: 'TERMINAL_API_TIMEOUT', message: '连接请求超时，请检查网络或代理后重试' }
       : { status: 'failed', code: 'TERMINAL_API_CANCELLED', message: '连接请求已取消' };
-  // Never forward error.message/cause: transports and providers may include credentials or bodies.
+  /**
+   * 不得转发 error.message/cause；传输层和服务商可能在其中包含凭据或正文。
+   * EN: Never forward error.message/cause: transports and providers may include credentials or bodies.
+   */
   const code = (error as { code?: unknown } | null)?.code;
   if (code === 'API_KEY_MISSING' || code === 'TERMINAL_CREDENTIAL_MISSING')
     return { status: 'failed', code: 'API_KEY_MISSING', message: '请保存 API Key 或配置所选环境变量' };
@@ -87,7 +120,10 @@ export function terminalProbeFailure(error: unknown, signal: AbortSignal): Outco
     message: '无法完成请求，请检查 API 地址、网络、证书和代理设置',
   };
 }
-/** A bounded JSON transport using the same global fetch/proxy setup and no redirects/retries. */
+/**
+ * 使用相同全局 fetch/代理设置的有界 JSON 传输，不重定向或重试。
+ * EN: A bounded JSON transport using the same global fetch/proxy setup and no redirects/retries.
+ */
 async function readJson(
   url: URL,
   init: RequestInit,
@@ -105,6 +141,10 @@ async function readJson(
   if (!response.body) fail('TERMINAL_API_RESPONSE', '服务响应为空，请检查 API 协议和端点');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  /**
+   * 取消响应体读取并处理收尾拒绝，避免取消监听产生未处理异常。
+   * EN: Cancels response reading and handles cleanup rejection to avoid unhandled listener errors.
+   */
   const cancel = () => void reader.cancel().catch(() => {});
   signal.addEventListener('abort', cancel, { once: true });
   let raw = '';
@@ -139,7 +179,10 @@ async function readJson(
     fail('TERMINAL_API_RESPONSE', '服务未返回有效的协议响应，请检查 API 协议和端点');
   return parsed as Record<string, unknown>;
 }
-/** 构造用户显式触发的最小非流式推理检查；此操作会使用少量真实模型用量。 */
+/**
+ * 构造用户显式触发的最小非流式推理检查；此操作会使用少量真实模型用量。
+ * EN: Builds a user-triggered minimal non-streaming inference check that consumes a small amount of real model usage.
+ */
 function testRequest(binding: TerminalConnectionBinding, credential: string) {
   const prompt = 'Reply with OK. This is an explicit connection check.';
   let url: URL;
@@ -182,6 +225,10 @@ function testRequest(binding: TerminalConnectionBinding, credential: string) {
     },
   };
 }
+/**
+ * 按四类协议核对响应完成结构，允许因最小输出上限停止；并校验返回型号不泄露凭据，异常结构不能成为成功核验。
+ * EN: Checks completion structure for each protocol, allowing minimal-output limits and validating safe model identity; malformed responses cannot count as successful checks.
+ */
 function checkResponse(
   binding: TerminalConnectionBinding,
   data: Record<string, unknown>,
@@ -228,6 +275,10 @@ function checkResponse(
     ...(resolvedModel ? { resolvedModel } : {}),
   };
 }
+/**
+ * 从保存地址构造协议目录端点与分页方式；仅对明确的官方 DeepSeek Anthropic 兼容地址采用其同主机目录路径，不随意迁移供应商。
+ * EN: Builds catalog endpoint/headers/paging from saved binding; only the explicit official DeepSeek Anthropic endpoint uses its same-host catalog path, never arbitrary provider switching.
+ */
 function catalogEndpoint(binding: TerminalConnectionBinding, credential: string) {
   const original = new URL(binding.baseUrl);
   if (
@@ -255,8 +306,8 @@ function catalogEndpoint(binding: TerminalConnectionBinding, credential: string)
   };
 }
 /**
- * 读取协议对应的模型目录，最多四页和 2000 个去重型号；页间共享 2 MiB 响应预算。
- * 游标重复/含凭据/超长立即失败，达到上限标记 truncated 而不声称目录完整。
+ * 读取协议对应的模型目录，最多四页和 2000 个去重型号；页间共享 2 MiB 响应预算。 游标重复/含凭据/超长立即失败，达到上限标记 truncated 而不声称目录完整。
+ * EN: Reads protocol-specific model catalogs with at most four pages, 2000 unique models and a shared 2 MiB response budget. Repeated, secret-bearing or oversized cursors fail; hitting limits marks truncated rather than claiming completeness.
  */
 async function models(
   binding: TerminalConnectionBinding,
@@ -324,8 +375,8 @@ async function models(
   };
 }
 /**
- * 验证绑定与密钥形态后执行显式 check 或只读 models。两种操作不相互替代：目录可读不等于
- * 所选模型已响应，检查成功也不表示已枚举目录。全部失败转换为安全结果，不透传远端原文。
+ * 验证绑定与密钥形态后执行显式 check 或只读 models。两种操作不相互替代：目录可读不等于 所选模型已响应，检查成功也不表示已枚举目录。全部失败转换为安全结果，不透传远端原文。
+ * EN: Validates binding/key shape before explicit inference check or read-only model listing. Neither substitutes the other: catalog access proves no selected-model response, and inference proves no complete catalog. All failures become safe results without remote bodies.
  */
 export async function terminalConnectionProbe(
   rawBinding: TerminalConnectionBinding,

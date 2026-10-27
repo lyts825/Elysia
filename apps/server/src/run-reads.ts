@@ -1,4 +1,8 @@
-/** 读取运行记录、任务和相关数据并注册接口。 */
+/**
+ * 读取运行记录、任务和相关数据并注册接口。
+ * 提供列表、详情、历史及执行检查的小投影，按需展开旧记录；分页范围、完整统计和坏记录覆盖明确区分，缺必要资料则禁止执行写入。
+ * EN: Reads runs, tasks and related projections and registers endpoints. Provides compact list/detail/history/execution projections with lazy legacy reads, explicit page/totals/damage scope and execution-write rejection on missing prerequisites.
+ */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
@@ -39,6 +43,10 @@ const pageQuery = z
     before: z.string().uuid().optional(),
   })
   .strict();
+/**
+ * 构造侧栏运行小投影，目标正文截到 240 字符，终端只暴露执行类型而不展开冻结连接。
+ * EN: Builds a compact sidebar run, clipping objective to 240 characters and exposing terminal execution kind without frozen connection details.
+ */
 function sidebarRun(run: Run): RunListItem {
   return {
     id: run.id,
@@ -55,6 +63,10 @@ function sidebarRun(run: Run): RunListItem {
     ...(run.execution?.kind === 'docker-agent' ? { execution: { kind: 'docker-agent' } } : {}),
   };
 }
+/**
+ * 按深度、字符串、数组和对象字段数裁剪详情预览；返回派生值，不修改原记录或声称预览完整。
+ * EN: Clips preview depth, strings, arrays and object fields, returning derived data without mutating records or claiming completeness.
+ */
 function clipped(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return value.length > 2048 ? value.slice(0, 2048) + '…' : value;
   if (!value || typeof value !== 'object') return value;
@@ -66,7 +78,10 @@ function clipped(value: unknown, depth = 0): unknown {
       .map(([key, item]) => [key, clipped(item, depth + 1)]),
   );
 }
-/** 裁剪操作结果中的大集合，生成适合详情预览的操作记录。 */
+/**
+ * 裁剪操作结果中的大集合，生成适合详情预览的操作记录。
+ * EN: Trims large operation-result collections for detail previews.
+ */
 export function briefOperation(operation: Operation): Operation {
   const result =
     operation.result && typeof operation.result === 'object' && !Array.isArray(operation.result)
@@ -87,6 +102,10 @@ export function briefOperation(operation: Operation): Operation {
     detailsOmitted: true,
   } as Operation;
 }
+/**
+ * 返回省略大 manifest 的请求视图，保留在途 partialText、上下文状态和有界差异并显式 detailsOmitted。
+ * EN: Returns requests with large manifests omitted, retaining active partialText, context state and bounded difference with explicit detailsOmitted.
+ */
 function briefRequest(request: RequestRecord): RequestRecord {
   return {
     ...request,
@@ -98,20 +117,37 @@ function briefRequest(request: RequestRecord): RequestRecord {
     detailsOmitted: true,
   } as RequestRecord;
 }
-/** Reads small SQL projections; legacy rows warm once without expanding business bodies again. */
-/** 聚合运行、任务、请求和操作的只读投影，并报告不可读记录。 */
+/**
+ * 读取小型 SQL 投影；旧记录只预热一次，不重复展开业务正文。 聚合运行、任务、请求和操作的只读投影，并报告不可读记录。
+ * EN: Reads small SQL projections; legacy rows warm once without expanding business bodies again. Aggregates read-only run/task/request/operation projections and reports unreadable records.
+ */
 export class RunReads {
   private projections: ProjectionReads;
+  /**
+   * 绑定存储与按记录隔离失败的投影读取器，后续读取共享损坏覆盖率。
+   * EN: Binds Store and failure-isolating projection reads, sharing unreadable-record coverage across later operations.
+   */
   constructor(private store: Store) {
     this.projections = projectionReads(store);
   }
+  /**
+   * 读取运行任务集合并保留投影读取器的坏记录隔离语义。
+   * EN: Reads run tasks through projection readers with damaged-row isolation.
+   */
   tasks(runId: string) {
     return this.projections.collection<Task>('tasks', runId);
   }
+  /**
+   * 委托存储详情事件入口返回有界运行事件预览，不扫描完整历史。
+   * EN: Delegates to bounded detail-event preview rather than scanning full history.
+   */
   eventPreview(runId: string) {
     return readDetailEvents(this.store, runId);
   }
-  /** 推理展示缓存失败只标记 readUnavailable，不让非权威缓存故障隐藏整个请求。 */
+  /**
+   * 推理展示缓存失败只标记 readUnavailable，不让非权威缓存故障隐藏整个请求。
+   * EN: Reasoning cache failures mark readUnavailable without hiding the entire request because the cache is non-authoritative.
+   */
   requestPreview(request: RequestRecord) {
     try {
       const reasoning = this.store.requestReasoningMetadata(request.id);
@@ -146,7 +182,10 @@ export class RunReads {
       };
     }
   }
-  /** 同时传入不可读任务 ID，使“当前没有问题”和“问题无法读取”在界面中可区分。 */
+  /**
+   * 同时传入不可读任务 ID，使“当前没有问题”和“问题无法读取”在界面中可区分。
+   * EN: Includes unreadable task IDs to distinguish no current question from an unreadable question.
+   */
   currentQuestions(run: Run, tasks: readonly Task[]) {
     const unavailable = this.store.db
       .prepare("SELECT record_id FROM projection_read_issues_v1 WHERE table_name='tasks' AND run_id=?")
@@ -158,6 +197,10 @@ export class RunReads {
       unavailable.map((row) => row.record_id),
     );
   }
+  /**
+   * 汇集执行守卫所需完整任务、请求和操作集合；各类不可读记录由共享投影覆盖率记录。
+   * EN: Collects full task/request/operation sets required by execution guards, tracking unreadable rows through shared projection coverage.
+   */
   executionRecords(runId: string) {
     return {
       tasks: this.tasks(runId),
@@ -165,8 +208,15 @@ export class RunReads {
       operations: this.projections.collection<Operation>('tool_operations', runId),
     };
   }
-  /** 标注详情各分区的读取范围和覆盖率，选中的一页不能被描述为全部请求/操作。 */
+  /**
+   * 标注详情各分区的读取范围和覆盖率，选中的一页不能被描述为全部请求/操作。
+   * EN: Annotates partition scope and coverage so a selected page is never presented as all requests or operations.
+   */
   detailCoverage(runId: string, scope: 'all' | 'selected'): RunDetailCoverage {
+    /**
+     * 为一个详情分区组合真实总量、坏记录覆盖率及 all/selected 范围标记，避免分页误报完整。
+     * EN: Combines partition totals, unreadable coverage and all/selected scope so pages cannot be misreported complete.
+     */
     const section = (table: 'tasks' | 'requests' | 'tool_operations', selectedScope: 'all' | 'selected') => ({
       ...this.projections.coverage(table, runId),
       total: this.count(table, runId),
@@ -178,16 +228,31 @@ export class RunReads {
       operations: section('tool_operations', scope),
     };
   }
+  /**
+   * 检查该运行任一投影是否存在读取缺口，不展开新正文。
+   * EN: Checks whether the run's existing projection coverage has any gaps without expanding new bodies.
+   */
   hasUnavailable(runId: string) {
     return !this.projections.coverage(undefined, runId).complete;
   }
+  /**
+   * 返回当前运行的共享可读覆盖率，供 HTTP 响应解释局部结果。
+   * EN: Returns shared run readability coverage for HTTP explanations of partial results.
+   */
   readCoverage(runId: string) {
     return this.projections.coverage(undefined, runId);
   }
+  /**
+   * 触发指定运行的投影重试，实际隔离与可取消预热由投影读取器实现。
+   * EN: Triggers projection retry for one run through the projection reader's isolation/warming mechanism.
+   */
   retry(runId: string) {
     return this.projections.retry(runId);
   }
-  /** 修改执行状态前强制读取必要记录；任一不可读使入口保持只读，防止基于残缺状态继续执行。 */
+  /**
+   * 修改执行状态前强制读取必要记录；任一不可读使入口保持只读，防止基于残缺状态继续执行。
+   * EN: Requires readable prerequisite records before execution mutations; any unreadable input keeps the entry read-only.
+   */
   assertExecutionReadable(runId: string) {
     this.executionRecords(runId);
     if (this.hasUnavailable(runId))
@@ -199,15 +264,27 @@ export class RunReads {
         422,
       );
   }
+  /**
+   * 按稳定 rowid 顺序对指定集合的 ID/版本生成摘要，检测列表读取期间集合变化而不加载正文。
+   * EN: Hashes collection IDs/revisions in rowid order to detect changes without loading bodies.
+   */
   private recordVersion(table: 'requests' | 'tool_operations' | 'artifacts', runId: string) {
     const rows = this.store.db
       .prepare(`SELECT id,revision FROM ${table} WHERE run_id=? ORDER BY rowid`)
       .all(runId);
     return hash(JSON.stringify(rows));
   }
+  /**
+   * 同步补齐指定表/运行的旧版小投影，避免后续元数据查询反复展开正文。
+   * EN: Synchronously warms legacy compact projections for a table/run to avoid repeated body expansion in metadata queries.
+   */
   private warmReadModels(table: Table, runId?: string) {
     this.projections.warmSync(table, runId);
   }
+  /**
+   * 先补齐旧投影，再读取可用记录的小元数据；缺少投影时按类型从权威记录派生必要字段，坏记录跳过并保留覆盖率。
+   * EN: Warms old projections then reads compact metadata from available rows, deriving required fields from authoritative records when needed and retaining coverage for skipped damage.
+   */
   private metadata(table: Table, runId?: string): Metadata[] {
     this.warmReadModels(table, runId);
     const rows = this.store.db
@@ -254,8 +331,8 @@ export class RunReads {
     });
   }
   /**
-   * 用量独立汇总完整请求集合，不受当前对话分页影响。缺失成本/缓存观测保留 unknown，
-   * 不可读记录使 costKnown=false，避免将局部统计呈现为完整账单。
+   * 用量独立汇总完整请求集合，不受当前对话分页影响。缺失成本/缓存观测保留 unknown， 不可读记录使 costKnown=false，避免将局部统计呈现为完整账单。
+   * EN: Aggregates usage across all requests independently of conversation pages. Missing costs/cache observations stay unknown; unreadable rows clear costKnown so partial statistics are not presented as a full bill.
    */
   usage(runId: string): RunUsageSummary {
     const rows = this.metadata('requests', runId);
@@ -308,8 +385,8 @@ export class RunReads {
     };
   }
   /**
-   * 按当前消息关联补入请求/操作，并始终保留最近记录及在途/不确定记录。
-   * deferred 首屏暂缓完整统计，但返回明确标记；列表被裁剪不代表历史已被删除。
+   * 按当前消息关联补入请求/操作，并始终保留最近记录及在途/不确定记录。 deferred 首屏暂缓完整统计，但返回明确标记；列表被裁剪不代表历史已被删除。
+   * EN: Adds requests/operations linked to visible messages and retains recent, active and uncertain records. Deferred first pages explicitly postpone totals; trimmed lists do not imply deleted history.
    */
   conversation(run: Run, messages: ConversationMessageLinks[], deferred = false) {
     const requestIds = new Set(messages.flatMap((message) => (message.requestId ? [message.requestId] : [])));
@@ -319,9 +396,15 @@ export class RunReads {
         ...(message.callId ? [message.callId] : []),
       ]),
     );
+    /**
+     * 为当前对话页选择关联、最近和在途/未知记录；仅未知旧状态/调用标识需展开，避免首屏读取整个历史正文。
+     * EN: Selects linked, recent and active/unknown records for the conversation page, expanding only unknown legacy state/call identity to keep first-page reads lazy.
+     */
     const select = (table: 'requests' | 'tool_operations', linked: Set<string>, statuses: string[]) => {
-      // Only unknown legacy state or call identity needs expansion for safe filtering.
-      // Old projections with usable state do not make the first message page read every body.
+      /**
+       * 只有旧记录的状态或调用标识未知时，才需要展开正文以安全筛选。 已有可用状态的旧投影不会迫使首个消息页读取所有正文。
+       * EN: Only unknown legacy state or call identity needs expansion for safe filtering. Old projections with usable state do not make the first message page read every body.
+       */
       const unknown = this.store.db
         .prepare(
           `SELECT id FROM ${table} WHERE run_id=? AND (COALESCE(json_extract(data,'$.readModel.status'),json_extract(data,'$.status')) IS NULL${table === 'tool_operations' && linked.size ? " OR COALESCE(json_extract(data,'$.readModel.toolCallId'),json_extract(data,'$.toolCallId')) IS NULL" : ''})`,
@@ -365,7 +448,10 @@ export class RunReads {
       const value = this.projections.read<Operation>('tool_operations', row.id);
       return value ? [briefOperation(value)] : [];
     });
-    // Usage may discover a damaged older request outside the visible conversation page.
+    /**
+     * 用量统计可能发现可见对话页以外更早的损坏请求。
+     * EN: Usage may discover a damaged older request outside the visible conversation page.
+     */
     const usageSummary = deferred ? undefined : this.usage(run.id);
     return {
       requests,
@@ -392,6 +478,10 @@ export class RunReads {
           }),
     };
   }
+  /**
+   * 计算指定白名单表的全量或运行内行数，包括不可读行，确保覆盖率分母不因坏记录缩水。
+   * EN: Counts rows in an allowlisted table/run including unreadable rows so coverage denominators do not shrink with damage.
+   */
   private count(table: Table | 'tasks', runId?: string) {
     return Number(
       (
@@ -401,6 +491,10 @@ export class RunReads {
       ).n,
     );
   }
+  /**
+   * 按游标、搜索和归档条件读取运行小投影，保留指定/固定条目；按需要异步预热旧记录并补足坏记录造成的页空缺，检查取消并报告覆盖率。
+   * EN: Reads compact run pages by cursor/search/archive with retained/pinned entries, warming legacy rows when needed and refilling gaps from unreadable rows while reporting coverage and cancellation.
+   */
   async list(
     query: {
       limit: number;
@@ -416,7 +510,10 @@ export class RunReads {
     signal?: AbortSignal,
   ) {
     if (query.retryProjections === 'true') await this.projections.retry();
-    // Keep the deferred first page lazy; full summaries/search perform the yielding legacy warm.
+    /**
+     * 延迟首屏保持惰性；完整摘要和搜索使用可让出执行权的旧记录预热。
+     * EN: Keep the deferred first page lazy; full summaries/search perform the yielding legacy warm.
+     */
     if (
       query.summary !== 'deferred' ||
       query.archived !== undefined ||
@@ -466,6 +563,10 @@ export class RunReads {
         ...(query.retained ?? []).slice(0, 300),
       ].filter(Boolean),
     );
+    /**
+     * 把一条列表候选转为公开运行投影，隔离坏记录；旧行按需刷新派生投影，搜索时附是否匹配当前查询。
+     * EN: Maps one list candidate to a public run projection, isolating damage and refreshing legacy projections; search adds query-match state.
+     */
     const read = (row: { id: string }): RunListItem[] => {
       if (this.projections.has('runs', row.id)) return [];
       const projection = this.store.db
@@ -499,7 +600,10 @@ export class RunReads {
             .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[]);
       runs = selected.flatMap(read);
       if (runs.length === selected.length || result) break;
-      // Refill the bounded page after isolating unreadable rows; never return a misleading empty page.
+      /**
+       * 隔离不可读行后补足有界分页，避免返回具有误导性的空页。
+       * EN: Refill the bounded page after isolating unreadable rows; never return a misleading empty page.
+       */
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
     const hasMore = result?.hasMore ?? selected.length > query.limit;
@@ -545,6 +649,10 @@ export class RunReads {
     };
   }
 }
+/**
+ * 注册运行记录、推理分页及历史查询接口，先验证父运行与游标归属；读取错误保留可诊断的不可用结果。
+ * EN: Registers run-record/reasoning/history routes, validating parent/cursor ownership first and preserving diagnosable unavailable results.
+ */
 export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
   const projections = projectionReads(store);
   for (const collection of ['messages', 'requests'] as const) {
@@ -586,8 +694,16 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
       },
     );
   }
+  /**
+   * 为历史查询绑定请求中断与提前响应关闭的取消信号，关闭时移除请求监听。
+   * EN: Binds history-read cancellation to request abort/premature response close, removing request listeners at close.
+   */
   const requestSignal = (request: FastifyRequest, reply: FastifyReply) => {
     const controller = new AbortController(),
+      /**
+       * 中止当前历史读取控制器，停止后续批次。
+       * EN: Aborts the current history reader before subsequent batches.
+       */
       abort = () => controller.abort();
     request.raw.once('aborted', abort);
     reply.raw.once('close', () => {
@@ -600,7 +716,10 @@ export function registerRunRecordRoutes(app: FastifyInstance, store: Store) {
   app.get<{ Params: { id: string } }>(
     '/api/runs/:id/messages/search',
     async (request, reply): Promise<MessageSearchPage> => {
-      // Validate the parent before any indexed query; another Run's message cursor is never accepted.
+      /**
+       * 索引查询前先验证父运行；不得接受其他运行的消息游标。
+       * EN: Validate the parent before any indexed query; another Run's message cursor is never accepted.
+       */
       projections.require<Run>('runs', request.params.id);
       const query = z
         .object({

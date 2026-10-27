@@ -1,4 +1,8 @@
-/** 汇总项目交付看板并注册交付操作接口。 */
+/**
+ * 汇总项目交付看板并注册交付操作接口。
+ * 维护交付板条目、运行关联、确认及冻结清单，组织导出/打包；版本、范围、可读性及指纹约束写入，后续变化不改已确认视图。
+ * EN: Summarizes project delivery boards and registers delivery operations. Owns board items/links/confirmations/frozen manifests and exports/bundles with revision/scope/readability/fingerprint guards; later changes never rewrite confirmed views.
+ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
@@ -76,9 +80,21 @@ const bundleJobBinding = z
     clientId: z.string().uuid().optional(),
   })
   .strict();
+/**
+ * 将请求中断与提前关闭绑定为只读打包取消信号，并返回显式解绑函数；正常发送完成不触发取消。
+ * EN: Binds request abort/premature closure to read-only bundle cancellation and returns detach cleanup; normal completion does not cancel.
+ */
 function bundleRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
+  /**
+   * 中止当前打包 HTTP 请求的控制器。
+   * EN: Aborts this bundle HTTP request's controller.
+   */
   const abort = () => controller.abort();
+  /**
+   * 只有响应未正常结束时才把连接关闭视为取消。
+   * EN: Treats connection closure as cancellation only before normal response completion.
+   */
   const disconnect = () => {
     if (!reply.raw.writableEnded) abort();
   };
@@ -87,31 +103,57 @@ function bundleRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   if (request.raw.aborted) abort();
   return {
     signal: controller.signal,
+    /**
+     * 移除本次请求的取消监听器，避免结束后继续保留响应对象。
+     * EN: Removes this request's cancellation listeners to release response references after completion.
+     */
     detach: () => {
       request.raw.off('aborted', abort);
       reply.raw.off('close', disconnect);
     },
   };
 }
+/**
+ * 从已由外层认证的会话 Cookie 派生不透明作业归属哈希；独立服务使用固定隔离回退，不把 Cookie 原文写入作业。
+ * EN: Derives opaque job ownership from the externally authenticated session cookie, using an isolated fallback without retaining cookie plaintext.
+ */
 function bundleSessionHash(request: FastifyRequest) {
   const session = request.headers.cookie
     ?.split(';')
     .map((part) => part.trim())
     .find((part) => part.startsWith('elysia_session='))
     ?.slice('elysia_session='.length);
-  // The enclosing local-server authentication hook validates this cookie.
+  /**
+   * 外层本地服务认证钩子负责验证此cookie。
+   * EN: The enclosing local-server authentication hook validates this cookie.
+   */
   return hash(session ?? 'isolated-session');
 }
+/**
+ * 抛出统一 409 工作台冲突，供具体校验提供领域代码与说明。
+ * EN: Throws a shared 409 board conflict using the caller's domain code/message.
+ */
 function conflict(code: string, message: string): never {
   throw new AppError(code, message, false, null, 409);
 }
+/**
+ * 比较交付板版本，不匹配时要求保留输入并重新读取，防止覆盖其他窗口。
+ * EN: Checks board revision and requests reread with input preserved on mismatch to prevent cross-window overwrite.
+ */
 function revision(expected: number, actual: number) {
   if (expected !== actual) conflict('PROJECT_BOARD_CONFLICT', '项目交付工作台已更新，请保留输入并重新读取');
 }
+/**
+ * 以可重试的 422 错误拒绝不可完整读取的交付关联，不以局部状态继续冻结。
+ * EN: Rejects unreadable linked delivery with a retryable 422 rather than freezing partial state.
+ */
 function readableError(message = '关联交付暂时无法读取，不能确认或冻结'): never {
   throw new AppError('PROJECT_DELIVERY_UNREADABLE', message, true, null, 422);
 }
-/** 缺少工作台记录视为未初始化；已有记录若损坏则明确不可读，不能退回空板覆盖原数据。 */
+/**
+ * 缺少工作台记录视为未初始化；已有记录若损坏则明确不可读，不能退回空板覆盖原数据。
+ * EN: Missing board records mean uninitialized; damaged existing records fail explicitly rather than returning an empty board that could overwrite them.
+ */
 function boardRecord(store: Store, projectId: string) {
   const project = store.require<Project>('projects', projectId);
   const row = store.db
@@ -127,16 +169,27 @@ function boardRecord(store: Store, projectId: string) {
     readableError('项目交付定义暂时无法读取，请修复记录后重试');
   }
 }
+/**
+ * 同时执行项目删除锁守卫与归档检查，统一限制所有交付板写入。
+ * EN: Combines deletion-lock and archival checks for all delivery-board mutations.
+ */
 function mutable(project: Project, guard: (runId: string | null, projectId?: string) => void) {
   guard(null, project.id);
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目');
 }
+/**
+ * 从当前板按 ID 取交付项，缺失抛 404，不创建推测条目。
+ * EN: Finds an item by ID on the current board or throws 404 without inventing entries.
+ */
 function itemOf(board: StoredBoard, itemId: string) {
   const item = board.items.find((item) => item.id === itemId);
   if (!item) throw new AppError('PROJECT_ITEM_NOT_FOUND', '交付项不存在', false, null, 404);
   return item;
 }
-/** 仅业务定义字段影响 itemRevision；关联运行和确认状态变化不伪装成验收要求变更。 */
+/**
+ * 仅业务定义字段影响 itemRevision；关联运行和确认状态变化不伪装成验收要求变更。
+ * EN: Only definition fields change itemRevision. Run links and confirmation changes are not requirement edits.
+ */
 function semantic(item: z.infer<typeof ProjectDeliveryItemInput>) {
   return stable({
     title: item.title,
@@ -146,8 +199,8 @@ function semantic(item: z.infer<typeof ProjectDeliveryItemInput>) {
   });
 }
 /**
- * 保存有界完整定义，以 revision 做比较并交换；并发版本冲突时拒绝覆盖。
- * 调用方负责事务，使关联表、交付板及命令回执保持同一次提交。
+ * 保存有界完整定义，以 revision 做比较并交换；并发版本冲突时拒绝覆盖。 调用方负责事务，使关联表、交付板及命令回执保持同一次提交。
+ * EN: Saves bounded complete definitions with revision compare-and-swap. Conflicts reject overwrites; callers supply the transaction so links, board, and command receipts commit together.
  */
 function saveBoard(store: Store, projectId: string, expected: number, data: StoredBoard) {
   const json = stable(data);
@@ -169,6 +222,10 @@ function saveBoard(store: Store, projectId: string, expected: number, data: Stor
   }
   return next;
 }
+/**
+ * 构造无法读取或已删除运行的明确缺口视图，版本、指纹和复核保持 null，来源备注标为不可用。
+ * EN: Builds explicit unreadable/deleted run coverage with null revisions/fingerprint/review and unavailable source notes.
+ */
 function emptySummary(runId: string, title: string, missing = false): ProjectDeliveryRunSummary {
   return {
     runId,
@@ -184,6 +241,10 @@ function emptySummary(runId: string, title: string, missing = false): ProjectDel
     issue: missing ? '原任务已删除' : '关联交付暂时无法读取',
   };
 }
+/**
+ * 只允许本项目原生 task 运行参与交付板，拒绝其他项目和终端历史。
+ * EN: Restricts board associations to native task runs in this project, rejecting foreign projects/terminal history.
+ */
 function assertRunScope(run: Run, projectId: string) {
   invariant(
     run.projectId === projectId && run.kind === 'task' && (run.execution?.kind ?? 'native') === 'native',
@@ -191,6 +252,10 @@ function assertRunScope(run: Run, projectId: string) {
     '只能关联本项目的原生任务',
   );
 }
+/**
+ * 通过持久关联索引核对项目、交付项和运行三元关系，缺失时要求重新关联。
+ * EN: Validates the persisted project/item/run link and requires relinking when absent.
+ */
 function assertLinked(store: Store, projectId: string, itemId: string, runId: string) {
   invariant(
     store.db
@@ -201,8 +266,8 @@ function assertLinked(store: Store, projectId: string, itemId: string, runId: st
   );
 }
 /**
- * 采集当前交付指纹、复核快照和来源意见状态。关键投影读取不完整时直接拒绝确认/冻结，
- * 不能仅因运行 status=DONE 就推断交付已通过复核或来源意见已解决。
+ * 采集当前交付指纹、复核快照和来源意见状态。关键投影读取不完整时直接拒绝确认/冻结， 不能仅因运行 status=DONE 就推断交付已通过复核或来源意见已解决。
+ * EN: Captures delivery fingerprints, review snapshots, and source-feedback state. Incomplete critical projections reject confirmation/freezing; DONE alone does not establish reviewed delivery or resolved source notes.
  */
 function runState(store: Store, projectId: string, runId: string) {
   const reads = projectionReads(store),
@@ -258,7 +323,10 @@ function runState(store: Store, projectId: string, runId: string) {
   };
   return { run, root, fingerprint, review, reviewId, source, summary };
 }
-/** 列表读取隔离单个关联失败，区分原任务已删除与存在但不可读；数据库自身错误仍向上传递。 */
+/**
+ * 列表读取隔离单个关联失败，区分原任务已删除与存在但不可读；数据库自身错误仍向上传递。
+ * EN: List reads isolate linked-record failures, distinguishing deleted tasks from unreadable existing records; database errors still propagate.
+ */
 function summarize(store: Store, projectId: string, runId: string, title: string): ProjectDeliveryRunSummary {
   if (!store.db.prepare('SELECT 1 FROM runs WHERE id=?').get(runId)) return emptySummary(runId, title, true);
   try {
@@ -268,7 +336,10 @@ function summarize(store: Store, projectId: string, runId: string, title: string
     return emptySummary(runId, title);
   }
 }
-/** 按当前运行、复核、来源反馈和确认指纹逐层计算 readiness；旧确认只展示为失效，不自动迁移。 */
+/**
+ * 按当前运行、复核、来源反馈和确认指纹逐层计算 readiness；旧确认只展示为失效，不自动迁移。
+ * EN: Computes readiness from current run, review, source feedback, and confirmation fingerprints. Stale confirmations display as invalid instead of migrating automatically.
+ */
 function itemView(
   item: StoredItem,
   current: ProjectDeliveryRunSummary | null,
@@ -294,7 +365,10 @@ function itemView(
   else if (!c || confirmationStale) readiness = 'unconfirmed';
   return { ...item, attemptCount, current, confirmationStale, readiness };
 }
-/** 读取项目交付板及各交付项关联运行的数量。 */
+/**
+ * 读取项目交付板及各交付项关联运行的数量。
+ * EN: Reads the delivery board and counts linked runs for each item.
+ */
 export function projectDeliveryBoard(store: Store, projectId: string): ProjectDeliveryBoard {
   const record = boardRecord(store, projectId);
   const counts = store.db
@@ -329,7 +403,10 @@ export function projectDeliveryBoard(store: Store, projectId: string): ProjectDe
     },
   };
 }
-/** 只关联本项目未归档的原生任务；切换当前候选时撤销旧确认，历史尝试记录继续保留。 */
+/**
+ * 只关联本项目未归档的原生任务；切换当前候选时撤销旧确认，历史尝试记录继续保留。
+ * EN: Links only unarchived native tasks from the project. Switching candidates revokes old confirmation but preserves prior attempts.
+ */
 function linkRun(
   store: Store,
   record: ReturnType<typeof boardRecord>,
@@ -362,8 +439,10 @@ function linkRun(
   }
   saveBoard(store, record.project.id, record.revision, record.data);
 }
-/** Invoked only inside the existing create command: a failed board CAS rolls back the new Run too. */
-/** 在已有创建事务中将运行关联到项目交付项，并检查工作台版本。 */
+/**
+ * 仅在既有创建命令事务内调用，交付板CAS失败也回滚新运行。 在已有创建事务中将运行关联到项目交付项，并检查工作台版本。
+ * EN: Invoked only inside the existing create command: a failed board CAS rolls back the new Run too. Links a newly created run to a delivery item within its existing transaction and checks workbench revision.
+ */
 export function attachProjectDeliveryRun(store: Store, run: Run, binding: ProjectDeliveryBinding) {
   invariant(run.projectId, 'PROJECT_RUN_SCOPE', '项目交付项不能关联独立聊天');
   const record = boardRecord(store, run.projectId);
@@ -371,7 +450,10 @@ export function attachProjectDeliveryRun(store: Store, run: Run, binding: Projec
   invariant(!record.project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目');
   linkRun(store, record, binding.itemId, run, true);
 }
-/** 同时核对存储列、清单正文和稳定序列化哈希，冻结清单损坏时禁止导出。 */
+/**
+ * 同时核对存储列、清单正文和稳定序列化哈希，冻结清单损坏时禁止导出。
+ * EN: Validates storage columns, manifest body, and stable serialization hash; damaged frozen manifests cannot export.
+ */
 function manifestRow(store: Store, projectId: string, manifestId: string) {
   store.require<Project>('projects', projectId);
   const row = store.db
@@ -393,7 +475,10 @@ function manifestRow(store: Store, projectId: string, manifestId: string) {
     readableError('冻结清单完整性核验失败，请修复记录后重试');
   }
 }
-/** 冻结内容保持原样，仅附加当前来源可用性，明确原文缺失或后来已变化。 */
+/**
+ * 冻结内容保持原样，仅附加当前来源可用性，明确原文缺失或后来已变化。
+ * EN: Keeps frozen content unchanged while adding current source availability, explicitly identifying missing or changed originals.
+ */
 function manifestView(store: Store, manifest: ProjectDeliveryManifest): ProjectDeliveryManifestView {
   const availability = manifest.items.map((item) => {
     const current = summarize(store, manifest.projectId, item.run.id, item.run.title);
@@ -435,7 +520,10 @@ function manifestView(store: Store, manifest: ProjectDeliveryManifest): ProjectD
   });
   return { manifest, availability };
 }
-/** 注册项目交付板、冻结清单及相关归档和交付包服务。 */
+/**
+ * 注册项目交付板、冻结清单及相关归档和交付包服务。
+ * EN: Registers delivery-board, frozen-manifest, archive, and bundle services.
+ */
 export function registerProjectDelivery(
   app: FastifyInstance,
   store: Store,
@@ -450,7 +538,10 @@ export function registerProjectDelivery(
     CREATE TABLE IF NOT EXISTS project_delivery_manifests_v1(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,title TEXT NOT NULL,created_at TEXT NOT NULL,item_count INTEGER NOT NULL,hash TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)));
     CREATE INDEX IF NOT EXISTS project_delivery_manifests_project ON project_delivery_manifests_v1(project_id);`);
   registerProjectDeliveryWarm(app, store, (projectId) => {
-    // 元数据预热绑定整个工作台版本；关联集合变化后不能沿用旧读取结果。
+    /**
+     * 元数据预热绑定整个工作台版本；关联集合变化后不能沿用旧读取结果。
+     * EN: Metadata warming binds the entire workbench revision; changed links cannot reuse old read results.
+     */
     const record = boardRecord(store, projectId);
     return {
       version: hash(stable({ revision: record.revision, data: record.data })),
@@ -481,7 +572,10 @@ export function registerProjectDelivery(
       true,
     );
   });
-  // 编辑定义与关联运行分开处理；仅要求内容变化才递增 itemRevision，使原确认自然失效。
+  /**
+   * 编辑定义与关联运行分开处理；仅要求内容变化才递增 itemRevision，使原确认自然失效。
+   * EN: Edits definitions separately from run links; only requirement changes advance itemRevision and naturally invalidate prior confirmation.
+   */
   app.put<{ Params: { id: string } }>('/api/projects/:id/delivery-board', (request) => {
     const body = ProjectDeliveryBoardInput.parse(request.body);
     return store.command(body.commandId, { route: request.url, body }, () => {
@@ -612,7 +706,10 @@ export function registerProjectDelivery(
       });
     },
   );
-  // 人工确认绑定交付项版本、当前候选、正文指纹和复核快照，任一变化都必须重新核对。
+  /**
+   * 人工确认绑定交付项版本、当前候选、正文指纹和复核快照，任一变化都必须重新核对。
+   * EN: Human confirmation binds item revision, candidate, content fingerprint, and review snapshot; every change requires revalidation.
+   */
   app.post<{ Params: { id: string; itemId: string } }>(
     '/api/projects/:id/delivery-board/items/:itemId/confirm',
     (request) => {
@@ -659,7 +756,10 @@ export function registerProjectDelivery(
       });
     },
   );
-  // 冻结在同一命令事务中验证全部必选项；保存的是不可变元数据快照，文件字节稍后另行打包。
+  /**
+   * 冻结在同一命令事务中验证全部必选项；保存的是不可变元数据快照，文件字节稍后另行打包。
+   * EN: Freezing validates all required items in one command transaction and saves immutable metadata; file bytes are bundled separately later.
+   */
   app.post<{ Params: { id: string } }>('/api/projects/:id/delivery-manifests', (request) => {
     const body = ProjectDeliveryManifestInput.parse(request.body);
     return store.command(body.commandId, { route: request.url, body }, () => {
@@ -764,7 +864,10 @@ export function registerProjectDelivery(
         items: selected,
       };
       const json = stable(snapshot);
-      // hash 字段不参与自身摘要；导出 JSON 的空白格式与此语义哈希无关。
+      /**
+       * hash 字段不参与自身摘要；导出 JSON 的空白格式与此语义哈希无关。
+       * EN: The hash field excludes itself; exported JSON whitespace is unrelated to the semantic digest.
+       */
       invariant(
         Buffer.byteLength(json, 'utf8') <= 8 * 1024 * 1024,
         'PROJECT_MANIFEST_LIMIT',
@@ -879,7 +982,10 @@ export function registerProjectDelivery(
       return archives.remove(manifest, expectedObjectHash);
     },
   );
-  // 下载读取持续绑定请求取消信号；流关闭时卸载监听，失败只释放本次已取得的资源。
+  /**
+   * 下载读取持续绑定请求取消信号；流关闭时卸载监听，失败只释放本次已取得的资源。
+   * EN: Download reads remain abort-bound, detach listeners at stream close, and release only resources acquired by this request on failure.
+   */
   app.get<{ Params: { id: string; manifestId: string } }>(
     '/api/projects/:id/delivery-manifests/:manifestId/archive/file',
     async (request, reply) => {
@@ -931,7 +1037,10 @@ export function registerProjectDelivery(
       }
     },
   );
-  // 长时检查/下载/保存以 202 作业返回，后续轮询与领取绑定同一会话及冻结清单。
+  /**
+   * 长时检查/下载/保存以 202 作业返回，后续轮询与领取绑定同一会话及冻结清单。
+   * EN: Long checks/downloads/saves return 202 jobs; polling and file claims bind the same session and frozen manifest.
+   */
   app.post<{ Params: { id: string; manifestId: string } }>(
     '/api/projects/:id/delivery-manifests/:manifestId/bundle-jobs',
     (request, reply) => {
@@ -992,8 +1101,10 @@ export function registerProjectDelivery(
           .send(bundle.stream);
       } catch (error) {
         cancellation.detach();
-        // A rejected duplicate GET has acquired nothing and must not cancel the
-        // legitimate sender. Only clean up this request's successfully claimed ZIP.
+        /**
+         * 被拒绝的重复GET未取得资源，不能取消， 合法发送者；只清理本请求确实取得的ZIP。
+         * EN: A rejected duplicate GET has acquired nothing and must not cancel the legitimate sender. Only clean up this request's successfully claimed ZIP.
+         */
         if (bundle) {
           await bundles.cancel(manifest, request.params.jobId, bundleSessionHash(request), clientId);
           await bundle.dispose();

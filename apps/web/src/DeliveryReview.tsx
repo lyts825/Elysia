@@ -1,4 +1,8 @@
-/* 展示和处理交付评审。 */
+/**
+ * 展示和处理交付评审。
+ * 组织交付快照、差异、证据、评审和用户复核入口，并协调预览焦点；写入权限与版本一致性仍由各专用流程校验。
+ * EN: Displays delivery validation and review controls. Composes delivery snapshots, differences, evidence, reviews, and user feedback with preview-focus coordination; dedicated flows still validate write authority and revision consistency.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryReview as Delivery, SourceArtifact } from '../../../packages/contracts/src/workflow';
 import type { Artifact, Operation } from '../../../packages/contracts/src/index';
@@ -16,7 +20,10 @@ import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } 
 import './workflow.css';
 import './delivery-overview.css';
 const FilePreview = deferredPanel(
-  // 产物预览按需加载，不阻塞交付主体与复核意见显示。
+  /**
+   * 产物预览按需加载，不阻塞交付主体与复核意见显示。
+   * EN: Load artifact preview on demand without blocking the delivery body or review notes.
+   */
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
   '产物预览',
 );
@@ -25,6 +32,7 @@ const FilePreview = deferredPanel(
  * 交付验收容器：先准备有界读模型，再读取交付快照；各子面板独立处理证据分页、备注和历史。
  * readOnly 及回调存在性决定可编辑能力，复核写入期间锁定关闭/修改入口，避免丢失在途决定。
  * raw 草稿由上层维护，因此读取失败或刷新不会直接覆盖用户尚未保存的意见。
+ * EN: The delivery review container prepares bounded read models before loading the snapshot. Child panels independently page evidence, notes, and history. readOnly and available callbacks determine edit capability. Lock closing and editing during a review write so an in-flight decision is not lost. The parent owns the raw draft, so read failure or refresh does not directly overwrite unsaved feedback.
  */
 export function DeliveryReview({
   runId,
@@ -66,9 +74,16 @@ export function DeliveryReview({
   const readRequest = useRef<AbortController | null>(null);
   const previewOpener = useRef<HTMLButtonElement | null>(null);
   const pendingPreviewFocus = useRef<(() => void) | null>(null);
+  /**
+   * 交付评审面板卸载时取消尚未完成的预览焦点恢复，防止异步帧访问已离开的界面。
+   * EN: Cancels pending preview-focus restoration when the delivery panel unmounts so an asynchronous frame cannot target a departed view.
+   */
   useEffect(() => () => pendingPreviewFocus.current?.(), []);
   useEffect(() => {
-    // runId/retry 变化只重读服务端快照；取消旧请求并保留同运行已读内容，避免旧响应串入新任务。
+    /**
+     * runId/retry 变化只重读服务端快照；取消旧请求并保留同运行已读内容，避免旧响应串入新任务。
+     * EN: A runId or retry change rereads the server snapshot only. Cancel old requests and retain loaded content for the same run, preventing stale responses from crossing into another task.
+     */
     const controller = new AbortController();
     readRequest.current = controller;
     setError('');
@@ -95,7 +110,10 @@ export function DeliveryReview({
       });
     return () => controller.abort();
   }, [api, runId, retry]);
-  // 证据内与独立文件列表复用同一产物展示和下载入口，记录真实打开按钮用于收起后归还焦点。
+  /**
+   * 证据内与独立文件列表复用同一产物展示和下载入口，记录真实打开按钮用于收起后归还焦点。
+   * EN: Evidence and standalone file lists reuse artifact display and download actions. Record the actual opener for focus restoration after collapse.
+   */
   const file = (item: SourceArtifact, embedded = false) => (
     <DeliveryFile
       key={item.id}
@@ -272,12 +290,24 @@ export function DeliveryReview({
                         const target = previewOpener.current;
                         if (!ownsFocus || !target) return;
                         let cancelled = false;
+                        /**
+                         * 记录用户已转移交互意图，使异步收起预览结束后不再自动抢回焦点。
+                         * EN: Records that user interaction has moved elsewhere so asynchronous preview collapse no longer restores focus automatically.
+                         */
                         const cancel = () => {
                           cancelled = true;
                         };
+                        /**
+                         * 焦点离开收起按钮时取消待执行的焦点恢复，保留用户新选择的目标。
+                         * EN: Cancels pending focus restoration when focus leaves the collapse button, preserving the user-selected target.
+                         */
                         const focusChanged = (event: FocusEvent) => {
                           if (event.target !== closer) cancel();
                         };
+                        /**
+                         * 解除本次焦点恢复的临时全局监听，并仅清空仍属于本次操作的取消引用。
+                         * EN: Removes temporary global listeners for this focus restoration and clears the cancellation ref only if it still belongs to this operation.
+                         */
                         const cleanup = () => {
                           document.removeEventListener('focusin', focusChanged);
                           document.removeEventListener('pointerdown', cancel, true);
@@ -285,7 +315,10 @@ export function DeliveryReview({
                           window.removeEventListener('blur', cancel);
                           if (pendingPreviewFocus.current === stop) pendingPreviewFocus.current = null;
                         };
-                        // 仅在焦点仍属于收起动作且用户未转向别处时归还，避免异步抢走新的键盘焦点。
+                        /**
+                         * 仅在焦点仍属于收起动作且用户未转向别处时归还，避免异步抢走新的键盘焦点。
+                         * EN: Restore focus only if it still belongs to the collapse action and the user has not moved elsewhere, avoiding asynchronous focus theft.
+                         */
                         const frame = requestAnimationFrame(() => {
                           cleanup();
                           const active = document.activeElement;
@@ -302,6 +335,10 @@ export function DeliveryReview({
                           target.focus({ preventScroll: true });
                           target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                         });
+                        /**
+                         * 完整取消待执行的焦点归还：设置取消标志、停止动画帧并解除监听，供后续操作或卸载复用。
+                         * EN: Fully cancels pending focus return by setting the cancellation flag, cancelling the animation frame, and removing listeners for replacement or teardown.
+                         */
                         const stop = () => {
                           cancel();
                           cancelAnimationFrame(frame);
@@ -344,7 +381,10 @@ export function DeliveryReview({
   );
 }
 
-/** 显示版本/核验元信息及预览、下载动作；名称可缩略展示，完整名称与哈希仍可展开读取。 */
+/**
+ * 显示版本/核验元信息及预览、下载动作；名称可缩略展示，完整名称与哈希仍可展开读取。
+ * EN: Display version and verification metadata with preview and download actions. A shortened name remains expandable together with the full hash.
+ */
 function DeliveryFile({
   item,
   href,
@@ -406,13 +446,20 @@ function DeliveryFile({
   );
 }
 
-/** 命令证据展开时才读取权威操作记录，收起/切换身份时取消读取，不用候选摘要冒充执行结果。 */
+/**
+ * 命令证据展开时才读取权威操作记录，收起/切换身份时取消读取，不用候选摘要冒充执行结果。
+ * EN: Read the authoritative operation only when command evidence expands. Cancel on collapse or identity change; a candidate summary must not impersonate an execution result.
+ */
 function CommandEvidence({ runId, operationId }: { runId: string; operationId: string }) {
   const { api } = useSurfaceClient();
   const [open, setOpen] = useState(false);
   const [operation, setOperation] = useState<Operation>();
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  /**
+   * 按运行、操作身份、展开和重试读取操作详情；改变目标或卸载时中断请求，仅未取消结果进入详情状态。
+   * EN: Reads operation detail by run/operation identity, expansion, and retry; target changes or teardown abort the request and only live results reach state.
+   */
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();

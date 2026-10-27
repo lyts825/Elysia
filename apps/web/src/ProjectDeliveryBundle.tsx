@@ -1,4 +1,8 @@
-/* 展示项目交付包及相关操作。 */
+/**
+ * 展示项目交付包及相关操作。
+ * 按冻结清单创建检查与下载作业，校验归属、长度及ZIP摘要，清理本客户端作业；文件保存仅在完整验证后触发。
+ * EN: Displays project bundle generation and download actions. Creates check/download jobs for a frozen manifest, verifies ownership, length, and ZIP digest, and cleans up client-owned jobs; browser saving follows full validation.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBundlePlan,
@@ -10,6 +14,10 @@ import { ApiError } from './api';
 import { ProjectDeliveryArchive } from './ProjectDeliveryArchive';
 import './project-delivery-bundle.css';
 
+/**
+ * 将可知大小转换为字节、KiB或MiB；null明确显示大小未知。
+ * EN: Formats known sizes in bytes, KiB, or MiB, explicitly showing unknown size for null.
+ */
 const sizeLabel = (bytes: number | null) =>
   bytes === null
     ? '大小未知'
@@ -23,6 +31,7 @@ const sizeLabel = (bytes: number | null) =>
  * 为不可变冻结清单检查文件或生成 ZIP。每窗口保存 clientId，所有作业响应同时核对作业、
  * 客户端、项目、清单及哈希；切换清单卸载后取消本地读取并尽力删除服务端作业。
  * 文件检查和下载分别创建作业，不能用较早检查通过代替下载时的重新核验。
+ * EN: Check/build ZIP from an immutable manifest. Retain window clientId and validate job/client/project/manifest/hash on responses. Abort local reads and best-effort delete jobs on change/unmount. Checks and downloads create separate jobs; download revalidates rather than trusting an earlier check.
  */
 export function ProjectDeliveryBundle({
   manifest,
@@ -36,7 +45,10 @@ export function ProjectDeliveryBundle({
   onSaved?: () => void;
 }) {
   const { api, apiUrl } = useSurfaceClient();
-  // 打包计划、任务进度和下载状态绑定当前不可变清单。
+  /**
+   * 打包计划、任务进度和下载状态绑定当前不可变清单。
+   * EN: Bind plan, progress, and download state to the immutable current manifest.
+   */
   const [plan, setPlan] = useState<ProjectDeliveryBundlePlan>();
   const [working, setWorking] = useState<'check' | 'download' | null>(null);
   const [error, setError] = useState('');
@@ -58,10 +70,18 @@ export function ProjectDeliveryBundle({
     }
   });
   const query = '?expectedManifestHash=' + encodeURIComponent(manifest.hash) + '&clientId=' + clientId;
+  /**
+   * 尽力删除当前客户端持有的指定打包作业；清理失败被容错，不覆盖当前界面操作结果。
+   * EN: Best-effort deletes the specified bundle job owned by this client; cleanup failures do not replace the current UI outcome.
+   */
   const discard = (jobId: string) =>
     api(base + '/bundle-jobs/' + jobId, { expectedManifestHash: manifest.hash, clientId }, 'DELETE').catch(
       () => {},
     );
+  /**
+   * 打包面板卸载时中断当前控制器、解除操作引用并尽力删除本客户端作业，防止下载在离开后继续触发。
+   * EN: On bundle-panel teardown, aborts the active controller, clears the operation reference, and best-effort deletes the client-owned job so download does not continue after departure.
+   */
   useEffect(
     () => () => {
       const current = operation.current;
@@ -71,8 +91,16 @@ export function ProjectDeliveryBundle({
     },
     [],
   );
+  /**
+   * 检查控制器仍属于当前操作且未取消，阻止旧检查或下载结果回写。
+   * EN: Checks that a controller still belongs to the active operation and is not aborted, preventing obsolete check or download updates.
+   */
   const current = (controller: AbortController) =>
     operation.current?.controller === controller && !controller.signal.aborted;
+  /**
+   * 逐项校验作业ID、客户端、项目、清单哈希及作业类型；任何不匹配都抛错以阻断错误文件下载。
+   * EN: Validates job ID, client, project, manifest hash, and operation kind, throwing on any mismatch to prevent downloading the wrong bundle.
+   */
   const assertJob = (job: ProjectDeliveryBundleJob, jobId: string, kind: 'check' | 'download') => {
     if (
       job.id !== jobId ||
@@ -84,9 +112,15 @@ export function ProjectDeliveryBundle({
     )
       throw Error('返回的文件包作业不属于当前清单，请重新检查。');
   };
-  /** 创建后轮询同一作业；即使 POST 迟到，也等待取得作业身份后明确取消，避免遗留后台工作。 */
+  /**
+   * 创建后轮询同一作业；即使 POST 迟到，也等待取得作业身份后明确取消，避免遗留后台工作。
+   * EN: Poll the same created job; wait for late POST identity before cancellation to avoid abandoned server work.
+   */
   const prepare = async (kind: 'check' | 'download', controller: AbortController, jobId: string) => {
-    // Let creation finish so even a late POST result can be explicitly cancelled.
+    /**
+     * 等待创建结束，迟到的 POST 也能明确取消。
+     * EN: Let creation finish so even a late POST result can be explicitly cancelled.
+     */
     let job = await api<ProjectDeliveryBundleJob>(
       base + '/bundle-jobs',
       {
@@ -110,6 +144,10 @@ export function ProjectDeliveryBundle({
       if (job.stage === 'cancelled') throw Error('文件包作业已取消，请重新检查。');
       if (job.stage === 'completed' || job.stage === 'ready') return job;
       await new Promise<void>((resolve) => {
+        /**
+         * 收束轮询间隔并移除取消监听，使计时器完成或取消都能尽快继续检查操作有效性。
+         * EN: Settles the polling delay and removes its abort listener so timeout or cancellation promptly returns to operation-validity checks.
+         */
         const done = () => {
           clearTimeout(timer);
           controller.signal.removeEventListener('abort', done);
@@ -128,10 +166,17 @@ export function ProjectDeliveryBundle({
       assertJob(job, jobId, kind);
     }
   };
-  /** 按声明长度有界接收文件，每收到新块重置 15 秒空闲期限，超长或中断均不产生下载。 */
+  /**
+   * 按声明长度有界接收文件，每收到新块重置 15 秒空闲期限，超长或中断均不产生下载。
+   * EN: Receive within declared length; reset a 15-second idle timeout per chunk. Oversize/interrupted transfers produce no download.
+   */
   const receive = async (job: ProjectDeliveryBundleJob, controller: AbortController) => {
     let idle: ReturnType<typeof setTimeout>;
     const reading = new AbortController();
+    /**
+     * 每次读取进度后重置15秒无进展超时；超时中止独立读取控制器，避免下载无限悬挂。
+     * EN: Resets a 15-second idle timeout after read progress; expiry aborts the dedicated reader so a stalled download cannot hang indefinitely.
+     */
     const renew = () => {
       clearTimeout(idle);
       idle = setTimeout(() => reading.abort(), 15_000);
@@ -187,6 +232,10 @@ export function ProjectDeliveryBundle({
       clearTimeout(idle!);
     }
   };
+  /**
+   * 创建并轮询独立检查作业，清空旧计划并校验返回身份；只有有效当前请求才能发布可下载方案或错误。
+   * EN: Creates and polls an isolated check job, clearing the old plan and validating identity; only the current live request publishes a download plan or failure.
+   */
   const check = async () => {
     if (operation.current) return;
     const controller = new AbortController();
@@ -222,6 +271,10 @@ export function ProjectDeliveryBundle({
       }
     }
   };
+  /**
+   * 仅对通过检查的计划创建下载作业；轮询完成后读取并核验ZIP内容，取消或失败时清理作业并保留可重试状态。
+   * EN: Creates a download job only for an approved plan, then polls, reads, and verifies ZIP bytes. Cancellation or failure cleans up the job and leaves a retryable state.
+   */
   const download = async () => {
     if (!plan?.canDownload || operation.current) return;
     const controller = new AbortController();
@@ -265,6 +318,10 @@ export function ProjectDeliveryBundle({
       }
     }
   };
+  /**
+   * 中断当前浏览器请求并尽力删除对应作业，清空旧计划与进度，使用户重新检查后再下载。
+   * EN: Aborts the active browser request, best-effort deletes its job, and clears the previous plan and progress so the user can check again before downloading.
+   */
   const cancel = () => {
     const old = operation.current;
     old?.controller.abort();

@@ -1,3 +1,5 @@
+# 默认自动识别文本，显式列出的源码和配置使用 LF；Windows 启动脚本使用 CRLF，避免不同工具产生换行噪声。
+# EN: Detect text automatically, set LF for the listed source/configuration patterns, and CRLF for Windows launch scripts.
 * text=auto
 *.md text eol=lf
 .gitignore text eol=lf
@@ -15,5 +17,6 @@
 *.cmd text eol=crlf
 *.vbs text eol=crlf
 *.ps1 text eol=crlf
-# Preserve upstream license bytes, including their original indentation and line endings.
+# 上游许可证按原始字节保留，禁用文本换行转换及空白检查，避免修改其缩进与换行。
+# EN: Preserve upstream license bytes, disabling text conversion and whitespace checks to retain original indentation and line endings.
 assets/distribution/*-LICENSE.txt -text -whitespace

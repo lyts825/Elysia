@@ -1,4 +1,10 @@
-// 实现 MCP 连接、权限检查、工具发现及调用。
+/**
+ * 实现 MCP 连接、权限检查、工具发现及调用。
+ * EN: Implement MCP transport sessions, permission gates, tool discovery, and invocation.
+ *
+ * 按连接维护传输、会话和能力发现，并在调用前核对允许的工具及配置；错误经统一边界返回，不绕过工具授权。
+ * EN: Maintain transports, sessions, and discovery per connection and check allowed tools/configuration before calls, returning errors through the tool boundary.
+ */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -14,11 +20,21 @@ const TOOL_NAME = /^[A-Za-z0-9_.-]{1,128}$/;
 const MAX_ARGUMENT_BYTES = 256 * 1024;
 
 export interface McpPermission {
-  /** 建立连接所需的执行权限，stdio 和 HTTP 均要求。 */
+  /**
+   * 建立连接所需的执行权限，stdio 和 HTTP 均要求。
+   * EN: Execution permission is required to establish either stdio or HTTP connections.
+   */
   exec: boolean;
-  /** 调用远端工具所需的写入权限；工具的只读注释不会放宽此门禁。 */
+  /**
+   * 调用远端工具所需的写入权限；工具的只读注释不会放宽此门禁。
+   * EN: Remote invocation additionally requires write permission; remote read-only annotations do not
+   * weaken this gate.
+   */
   write: boolean;
-  /** HTTP 连接允许的精确 URL 集合，不按主机前缀匹配。 */
+  /**
+   * HTTP 连接允许的精确 URL 集合，不按主机前缀匹配。
+   * EN: The exact HTTP connection URL allowlist, not a hostname-prefix allowlist.
+   */
   urls: string[];
 }
 export interface McpTool {
@@ -42,11 +58,21 @@ export interface McpCallResult {
 }
 type RpcMessage = Record<string, unknown> & { jsonrpc: '2.0' };
 type Session = {
-  /** 发出有 ID 的 RPC 并等待匹配结果；onSent 标识副作用可能开始的发送边界。 */
+  /**
+   * 发出有 ID 的 RPC 并等待匹配结果；onSent 标识副作用可能开始的发送边界。
+   * EN: Send an ID-bearing RPC and await its matching result. onSent marks the boundary where side
+   * effects may have started.
+   */
   request(method: string, params?: Record<string, unknown>, onSent?: () => void): Promise<unknown>;
-  /** 发送无 ID 通知，不等待业务结果。 */
+  /**
+   * 发送无 ID 通知，不等待业务结果。
+   * EN: Send an ID-free notification without waiting for a business result.
+   */
   notify(method: string): Promise<void>;
-  /** 释放传输资源并处理剩余等待者，允许重复调用。 */
+  /**
+   * 释放传输资源并处理剩余等待者，允许重复调用。
+   * EN: Release transport resources and settle remaining waiters; repeated close calls are permitted.
+   */
   close(): Promise<void>;
 };
 type ConnectionContext = {
@@ -60,13 +86,25 @@ type ConnectionContext = {
   args?: string[];
 };
 
+/**
+ * 构造不可自动重试的MCP错误，避免未经核验重复潜在副作用。
+ * EN: Create a non-retryable MCP error to avoid repeating potential side effects without verification.
+ */
 function failure(code: string, message: string) {
   return new AppError(code, message, false);
 }
+/**
+ * 把非空非数组对象作为RPC记录，其他JSON值不具备消息字段。
+ * EN: Recognize only non-null, non-array objects as RPC records.
+ */
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
-/** 只继承定位程序和用户目录的基础变量，连接专用凭据必须经配置显式引用。 */
+/**
+ * 只继承定位程序和用户目录的基础变量，连接专用凭据必须经配置显式引用。
+ * EN: Inherit only baseline program/user-path variables. Connection-specific credentials require
+ * explicit configured references.
+ */
 function baseEnv(): NodeJS.ProcessEnv {
   const keys = [
     'PATH',
@@ -85,7 +123,11 @@ function baseEnv(): NodeJS.ProcessEnv {
   ];
   return Object.fromEntries(keys.filter((key) => process.env[key]).map((key) => [key, process.env[key]]));
 }
-/** 解析一个环境变量引用，同时收集其值用于输出脱敏；缺失配置不连接远端。 */
+/**
+ * 解析一个环境变量引用，同时收集其值用于输出脱敏；缺失配置不连接远端。
+ * EN: Resolve one environment-variable reference and collect its value for output redaction. Missing
+ * values fail before connecting.
+ */
 function envValue(name: string, secrets: string[]) {
   if (!ENV_NAME.test(name)) throw failure('MCP_ENV_INVALID', 'MCP 环境变量名称无效');
   const value = process.env[name];
@@ -97,6 +139,10 @@ function envValue(name: string, secrets: string[]) {
  * 将保存的连接配置编译为本次会话环境：校验凭据引用、请求头、工具范围和传输参数。
  * 不允许覆盖协议保留头，也不允许把凭据直接塞入 URL；Windows 程序入口在此解析。
  * 返回的 secrets 仅在本次连接内使用，配置导入本身不调用此函数或启动服务。
+ * EN: Compile stored configuration into a per-session environment, validating credential references,
+ * headers, tool scope, and transport arguments. Reject reserved-header overrides and embedded URL
+ * credentials; resolve Windows executables here. secrets stays local to this connection, and
+ * importing configuration alone does not prepare or start a service.
  */
 async function prepare(
   config: LocalMcpConfig,
@@ -163,6 +209,9 @@ async function prepare(
 /**
  * Windows 包管理器的 .cmd 启动器不能在 shell=false 下直接可靠执行，因此解析其 JS 入口，
  * 使用当前 Node 加参数启动；自定义批处理拒绝执行，避免回退到命令字符串解释。
+ * EN: With shell=false, Windows package-manager .cmd shims cannot be executed directly in this path.
+ * Resolve their JavaScript entries and launch with the current Node plus arguments. Reject custom
+ * batch files instead of falling back to shell string interpretation.
  */
 async function stdioExecutable(command: string, args: string[]) {
   if (process.platform !== 'win32') return { program: command, args };
@@ -182,6 +231,10 @@ async function stdioExecutable(command: string, args: string[]) {
       );
     return { program: command, args };
   }
+  /**
+   * 探测候选包管理器入口是否为普通文件，缺失或无权限时继续其他候选。
+   * EN: Check whether a package-manager candidate is a file, allowing other candidates after missing or inaccessible paths.
+   */
   const isFile = async (filename: string) => {
     try {
       return (await fs.stat(filename)).isFile();
@@ -205,13 +258,20 @@ async function stdioExecutable(command: string, args: string[]) {
   }
   return { program: command, args };
 }
-/** 显式允许列表与拒绝列表同时生效，拒绝优先；未设置允许列表时仍受拒绝列表约束。 */
+/**
+ * 显式允许列表与拒绝列表同时生效，拒绝优先；未设置允许列表时仍受拒绝列表约束。
+ * EN: Apply allowed and denied tool lists together, with denial taking precedence. An omitted
+ * allowlist still respects the denylist.
+ */
 function toolAllowed(config: LocalMcpConfig, name: string) {
   return (!config.allowedTools || config.allowedTools.includes(name)) && !config.deniedTools?.includes(name);
 }
 /**
  * 连接必须有 exec，实际工具调用另需 write；HTTP 地址按 URL 规范化后精确匹配授权。
  * calling 区分目录检查与可能产生副作用的调用，不根据远端自述推断授权。
+ * EN: Require exec for connections and write for invocation. Normalize HTTP URLs and match
+ * authorization exactly. calling distinguishes catalogue inspection from potentially mutating calls;
+ * remote claims do not grant permission.
  */
 function permissionGate(config: LocalMcpConfig, permission: McpPermission | undefined, calling: boolean) {
   if (!permission || !permission.exec) throw failure('MCP_EXEC_DENIED', 'MCP 连接需要任务的执行权限');
@@ -234,11 +294,18 @@ function permissionGate(config: LocalMcpConfig, permission: McpPermission | unde
     if (!allowed) throw failure('MCP_URL_DENIED', 'MCP URL 未在任务中明确授权');
   }
 }
-// Environment references are resolved only for this connection. Never expose their values in
-// diagnostics, tool results, schema metadata or server-provided error strings.
-/** 递归替换已识别敏感值，连对象键也处理；节点数和深度上限防止远端结构耗尽资源。 */
+/**
+ * 环境引用仅为本次连接解析，已识别敏感值不能回显到诊断、工具结果、schema或远端错误。递归替换字符串及对象键，节点数和深度上限约束远端结构。
+ * EN: Resolve environment references only for this connection and redact identified values from
+ * diagnostics, results, schemas, and remote error material. Recursively sanitize strings and object
+ * keys, bounding node count and depth.
+ */
 function sanitized(value: unknown, secrets: string[]): unknown {
   let nodes = 0;
+  /**
+   * 递归净化字符串及对象键，并在遍历中施加深度与节点总数上限。
+   * EN: Recursively sanitize strings and keys while enforcing traversal-depth and node-count limits.
+   */
   const clean = (input: unknown, depth: number): unknown => {
     if (++nodes > 100000 || depth > 64) throw failure('MCP_OUTPUT_LIMIT', 'MCP 返回内容结构过大');
     if (typeof input === 'string') {
@@ -254,7 +321,11 @@ function sanitized(value: unknown, secrets: string[]): unknown {
   };
   return clean(value, 0);
 }
-/** 解析单个 JSON-RPC 2.0 消息，仅做外层结构验证，具体请求身份由各传输会话匹配。 */
+/**
+ * 解析单个 JSON-RPC 2.0 消息，仅做外层结构验证，具体请求身份由各传输会话匹配。
+ * EN: Parse one JSON-RPC 2.0 message, validating only the outer shape; each session matches request
+ * identity.
+ */
 function parseMessage(text: string): RpcMessage {
   let value: unknown;
   try {
@@ -266,7 +337,11 @@ function parseMessage(text: string): RpcMessage {
     throw failure('MCP_PROTOCOL', 'MCP 返回了无效 JSON-RPC 消息');
   return value as RpcMessage;
 }
-/** 返回 result 或抛出远端错误；错误只保留代码，不回显可能携带凭据的远端错误字符串。 */
+/**
+ * 返回 result 或抛出远端错误；错误只保留代码，不回显可能携带凭据的远端错误字符串。
+ * EN: Return result or raise a remote error using its code only, without echoing remote error text
+ * that could contain credentials.
+ */
 function responseValue(message: RpcMessage) {
   if (object(message.error)) {
     const code = typeof message.error.code === 'number' ? String(message.error.code) : 'unknown';
@@ -279,6 +354,9 @@ function responseValue(message: RpcMessage) {
 /**
  * 尽力终止 MCP 进程树并销毁全部管道。Windows 的 taskkill 最长等候三秒，
  * 其他平台先向独立进程组发 TERM，短暂等待后再发 KILL，避免遗留后代进程。
+ * EN: Attempt to terminate the MCP process tree and destroy all pipes. On Windows, bound taskkill
+ * waiting to three seconds. Else send TERM to the isolated process group, briefly wait, then send
+ * KILL to reduce leftover descendants.
  */
 async function killTree(child: ChildProcessWithoutNullStreams) {
   if (!child.pid) return;
@@ -293,6 +371,10 @@ async function killTree(child: ChildProcessWithoutNullStreams) {
         killer.kill();
         resolve();
       }, 3000);
+      /**
+       * 等待或错误结束后清除taskkill定时器，重复事件只会重复resolve同一Promise。
+       * EN: Clear the taskkill timer after completion/error; duplicate events resolve the same promise harmlessly.
+       */
       const finish = () => {
         clearTimeout(timer);
         resolve();
@@ -316,6 +398,9 @@ async function killTree(child: ChildProcessWithoutNullStreams) {
 /**
  * 按换行分隔的 JSON-RPC stdio 会话。每条请求单独登记 ID，累计 stdout 受整个会话预算限制；
  * 协议错误、退出和取消会统一拒绝未完成请求，并通过共享关闭流程释放进程树。
+ * EN: Implement newline-delimited stdio JSON-RPC. Register each request ID separately and apply one
+ * cumulative stdout budget to the session. Protocol errors, process exit, and cancellation reject
+ * pending requests and share process-tree cleanup.
  */
 class StdioSession implements Session {
   private child: ChildProcessWithoutNullStreams;
@@ -326,7 +411,11 @@ class StdioSession implements Session {
   private failed?: Error;
   private stopping?: Promise<void>;
   private abort: () => void;
-  /** 启动已解析程序，注册行解码器和取消监听；stderr 只消费不回传，避免泄露进程诊断。 */
+  /**
+   * 启动已解析程序，注册行解码器和取消监听；stderr 只消费不回传，避免泄露进程诊断。
+   * EN: Start the resolved program, attach line decoding and cancellation listeners, and consume
+   * stderr without returning it to avoid leaking process diagnostics.
+   */
   constructor(private context: ConnectionContext) {
     context.signal.throwIfAborted();
     this.child = spawnMcpProcess(context.program!, context.args ?? [], context.config.cwd, context.env);
@@ -361,7 +450,11 @@ class StdioSession implements Session {
       if (!this.stopping) this.fail(failure('MCP_PROCESS', 'MCP 程序在完成请求前退出'));
     });
   }
-  /** 服务端反向请求只支持 ping；普通响应仅交给匹配 ID 的等待者，未知 ID 不消费其他请求。 */
+  /**
+   * 服务端反向请求只支持 ping；普通响应仅交给匹配 ID 的等待者，未知 ID 不消费其他请求。
+   * EN: Support only ping for server-to-client requests. Deliver ordinary responses only to matching
+   * IDs; unknown IDs do not consume other waiters.
+   */
   private receive(message: RpcMessage) {
     if (typeof message.method === 'string') {
       if (message.id !== undefined)
@@ -384,14 +477,22 @@ class StdioSession implements Session {
       pending.reject(error as Error);
     }
   }
-  /** 写管道前触发 onSent，令上层保守记录“请求可能已经发出”的副作用边界。 */
+  /**
+   * 写管道前触发 onSent，令上层保守记录“请求可能已经发出”的副作用边界。
+   * EN: Invoke onSent before writing to stdin so upper layers conservatively treat the request as
+   * potentially issued.
+   */
   private send(message: RpcMessage, onSent?: () => void) {
     if (this.failed) throw this.failed;
     this.context.signal.throwIfAborted();
     onSent?.();
     this.child.stdin.write(JSON.stringify(message) + '\n');
   }
-  /** 首个会话失败决定所有在途请求的错误；后续错误不重复触发进程清理。 */
+  /**
+   * 首个会话失败决定所有在途请求的错误；后续错误不重复触发进程清理。
+   * EN: The first session failure determines pending-request errors; later errors do not repeat
+   * process cleanup.
+   */
   private fail(error: Error) {
     if (this.failed) return;
     this.failed = error;
@@ -399,7 +500,10 @@ class StdioSession implements Session {
     this.pending.clear();
     void this.close();
   }
-  /** 先注册等待者再发送，防止快速响应到达时尚无接收目标；发送失败会撤销该登记。 */
+  /**
+   * 先注册等待者再发送，防止快速响应到达时尚无接收目标；发送失败会撤销该登记。
+   * EN: Register the waiter before sending to handle immediate responses; remove it if sending fails.
+   */
   request(method: string, params?: Record<string, unknown>, onSent?: () => void): Promise<unknown> {
     if (this.failed) return Promise.reject(this.failed);
     const id = ++this.nextId;
@@ -413,11 +517,18 @@ class StdioSession implements Session {
       }
     });
   }
-  /** stdio 通知复用写管道，不建立 pending 等待项。 */
+  /**
+   * stdio 通知复用写管道，不建立 pending 等待项。
+   * EN: Send stdio notifications through the existing pipe without creating pending request entries.
+   */
   async notify(method: string) {
     this.send({ jsonrpc: '2.0', method });
   }
-  /** 拒绝仍未结束的请求，移除取消监听器，并复用一次进程树终止 Promise。 */
+  /**
+   * 拒绝仍未结束的请求，移除取消监听器，并复用一次进程树终止 Promise。
+   * EN: Reject unfinished requests, remove the abort listener, and reuse one process-tree termination
+   * promise.
+   */
   close(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.context.signal.removeEventListener('abort', this.abort);
@@ -430,6 +541,9 @@ class StdioSession implements Session {
 /**
  * MCP HTTP 会话：POST 可返回 JSON 或 SSE，初始化后保存会话 ID 与协商协议版本。
  * 单次请求只接受自身 ID 的响应；服务端反向请求通过独立 POST 回答并跟踪其结束。
+ * EN: Implement MCP HTTP sessions whose POST responses may be JSON or SSE. Preserve the initialized
+ * session ID and negotiated protocol. Match each request own ID, and track separate POST replies to
+ * server-to-client requests.
  */
 class HttpSession implements Session {
   private nextId = 0;
@@ -439,22 +553,41 @@ class HttpSession implements Session {
   private bytes = 0;
   private stopping?: Promise<void>;
   private replies = new Set<Promise<unknown>>();
+  /**
+   * 保存会话配置但不立即发送网络请求，实际连接由首个POST建立。
+   * EN: Retain session configuration without issuing a network request; the first POST establishes the connection.
+   */
   constructor(private context: ConnectionContext) {}
-  /** HTTP 每个普通请求分配独立递增 ID，并通过 post 匹配返回结果。 */
+  /**
+   * HTTP 每个普通请求分配独立递增 ID，并通过 post 匹配返回结果。
+   * EN: Assign a monotonically increasing ID to each ordinary HTTP request and match its result
+   * through post.
+   */
   request(method: string, params?: Record<string, unknown>, onSent?: () => void) {
     return this.post({ jsonrpc: '2.0', id: ++this.nextId, method, ...(params ? { params } : {}) }, onSent);
   }
-  /** HTTP 通知仍需等待服务器返回接受状态，但没有 RPC result。 */
+  /**
+   * HTTP 通知仍需等待服务器返回接受状态，但没有 RPC result。
+   * EN: HTTP notifications still await server acceptance but have no RPC result.
+   */
   async notify(method: string) {
     await this.post({ jsonrpc: '2.0', method });
   }
-  /** 多次关闭共用同一远端会话释放过程，避免重复发送 DELETE。 */
+  /**
+   * 多次关闭共用同一远端会话释放过程，避免重复发送 DELETE。
+   * EN: Share one remote-session cleanup operation across repeated closes to avoid duplicate DELETE
+   * requests.
+   */
   close(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.stopping = this.finishClose();
     return this.stopping;
   }
-  /** 等待已发出的反向回复，再取消本地会话；存在远端会话 ID 时尽力用短超时 DELETE 释放。 */
+  /**
+   * 等待已发出的反向回复，再取消本地会话；存在远端会话 ID 时尽力用短超时 DELETE 释放。
+   * EN: Await already issued reverse replies, abort the local session, and attempt a short-timeout
+   * DELETE when a remote session ID exists.
+   */
   private async finishClose() {
     await Promise.allSettled([...this.replies]);
     this.controller.abort();
@@ -485,6 +618,9 @@ class HttpSession implements Session {
   /**
    * 发送一个 RPC POST，使用调用取消与本地会话取消的组合信号。
    * 通知只接受 202；请求校验响应编码、会话头与内容类型，finish 防止结束/错误重复结算。
+   * EN: Send one RPC POST using caller and session cancellation together. Notifications require 202.
+   * Requests validate encoding, session headers, and content type; finish ensures errors and stream
+   * completion settle only once.
    */
   private post(message: RpcMessage, onSent?: () => void): Promise<unknown> {
     const url = new URL(this.context.config.url!);
@@ -502,6 +638,10 @@ class HttpSession implements Session {
         ...(this.protocol ? { 'MCP-Protocol-Version': this.protocol } : {}),
       };
       let settled = false;
+      /**
+       * 只结算HTTP请求第一次结果，防止响应关闭与错误回调重复完成。
+       * EN: Settle only the first HTTP request outcome when stream completion and errors race.
+       */
       const finish = (error: Error | null, value?: unknown) => {
         if (settled) return;
         settled = true;
@@ -546,8 +686,14 @@ class HttpSession implements Session {
             this.sessionId = sessionId;
           }
           const contentType = response.headers['content-type']?.split(';')[0].trim().toLowerCase();
+          /**
+           * 先处理服务端反向请求，再只接受当前RPC ID对应的结果；匹配后关闭响应。
+           * EN: Handle reverse requests first, accept only this RPC ID result, then close the response after settlement.
+           */
           const accept = (reply: RpcMessage) => {
             // 反向请求不能当作本请求结果；只支持 ping，并拒绝未声明的客户端能力。
+            // EN: Do not treat reverse requests as this request result. Answer ping and reject undeclared client
+            // capabilities.
             if (typeof reply.method === 'string') {
               if (reply.id !== undefined) {
                 const pending = this.post({
@@ -590,7 +736,11 @@ class HttpSession implements Session {
       request.end(body);
     });
   }
-  /** 各 HTTP 响应共用会话累计字节预算，超限即销毁当前响应并拒绝请求。 */
+  /**
+   * 各 HTTP 响应共用会话累计字节预算，超限即销毁当前响应并拒绝请求。
+   * EN: All HTTP responses share the cumulative session byte budget; exceeding it destroys the current
+   * response and rejects the request.
+   */
   private consume(response: IncomingMessage, chunk: string, finish: (error: Error | null) => void) {
     this.bytes += Buffer.byteLength(chunk);
     if (this.bytes <= this.context.maxBytes) return true;
@@ -598,7 +748,11 @@ class HttpSession implements Session {
     finish(failure('MCP_OUTPUT_LIMIT', 'MCP 返回内容超过大小上限'));
     return false;
   }
-  /** 收集一个有界 JSON 响应；结束时若仍未匹配请求结果，则报告协议失败。 */
+  /**
+   * 收集一个有界 JSON 响应；结束时若仍未匹配请求结果，则报告协议失败。
+   * EN: Collect one bounded JSON response. Report protocol failure if it ends without a matching
+   * request result.
+   */
   private readJson(
     response: IncomingMessage,
     accept: (message: RpcMessage) => void,
@@ -622,6 +776,9 @@ class HttpSession implements Session {
   /**
    * 按 SSE 空行组装 data 字段，可跨网络片段保存半行；忽略其他 SSE 字段。
    * 一旦匹配请求结果由上层关闭响应；流结束仍无结果时失败，不把连接结束当作成功。
+   * EN: Assemble SSE data fields at blank lines while preserving partial lines across network chunks,
+   * ignoring other SSE fields. The caller closes the response once a matching result arrives. Stream
+   * termination without a result is failure, not success.
    */
   private readEvents(
     response: IncomingMessage,
@@ -630,6 +787,10 @@ class HttpSession implements Session {
   ) {
     let buffer = '',
       data: string[] = [];
+    /**
+     * 以空行结束的SSE data块组装完整JSON-RPC消息，清空临时data后分派。
+     * EN: Assemble a blank-line-terminated SSE data block into one JSON-RPC message, clear temporary data, and dispatch it.
+     */
     const dispatch = () => {
       if (!data.length) return;
       const text = data.join('\n');
@@ -658,11 +819,19 @@ class HttpSession implements Session {
   }
 }
 
-/** 每次检查或调用建立短会话并完成初始化；配置导入不会连接或执行工具。 */
+/**
+ * 每次检查或调用建立短会话并完成初始化；配置导入不会连接或执行工具。
+ * EN: Create and initialize a short-lived session for each inspection or invocation. Configuration
+ * import itself does not connect or execute tools.
+ */
 export class McpClient {
   private active = new Map<AbortController, Promise<void>>();
   private closed = false;
-  /** 只保存超时、大小和并发限制；实际配置与环境引用到 inspect/call 时才解析。 */
+  /**
+   * 只保存超时、大小和并发限制；实际配置与环境引用到 inspect/call 时才解析。
+   * EN: Store only timeout, size, and concurrency limits; resolve configuration and environment
+   * references when inspect or call begins.
+   */
   constructor(
     private options: {
       timeoutMs?: number;
@@ -674,6 +843,8 @@ export class McpClient {
   /**
    * 建立短会话并读取允许的工具目录；限制页数和工具数，校验名称及分页游标。
    * 返回内容标记为不可信，已识别的敏感值会从响应中清理。
+   * EN: Establish a short session and read the permitted catalogue, bounding pages and tools and
+   * validating names/cursors. Mark output untrusted and redact identified sensitive values.
    */
   inspect(config: LocalMcpConfig, signal?: AbortSignal, permission?: McpPermission): Promise<McpInspection> {
     if (permission) permissionGate(config, permission, false);
@@ -730,6 +901,9 @@ export class McpClient {
   /**
    * 检查调用权限和参数大小后执行远端工具。请求发出后若连接中断且结果无法确认，
    * 返回 MCP_CALL_UNCERTAIN，提醒调用方先核验副作用再决定是否重试。
+   * EN: Validate invocation permission and argument size before calling the remote tool. If the
+   * request was issued but its result cannot be confirmed, raise MCP_CALL_UNCERTAIN so callers verify
+   * side effects before retrying.
    */
   call(
     config: LocalMcpConfig,
@@ -773,7 +947,10 @@ export class McpClient {
       }
     });
   }
-  /** 取消所有活动会话并等待它们结束；关闭后不再接受新连接。 */
+  /**
+   * 取消所有活动会话并等待它们结束；关闭后不再接受新连接。
+   * EN: Abort active sessions and await their completion. A closed client accepts no new connections.
+   */
   async close() {
     this.closed = true;
     for (const controller of this.active.keys()) controller.abort();
@@ -783,6 +960,10 @@ export class McpClient {
    * 为一次操作占用连接名额，设置总超时，初始化并协商允许的协议，再执行 use。
    * 不声明任何额外客户端能力；初始化响应必须提供工具能力。finally 统一关闭传输、
    * 清理计时器和活动登记，使客户端 close 能等待本次操作真正释放资源。
+   * EN: Reserve a connection slot, apply a total timeout, initialize and negotiate an accepted
+   * protocol, then run use. Declare no extra client capabilities and require server tool capability.
+   * finally closes the transport, clears timers and registration, and resolves the lifecycle waiter
+   * used by client close.
    */
   private async withSession<T>(
     config: LocalMcpConfig,

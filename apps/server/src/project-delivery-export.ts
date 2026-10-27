@@ -1,22 +1,38 @@
-/** 将项目交付清单导出为 Markdown。 */
+/**
+ * 将项目交付清单导出为 Markdown。
+ * 将已有冻结清单格式化为 Markdown，保留用户文字和显式空值；不重新读取可变运行或补写验收结论。
+ * EN: Exports frozen project-delivery manifests as Markdown. Formats frozen manifests as Markdown preserving text/empty values without rereading mutable runs or inventing acceptance conclusions.
+ */
 import type { ProjectDeliveryManifest } from '../../../packages/contracts/src/project-delivery.js';
 
-/** 用比正文内最长反引号串更长的围栏包裹用户文本，避免标题、HTML 或链接改变导出结构。 */
+/**
+ * 用比正文内最长反引号串更长的围栏包裹用户文本，避免标题、HTML 或链接改变导出结构。
+ * EN: Uses a fence longer than any backtick sequence in user text so headings, HTML, or links cannot change export structure.
+ */
 function literal(value: string) {
   let length = 3;
   for (const match of value.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
   const fence = '`'.repeat(length);
   return `${fence}text\n${value}\n${fence}`;
 }
+/**
+ * 生成带标签的 Markdown 段落，正文经 literal 处理；空值使用明确未填写占位。
+ * EN: Builds a labeled Markdown paragraph through literal handling, using an explicit placeholder for empty values.
+ */
 function paragraph(label: string, value: string) {
   return `**${label}**\n\n${literal(value || '（未填写）')}`;
 }
+/**
+ * 按顺序编号导出文本项并保留 literal 格式；空数组明确输出无。
+ * EN: Exports numbered text items with literal formatting and explicitly represents empty lists.
+ */
 function list(label: string, values: string[]) {
   return `**${label}**\n\n${values.length ? values.map((v, i) => `**第 ${i + 1} 项**\n\n${literal(v)}`).join('\n\n') : '（无）'}`;
 }
 
-/** 只从冻结快照生成可重复导出的 Markdown，不查询当前任务或打开产物正文。
- * 保留任务标准、人工确认、复核和来源意见处置的对应关系；结构核验与证据不替代质量判断。
+/**
+ * 只从冻结快照生成可重复导出的 Markdown，不查询当前任务或打开产物正文。 保留任务标准、人工确认、复核和来源意见处置的对应关系；结构核验与证据不替代质量判断。
+ * EN: Generates repeatable Markdown only from frozen snapshots, without querying current tasks or opening artifact bodies. Retains mappings among criteria, human confirmation, reviews, and source-note resolutions; structural checks and evidence do not replace quality judgment.
  */
 export function projectDeliveryMarkdown(manifest: ProjectDeliveryManifest) {
   const sections = [

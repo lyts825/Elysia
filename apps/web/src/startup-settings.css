@@ -1,5 +1,11 @@
-/* 定义 startup-settings 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 启动偏好设置：组织外观组、开关、字段、颜色值与说明。长配置值可聚焦阅读，短窗口解除内容区的独立滚动约束，改为整个面板滚动并固定标题。
+ * EN: Startup preferences: arranges appearance groups, toggles, fields, colors, and guidance. Long values support focused reading; short windows release inner scroll constraints and scroll the panel with a sticky heading.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .startup-preferences-panel .startup-settings-body {
   min-width: 0;
   min-height: 0;
@@ -48,7 +54,10 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .startup-preferences-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -101,7 +110,10 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-/* 短窗口让启动设置面板整体滚动并固定标题，释放内容区的滚动约束。 */
+/*
+ * 短窗口让启动设置面板整体滚动并固定标题，释放内容区的滚动约束。
+ * EN: Scrolls the whole startup-settings panel with a sticky heading in short windows and releases content-region scroll constraints.
+ */
 @media (max-height: 600px) {
   .startup-preferences-panel {
     overflow-y: auto;

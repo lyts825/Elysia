@@ -1,3 +1,7 @@
+<!--
+  Web 应用入口：提供语言、视口、品牌图标和 React 根节点，根节点内先展示轻量启动界面。main.tsx 挂载后接管根节点；页面本身只引用入口模块，不承担任务状态或 API 逻辑。
+  EN: Web application entry: defines language, viewport, brand icons, and the React root with lightweight startup content. main.tsx takes over after mounting; this document references the entry module without owning task state or API logic.
+-->
 <!doctype html>
 <html lang="zh-CN">
   <head>
@@ -11,7 +15,10 @@
     <title>Elysia · 本机 Agent 工作台</title>
   </head>
   <body>
-    <!-- React 加载前先显示轻量启动界面，挂载后由应用接管。 -->
+    <!--
+      React 加载前先显示轻量启动界面，挂载后由应用接管。
+      EN: Shows a lightweight startup surface before React loads; the mounted application then takes over.
+    -->
     <div id="root">
       <main class="startup-screen">
         <div class="startup-content">

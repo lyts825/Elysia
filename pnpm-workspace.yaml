@@ -1,9 +1,15 @@
+# 将应用与共享包纳入同一个 pnpm 工作区，供 workspace 依赖和统一脚本解析。
+# EN: Include apps and shared packages in one pnpm workspace for workspace dependency and script resolution.
 packages:
   - apps/*
   - packages/*
+# 只允许列出的依赖执行安装构建脚本；esbuild 和 Electron 需要各自的本机运行文件。
+# EN: Allow installation build scripts only for these dependencies, which need their platform runtime files.
 allowBuilds:
   esbuild: true
   electron: true
+# 对这里固定的版本豁免最短发布年龄检查；此处只改变安装策略，不改变具体依赖版本。
+# EN: Exempt these pinned versions from release-age checks; this setting changes installation policy, not dependency versions.
 minimumReleaseAgeExclude:
   - vite@8.3.3
   - electron@44.6.0

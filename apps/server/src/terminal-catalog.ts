@@ -1,4 +1,8 @@
-/** 定义终端应用目录和连接兼容性检查。 */
+/**
+ * 定义终端应用目录和连接兼容性检查。
+ * 声明应用、容器预设和协议支持并返回新对象；目录不证明镜像已安装、CLI 已运行或凭据已验证。
+ * EN: Defines terminal app presets and connection compatibility checks. Declares app/container/protocol support through fresh objects without proving image installation, running CLI or credential validity.
+ */
 import { AgentTerminalProfile, invariant } from '../../../packages/contracts/src/index.js';
 import {
   TerminalAppId,
@@ -15,8 +19,8 @@ export const terminalProtocols: Record<TerminalAppId, TerminalConnectionBinding[
 };
 const image = 'elysia-agents:0.13.0';
 /**
- * 返回内置 CLI 的显示目录和容器预设；目录仅声明支持形态，不表示镜像已安装或凭据已验证。
- * 每次生成独立配置对象，后续模板编辑不会直接改写下一次读取的内置预设。
+ * 返回内置 CLI 的显示目录和容器预设；目录仅声明支持形态，不表示镜像已安装或凭据已验证。 每次生成独立配置对象，后续模板编辑不会直接改写下一次读取的内置预设。
+ * EN: Returns built-in CLI display entries and container presets; support declarations do not prove image installation or credentials. Fresh objects prevent edited templates from mutating future preset reads.
  */
 export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
   return [
@@ -125,17 +129,26 @@ export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
     },
   ];
 }
-/** 从目录生成默认启用的 Codex 和 DSH 终端配置。 */
+/**
+ * 从目录生成默认启用的 Codex 和 DSH 终端配置。
+ * EN: Builds default enabled Codex and DSH terminal configuration.
+ */
 export function initialTerminalProfiles(): AgentTerminalProfile[] {
   return terminalAppCatalog()
     .filter((entry) => entry.id === 'dsh' || entry.id === 'codex')
     .map((entry) => AgentTerminalProfile.parse(entry.preset));
 }
-/** 从经过 schema 校验的模板代理类型确定应用键，不按用户可改的标签或命令名称猜测。 */
+/**
+ * 从经过 schema 校验的模板代理类型确定应用键，不按用户可改的标签或命令名称猜测。
+ * EN: Derives the app key from schema-validated adapter type, never editable labels or command names.
+ */
 export function terminalAppForProfile(profile: AgentTerminalProfile): TerminalAppId {
   return TerminalAppId.parse(profile.agent);
 }
-/** 校验终端应用支持所选连接协议，避免绑定不兼容的连接。 */
+/**
+ * 校验终端应用支持所选连接协议，避免绑定不兼容的连接。
+ * EN: Validates that the terminal app supports the selected connection protocol.
+ */
 export function assertTerminalConnectionCompatible(
   profile: AgentTerminalProfile,
   connection: TerminalConnectionBinding,

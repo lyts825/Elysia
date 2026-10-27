@@ -1,4 +1,8 @@
-/** 注册项目交付数据预热任务。 */
+/**
+ * 注册项目交付数据预热任务。
+ * 串联项目内运行级回填并累积会话作业进度；子运行仍独立核验 epoch 与可读性，累计进度不代表项目已完整可验收。
+ * EN: Registers project-delivery warm-up jobs. Chains per-run project backfills with session progress while retaining child epoch/readability checks; aggregate progress does not establish complete acceptance.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, type Run } from '../../../packages/contracts/src/index.js';
@@ -34,10 +38,9 @@ type Job = {
   work?: Promise<void>;
 };
 
-/** Project jobs own subscriptions to shared Run work, rather than cancelling another window's reader. */
 /**
- * 项目预热作业绑定工作台来源版本、各运行 epoch 和会话，只持有共享运行读取的订阅。
- * 取消一个项目作业只撤销其子订阅，不中止其他窗口的读取；定义/产物变化使旧作业失效。
+ * 项目作业拥有共享运行工作的订阅，不取消其他窗口读取。 项目预热作业绑定工作台来源版本、各运行 epoch 和会话，只持有共享运行读取的订阅。 取消一个项目作业只撤销其子订阅，不中止其他窗口的读取；定义/产物变化使旧作业失效。
+ * EN: Project jobs own subscriptions to shared Run work, rather than cancelling another window's reader. Binds project warming to workbench source revision, run epochs, and session while holding subscriptions only. Cancelling a project job releases its children without stopping other windows; definition/artifact changes invalidate old jobs.
  */
 export function registerProjectDeliveryWarm(
   app: FastifyInstance,
@@ -47,6 +50,10 @@ export function registerProjectDeliveryWarm(
   const runs = deliveryArtifactWarmReads(store),
     jobs = new Map<string, Job>();
   let closed = false;
+  /**
+   * 按项目、作业 ID 和会话验证预热归属；不存在或跨会话访问统一返回 410。
+   * EN: Validates project/job/session warming ownership and returns uniform 410 for missing or foreign jobs.
+   */
   const bound = (projectId: string, jobId: string, session: string) => {
     const job = jobs.get(jobId);
     if (!job || job.view.projectId !== projectId || job.session !== session)
@@ -59,6 +66,10 @@ export function registerProjectDeliveryWarm(
       );
     return job;
   };
+  /**
+   * 仅结算 warming 作业，设置终态/可选错误、移除当前运行并更新时间，避免重复收尾覆盖结果。
+   * EN: Settles warming jobs only, recording terminal state/error, clearing current run and updating time without overwriting settled results.
+   */
   const finish = (
     job: Job,
     status: ProjectDeliveryWarmJob['status'],
@@ -69,17 +80,28 @@ export function registerProjectDeliveryWarm(
     delete job.view.currentRunId;
     job.updated = Date.now();
   };
+  /**
+   * 中止项目预热及其当前运行子作业，再标记取消；关闭期间子作业已释放可忽略。
+   * EN: Aborts project warming and its current run child, then marks cancelled; already disposed children during shutdown are tolerated.
+   */
   const cancel = (job: Job) => {
     job.controller.abort();
     if (job.child) {
       try {
         runs.cancel(job.child.runId, job.child.jobId, job.session);
       } catch {
-        /* Child may already be disposed during shutdown. */
+        /**
+         * 关闭期间子订阅可能已经释放。
+         * EN: Child may already be disposed during shutdown.
+         */
       }
     }
     finish(job, 'cancelled');
   };
+  /**
+   * 关闭入口并取消所有进程内项目预热作业，供 Store 生命周期收尾。
+   * EN: Closes admission and cancels all in-memory project warm jobs during Store shutdown.
+   */
   const stop = () => {
     closed = true;
     for (const job of jobs.values()) cancel(job);
@@ -91,7 +113,10 @@ export function registerProjectDeliveryWarm(
     jobs.clear();
     removeCloseHook();
   });
-  /** 每轮和等待后都核对来源集合及正文 epoch，避免把旧候选的预热完成结果套到新工作台。 */
+  /**
+   * 每轮和等待后都核对来源集合及正文 epoch，避免把旧候选的预热完成结果套到新工作台。
+   * EN: Rechecks source sets and body epochs each round and after waiting, preventing old-candidate completion from being applied to a new workbench.
+   */
   const requireCurrent = (job: Job) => {
     job.controller.signal.throwIfAborted();
     if (
@@ -103,12 +128,20 @@ export function registerProjectDeliveryWarm(
     )
       throw new AppError('DELIVERY_CHANGED', '项目交付定义在准备期间已变化，请重新读取', true, null, 409);
   };
+  /**
+   * 读取运行产物 epoch，缺失返回空串，用于检测预热期间的产物变化。
+   * EN: Reads artifact epoch, defaulting to empty, to detect changes during warming.
+   */
   const epoch = (runId: string) =>
     (
       store.db.prepare('SELECT token FROM delivery_artifact_warm_epochs_v1 WHERE run_id=?').get(runId) as
         | { token: string }
         | undefined
     )?.token ?? '';
+  /**
+   * 只对同项目原生任务统计产物数；运行损坏、缺失或范围不符返回 null，不猜为零。
+   * EN: Counts artifacts only for same-project native tasks; missing/damaged/out-of-scope runs return null rather than guessed zero.
+   */
   const countFor = (projectId: string, runId: string) => {
     try {
       const run = store.require<Run>('runs', runId);
@@ -123,7 +156,10 @@ export function registerProjectDeliveryWarm(
       return null;
     }
   };
-  /** 逐运行推进并聚合进度；不可读运行计入 unavailableRuns，而非把项目结果误报全部可读。 */
+  /**
+   * 逐运行推进并聚合进度；不可读运行计入 unavailableRuns，而非把项目结果误报全部可读。
+   * EN: Advances per run and aggregates progress; unreadable runs increment unavailableRuns rather than falsely reporting complete readability.
+   */
   const drain = async (job: Job) => {
     const timeout = setTimeout(() => cancel(job), 300_000);
     timeout.unref();
@@ -140,6 +176,10 @@ export function registerProjectDeliveryWarm(
         job.child = { runId, jobId: child.view.jobId };
         const scanned = job.view.scanned,
           backfilled = job.view.backfilled;
+        /**
+         * 将当前子作业的扫描/回填数叠加到此前完成运行计数，更新项目公开进度。
+         * EN: Adds current child scan/backfill counts to completed-run totals for public project progress.
+         */
         const progress = () => {
           job.view.scanned = scanned + child.view.scanned;
           job.view.backfilled = backfilled + child.view.backfilled;
@@ -185,6 +225,10 @@ export function registerProjectDeliveryWarm(
       clearTimeout(timeout);
     }
   };
+  /**
+   * 清除结束超过两分钟的进程内项目作业，保留活动 warming 作业。
+   * EN: Prunes completed project jobs older than two minutes while retaining active warming jobs.
+   */
   const prune = () => {
     for (const [key, job] of jobs)
       if (job.view.status !== 'warming' && Date.now() - job.updated > 120_000) jobs.delete(key);

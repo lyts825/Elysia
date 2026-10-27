@@ -1,4 +1,8 @@
-/* 编辑应用启动设置。 */
+/**
+ * 编辑应用启动设置。
+ * 编辑启动视觉偏好并导入本地媒体，区分未保存输入、预览和已保存状态；通过偏好存储模块验证及持久化。
+ * EN: Edits startup appearance and media preferences. Edits startup visuals and imports local media while separating unsaved input, preview, and saved state, delegating validation/persistence to preference storage.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { StartupVisual, startupColors } from './StartupTransition';
@@ -19,7 +23,10 @@ import {
 import './startup-settings.css';
 
 const stageLabels: Record<StartupStage, string> = {
-  // 将启动诊断阶段转换为界面可读名称，原始阶段标识保持稳定。
+  /**
+   * 将启动诊断阶段转换为界面可读名称，原始阶段标识保持稳定。
+   * EN: Map diagnostic stages to readable labels while retaining stable original IDs.
+   */
   'launch-entry': '启动入口',
   'dependencies-ready': '依赖检查',
   'fingerprint-ready': '构建检查',
@@ -37,6 +44,7 @@ const stageLabels: Record<StartupStage, string> = {
 /**
  * 本次编辑使用独立草稿和待上传媒体，预览不立即写入偏好。
  * 共享配置更新只在当前草稿未编辑时跟随；导入先完成实际解码，保存成功才清除 dirty 和上传对象。
+ * EN: Edit independent draft/upload and do not persist preview immediately. Follow shared updates only while draft is clean. Import requires actual decoding; clear dirty/upload only after successful save.
  */
 export function StartupSettings({ close }: { close: () => void }) {
   const { config, loaded, error: readError } = useStartupPreferences();
@@ -60,13 +68,20 @@ export function StartupSettings({ close }: { close: () => void }) {
   useEffect(() => {
     if (!dirty) setDraft(config);
   }, [config, dirty]);
+  /**
+   * 合并启动偏好局部修改，标记脏状态并撤销旧成功提示和错误，使保存反映当前输入。
+   * EN: Merges partial startup-preference edits, marks the form dirty, and clears old success/error feedback so saving reflects the current input.
+   */
   function change(value: Partial<StartupPreferences>) {
     setDirty(true);
     setSaved(false);
     setError('');
     setDraft((previous) => ({ ...previous, ...value }));
   }
-  /** 浏览器 File 或桌面选择器统一校验为媒体上传对象；卸载后不回写表单。 */
+  /**
+   * 浏览器 File 或桌面选择器统一校验为媒体上传对象；卸载后不回写表单。
+   * EN: Browser File and desktop chooser share media validation; do not update after unmount.
+   */
   async function importMedia(file?: File) {
     setBusy(true);
     setError('');
@@ -85,7 +100,10 @@ export function StartupSettings({ close }: { close: () => void }) {
       if (mounted.current) setBusy(false);
     }
   }
-  /** 保存共享偏好，失败保留草稿及媒体以便修正或重试。 */
+  /**
+   * 保存共享偏好，失败保留草稿及媒体以便修正或重试。
+   * EN: Save shared preferences; retain draft/media on failure for repair or retry.
+   */
   async function save() {
     setBusy(true);
     setError('');

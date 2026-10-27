@@ -1,4 +1,11 @@
-/* 提供终端任务之间的通信界面。 */
+/**
+ * 提供终端任务之间的通信界面。
+ *
+ * EN: Provides communication between terminal tasks.
+ *
+ * 本模块负责终端间接收方查询、消息分页、草稿发送及人工处理界面；草稿归父层管理，读取按任务作用域隔离，排队回执与实际加入接收方上下文分别呈现。
+ * EN: Owns peer search, message paging, draft submission, and manual resolution UI. The parent owns drafts, reads are scoped to a run, and queued receipts remain distinct from inclusion in recipient context.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type {
@@ -42,6 +49,8 @@ type PagePosition = { cursors: string[]; query?: string };
 /**
  * 按路径、作用域和游标读取一页通信数据。刷新期间保留同作用域的旧结果，
  * 请求取消或作用域改变时不把旧结果显示为新任务的数据。
+ *
+ * EN: Reads one page by path, scope, and cursor. Same-scope data remains visible during refresh, but cancelled/foreign-scope responses cannot become data for a new task.
  */
 function useCommunicationRead<T>(
   path: string,
@@ -105,10 +114,18 @@ function useCommunicationRead<T>(
           value: undefined,
           position: undefined,
         };
-  // path 尚未切换成功时可保留同 scope 的旧页，但 loading/position 会明确指出数据仍是旧页。
+  /**
+   * path 尚未切换成功时可保留同 scope 的旧页，但 loading/position 会明确指出数据仍是旧页。
+   *
+   * EN: Same-scope old pages may remain until path succeeds; loading and position identify that data as the old page.
+   */
   return {
     ...visible,
     loading: state.path !== path || visible.loading,
+    /**
+     * 中止当前读取并显示取消提示，保留已读页；这是本地读取取消，不涉及消息发送或远端状态修改。
+     * EN: Aborts the current read and shows cancellation while preserving the page; this local read cancellation does not send messages or mutate remote state.
+     */
     cancel: () => {
       reader.current?.abort();
       setState((old) => ({ ...old, loading: false, issue: '读取已取消。' }));
@@ -119,6 +136,8 @@ function useCommunicationRead<T>(
 /**
  * 展示终端之间的接收方和消息，提供发送、分页与人工处理入口。
  * 草稿由调用方持有，运行或消息版本变化触发读取，不自动发送草稿。
+ *
+ * EN: Displays peers/messages and offers send, paging, and manual resolution. The parent holds drafts; run/message revision changes reread data without sending drafts automatically.
  */
 export function TerminalCommunication({
   run,
@@ -202,19 +221,35 @@ export function TerminalCommunication({
     refresh,
     { cursors: messageCursors },
   );
-  /** 记住触发刷新的焦点位置，以便结果到达后在用户未转移焦点时提示结果。 */
+  /**
+   * 记住触发刷新的焦点位置，以便结果到达后在用户未转移焦点时提示结果。
+   *
+   * EN: Remembers refresh focus so arriving feedback may focus only if the user has not moved elsewhere.
+   */
   function refreshRead(kind: 'messages' | 'peers') {
     readFeedback.current = { kind, refresh: refresh + 1, origin: document.activeElement };
     setRefresh((value) => value + 1);
   }
   useEffect(() => {
+    /**
+     * 焦点离开刷新触发元素时撤销结果聚焦意图，防止迟到的读取结果打断新的操作。
+     * EN: Revokes feedback focus when focus leaves the refresh origin so late results cannot interrupt subsequent interaction.
+     */
     const releaseFeedback = (event: FocusEvent) => {
       if (readFeedback.current && event.target !== readFeedback.current.origin) readFeedback.current = null;
     };
+    /**
+     * 点击触发元素外部视为用户已转向其他内容，只清除聚焦意图，不取消正在读取的数据。
+     * EN: Treats pointer interaction outside the origin as a new user intent, clearing feedback focus without cancelling the data read.
+     */
     const releasePointerFeedback = (event: PointerEvent) => {
       if (readFeedback.current && !readFeedback.current.origin?.contains(event.target as Node))
         readFeedback.current = null;
     };
+    /**
+     * 窗口失焦后不再自动聚焦异步反馈，避免用户返回窗口时焦点被旧请求抢走。
+     * EN: Disables automatic feedback focus after window blur so an old request cannot steal focus on return.
+     */
     const releaseWindowFeedback = () => {
       readFeedback.current = null;
     };
@@ -281,7 +316,11 @@ export function TerminalCommunication({
   }, [resolutionDraft?.item.id]);
   useEffect(() => {
     if (!open) return;
-    // 仅在面板展开且页面可见时轮询，减少隐藏界面的读取。
+    /**
+     * 仅在面板展开且页面可见时轮询，减少隐藏界面的读取。
+     *
+     * EN: Polls only while expanded and document-visible to reduce hidden reads.
+     */
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') setRefresh((value) => value + 1);
     }, 15000);
@@ -331,11 +370,19 @@ export function TerminalCommunication({
 
   const selection = selected?.source === base && selected.id === draft.targetRunId ? selected : undefined;
   const peer = selection?.peer;
-  // 保存过 commandId/版本的草稿代表原请求核对；此时不能用新的接收方检查替换原负载。
+  /**
+   * 保存过 commandId/版本的草稿代表原请求核对；此时不能用新的接收方检查替换原负载。
+   *
+   * EN: A draft with commandId/revision reconciles the original request; a new peer check cannot replace that payload.
+   */
   const retrying = !!draft.commandId && Number.isSafeInteger(draft.expectedRevision);
   const canSend =
     !!draft.targetRunId && !!draft.text.trim() && (retrying || (!!peer?.canReceive && !selection?.issue));
-  /** 实际编辑生成新草稿，移除旧命令身份，让下次发送建立新的请求。 */
+  /**
+   * 实际编辑生成新草稿，移除旧命令身份，让下次发送建立新的请求。
+   *
+   * EN: An actual edit creates a new draft and removes the old command identity for a fresh send.
+   */
   const edit = (next: Pick<TerminalCommunicationDraft, 'targetRunId' | 'text'>) => {
     if (next.targetRunId === draft.targetRunId && next.text === draft.text) return;
     changeDraft(next);
@@ -345,6 +392,8 @@ export function TerminalCommunication({
   /**
    * 首次发送先把 commandId 和来源运行版本写回草稿，未知结果重试沿用该身份。
    * 成功通知外层按 sent 精确清理草稿；版本明确冲突时只解除同一未修改草稿的请求绑定。
+   *
+   * EN: First send persists commandId/source revision in the draft; unknown retries reuse that identity. Success lets the parent clear the exact sent draft; an explicit revision conflict unbinds only the unchanged matching draft.
    */
   const send = async () => {
     if (disabled || sendLock.current || !canSend) return;
@@ -397,7 +446,11 @@ export function TerminalCommunication({
       if (mounted.current) setSending(false);
     }
   };
-  /** 仅为仍 queued 的消息建立处置草稿；已有另一条含理由或命令身份的草稿必须先处理。 */
+  /**
+   * 仅为仍 queued 的消息建立处置草稿；已有另一条含理由或命令身份的草稿必须先处理。
+   *
+   * EN: Creates resolution drafts only for queued messages; a different draft with text/identity must be handled first.
+   */
   const beginResolution = (item: TerminalCommunicationItem) => {
     if (disabled || resolutionLock.current || item.status !== 'queued') return;
     if (
@@ -422,6 +475,8 @@ export function TerminalCommunication({
   /**
    * 人工处置绑定消息修订和 commandId。未知结果保留原理由与请求供核对；明确 HTTP 拒绝
    * 会锁住此处置，要求重新查看消息，而不是按新版本静默重放决定。
+   *
+   * EN: Resolution binds message revision and commandId. Unknown outcomes retain original reason/request; definitive HTTP rejection locks this resolution for rereview rather than silently replaying it against a new revision.
    */
   const resolveMessage = async () => {
     if (disabled || resolutionLock.current || !resolutionDraft?.note.trim() || resolutionRejected) return;
@@ -467,7 +522,11 @@ export function TerminalCommunication({
     }
   };
   const visibleMessageCursors = messages.position?.cursors || [];
-  // 分页按钮依据已显示结果的游标链，而非正在请求的新游标，失败时仍可正确返回旧页。
+  /**
+   * 分页按钮依据已显示结果的游标链，而非正在请求的新游标，失败时仍可正确返回旧页。
+   *
+   * EN: Paging controls use the displayed result cursor chain, not a requested future cursor, preserving correct back navigation after failure.
+   */
   const visiblePeerCursors = peers.position?.cursors || [];
 
   return (

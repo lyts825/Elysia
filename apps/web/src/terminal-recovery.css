@@ -1,5 +1,11 @@
-/* 定义 terminal-recovery 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 终端操作核验：突出中断操作、人工说明输入及确认/未发生结果动作。证据字段自适应分列，说明保留阅读空间，状态与操作层级帮助用户核对后再提交结论。
+ * EN: Terminal-operation recovery: emphasizes interrupted operations, human notes, and confirmed/not-applied actions. Adaptive evidence fields and readable note space support verification before submitting an outcome.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .terminal-recovery-panel {
   display: grid;
   gap: var(--space-3);
@@ -46,7 +52,10 @@
   font-size: var(--font-sm);
   line-height: var(--leading-body);
 }
-/* 列数随容器宽度变化；每列以 15rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 15rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 15rem minimum per column without exceeding a narrower container.
+ */
 .terminal-recovery-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));

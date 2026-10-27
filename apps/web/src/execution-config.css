@@ -1,4 +1,7 @@
-/* 定义 execution-config 对应界面的样式与布局。 */
+/*
+ * 执行配置弹窗：组织配置分区、字段、版本/来源说明和确认区域。宽屏使用自适应字段网格；高度不足时改为弹窗整体滚动并固定标题，避免多层滚动困住表单。
+ * EN: Execution-config modal: organizes sections, fields, revision/source information, and confirmation. Wider layouts use adaptive field grids; short windows scroll the whole modal with a sticky heading to avoid trapping the form in nested scrollers.
+ */
 .execution-config-modal > form > .form-body {
   display: grid;
   gap: var(--space-5);
@@ -55,7 +58,10 @@
   flex: none;
   margin-top: var(--space-1);
 }
-/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 10rem minimum per column without exceeding a narrower container.
+ */
 .execution-config-budget {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
@@ -83,7 +89,10 @@
 .execution-config-budget dd {
   font-variant-numeric: tabular-nums;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .execution-config-read {
   max-height: min(12rem, 40dvh);
   overflow: auto;
@@ -130,7 +139,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-/* 短窗口由弹窗整体滚动并固定标题，避免表单被嵌套滚动区限制。 */
+/*
+ * 短窗口由弹窗整体滚动并固定标题，避免表单被嵌套滚动区限制。
+ * EN: Scrolls the whole modal with a sticky heading in short windows, avoiding nested-scroll constraints on the form.
+ */
 @media (max-height: 560px) {
   .execution-config-modal,
   .execution-contract-policy .modal {

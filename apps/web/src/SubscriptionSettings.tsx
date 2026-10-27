@@ -1,4 +1,8 @@
-/* 管理订阅相关设置。 */
+/**
+ * 管理订阅相关设置。
+ * 管理订阅账号登录尝试、轮询和选择，完成回执必须匹配本窗口尝试ID；认证流程和凭据由服务端管理。
+ * EN: Manages direct subscription authorization settings. Manages subscription sign-in attempts, polling, and account selection, matching completion receipts to this view attempt ID; the server owns authentication and credentials.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { manageUsage } from './desktop';
@@ -23,6 +27,7 @@ type State = {
  * 管理兼容的直接订阅授权流程。账号状态持续轮询，只有本面板发起的 attempt 完成才
  * 自动选择其账号；模型目录绑定账号、计划资格、额度阻塞和刷新代次，旧目录不能继续证明就绪。
  * 所有选择通过 change 回传供应商草稿，账号连接与配置保存仍是两个独立步骤。
+ * EN: Poll account state, auto-selecting only the attempt started here. Bind catalog to account/plan eligibility/quota block/refresh generation; stale catalog cannot prove readiness. change reports provider draft; account login and saved configuration are distinct.
  */
 export function SubscriptionSettings({
   accountId,
@@ -36,7 +41,10 @@ export function SubscriptionSettings({
   ready?: (valid: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
-  // 账号连接状态和可选模型目录独立读取，选择变更由父组件保存。
+  /**
+   * 账号连接状态和可选模型目录独立读取，选择变更由父组件保存。
+   * EN: Read account status/catalog independently; parent saves selection changes.
+   */
   const accountHelpId = useId(),
     modelHelpId = useId();
   const [status, setStatus] = useState<State>(),
@@ -63,6 +71,10 @@ export function SubscriptionSettings({
   modelRef.current = model;
   const selected = status?.accounts.find((a) => a.id === accountId);
   const catalogKey = `${accountId}:${!!selected?.connected}:${!!selected?.planEnabled}:${!!selected?.usageBlocked}:${reload}`;
+  /**
+   * 读取最新订阅登录状态并更新界面，同时返回快照供操作流程继续使用；失败向调用方传播。
+   * EN: Reads and publishes the latest subscription-login state and returns it to the action flow, propagating failures to the caller.
+   */
   const refresh = async () => {
     const value = await api<State>('/subscription');
     setStatus(value);
@@ -70,6 +82,10 @@ export function SubscriptionSettings({
   };
   useEffect(() => {
     let alive = true;
+    /**
+     * 读取登录尝试状态，仅在组件存活时回写；匹配本窗口待处理尝试且已完成时应用账号并清空等待标记。
+     * EN: Reads login-attempt state and publishes only while mounted; a completed attempt matching this view applies the account and clears its pending marker.
+     */
     const poll = async () => {
       try {
         const value = await api<State>('/subscription');
@@ -126,7 +142,10 @@ export function SubscriptionSettings({
   }, [accountId, selected?.connected, selected?.planEnabled, selected?.usageBlocked, reload]);
   const chosenModel = models.find((item) => item.id === model);
   const catalogCurrent = loadedCatalog === catalogKey;
-  // 就绪同时要求当前账号可用、目录当前、型号支持文字，且没有在途操作或读取错误。
+  /**
+   * 就绪同时要求当前账号可用、目录当前、型号支持文字，且没有在途操作或读取错误。
+   * EN: Ready requires usable account/current catalog/text model and no in-flight action/read error.
+   */
   const valid =
     !!selected?.connected &&
     selected.planEnabled &&
@@ -140,6 +159,10 @@ export function SubscriptionSettings({
   useEffect(() => {
     ready?.(valid);
   }, [valid, ready]);
+  /**
+   * 统一管理订阅操作忙碌和错误状态，执行后刷新权威状态；失败请求错误聚焦，finally解除忙碌。
+   * EN: Manages busy/error state for a subscription action and refreshes authoritative state afterward; failures request error focus and finally clears busy state.
+   */
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError('');
@@ -153,7 +176,10 @@ export function SubscriptionSettings({
       setBusy(false);
     }
   };
-  /** 保存登录 attempt 身份，后续轮询只消费这一明确请求的成功结果。 */
+  /**
+   * 保存登录 attempt 身份，后续轮询只消费这一明确请求的成功结果。
+   * EN: Keep login attempt identity; polling consumes success only for that explicit request.
+   */
   const login = (id?: string, consent = false) =>
     act(async () => {
       const result = await mutation('/subscription/login', { accountId: id, consent });

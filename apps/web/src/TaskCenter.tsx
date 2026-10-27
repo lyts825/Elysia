@@ -1,4 +1,11 @@
-/* 展示任务中心及其任务状态。 */
+/**
+ * 展示任务中心及其任务状态。
+ *
+ * EN: Displays the task center and its task states.
+ *
+ * 本模块负责任务列表的筛选、游标分页、周期刷新、打开详情及通知偏好交互；筛选轨迹由父层持有，列表投影只供展示，实际导航由外层读取完整详情后处理。
+ * EN: Owns task-list filtering, cursor paging, periodic refresh, detail opening, and notification preferences. The parent retains filter history; list projections support display while outer navigation rereads full detail.
+ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
@@ -18,7 +25,11 @@ import {
 import './task-center.css';
 
 export type TaskCenterState = {
-  // 筛选条件与分页轨迹由父组件持有，关闭面板后仍可恢复。
+  /**
+   * 筛选条件与分页轨迹由父组件持有，关闭面板后仍可恢复。
+   *
+   * EN: The parent owns filters and paging history so they survive closing the panel.
+   */
   filter: 'all' | TaskCenterCategory;
   before: string;
   trail: string[];
@@ -34,6 +45,8 @@ const labels: Record<'all' | TaskCenterCategory, string> = {
  * 按父组件持有的筛选/游标状态读取任务中心，五秒刷新当前页并支持异常投影显式重试。
  * 行展示使用列表快照，openRun 再读取完整详情决定导航；通知偏好独立从桌面桥读取和保存。
  * 请求失效、分页失效和焦点恢复各自处理，避免错误页面覆盖用户正在操作的控件。
+ *
+ * EN: Reads using parent-held filters/cursors, refreshes every five seconds, and supports explicit retry of faulty projections. Rows are snapshots; openRun rereads details for navigation. Notification preferences are independent. Request/cursor invalidation and focus restoration are handled separately so errors do not overwrite active user interaction.
  */
 export function TaskCenter({
   state,
@@ -76,7 +89,11 @@ export function TaskCenter({
     },
     [],
   );
-  // 导航失败只在用户尚未离开触发按钮时聚焦错误；后续选择或窗口失焦会取消该意图。
+  /**
+   * 导航失败只在用户尚未离开触发按钮时聚焦错误；后续选择或窗口失焦会取消该意图。
+   *
+   * EN: Focuses navigation errors only while the user remains at the initiating button; later selection or window blur cancels that intent.
+   */
   useLayoutEffect(() => {
     if (!openingError) return;
     const request = openingFocus.current;
@@ -108,6 +125,10 @@ export function TaskCenter({
     };
   }, [surface]);
   useEffect(() => {
+    /**
+     * 只接收当前入口的通知健康事件，按当前客户端重新读缓存，避免其他入口的提示串入面板。
+     * EN: Accepts health events for this surface only and rereads its client cache so other surfaces do not affect this panel.
+     */
     const receive = (event: Event) => {
       if ((event as CustomEvent).detail?.surface === surface)
         setNotificationHealth(readNotificationHealth(client));
@@ -118,13 +139,27 @@ export function TaskCenter({
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
-    // 切换筛选清空旧页，当前查询定时刷新失败则保留已读结果和明确错误。
+    /**
+     * 切换筛选清空旧页，当前查询定时刷新失败则保留已读结果和明确错误。
+     *
+     * EN: Changing filters clears the old page; refresh failures retain the successful current-query page with an explicit error.
+     */
     setResult(undefined);
     openingFocus.current?.controller.abort();
     openingFocus.current = undefined;
     setOpeningError(undefined);
+    /**
+     * 读取当前筛选页并消费一次性的重试标志；并发门闩阻止慢请求叠加，取消后不发布结果。
+     * 游标失效回到首页，其他失败保留已读页并显示错误；finally 只结束本次仍有效的加载状态。
+     * EN: Reads the filtered page and consumes one-shot retry flags. A latch prevents overlapping slow reads and cancellation suppresses updates.
+     * Invalid cursors return to page one; other failures retain the last page with an error, and finally clears loading only for a live read.
+     */
     const read = async () => {
-      // 定时器可能在慢请求期间触发，pending 防止同一查询并行叠加。
+      /**
+       * 定时器可能在慢请求期间触发，pending 防止同一查询并行叠加。
+       *
+       * EN: pending prevents timer ticks from stacking parallel reads while a slow request remains active.
+       */
       if (pending || controller.signal.aborted) return;
       pending = true;
       setLoading(true);
@@ -151,7 +186,11 @@ export function TaskCenter({
       } catch (issue) {
         if (!controller.signal.aborted) {
           if (issue instanceof ApiError && issue.code === 'RECORD_CURSOR_MISSING' && state.before)
-            // 删除或重建使旧游标失效时回到首页，不能把旧页码套在新结果上。
+            /**
+             * 删除或重建使旧游标失效时回到首页，不能把旧页码套在新结果上。
+             *
+             * EN: Returns to page one if deletion/rebuilding invalidates a cursor instead of attaching an old page number to new results.
+             */
             changeState({ ...state, before: '', trail: [] });
           else setError(issue instanceof Error ? issue.message : '任务读取失败，请重试。');
         }
@@ -364,7 +403,11 @@ export function TaskCenter({
                   aria-label={`${item.title}，${presentation.status}，${presentation.action}`}
                   disabled={!!opening}
                   onClick={(event) => {
-                    // 跟踪导航期间的焦点/指针变化；失败反馈不能打断用户已开始的其他操作。
+                    /**
+                     * 跟踪导航期间的焦点/指针变化；失败反馈不能打断用户已开始的其他操作。
+                     *
+                     * EN: Tracks focus/pointer changes during navigation so failure feedback does not interrupt another action.
+                     */
                     openingFocus.current?.controller.abort();
                     const focus = {
                       origin: event.currentTarget,

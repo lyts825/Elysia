@@ -1,4 +1,8 @@
-/** 汇总工作台范围内的数据并注册接口。 */
+/**
+ * 汇总工作台范围内的数据并注册接口。
+ * 白名单草稿/偏好采用作用域、版本和原始字节上限，大小索引可从正文重建；孤儿定向清理，损坏草稿报错保留。
+ * EN: Aggregates workbench-scoped data and registers endpoints. Scopes/revisions/bounds allowlisted drafts/preferences by raw bytes with rebuildable indexes, targeted orphan cleanup and preserved damaged drafts.
+ */
 import type { FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -10,7 +14,10 @@ const prefix = 'workbench:v1:';
 const indexPrefix = 'workbench-index:v1:';
 const maxEntries = 4096;
 const maxTotalBytes = 16 * 1024 * 1024;
-// JSON escaping can use six bytes for each character in a 200,000-character draft.
+/**
+ * 200,000 字符草稿经 JSON 转义后，每字符最多可占六字节。
+ * EN: JSON escaping can use six bytes for each character in a 200,000-character draft.
+ */
 const maxEntryBytes = 2 * 1024 * 1024;
 const maxEncodedBytes = Math.ceil(maxEntryBytes / 3) * 4 + 1024;
 const fixedKeys = new Set([
@@ -70,7 +77,10 @@ const mutation = z
 type Entry = z.infer<typeof storedEntry>;
 type Row = { key: string; value: string };
 
-/** 从白名单缓存键解析实体引用，用于实体删除后的定向清理，不能从任意键推导数据库表。 */
+/**
+ * 从白名单缓存键解析实体引用，用于实体删除后的定向清理，不能从任意键推导数据库表。
+ * EN: Parses entity references only from allowlisted cache keys for targeted cleanup after deletion; arbitrary keys cannot name database tables.
+ */
 function reference(key: string): { table: 'projects' | 'runs'; id: string } | undefined {
   const schedules = projectSchedulesDraftKey.exec(key);
   if (schedules) return { table: 'projects', id: schedules[1] };
@@ -97,6 +107,10 @@ function reference(key: string): { table: 'projects' | 'runs'; id: string } | un
   return { table: match[1].endsWith('project') ? 'projects' : 'runs', id: match[3] };
 }
 
+/**
+ * 按缓存键区分草稿/模板文本与布尔偏好，模板选择另要求空值或 UUID；类型不符拒绝保存。
+ * EN: Validates draft/template text versus boolean preferences by key, additionally requiring empty/UUID template selection and rejecting mismatched types.
+ */
 function assertValue(key: string, value: string | boolean) {
   const profile = key === 'settings:selected-terminal-profile' || terminalSelectionKey.test(key);
   const text = key.startsWith('draft:') || profile;
@@ -114,8 +128,8 @@ function assertValue(key: string, value: string | boolean) {
 }
 
 /**
- * 校验规范 Base64、解压上限及值类型，返回实际原始字节用于容量统计。
- * 损坏条目保留并明确报错，不能当作空草稿覆盖用户输入。
+ * 校验规范 Base64、解压上限及值类型，返回实际原始字节用于容量统计。 损坏条目保留并明确报错，不能当作空草稿覆盖用户输入。
+ * EN: Validates canonical Base64, decompression limits and value types and returns actual raw bytes for accounting. Damaged entries remain with explicit errors rather than overwriting drafts as empty.
  */
 function decode(row: Row): { entry: Entry; bytes: number } {
   try {
@@ -142,6 +156,10 @@ function decode(row: Row): { entry: Entry; bytes: number } {
   }
 }
 
+/**
+ * 检查总条目和原始字节上限，超限返回 413 并保留已有草稿，不通过截断腾容量。
+ * EN: Checks entry/raw-byte capacity and returns 413 while preserving existing drafts instead of truncating them.
+ */
 function capacity(count: number, bytes: number) {
   if (count > maxEntries || bytes > maxTotalBytes)
     throw new AppError(
@@ -153,33 +171,57 @@ function capacity(count: number, bytes: number) {
     );
 }
 
-/** 按规范化的数据目录计算工作台作用域，Windows 路径比较忽略大小写。 */
+/**
+ * 按规范化的数据目录计算工作台作用域，Windows 路径比较忽略大小写。
+ * EN: Derives workbench scope from the normalized data directory with case-insensitive Windows comparison.
+ */
 export function workbenchScope(store: Store) {
-  // Store.directory is already resolved with realpathSync, including directory links.
+  /**
+   * Store.directory 已通过 realpathSync 解析，包含目录链接。
+   * EN: Store.directory is already resolved with realpathSync, including directory links.
+   */
   const directory = path.normalize(path.resolve(store.directory));
   return hash(`workbench:v1:${process.platform === 'win32' ? directory.toLowerCase() : directory}`);
 }
 /**
- * 管理带版本的本地草稿和显示偏好。缓存键和值均受白名单及总容量限制，
- * 保存用 expectedRevision 防止多窗口覆盖，派生大小索引在原文变化时失效并可重建。
+ * 管理带版本的本地草稿和显示偏好。缓存键和值均受白名单及总容量限制， 保存用 expectedRevision 防止多窗口覆盖，派生大小索引在原文变化时失效并可重建。
+ * EN: Manages revisioned local drafts/display preferences with allowlisted keys/values and total capacity limits. expectedRevision prevents multi-window overwrites; derived size indexes invalidate on raw changes and can be rebuilt.
  */
 export function registerWorkbench(app: FastifyInstance, store: Store) {
   const scope = workbenchScope(store);
-  // Older application versions and management deletes invalidate the derived sizes too.
+  /**
+   * 旧版应用和管理删除同样会使派生大小失效。
+   * EN: Older application versions and management deletes invalidate the derived sizes too.
+   */
   for (const action of ['INSERT', 'UPDATE', 'DELETE'] as const) {
     const row = action === 'DELETE' ? 'OLD' : 'NEW';
     store.db.exec(
       `CREATE TRIGGER IF NOT EXISTS workbench_index_${action.toLowerCase()} AFTER ${action} ON storage_meta WHEN ${row}.key LIKE 'workbench:v1:%' BEGIN DELETE FROM storage_meta WHERE key='workbench-index:v1:' || substr(${row}.key,14); END;`,
     );
   }
+  /**
+   * 通过白名单实体表和 ID 检查归属对象仍存在，不加载实体正文。
+   * EN: Checks owner existence by allowlisted entity table/ID without loading bodies.
+   */
   const exists = ({ table, id }: { table: 'projects' | 'runs'; id: string }) =>
     !!store.db.prepare(`SELECT id FROM ${table} WHERE id=?`).get(id);
+  /**
+   * 按键稳定列出工作台命名空间的元数据条目，供容量和孤儿清理使用。
+   * EN: Lists workbench metadata keys in stable order for capacity/orphan checks.
+   */
   const rows = () =>
     store.db.prepare('SELECT key FROM storage_meta WHERE key LIKE ? ORDER BY key').all(prefix + '%') as {
       key: string;
     }[];
+  /**
+   * 仅删除已验证键且所属实体明确不存在的缓存及大小索引；未知格式抛错保留，避免清空用户草稿。
+   * EN: Deletes cache/size indexes only for validated keys with definitely absent owners; unknown formats throw and remain preserved.
+   */
   const prune = (entries: { key: string }[]) =>
-    // 只移除所属项目/运行已不存在的条目；格式未知的键必须报错保留，不能无差别清空缓存。
+    /**
+     * 只移除所属项目/运行已不存在的条目；格式未知的键必须报错保留，不能无差别清空缓存。
+     * EN: Removes only entries whose owning project/run no longer exists; unknown key formats error and remain instead of blanket clearing.
+     */
     entries.filter((row) => {
       const key = row.key.slice(prefix.length);
       if (!keySchema.safeParse(key).success)
@@ -190,8 +232,16 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
       store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(indexPrefix + key);
       return false;
     });
+  /**
+   * 读取并解码一条已定位缓存，实际字节与格式校验由 decode 统一完成。
+   * EN: Reads/decodes one located cache entry through shared format and raw-byte validation.
+   */
   const read = (key: string) =>
     decode(store.db.prepare('SELECT key,value FROM storage_meta WHERE key=?').get(key) as Row);
+  /**
+   * 保存由已解码正文证明的大小与版本冗余索引；索引键绑定原缓存键。
+   * EN: Persists size/revision metadata derived from decoded bodies, keyed to the original cache entry.
+   */
   const index = (key: string, decoded: { entry: Entry; bytes: number }) => {
     store.db
       .prepare(
@@ -202,8 +252,15 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
         JSON.stringify({ bytes: decoded.bytes, revision: decoded.entry.revision }),
       );
   };
+  /**
+   * 优先复用有效大小索引汇总容量；缺失或损坏时从保留正文重建，不以错误索引当零或覆盖正文。
+   * EN: Totals capacity using valid size indexes, rebuilding missing/damaged metadata from retained bodies rather than treating faults as zero or overwriting content.
+   */
   const totalBytes = (saved: { key: string }[]) => {
-    // 可用大小索引避免每次写草稿解压全库；缺失/损坏的索引只从保留正文重建。
+    /**
+     * 可用大小索引避免每次写草稿解压全库；缺失/损坏的索引只从保留正文重建。
+     * EN: Uses valid size indexes to avoid decompressing all drafts on each write; missing/damaged indexes rebuild only from retained bodies.
+     */
     let total = 0;
     for (const row of saved) {
       const metadata = store.db
@@ -221,7 +278,10 @@ export function registerWorkbench(app: FastifyInstance, store: Store) {
         )
           bytes = value.bytes;
       } catch {
-        /* Rebuild redundant metadata from the preserved entry. */
+        /**
+         * 从保留的原条目重建冗余元数据。
+         * EN: Rebuild redundant metadata from the preserved entry.
+         */
       }
       if (bytes === undefined) {
         const decoded = read(row.key);

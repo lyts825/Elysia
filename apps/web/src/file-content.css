@@ -1,8 +1,14 @@
-/* 定义 file-content 对应界面的样式与布局。 */
+/*
+ * 文件内容视图：统一文件信息、文档正文、图片及其他内容状态的阅读布局。元数据可展开，长正文在自身区域滚动，窄屏缩小文件标签和容器留白以增加有效阅读面积。
+ * EN: File-content view: unifies metadata, document bodies, images, and content states. Metadata can expand, long bodies scroll locally, and narrow screens reduce tab/container padding to preserve reading area.
+ */
 .file-content-view {
   min-width: 0;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .file-content-info {
   min-width: 0;
   margin-bottom: var(--space-2);
@@ -14,7 +20,10 @@
   color: var(--secondary);
   line-height: var(--leading-body);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .file-content-info-reading {
   display: grid;
   gap: var(--space-3);
@@ -207,7 +216,10 @@
   min-height: 30px;
   font-size: var(--font-sm);
 }
-/* 窄屏减少文档容器和文件标签的内边距。 */
+/*
+ * 窄屏减少文档容器和文件标签的内边距。
+ * EN: Reduces document-container and file-tab padding on narrow screens.
+ */
 @media (max-width: 560px) {
   .file-document-scroll {
     padding: var(--space-3);

@@ -1,6 +1,16 @@
-// 终端 CLI 安装失败分类及对应修复指引。
+/**
+ * 终端 CLI 安装失败分类及对应修复指引。
+ * 将内部安装错误压缩为安全、可导航的诊断，未知错误不回显任意底层文本。
+ *
+ * EN: Classifies terminal CLI installation failures and provides matching repair guidance.
+ * Maps internal installation failures to safe actionable diagnostics without echoing arbitrary underlying text.
+ */
 export type TerminalCliInstallRepair = 'check' | 'version' | 'template' | 'retry';
-// 保留原始错误码、分类和可执行修复动作，供界面选择对应的指引。
+/**
+ * 保留原始错误码、分类和可执行修复动作，供界面选择对应的指引。
+ *
+ * EN: Preserves the original error code, category, and available repair actions so the UI can choose appropriate guidance.
+ */
 export type TerminalCliInstallFailure = {
   code: string;
   category: string;
@@ -130,7 +140,11 @@ const version = new RegExp(`^${versionPattern}$`);
 const mismatchMessage = new RegExp(
   `^实际 CLI 版本 (${versionPattern}) 与请求版本 (${versionPattern}) 不一致，请重新安装；未应用镜像$`,
 );
-/** 仅接受结构化版本字段或精确匹配旧版错误模板的内容，防止任意远端诊断进入界面。 */
+/**
+ * 仅接受结构化版本字段或精确匹配旧版错误模板的内容，防止任意远端诊断进入界面。
+ *
+ * EN: Accepts only structured version fields or exact legacy error templates, preventing arbitrary remote diagnostics from entering the UI.
+ */
 function versions(details: unknown): { actualVersion: string; requestedVersion: string } | undefined {
   if (typeof details === 'string' && details.length <= 240) {
     const match = mismatchMessage.exec(details);
@@ -149,8 +163,13 @@ function versions(details: unknown): { actualVersion: string; requestedVersion: 
     return { actualVersion: values.actualVersion, requestedVersion: values.requestedVersion };
 }
 
-/** Public installation failures use a closed vocabulary, never transport text or arbitrary AppError messages. */
-// 未知错误码映射为通用说明；仅在版本格式严格有效时展示实际与请求版本。
+/**
+ * 公开安装失败只使用闭合词汇表，不回显传输文本或任意 AppError 消息。
+ * 未知错误码映射为通用说明；仅在版本格式严格有效时展示实际与请求版本。
+ *
+ * EN: Public installation failures use a closed vocabulary, never transport text or arbitrary AppError messages.
+ * Maps unknown codes to generic guidance; shows actual and requested versions only when both have a strictly valid format.
+ */
 export function terminalCliInstallFailure(code: unknown, details?: unknown): TerminalCliInstallFailure {
   const safeCode = typeof code === 'string' && Object.hasOwn(guides, code) ? code : 'TERMINAL_CLI_INSTALL';
   const guide = guides[safeCode];

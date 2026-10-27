@@ -1,5 +1,11 @@
-/* 定义 task-center 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 任务中心：布局筛选、搜索、通知选项、任务行及分页，选中筛选由 aria-pressed 标记。搜索列可收缩，窄屏重排；短窗口改为整个任务中心滚动并固定标题，保留列表上下文。
+ * EN: Task center: arranges filters, search, notification options, rows, and paging with aria-pressed selection. Search columns shrink/adapt; short windows scroll the whole center with a sticky heading to retain list context.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .task-center-body {
   padding: var(--space-5) var(--space-6);
   min-height: 0;
@@ -43,7 +49,10 @@
   display: grid;
   gap: var(--space-2);
 }
-/* 搜索栏分成两个可收缩的输入区域，第一列稍宽。 */
+/*
+ * 搜索栏分成两个可收缩的输入区域，第一列稍宽。
+ * EN: Splits search into two shrinkable input areas, giving the first slightly more width.
+ */
 .task-center-search {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
@@ -244,7 +253,10 @@
   display: flex;
   gap: var(--space-2);
 }
-/* 窄屏减少任务中心留白并调整搜索栏列数。 */
+/*
+ * 窄屏减少任务中心留白并调整搜索栏列数。
+ * EN: Reduces task-center padding and changes search-bar columns on narrow screens.
+ */
 @media (max-width: 600px) {
   .task-center-body {
     padding: var(--space-4);
@@ -285,7 +297,10 @@
     align-items: center;
   }
 }
-/* 短窗口让任务中心整体滚动并固定标题。 */
+/*
+ * 短窗口让任务中心整体滚动并固定标题。
+ * EN: Scrolls the entire task center with a sticky heading in short windows.
+ */
 @media (max-height: 540px) {
   .task-center {
     overflow-y: auto;

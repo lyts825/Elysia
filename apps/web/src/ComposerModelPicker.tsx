@@ -1,4 +1,8 @@
-/* 在消息输入区选择模型。 */
+/**
+ * 在消息输入区选择模型。
+ * 在入口根节点中挂载原生popover，维护展开、定位和焦点；模型目录、有效性与选值由ModelPicker和父组件共同管理。
+ * EN: Selects a model from the message composer. Mounts a native popover under the surface root and owns opening, placement, and focus; ModelPicker and the parent manage catalog validity and selected values.
+ */
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -9,6 +13,7 @@ import './composer-model-picker.css';
 /**
  * 在输入区通过原生 popover 提供模型选择，具体值和有效性仍由父组件与 ModelPicker 管理。
  * 打开后依据上下可用空间定位，滚动/尺寸变化重算；禁用或卸载关闭浮层，显式关闭恢复触发焦点。
+ * EN: Use a native popover for model selection; the parent and ModelPicker own the actual value and validity. Position against available space above and below, and recalculate on scrolling or resizing. Disable or unmount closes it, while explicit closure restores trigger focus.
  */
 export function ComposerModelPicker({
   providers,
@@ -31,8 +36,15 @@ export function ComposerModelPicker({
   const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const selected = providers.find((provider) => provider.id === value.providerId);
-  const position = () => {
-    // 根据触发按钮上下空间定位浮层；窗口过小时限制宽高以保持可访问。
+  /**
+   * 依据按钮上下可用空间决定浮层方向并限制尺寸；直接更新样式，使滚动和窗口变化后选择器仍可访问。
+   * EN: Chooses a popup direction from the space above and below the trigger and constrains its dimensions. Direct style updates keep the picker reachable after scrolling or resizing.
+   */
+    const position = () => {
+    /**
+     * 根据触发按钮上下空间定位浮层；窗口过小时限制宽高以保持可访问。
+     * EN: Position the popup using space around the trigger; constrain its dimensions in a small viewport to keep it reachable.
+     */
     if (!trigger.current || !panel.current) return;
     const anchor = trigger.current.getBoundingClientRect();
     const node = panel.current;
@@ -61,10 +73,18 @@ export function ComposerModelPicker({
       maxHeight: `${height}px`,
     });
   };
+  /**
+   * 挂载时订阅原生popover开关，打开后定位并聚焦选择框；卸载时解除监听并隐藏原生浮层。
+   * EN: Subscribes to native popover toggles on mount, positioning/focusing the select on opening; teardown removes the listener and hides the popover.
+   */
   useEffect(() => {
     const node = panel.current;
     if (!node) return;
-    const toggled = () => {
+    /**
+     * 从原生popover状态同步React展开标志；打开后重新定位并将焦点交给首个选择框。
+     * EN: Synchronizes React open state from the native popover; opening repositions it and focuses the first select control.
+     */
+        const toggled = () => {
       const visible = node.matches(':popover-open');
       setOpen(visible);
       if (visible) {
@@ -78,6 +98,10 @@ export function ComposerModelPicker({
       node.hidePopover();
     };
   }, []);
+  /**
+   * 展开期间观察浮层尺寸并监听窗口与滚动变化重新定位；关闭后解除全部几何监听。
+   * EN: Observes popup size and viewport/scroll changes for repositioning while open, removing geometry listeners on closure.
+   */
   useEffect(() => {
     if (!open) return;
     const observer = new ResizeObserver(position);
@@ -90,10 +114,18 @@ export function ComposerModelPicker({
       document.removeEventListener('scroll', position, true);
     };
   }, [open]);
+  /**
+   * 禁用状态变化时隐藏原生popover，防止上层禁止切换后遗留仍可操作的菜单。
+   * EN: Hides the native popover when disabled so an interactive menu cannot remain after the parent forbids switching.
+   */
   useEffect(() => {
     if (disabled) panel.current?.hidePopover();
   }, [disabled]);
-  const close = () => {
+  /**
+   * 通过原生API隐藏模型选择器并恢复触发器焦点；preventScroll避免关闭时页面跳动。
+   * EN: Hides the model picker through the native API and restores trigger focus with preventScroll to avoid a page jump.
+   */
+    const close = () => {
     panel.current?.hidePopover();
     trigger.current?.focus({ preventScroll: true });
   };

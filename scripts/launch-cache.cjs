@@ -1,9 +1,19 @@
-// 管理构建缓存占用、租约及可清理性检查。
+/**
+ * 管理构建缓存占用、租约及可清理性检查。
+ * EN: Inspect build-cache storage, leases, and retention eligibility.
+ *
+ * 以租约和进程信息识别仍在使用的构建，再按保留规则生成清理判断；不能仅凭缓存目录存在就认定可删除。
+ * EN: Use leases and process identity to recognize active builds before retention decisions; directory presence alone does not establish deletion eligibility.
+ */
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-/** 仅接受真实目录；create 只创建当前一级，不能把链接或特殊文件当作缓存容器。 */
+/**
+ * 仅接受真实目录；create 只创建当前一级，不能把链接或特殊文件当作缓存容器。
+ * EN: Accept real directories only. create creates this single level; links and special entries are
+ * not valid cache containers.
+ */
 function directory(filename, create = false) {
   if (create && !fs.existsSync(filename)) fs.mkdirSync(filename);
   const stat = fs.lstatSync(filename);
@@ -12,6 +22,9 @@ function directory(filename, create = false) {
 /**
  * 为指定摘要目录建立租约并记录桌面 PID。backend() 写入服务进程 PID，
  * close() 持久记录正常退出；租约文件使用独占创建并在写入后同步到磁盘。
+ * EN: Create a lease for a digest-keyed build and record its desktop PID. backend() adds the service
+ * PID, and close() durably records normal exit. Create lease files exclusively and sync each write
+ * to disk.
  */
 function createBuildLease(buildDirectory) {
   const build = fs.realpathSync(buildDirectory),
@@ -35,6 +48,8 @@ function createBuildLease(buildDirectory) {
     startedAt: new Date().toISOString(),
   };
   // 复用独占打开的描述符，截短、完整写入并同步，确保正常关闭标记能够持久保存。
+  // EN: Reuse the exclusively opened descriptor, truncate, write all bytes, and sync so normal-close
+  // markers can persist.
   const save = () => {
     const bytes = Buffer.from(JSON.stringify(state));
     fs.ftruncateSync(fd, 0);
@@ -49,13 +64,21 @@ function createBuildLease(buildDirectory) {
     throw error;
   }
   return {
-    /** 服务进程启动后补记 PID；只有桌面和服务均已退出，缓存才可能进入可复核状态。 */
+    /**
+     * 服务进程启动后补记 PID；只有桌面和服务均已退出，缓存才可能进入可复核状态。
+     * EN: Add the backend PID after startup. Only exited desktop and backend processes can make a lease
+     * eligible for review.
+     */
     backend(pid) {
       if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('启动服务 PID 无效');
       state.backendPid = pid;
       save();
     },
-    /** 幂等标记正常关闭并释放描述符，保留租约文件作为历史证据。 */
+    /**
+     * 幂等标记正常关闭并释放描述符，保留租约文件作为历史证据。
+     * EN: Idempotently record normal closure and release the descriptor, retaining the lease as
+     * historical evidence.
+     */
     close() {
       if (closed) return;
       closed = true;
@@ -70,7 +93,11 @@ function createBuildLease(buildDirectory) {
   };
 }
 
-/** 进程不存在可判为 dead；权限不足等其他错误保持 unknown，避免误判。 */
+/**
+ * 进程不存在可判为 dead；权限不足等其他错误保持 unknown，避免误判。
+ * EN: Classify an absent process as dead; preserve unknown for permission or other errors instead of
+ * guessing.
+ */
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return 'unknown';
   try {
@@ -80,7 +107,11 @@ function alive(pid) {
     return error.code === 'ESRCH' ? 'dead' : 'unknown';
   }
 }
-/** 统计文件数和字节；链接、硬链接或读取失败使结果标记为不确定。 */
+/**
+ * 统计文件数和字节；链接、硬链接或读取失败使结果标记为不确定。
+ * EN: Count files and bytes while marking results uncertain for links, shared hard links, or read
+ * failures.
+ */
 function footprint(root) {
   let bytes = 0,
     files = 0,
@@ -107,14 +138,22 @@ function footprint(root) {
   }
   return { bytes, files, unknown };
 }
-/** 读取有界、单硬链接的普通元数据文件；共享文件或链接的来源无法核验时拒绝解析。 */
+/**
+ * 读取有界、单硬链接的普通元数据文件；共享文件或链接的来源无法核验时拒绝解析。
+ * EN: Read bounded ordinary metadata files with a single hard link. Reject links or shared files
+ * whose provenance cannot be verified.
+ */
 function readJson(file, limit = 64 * 1024) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > limit)
     throw new Error('缓存元数据不可核验');
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
-/** 只在租约格式可核验、进程已退出且登记正常关闭时返回 closed。 */
+/**
+ * 只在租约格式可核验、进程已退出且登记正常关闭时返回 closed。
+ * EN: Return closed only for verifiable leases with exited processes and an explicit normal-close
+ * record.
+ */
 function leaseState(leaseRoot, build) {
   try {
     directory(leaseRoot);
@@ -136,7 +175,9 @@ function leaseState(leaseRoot, build) {
       const desktop = alive(item.desktopPid),
         backend = item.backendPid === null ? 'dead' : alive(item.backendPid);
       if (desktop === 'alive' || backend === 'alive') return 'active';
-      // Dead PIDs alone never authorize cleanup: crashes, PID reuse and legacy launchers are ambiguous.
+      // PID已死本身不能授权清理，崩溃、PID复用和旧启动器均有歧义。
+      // EN: Dead PIDs alone do not authorize cleanup; crashes, PID reuse, and legacy launchers remain
+      // ambiguous.
       if (desktop === 'unknown' || backend === 'unknown' || item.state !== 'closed') uncertain = true;
     }
     return uncertain ? 'unknown' : 'closed';
@@ -147,6 +188,9 @@ function leaseState(leaseRoot, build) {
 /**
  * 只读检查缓存并保留最近 keep 个构建。占用、格式或租约不确定时保守保留；
  * 即使给出 review-only 建议，也不会删除文件或授予删除权限。
+ * EN: Inspect caches read-only and retain the newest keep builds. Preserve uncertain usage, format,
+ * or leases conservatively. Even a review-only recommendation neither deletes files nor grants
+ * deletion permission.
  */
 function inspectBuildCache(root, keep = 2) {
   if (!Number.isSafeInteger(keep) || keep < 1 || keep > 100) throw new Error('--keep 必须为 1 至 100');

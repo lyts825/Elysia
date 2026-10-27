@@ -1,11 +1,22 @@
-/* 展示工具调用及其活动信息。 */
+/**
+ * 展示工具调用及其活动信息。
+ *
+ * EN: Displays tool calls and their activity.
+ *
+ * 本模块合并已读工具调用账本与工具消息，保留参数原文、执行状态、结果及审计关联，并按需读取省略的结果；工具完成与业务成功分开解释，未知格式保留原始信息。
+ * EN: Combines read tool-call ledger entries/messages, preserving raw arguments, execution states, results, and audit links while loading omitted results on demand. Tool completion is distinct from business success and unknown formats retain raw information.
+ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Message, Operation, Task, ToolCall } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Icon } from './Icon';
 import './tool-activity.css';
 
-// 为工具协议名称提供显示标签，原始名称仍用于关联调用及结果。
+/**
+ * 为工具协议名称提供显示标签，原始名称仍用于关联调用及结果。
+ *
+ * EN: Maps protocol names to display labels while raw names continue associating calls/results.
+ */
 const toolNames: Record<string, string> = {
   load_skill: '加载技能',
   list_skills: '查找技能',
@@ -97,19 +108,31 @@ const fieldNames: Record<string, string> = {
   version: '版本',
   limitation: '核验范围',
 };
-/** 仅将非数组对象作为结构化工具结果，字符串和空值仍按原文展示。 */
+/**
+ * 仅将非数组对象作为结构化工具结果，字符串和空值仍按原文展示。
+ *
+ * EN: Treats only nonarray objects as structured results; strings/null retain their original display semantics.
+ */
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
-/** 字符串原样显示，其他值以缩进 JSON 保留字段；undefined 明确显示尚无结果。 */
+/**
+ * 字符串原样显示，其他值以缩进 JSON 保留字段；undefined 明确显示尚无结果。
+ *
+ * EN: Displays strings verbatim and other values as indented JSON; undefined explicitly means no result yet.
+ */
 function format(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined) return '暂无结果';
   return JSON.stringify(value, null, 2) ?? '';
 }
-/** 组装便于阅读的命令摘要，为含空白参数加 JSON 引号；此文本只展示，不用于再次执行。 */
+/**
+ * 组装便于阅读的命令摘要，为含空白参数加 JSON 引号；此文本只展示，不用于再次执行。
+ *
+ * EN: Builds a readable command summary with JSON quotes around whitespace arguments; display only, never re-execution input.
+ */
 function command(args: Record<string, unknown>): string {
   const program = typeof args.program === 'string' ? args.program : '';
   const parameters = Array.isArray(args.args)
@@ -117,7 +140,11 @@ function command(args: Record<string, unknown>): string {
     : [];
   return [program, ...parameters].join(' ');
 }
-/** 格式化非负有限字节数；未知/异常值不生成虚假大小。 */
+/**
+ * 格式化非负有限字节数；未知/异常值不生成虚假大小。
+ *
+ * EN: Formats finite nonnegative byte sizes without inventing values for unknown/invalid data.
+ */
 function size(bytes: unknown): string {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
   return bytes < 1024
@@ -129,6 +156,8 @@ function size(bytes: unknown): string {
 /**
  * 结合工具语义生成摘要，优先区分等待登记、截断和命令退出状态。
  * 摘要仅描述本次回执，不把当时进入等待当作任务现在仍在等待，也不代替完整结果。
+ *
+ * EN: Summarizes tool receipts while distinguishing registered waits, truncation, and command exits. A historical wait receipt is not proof of current waiting and the summary never replaces full results.
  */
 function resultSummary(name: string, outcome: unknown): string {
   const result = record(outcome);
@@ -173,13 +202,21 @@ function resultSummary(name: string, outcome: unknown): string {
   };
   return summaries[name] || '已返回结果';
 }
-/** 只有声明支持等待的工具才解释 waiting 字段，防止任意结果字段改变界面状态。 */
+/**
+ * 只有声明支持等待的工具才解释 waiting 字段，防止任意结果字段改变界面状态。
+ *
+ * EN: Only tools declaring wait semantics interpret waiting; arbitrary result fields cannot change UI state.
+ */
 function registeredWait(name: string, result: Record<string, unknown> | null): boolean {
   return (
     ['clarify', 'propose_plan', 'join_tasks', 'submit_result'].includes(name) && result?.waiting === true
   );
 }
-/** 命令元数据、stdout 和 stderr 分区显示；未知结构保留原文，空输出与字段缺失分别处理。 */
+/**
+ * 命令元数据、stdout 和 stderr 分区显示；未知结构保留原文，空输出与字段缺失分别处理。
+ *
+ * EN: Separates command metadata/stdout/stderr; unknown structures remain original, and empty output differs from an absent field.
+ */
 function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
   const value = record(outcome);
   if (name !== 'exec' || !value)
@@ -225,6 +262,8 @@ function ResultContent({ name, outcome }: { name: string; outcome: unknown }) {
  * 将模型调用、操作账本和工具消息合并成可展开记录。账本结果优先，旧消息回执作为兼容来源。
  * 摘要缺省正文时仅在展开后补读，严格匹配运行/操作/调用身份与版本，保留原摘要供失败时查看。
  * DONE 只代表动作有结果，命令退出失败和 MCP isError 仍应显示失败。
+ *
+ * EN: Combines model calls, operation ledger, and tool messages into expandable records. Ledger outcomes win, with old receipts as fallback. Omitted bodies load on expansion with strict identity/revision checks. DONE means an outcome exists; exit failures and MCP isError still display as failures.
  */
 export function ToolActivity({
   call,
@@ -251,7 +290,11 @@ export function ToolActivity({
   const readErrorRef = useRef<HTMLParagraphElement>(null);
   const retryFocus = useRef(false);
   const [focusRequest, setFocusRequest] = useState<{ target: 'summary' | 'error' }>();
-  /** 完整缓存必须匹配当前摘要的全部可用身份，不能跨修订或模型回复复用同名工具结果。 */
+  /**
+   * 完整缓存必须匹配当前摘要的全部可用身份，不能跨修订或模型回复复用同名工具结果。
+   *
+   * EN: Cached full records must match all available summary identities, never crossing revisions or assistant responses.
+   */
   const sameRecord = (value: Operation | null) =>
     !!value &&
     !!summaryOperation &&
@@ -275,7 +318,11 @@ export function ToolActivity({
     setFull(null);
     setReadError('');
   }, [summaryOperation?.runId, summaryOperation?.id, summaryOperation?.revision]);
-  // 仅按需读取被省略的正文；展开状态、调用身份和重试号变化会取消上一请求。
+  /**
+   * 仅按需读取被省略的正文；展开状态、调用身份和重试号变化会取消上一请求。
+   *
+   * EN: Loads omitted bodies only on demand; expansion, call identity, and retry changes cancel prior reads.
+   */
   useEffect(() => {
     if (!summaryOperation || !omitted || !detailsOpen || loaded) {
       setLoading(false);
@@ -338,7 +385,11 @@ export function ToolActivity({
   ]);
   useEffect(() => {
     if (!focusRequest || !activity.current?.open) return;
-    // Recover focus lost with the retry button, without interrupting another control.
+    /**
+     * 恢复因重试按钮消失而丢失的焦点，不打断其他控件。
+     *
+     * EN: Recover focus lost with the retry button, without interrupting another control.
+     */
     const active = document.activeElement;
     if (
       active !== document.body &&
@@ -354,7 +405,11 @@ export function ToolActivity({
   try {
     parsed = JSON.parse(call.arguments);
   } catch {
-    // Preserve invalid arguments so the actual request remains reviewable.
+    /**
+     * 保留无效参数，使实际请求仍可审阅。
+     *
+     * EN: Preserve invalid arguments so the actual request remains reviewable.
+     */
   }
   const args = operation?.args || record(parsed) || {};
   let response: unknown = toolResponse?.text;
@@ -362,7 +417,11 @@ export function ToolActivity({
     try {
       response = JSON.parse(toolResponse.text);
     } catch {
-      // Plain text tool results remain plain text.
+      /**
+       * 纯文本工具结果保持纯文本。
+       *
+       * EN: Plain text tool results remain plain text.
+       */
     }
   }
   const returned = record(response);
@@ -372,7 +431,11 @@ export function ToolActivity({
       : returned && 'result' in returned
         ? returned.result
         : response;
-  // 操作已完成并不保证程序成功：退出码、超时和 MCP 错误属于具体结果语义，需额外判断。
+  /**
+   * 操作已完成并不保证程序成功：退出码、超时和 MCP 错误属于具体结果语义，需额外判断。
+   *
+   * EN: Operation completion does not guarantee program success; exit codes, timeout, and MCP errors require separate outcome interpretation.
+   */
   const result = record(outcome);
   const waiting = registeredWait(call.name, result);
   const mcpFailed = call.name === 'mcp_call' && record(result?.result)?.isError === true;
@@ -389,7 +452,11 @@ export function ToolActivity({
     tone = 'pending',
     statusIcon = 'history';
   if (operation?.status === 'UNCERTAIN') {
-    // 未知副作用优先于其他错误显示，不能因存在旧回执就降为普通失败或成功。
+    /**
+     * 未知副作用优先于其他错误显示，不能因存在旧回执就降为普通失败或成功。
+     *
+     * EN: Unknown side effects take display priority; old receipts cannot downgrade them to ordinary failure or success.
+     */
     status = '待核验';
     tone = 'uncertain';
     statusIcon = 'lock';

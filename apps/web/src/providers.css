@@ -1,4 +1,7 @@
-/* 定义 providers 对应界面的样式与布局。 */
+/*
+ * 供应商连接中心：以列表与编辑区组织连接、模型预设、步骤、检查状态及底部动作。多级断点从双区布局过渡到窄屏排列，限制长身份阅读区并保留错误、选择和确认状态。
+ * EN: Provider center: organizes connections, model presets, steps, checks, and footer actions across list/editor regions. Layered breakpoints adapt the two-region layout for narrow screens while retaining bounded identity reading and error/selection/confirmation states.
+ */
 .modal.provider-center {
   width: min(1080px, calc(100vw - 40px));
   max-height: calc(100dvh - 40px);
@@ -11,7 +14,10 @@
   overflow: hidden;
   flex: 1;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .provider-list {
   padding: var(--space-5) var(--space-3);
   background: var(--surface-soft);
@@ -72,7 +78,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .provider-heading-reading:focus-visible,
 .provider-model-reading:focus-visible,
 .provider-feedback-reading:focus-visible {
@@ -461,7 +470,10 @@
 .connection-panel .field-help {
   margin: var(--space-2) 0 var(--space-3);
 }
-/* 较窄窗口调整供应商列表与编辑区的列宽，并收紧内边距。 */
+/*
+ * 较窄窗口调整供应商列表与编辑区的列宽，并收紧内边距。
+ * EN: Adjusts provider-list/editor column widths and tightens padding in narrower windows.
+ */
 @media (max-width: 1050px) {
   .provider-workspace {
     grid-template-columns: 212px minmax(0, 1fr);
@@ -473,7 +485,10 @@
     padding: var(--space-4);
   }
 }
-/* 窄屏调整供应商中心的尺寸和列表、编辑区布局。 */
+/*
+ * 窄屏调整供应商中心的尺寸和列表、编辑区布局。
+ * EN: Changes provider-center size and list/editor layout on narrow screens.
+ */
 @media (max-width: 760px) {
   .modal.provider-center {
     width: 100%;
@@ -544,7 +559,10 @@
     margin-bottom: var(--space-2);
   }
 }
-/* 极窄屏调整连接表单和模型预设的列数及间距。 */
+/*
+ * 极窄屏调整连接表单和模型预设的列数及间距。
+ * EN: Changes connection-form/model-preset columns and spacing on very narrow screens.
+ */
 @media (max-width: 480px) {
   .provider-editor .form-columns,
   .provider-editor .provider-advanced .form-columns {
@@ -563,7 +581,10 @@
     width: 100%;
   }
 }
-/* 窄屏调整供应商卡片和底部操作的对齐与换行。 */
+/*
+ * 窄屏调整供应商卡片和底部操作的对齐与换行。
+ * EN: Adjusts provider-card/footer-action alignment and wrapping on narrow screens.
+ */
 @media (max-width: 760px) {
   .provider-card-model,
   .provider-card > small {
@@ -597,7 +618,10 @@
   }
 }
 
-/* 窄屏调整连接步骤的网格并允许标题换行。 */
+/*
+ * 窄屏调整连接步骤的网格并允许标题换行。
+ * EN: Changes the connection-step grid and lets headings wrap on narrow screens.
+ */
 @media (max-width: 760px) {
   .connection-stages {
     display: grid;

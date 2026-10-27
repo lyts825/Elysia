@@ -1,4 +1,7 @@
-/* 定义 artifact-revision-selection 对应界面的样式与布局。 */
+/*
+ * 产物修订选择：展示已选数量、版本元数据、引用和可展开来源。只读依据采用可聚焦滚动区，避免较长来源或标识撑破编辑面板，并保留键盘阅读位置。
+ * EN: Artifact revision selection: shows selection counts, version metadata, references, and expandable sources. Focusable reading regions contain long evidence/identifiers and preserve keyboard access within the editor.
+ */
 .revision-selection-editor {
   min-width: 0;
 }
@@ -39,7 +42,10 @@
   cursor: pointer;
   color: var(--secondary);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .revision-selection-reading {
   min-width: 0;
   max-height: clamp(8rem, 35dvh, 20rem);
@@ -55,7 +61,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .revision-selection-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

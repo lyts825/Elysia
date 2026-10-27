@@ -1,5 +1,12 @@
-// 识别评审模型与执行模型之间的身份冲突。
-/** 比较实际型号身份所需的最小分配信息，key/title 用于定位冲突的具体任务。 */
+/**
+ * 识别评审模型与执行模型之间的身份冲突。
+ * 比较实际型号身份所需的最小分配信息，key/title 用于定位冲突的具体任务。
+ * 以实际型号身份而非连接标签判断独立性，冲突说明返回可定位的任务信息。
+ *
+ * EN: Detects identity conflicts between review and execution models.
+ * The minimum assignment data needed to compare actual model identities; key/title locate a conflicting task.
+ * Determines independence from actual model identity, not connection labels, and returns locatable conflict details.
+ */
 export interface ReviewModelAssignment {
   key: string;
   title: string;
@@ -7,9 +14,17 @@ export interface ReviewModelAssignment {
   model: string;
 }
 
-// Connection IDs, accounts, endpoints and reasoning effort do not identify a different model.
-// 比较去除首尾空白并转为小写后的型号；返回首个冲突说明或 null。
+/**
+ * 连接 ID、账号、端点和推理强度不能将同一型号变成不同模型。
+ * 比较去除首尾空白并转为小写后的型号；返回首个冲突说明或 null。
+ *
+ * EN: Connection IDs, accounts, endpoints and reasoning effort do not identify a different model.
+ * Compares trimmed, lowercase model identities and returns the first conflict explanation or null.
+ */
 export function reviewModelConflict(assignments: readonly ReviewModelAssignment[]) {
+  /** 只规范化空白和大小写，不让连接或账号差异掩盖同一型号。
+   * EN: Normalizes whitespace and case only, so different connections/accounts cannot disguise one model identity.
+   */
   const identity = (model: string) => model.trim().toLowerCase();
   for (const reviewer of assignments.filter((item) => item.role === 'reviewer')) {
     const worker = assignments.find(

@@ -1,5 +1,11 @@
-/* 定义 plan-alignment-loader 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 计划模块加载反馈：布局加载来源、版本、数量和失败提示。正文与标识允许断行，失败状态单独着色，让延迟模块状态不会与已经读取的计划结果混淆。
+ * EN: Plan-module loading feedback: arranges provenance, revision, counts, and failure guidance. Wrapping text/identifiers and distinct failure colors keep lazy-module state separate from loaded plan results.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .plan-module-feedback {
   display: grid;
   justify-items: start;

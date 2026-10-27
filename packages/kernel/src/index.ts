@@ -1,4 +1,10 @@
-// 协调领域状态、运行生命周期与持久化操作的核心入口。
+/**
+ * 协调领域状态、运行生命周期与持久化操作的核心入口。
+ * 设计上由模型提出意图、内核同步核验并记录状态，外部I/O留给可取消的运行时。
+ *
+ * EN: The core entry point for domain state, run lifecycle, and durable operations.
+ * Models propose intent while the kernel synchronously validates/records state; cancellable runtime owns external I/O.
+ */
 import { freezeExecutionPolicy } from './execution-policy.js';
 import {
   UsageSchema,
@@ -45,17 +51,32 @@ import {
   type TerminalInboxPeer,
 } from '../../contracts/src/terminal-inbox.js';
 export type PlanModelAssignment = ModelChoice & { key: string; contextPolicy?: ContextPolicy };
-// 领域操作通过存储端口协调状态、权限、预算与事件；外部执行由运行时负责。
+/**
+ * 领域操作通过存储端口协调状态、权限、预算与事件；外部执行由运行时负责。
+ *
+ * EN: Domain operations coordinate state, permissions, budgets, and events through storage ports; runtime handles external execution.
+ */
 export class Kernel<Storage extends KernelStore = KernelStore> {
+  /** 只持有领域存储端口和显式注入的宿主服务；构造本身不创建运行或启动外部执行。
+   * EN: Holds domain storage ports and explicitly injected host services; construction neither creates a run nor starts external execution.
+   */
   constructor(
     public store: Storage,
     private readonly services: KernelServices = {},
   ) {}
-  /** 记录所属运行的领域事件；调用方在事务内使用时，事件与状态写入一起提交。 */
+  /**
+   * 记录所属运行的领域事件；调用方在事务内使用时，事件与状态写入一起提交。
+   *
+   * EN: Records a domain event in its run; inside a caller transaction it commits together with state writes.
+   */
   event(runId: string, type: string, payload: unknown, taskId?: string, attemptId?: string) {
     return this.store.event(runId, type, payload, taskId, attemptId);
   }
-  // 原子更新任务和代理状态并发出事件；结束或切换模型时清理限流及依赖阻塞。
+  /**
+   * 原子更新任务和代理状态并发出事件；结束或切换模型时清理限流及依赖阻塞。
+   *
+   * EN: Atomically updates task and agent state and emits an event; terminal/model-switch transitions clear rate-limit and dependency blocking metadata.
+   */
   updateTask(task: Task, status: Task['status'], extra: Partial<Task> = {}) {
     return this.store.tx(() => {
       const bindingChanged =
@@ -81,7 +102,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return next;
     });
   }
-  // 禁止改写已冻结的执行策略；合同变化时先使已有同行评审失效。
+  /**
+   * 禁止改写已冻结的执行策略；合同变化时先使已有同行评审失效。
+   *
+   * EN: Rejects changes to frozen execution policy; contract changes invalidate existing peer-review rounds first.
+   */
   updateRun(run: Run, extra: Partial<Run>) {
     return this.store.tx(() => {
       if (extra.contract)
@@ -103,7 +128,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return next;
     });
   }
-  // 只采用与当前代理、会话、窗口和策略一致的最新有效指标。
+  /**
+   * 只采用与当前代理、会话、窗口和策略一致的最新有效指标。
+   *
+   * EN: Uses only the latest valid metrics matching the current agent, session, window, and policy.
+   */
   contextMetrics(agent: Agent): ContextRuntimeMetrics | null {
     const event = this.store.latestEvent(agent.runId, agent.taskId, 'context.updated');
     const candidates = [
@@ -132,7 +161,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
     );
   }
-  // 请求或操作仍在执行、结果未知或工具配对未结束时，不允许调整窗口。
+  /**
+   * 请求或操作仍在执行、结果未知或工具配对未结束时，不允许调整窗口。
+   *
+   * EN: Window changes are disallowed while requests/operations are active, billing is unknown, or tool pairing is incomplete.
+   */
   contextConfigureReason(run: Run, task: Task): string | null {
     if (run.archived || (run.projectId && this.store.require<Project>('projects', run.projectId).archived))
       return '请先恢复归档的对话或项目';
@@ -153,6 +186,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 汇总运行内各代理的窗口配置、有效运行指标和可编辑原因，供界面一次读取。
    * 尚无有效指标时用 null 表达未知，不把估算缺失当作零用量。
+   *
+   * EN: Summarizes agent window policies, valid runtime metrics, and editability for one UI read. Missing valid metrics remain null, not zero usage.
    */
   contextSnapshot(runId: string): ContextSnapshot {
     const run = this.store.require<Run>('runs', runId);
@@ -203,6 +238,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 校验窗口策略：窗口不得超过冻结的模型上限，也必须容纳输出、安全预留及 minimum。
    * minimum 来自当前上下文的固定部分；返回规范化策略，不修改代理记录。
+   *
+   * EN: Validates that the window fits the frozen model ceiling and can hold output, safety, and minimum fixed content. Returns a normalized policy without writing the agent.
    */
   validateContextPolicy(provider: ProviderConfig, raw: unknown, minimum = 0): ContextPolicy {
     const policy = ContextPolicy.parse(raw);
@@ -222,6 +259,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 为子代理计算继承窗口。托管窗口允许模型请求调整；手动窗口只能继承或由用户显式覆盖。
    * 父窗口大于子模型容量时先收窄；新继承的手动窗口按整 K 对齐，再执行统一容量校验。
+   *
+   * EN: Computes an inherited child window. Managed windows may be model-adjusted; manual windows must be inherited or explicitly user-overridden. Narrows to child capacity, aligns newly inherited manual windows to whole K, then validates.
    */
   childContextPolicy(parent: Task, provider: ProviderConfig, requested?: number, override?: ContextPolicy) {
     const parentAgent = this.store.require<Agent>('agents', parent.agentId);
@@ -235,7 +274,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           : override,
       );
     const mode = parentAgent.contextPolicy?.mode ?? 'managed';
-    // New manually inherited windows use whole K without rewriting a legacy parent policy.
+    /**
+     * 新继承的手动窗口按整 K 对齐，不改写旧父策略。
+     *
+     * EN: New manually inherited windows use whole K without rewriting a legacy parent policy.
+     */
     const manualInherited =
       mode === 'manual' ? Math.floor(inherited / CONTEXT_TOKEN_UNIT) * CONTEXT_TOKEN_UNIT : inherited;
     invariant(
@@ -245,7 +288,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return this.validateContextPolicy(provider, { mode, windowTokens: requested ?? manualInherited });
   }
-  // 用户调整窗口时在事务中核对运行和代理修订，并要求处于安全检查点。
+  /**
+   * 用户调整窗口时在事务中核对运行和代理修订，并要求处于安全检查点。
+   *
+   * EN: A user window edit checks run/agent revisions in a transaction and requires a safe checkpoint.
+   */
   setContextPolicy(
     runId: string,
     agentId: string,
@@ -291,7 +338,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return this.contextSnapshot(run.id);
     });
   }
-  // 运行中的非评审代理只能为直属子代理分配托管窗口，手动窗口由用户调整。
+  /**
+   * 运行中的非评审代理只能为直属子代理分配托管窗口，手动窗口由用户调整。
+   *
+   * EN: A running non-review agent may allocate only managed windows to direct children; users adjust manual windows.
+   */
   allocateContext(parent: Task, taskId: string, expectedRevision: number, windowTokens: number) {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
@@ -351,7 +402,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       };
     });
   }
-  // 根据合同、执行入口与连接创建运行及根任务，并冻结所需能力和策略。
+  /**
+   * 根据合同、执行入口与连接创建运行及根任务，并冻结所需能力和策略。
+   *
+   * EN: Creates a run and root task from contract, surface, and connection, freezing required capabilities and policies.
+   */
   createRun(
     project: Project | null,
     objective: string,
@@ -402,7 +457,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         '项目任务需要装配能力快照服务',
       );
       const toolReviewBinding = freezeExecutionPolicy(this.store, contract, kind, execution);
-      // 审核、评审、角色路由和能力在创建时冻结；后续编辑全局设置不能改变该运行的边界。
+      /**
+       * 审核、评审、角色路由和能力在创建时冻结；后续编辑全局设置不能改变该运行的边界。
+       *
+       * EN: Review policies, role routing, and capabilities are frozen at creation; later global edits cannot change this run boundary.
+       */
       const peerReview = freezePeerReview(this.store, contract, provider, limits, kind, execution);
       const run = this.store.put<Run>('runs', {
         id: runId,
@@ -476,7 +535,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return run;
     });
   }
-  /** 只接受仍有效且已验证的配置修订；override 用于保存经过目录校验的具体型号选择。 */
+  /**
+   * 只接受仍有效且已验证的配置修订；override 用于保存经过目录校验的具体型号选择。
+   *
+   * EN: Accepts only current verified configuration revisions; override stores a concrete model selection already checked against the catalog.
+   */
   private binding(providerId: string, override?: ProviderConfig): ProviderConfig {
     const saved = this.store.require<ProviderConfig>('providers', providerId);
     invariant(!saved.archived, 'PROVIDER_ARCHIVED', '模型配置已归档');
@@ -491,7 +554,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return binding;
   }
-  // 聊天关闭工作区权限；规划和复核只读；执行还须有授权并接受当前计划。
+  /**
+   * 聊天关闭工作区权限；规划和复核只读；执行还须有授权并接受当前计划。
+   *
+   * EN: Chat has no workspace permissions; planning/review are read-only; execution also needs authorization and acceptance of the current plan.
+   */
   permissions(task: Task): Permissions {
     const run = this.store.require<Run>('runs', task.runId);
     if (run.kind === 'chat')
@@ -505,7 +572,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return run.contract.permissionProfile;
   }
-  // 从当前任务向上收集祖先，同时防止损坏的父子关系形成循环。
+  /**
+   * 从当前任务向上收集祖先，同时防止损坏的父子关系形成循环。
+   *
+   * EN: Collects ancestors while preventing corrupt parent links from causing a cycle.
+   */
   ancestors(task: Task): Task[] {
     const result = [task];
     let current = task;
@@ -516,22 +587,41 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     }
     return result;
   }
-  /** 返回同一运行中以 task 为祖先的任务集合，包含 task 自身。 */
+  /**
+   * 返回同一运行中以 task 为祖先的任务集合，包含 task 自身。
+   *
+   * EN: Returns same-run descendants of task, including task itself.
+   */
   descendants(task: Task): Task[] {
     return this.store
       .all<Task>('tasks', task.runId)
       .filter((t) => this.ancestors(t).some((a) => a.id === task.id));
   }
-  /** 读取持久化依赖边；任务等待列表与必要子任务边由 graph() 另行补入。 */
+  /**
+   * 读取持久化依赖边；任务等待列表与必要子任务边由 graph() 另行补入。
+   *
+   * EN: Reads durable explicit dependency edges; graph() separately adds waiting and required-child edges.
+   */
   dependencies(task: Task): string[] {
     return this.store.taskDependencies(task.id);
   }
-  // 验证所有依赖存在且图无环，避免调度进入无法完成的等待。
+  /**
+   * 验证所有依赖存在且图无环，避免调度进入无法完成的等待。
+   *
+   * EN: Validates dependency existence and acyclicity so scheduling cannot enter an impossible wait.
+   */
   checkGraph(tasks: { id: string; deps: string[] }[]) {
     const graph = new Map(tasks.map((t) => [t.id, t.deps]));
-    // active 是当前递归路径，visited 是已验证的子图；前者用于检测循环依赖。
+    /**
+     * active 是当前递归路径，visited 是已验证的子图；前者用于检测循环依赖。
+     *
+     * EN: active is the current recursion path and visited is a validated subgraph; the former detects dependency cycles.
+     */
     const visited = new Set<string>(),
       active = new Set<string>();
+    /** 深度优先验证一个依赖节点，active 检测当前路径的环，visited 复用已验证子图。
+     * EN: Validates one dependency node depth-first; active detects path cycles and visited reuses verified subgraphs.
+     */
     const visit = (key: string) => {
       invariant(graph.has(key), 'DEPENDENCY_MISSING', `依赖 ${key} 不存在`);
       invariant(!active.has(key), 'CYCLE', '任务依赖或等待关系存在环');
@@ -546,6 +636,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 构造调度需要检查的有向图：显式依赖、当前等待及必要子任务均视为边。
    * addition 只合入内存视图，便于在真正写入等待关系前预检环路。
+   *
+   * EN: Builds the scheduling graph from explicit dependencies, current waits, and required children. addition only affects the in-memory view so cycles can be checked before persisting a wait.
    */
   graph(runId: string, addition?: { id: string; deps: string[] }) {
     const tasks = this.store.all<Task>('tasks', runId);
@@ -564,7 +656,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     }
     return graph;
   }
-  // 仅根代理在规划阶段提出计划；校验合同、策略和任务依赖后再记录。
+  /**
+   * 仅根代理在规划阶段提出计划；校验合同、策略和任务依赖后再记录。
+   *
+   * EN: Only the root coordinator may propose a plan during planning; validates contract, policy, and dependencies before recording.
+   */
   propose(task: Task, rawContract: unknown, rawPlan: unknown) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
@@ -654,7 +750,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       };
     });
   }
-  /** 子预算的次数、token 和费用均须落在祖先范围内；null 费用表示没有该项上限。 */
+  /**
+   * 子预算的次数、token 和费用均须落在祖先范围内；null 费用表示没有该项上限。
+   *
+   * EN: Child request/token/cost budgets must remain inside every ancestor budget; null cost means no configured cost limit.
+   */
   checkBudgetSubset(child: Run['contract']['budget'], parent: Run['contract']['budget']) {
     invariant(
       child.maxRequests <= parent.maxRequests &&
@@ -668,6 +768,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    * 从执行中的非评审父任务创建原生子任务及独立代理/会话，并冻结其模型与窗口。
    * 在同一事务中检查代理数量、深度、预算、模型隔离和依赖环；失败不会留下半个子任务。
    * 返回任务 ID、代理 ID 和计划 key；终端 CLI 的内部委派不经过此入口。
+   *
+   * EN: Creates a native child plus separate agent/session from a running non-review parent, freezing model/window. Agent count, depth, budget, model separation, and cycles are checked atomically; failure leaves no half-created child. Returns task ID, agent ID, and plan key; CLI-internal delegation does not use this path.
    */
   spawn(
     parent: Task,
@@ -724,7 +826,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           this.checkBudgetSubset(spec.budget, ancestor.spec.budget ?? run.contract.budget);
       const taskId = id(),
         agentId = id();
-      // 计划 key 先解析成真实任务 ID；子任务不能依赖正在等待其交付的祖先。
+      /**
+       * 计划 key 先解析成真实任务 ID；子任务不能依赖正在等待其交付的祖先。
+       *
+       * EN: Resolves plan keys to real task IDs first; a child cannot depend on an ancestor waiting for its result.
+       */
       const deps = spec.dependsOn.map((key) => {
         const t = this.store.all<Task>('tasks', run.id).find((t) => t.id === key || t.spec.key === key);
         invariant(t, 'DEPENDENCY_MISSING', `依赖 ${key} 不存在`);
@@ -776,6 +882,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 用户接受指定版本的计划：核对运行修订，解析一级子任务的模型与窗口分配，
    * 冻结实际选择并按依赖顺序创建子任务。整组操作在事务内，任何选择过期都整体失败。
+   *
+   * EN: Accepts a specified plan version after checking the run revision and resolving first-level model/window allocations. Freezes actual choices and creates children in dependency order atomically; stale choices fail the whole operation.
    */
   accept(
     runId: string,
@@ -865,7 +973,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       });
       const created = new Map<string, string>();
       const pending = [...run.plan!.tasks];
-      // 只创建其依赖已获得真实 ID 的任务，保证 spawn 不会引用尚未创建的计划 key。
+      /**
+       * 只创建其依赖已获得真实 ID 的任务，保证 spawn 不会引用尚未创建的计划 key。
+       *
+       * EN: Creates only entries whose dependencies already have real IDs so spawn cannot reference an uncreated plan key.
+       */
       while (pending.length) {
         const index = pending.findIndex((t) => t.dependsOn.every((key) => created.has(key)));
         invariant(index >= 0, 'CYCLE', '计划依赖成环');
@@ -890,7 +1002,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return run;
     });
   }
-  // 在所属代理会话中分配顺序号，并为已保存消息发出完成事件。
+  /**
+   * 在所属代理会话中分配顺序号，并为已保存消息发出完成事件。
+   *
+   * EN: Assigns an ordinal within the owning agent session and emits a completed event for the durable message.
+   */
   appendMessage(task: Task, role: Message['role'], text: string, extra: Partial<Message> = {}) {
     const agent = this.store.require<Agent>('agents', task.agentId);
     const ordinal = this.store.sessionMessageCount(task.runId, agent.sessionId) + 1;
@@ -907,7 +1023,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     this.event(task.runId, 'message.completed', reasoningMessagePreview(message), task.id);
     return message;
   }
-  // 在事务中核对运行状态和依赖，复用或创建尝试并刷新租约。
+  /**
+   * 在事务中核对运行状态和依赖，复用或创建尝试并刷新租约。
+   *
+   * EN: Checks run state and dependencies in a transaction, reuses/creates an attempt, and refreshes its lease.
+   */
   claim(taskId: string) {
     return this.store.tx(() => {
       const task = this.store.require<Task>('tasks', taskId),
@@ -957,7 +1077,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return attempt;
     });
   }
-  // 保存消息数量、等待对象及未完成操作；活动尝试同时续租。
+  /**
+   * 保存消息数量、等待对象及未完成操作；活动尝试同时续租。
+   *
+   * EN: Saves message count, wait targets, and unfinished operations; active attempts also renew their lease.
+   */
   checkpoint(attemptId: string) {
     return this.store.tx(() => {
       const a = this.store.require<Attempt>('attempts', attemptId),
@@ -984,12 +1108,20 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       });
     });
   }
-  /** 仅返回当前代理会话的消息；显式模型切换后的历史通过交接包进入新会话。 */
+  /**
+   * 仅返回当前代理会话的消息；显式模型切换后的历史通过交接包进入新会话。
+   *
+   * EN: Returns only the current agent session; history after an explicit model switch enters the new session through a handoff.
+   */
   history(task: Task) {
     const agent = this.store.require<Agent>('agents', task.agentId);
     return this.store.sessionMessages(task.runId, agent.sessionId);
   }
-  // 校验等待对象属于同一运行且不是自身，再记录等待原因。
+  /**
+   * 校验等待对象属于同一运行且不是自身，再记录等待原因。
+   *
+   * EN: Validates that wait targets belong to the run and are not self, then records the wait reason.
+   */
   wait(task: Task, reason: string, ids: string[] = []) {
     return this.store.tx(() => {
       for (const key of ids)
@@ -1008,7 +1140,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       this.checkGraph(this.graph(task.runId, { id: task.id, deps: ids }));
       if (reason === 'children') {
         const children = ids.map((key) => this.store.require<Task>('tasks', key));
-        // A failed branch is actionable immediately, even when another branch is still running.
+        /**
+         * 即使其他分支仍运行，失败分支也应立即可被处理。
+         *
+         * EN: A failed branch is actionable immediately, even when another branch is still running.
+         */
         if (children.some((child) => this.childNeedsDecision(child)))
           return { waiting: false, reason: 'dependency_failed', children: this.childResults(children) };
       }
@@ -1031,7 +1167,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return { waiting: true, reason };
     });
   }
-  // 请求前为任务及其祖先核对累计预算；未知价格或不同币种不能用于受限费用预算。
+  /**
+   * 请求前为任务及其祖先核对累计预算；未知价格或不同币种不能用于受限费用预算。
+   *
+   * EN: Checks cumulative budgets for the task and ancestors before a request; unknown prices or mixed currencies cannot satisfy a cost-limited budget.
+   */
   reserve(
     task: Task,
     attempt: Attempt,
@@ -1080,14 +1220,22 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           requests,
         );
       }
-      // 预留采用保守输入单价与完整输出上限；结算前，未知结果继续占用预算。
+      /**
+       * 预留采用保守输入单价与完整输出上限；结算前，未知结果继续占用预算。
+       *
+       * EN: Reserves conservative input cost and the full output ceiling; unknown outcomes retain reservations until settlement.
+       */
       const price = provider.prices;
       const reservedCost = price
         ? (tokens * (Math.max(price.input, price.cacheRead) + (price.cacheWrite ?? 0)) +
             provider.outputLimit * price.output) /
           1e6
         : null;
-      // 每层祖先都核对其整棵子树的累计消耗，子任务不能绕过上层预算。
+      /**
+       * 每层祖先都核对其整棵子树的累计消耗，子任务不能绕过上层预算。
+       *
+       * EN: Each ancestor checks cumulative consumption for its full subtree, preventing children from bypassing parent budgets.
+       */
       for (const ancestor of this.ancestors(task)) {
         const budget = ancestor.spec.budget ?? run.contract.budget,
           descendants = new Set(this.descendants(ancestor).map((t) => t.id));
@@ -1146,7 +1294,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return request;
     });
   }
-  // 完整用量结算，确定未执行的请求释放，其余缺失用量保持未知。
+  /**
+   * 完整用量结算，确定未执行的请求释放，其余缺失用量保持未知。
+   *
+   * EN: Settles complete usage, releases requests proven unexecuted, and leaves all other incomplete usage unknown.
+   */
   settle(requestId: string, usage: Usage | null, error?: string, rejected = false) {
     if (usage) UsageSchema.parse(usage);
     return this.store.tx(() => {
@@ -1170,6 +1322,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 恢复/切换模型的共同检查点：记录必须属于当前运行，执行、未知计费及工具配对均已收束。
    * restartable 只描述可恢复的状态原因；不能代替计划、用户问题或验收所需的专门决定。
+   *
+   * EN: Shared recovery/model-switch checkpoint: records must belong to the run, active work and unknown accounting must be resolved, and tool pairing must close. restartable describes eligible wait reasons only; it cannot replace decisions for plans, questions, or acceptance.
    */
   private taskControlBoundary(runId: string, taskId: string) {
     const run = this.store.require<Run>('runs', runId),
@@ -1214,7 +1368,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       ].includes(task.waitReason ?? '');
     return { run, task, history, restartable };
   }
-  // 从可控的等待或失败检查点恢复任务；边界校验阻止跳过未知请求或操作。
+  /**
+   * 从可控的等待或失败检查点恢复任务；边界校验阻止跳过未知请求或操作。
+   *
+   * EN: Resumes a task from a controlled wait/failure checkpoint; boundary checks prevent bypassing unknown requests or operations.
+   */
   resumeTask(runId: string, taskId: string) {
     return this.store.tx(() => {
       const { run, task, restartable } = this.taskControlBoundary(runId, taskId);
@@ -1237,7 +1395,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       });
     });
   }
-  // 在安全检查点切换模型；模式区分只应用配置与继续运行。
+  /**
+   * 在安全检查点切换模型；模式区分只应用配置与继续运行。
+   *
+   * EN: Switches models at a safe checkpoint; mode distinguishes configuration-only application from continuation.
+   */
   switchModel(runId: string, taskId: string, provider: ProviderConfig, mode: 'apply' | 'resume') {
     return this.store.tx(() => {
       let { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
@@ -1309,7 +1471,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         text: string;
         toolCalls?: { name: string; arguments: string }[];
       };
-      // 交接只复制公开角色、正文及工具名称/参数，供应商私有重放与推理签名留在旧会话。
+      /**
+       * 交接只复制公开角色、正文及工具名称/参数，供应商私有重放与推理签名留在旧会话。
+       *
+       * EN: Handoff copies only public roles/text and tool names/arguments; private provider replay data and reasoning signatures stay in the old session.
+       */
       const publicHistory: PublicMessage[] = [];
       for (const message of history) {
         if (message.purpose === 'model_handoff') {
@@ -1342,7 +1508,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
               continue;
             }
           } catch {
-            // Older or damaged handoffs remain readable as public text.
+            /**
+             * 旧版或损坏的交接包仍可作为公开文本读取。
+             *
+             * EN: Older or damaged handoffs remain readable as public text.
+             */
           }
         }
         publicHistory.push({
@@ -1364,6 +1534,9 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           ),
         ),
       );
+      /** 缩短公开正文和参数预览，完整历史已存入对象；不跨会话复制供应商私有字段。
+       * EN: Shortens public text/argument previews after retaining full history as an object, without copying private provider fields across sessions.
+       */
       const shorten = (m: PublicMessage): PublicMessage => ({
         role: m.role,
         text: m.text.slice(0, 900),
@@ -1371,8 +1544,15 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           ? { toolCalls: m.toolCalls.map((c) => ({ name: c.name, arguments: c.arguments.slice(0, 900) })) }
           : {}),
       });
-      // 完整公开历史先存对象；可见交接逐级缩短以适配新模型窗口，原文仍能按引用回查。
+      /**
+       * 完整公开历史先存对象；可见交接逐级缩短以适配新模型窗口，原文仍能按引用回查。
+       *
+       * EN: Stores complete public history as an object first, then progressively shortens the visible handoff to fit the new model window; originals remain retrievable by reference.
+       */
       let visibleHistory = publicHistory.map((m, i) => (i < publicHistory.length - 8 ? shorten(m) : m));
+      /** 对当前可见交接的稳定 JSON 计算实际 UTF-8 大小，供逐级裁剪循环判定停止条件。
+       * EN: Measures actual UTF-8 bytes of stable visible-handoff JSON for the progressive trimming loop.
+       */
       const historyBytes = () => Buffer.byteLength(stable(visibleHistory), 'utf8');
       while (historyBytes() > historyBudget && visibleHistory.length > 8) visibleHistory.shift();
       if (historyBytes() > historyBudget) visibleHistory = visibleHistory.map(shorten);
@@ -1383,7 +1563,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           text: m.text.slice(0, Math.floor(m.text.length / 2)),
         }));
       }
-      // Only public messages cross sessions; provider replay data and reasoning signatures stay in the old session.
+      /**
+       * 只有公开消息跨会话，供应商重放数据和推理签名留在原会话。
+       *
+       * EN: Only public messages cross sessions; provider replay data and reasoning signatures stay in the old session.
+       */
       this.appendMessage(
         next,
         'user',
@@ -1419,6 +1603,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    * 这里只更新领域状态与租约；实际终止网络或进程由运行时观察状态并取消。
    * 恢复保持累计预算及评审轮次；终端验收、失败/取消或重复错误分支按各自门禁核验。
    * 原生 interrupted 分支沿用显式继续语义，允许保留未知请求与原预算预留后继续。
+   *
+   * EN: Applies start/pause/resume/cancel to a run or task subtree. Updates domain state and leases only; runtime observes state to stop network/process work. Budgets and review rounds remain cumulative, with separate terminal/failure/cancellation/no-progress gates. Native interrupted continuation retains unknown requests and original reservations.
    */
   action(runId: string, action: 'start' | 'pause' | 'resume' | 'cancel', taskId?: string) {
     return this.store.tx(() => {
@@ -1494,8 +1680,13 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
                 'no_progress',
               ].includes(t.waitReason ?? '')),
         );
-        // A failed/blocked branch must not use broad resume to bypass local verification.
-        // Interrupted streams retain their existing explicit continuation semantics and reserves.
+        /**
+         * 失败或受阻分支不能通过整体恢复绕过局部核验。
+         * 中断流保留现有显式继续语义和预留。
+         *
+         * EN: A failed/blocked branch must not use broad resume to bypass local verification.
+         * Interrupted streams retain their existing explicit continuation semantics and reserves.
+         */
         for (const task of restarting)
           if (['FAILED', 'CANCELLED'].includes(task.status) || task.waitReason === 'no_progress')
             invariant(
@@ -1525,6 +1716,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 持久接收用户补充消息，返回 PENDING 记录，不直接将消息注入活动模型请求。
    * 原生计划任务可标记 continue/replan；终端队列另有条数和 UTF-8 总字节上限。
+   *
+   * EN: Durably queues user feedback as PENDING rather than injecting it into an active model request. Native planned tasks may choose continue/replan; terminal queues have separate count and UTF-8 byte limits.
    */
   inbox(
     runId: string,
@@ -1576,13 +1769,21 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return message;
     });
   }
-  /** 获取尚未应用的入站终端消息，排除发往其他终端的出站记录。 */
+  /**
+   * 获取尚未应用的入站终端消息，排除发往其他终端的出站记录。
+   *
+   * EN: Reads unapplied inbound terminal messages, excluding outbound records destined for other terminals.
+   */
   pendingTerminalInbox(runId: string): InboxMessage[] {
     return this.store
       .stateCandidates<InboxMessage>('inbox', ['PENDING'], { runId })
       .filter((message) => message.status === 'PENDING' && message.direction !== 'outgoing');
   }
-  /** 给跨终端来源附加资料边界；来源信息不构成新的用户授权。 */
+  /**
+   * 给跨终端来源附加资料边界；来源信息不构成新的用户授权。
+   *
+   * EN: Adds a data boundary to cross-terminal sources; provenance does not constitute new user authorization.
+   */
   terminalInboxText(message: InboxMessage) {
     if (!message.source) return message.text;
     return (
@@ -1592,7 +1793,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       stable({ text: message.text })
     );
   }
-  /** The caller owns the execution boundary. This only records context and never wakes a task. */
+  /**
+   * 调用方拥有执行边界；这里只记录上下文，从不唤醒任务。
+   *
+   * EN: The caller owns the execution boundary. This only records context and never wakes a task.
+   */
   applyTerminalInbox(task: Task, inboxIds: string[], operationId?: string) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
@@ -1632,22 +1837,38 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 在安全检查点将原生运行的 PENDING 消息写入会话，并决定继续当前计划或重新规划。
    * 暂停、未知请求、未闭合工具结果期间保留队列；终端消息由显式启动/续接单独消费。
+   *
+   * EN: At a safe checkpoint, writes native PENDING messages to the session and chooses continuation or replanning. Pauses, unknown requests, and unfinished tool results retain the queue; explicit startup/continuation consumes terminal messages.
    */
   applyInbox(runId: string) {
     return this.store.tx(() => {
       let run = this.store.require<Run>('runs', runId);
       if (run.archived) return;
-      // Terminal stdin is a finite prompt. Only its startup or an explicit continuation
-      // can consume messages; the native scheduler must not clear paused/review queues.
+      /**
+       * 终端 stdin 是有限提示，只有启动或显式继续
+       * 才能消费消息；原生调度器不能清空暂停或待验收队列。
+       *
+       * EN: Terminal stdin is a finite prompt. Only its startup or an explicit continuation
+       * can consume messages; the native scheduler must not clear paused/review queues.
+       */
       if (run.execution?.kind === 'docker-agent') return;
       const incoming = this.store.stateCandidates<any>('inbox', ['PENDING'], { runId });
       if (!incoming.length) return;
-      // 收件箱只在工具配对闭合后应用。
+      /**
+       * 收件箱只在工具配对闭合后应用。
+       *
+       * EN: Applies inbox messages only after all tool calls are paired.
+       */
       const tasks = this.store
         .all<Task>('tasks', runId)
         .filter((t) => !['DONE', 'CANCELLED'].includes(t.status));
-      // The runtime checks the same safe boundary before calling this method. Keep
-      // it here as well so direct callers cannot apply feedback during uncertain work.
+      /**
+       * 运行时在调用前检查相同安全边界；此处也保留检查，
+       * 以防直接调用方在结果未知的执行期间应用反馈。
+       *
+       * EN: The runtime checks the same safe boundary before calling this method. Keep
+       * it here as well so direct callers cannot apply feedback during uncertain work.
+       */
       if (
         run.kind === 'task' &&
         (this.store.getExecutionHold(runId) ||
@@ -1673,7 +1894,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       );
       if (run.kind === 'chat') {
         const root = this.store.require<Task>('tasks', run.rootTaskId);
-        // Wait for the current response before applying a new turn to its context.
+        /**
+         * 等待当前响应结束后，再把新轮次写入其上下文。
+         *
+         * EN: Wait for the current response before applying a new turn to its context.
+         */
         if (root.status === 'RUNNING' || root.status === 'VERIFYING') return;
         for (const message of incoming) {
           this.appendMessage(root, 'user', message.text, { sourceInboxId: message.id });
@@ -1683,13 +1908,22 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         this.updateRun(run, { status: 'READY', reason: undefined, startedAt: Date.now() });
         return;
       }
-      // continue 保留原授权与子任务；replan 使旧候选失效，并在必要时取消旧子任务后回到规划。
+      /**
+       * continue 保留原授权与子任务；replan 使旧候选失效，并在必要时取消旧子任务后回到规划。
+       *
+       * EN: continue preserves authorization and children; replan stales the old candidate and cancels old children when needed before returning to planning.
+       */
       const replan = run.planMode !== false && incoming.some((message) => message.intent !== 'continue');
       const continuing =
         run.planMode === false ||
         (!replan && run.authorized && run.plan && run.acceptedPlanVersion === run.plan.version);
-      // Feedback must not double as resume. Retain it until the explicit pause,
-      // limit or failure is resolved, so a queued answer can still wake its question.
+      /**
+       * 反馈不能兼作恢复操作；在显式暂停、
+       * 限制或失败解除前保留队列，使排队回答之后仍能唤醒其问题。
+       *
+       * EN: Feedback must not double as resume. Retain it until the explicit pause,
+       * limit or failure is resolved, so a queued answer can still wake its question.
+       */
       if (
         !replan &&
         !['READY', 'RUNNING'].includes(run.status) &&
@@ -1706,8 +1940,13 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       }
       const root = this.store.require<Task>('tasks', run.rootTaskId);
       if (continuing) {
-        // Feedback stays within the original authorization. Preserve child work and
-        // cumulative limits; only a pending user question is answered by this inbox.
+        /**
+         * 反馈保持在原授权范围内，保留子任务工作及
+         * 累计限制；该收件箱仅回答待处理的用户问题。
+         *
+         * EN: Feedback stays within the original authorization. Preserve child work and
+         * cumulative limits; only a pending user question is answered by this inbox.
+         */
         if (run.planMode === false) {
           const spec = {
             ...root.spec,
@@ -1750,7 +1989,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       this.updateRun(this.store.require('runs', runId), { status: 'READY', reason: undefined });
     });
   }
-  /** 子任务失败、取消或可定位的依赖/无进展阻塞应立即唤醒父任务处理。 */
+  /**
+   * 子任务失败、取消或可定位的依赖/无进展阻塞应立即唤醒父任务处理。
+   *
+   * EN: A child failure, cancellation, or actionable dependency/no-progress block should wake the parent promptly.
+   */
   private childNeedsDecision(task: Task) {
     return (
       ['FAILED', 'CANCELLED'].includes(task.status) ||
@@ -1759,6 +2002,9 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           (task.waitReason === 'dependency_failed' && task.dependencyBlock?.causes.length !== 0)))
     );
   }
+  /** 抽取父任务处理子任务所需的状态和结果，不复制代理绑定或工作区所有权。
+   * EN: Projects child status/results needed by the parent without copying agent bindings or workspace ownership.
+   */
   private childResults(tasks: Task[]) {
     return tasks.map((task) => ({
       id: task.id,
@@ -1770,7 +2016,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       result: task.result,
     }));
   }
-  /** 有在途/未知请求或未完成/未知操作时，恢复必须先经过核验边界。 */
+  /**
+   * 有在途/未知请求或未完成/未知操作时，恢复必须先经过核验边界。
+   *
+   * EN: Active/unknown requests and unfinished/unknown operations force recovery through the reconciliation boundary first.
+   */
   private taskNeedsVerification(task: Task) {
     return (
       this.store
@@ -1784,11 +2034,16 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /**
    * 将失败根因沿显式依赖传播给待调度任务，并保留路径供界面说明。
    * 根因消失不等于依赖已完成：全部 DONE 后才可恢复 READY，未知副作用则转入核验。
+   *
+   * EN: Propagates failure causes along explicit dependencies to schedulable tasks and retains the path for display. Removal of a cause does not imply completion: every dependency must be DONE before READY, and unknown side effects go to verification.
    */
   private reconcileDependencies(runId: string) {
     const tasks = this.store.all<Task>('tasks', runId),
       byId = new Map(tasks.map((task) => [task.id, task]));
     type Cause = NonNullable<Task['dependencyBlock']>['causes'][number];
+    /** 沿依赖递归收集可处理根因及路径；闭合任务终止搜索，重复路径中止以容忍损坏图。
+     * EN: Recursively collects actionable dependency causes and paths; terminal tasks stop traversal and repeated paths stop corrupt cycles.
+     */
     const causesFor = (task: Task, chain: string[] = []): Cause[] => {
       if (chain.includes(task.id)) return [];
       const path = [...chain, task.id];
@@ -1836,7 +2091,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       }
     }
   }
-  /** 子任务全部终结或有分支需决定时追加状态摘要，父任务转回 READY 或先进入副作用核验。 */
+  /**
+   * 子任务全部终结或有分支需决定时追加状态摘要，父任务转回 READY 或先进入副作用核验。
+   *
+   * EN: When children terminate or a branch needs a decision, appends a status summary and makes the parent READY or routes it through side-effect verification.
+   */
   wakeChildren(runId: string) {
     this.store.tx(() => {
       this.reconcileDependencies(runId);
@@ -1862,7 +2121,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       }
     });
   }
-  // 恢复持久记录中的执行状态；对不确定结果保留后续核验要求。
+  /**
+   * 恢复持久记录中的执行状态；对不确定结果保留后续核验要求。
+   *
+   * EN: Recovers execution state from durable records while retaining reconciliation requirements for uncertain outcomes.
+   */
   recover(runId?: string) {
     const recovery = this.store.recovery;
     for (const key of recovery.candidates('requests', ['RESERVED'], runId))
@@ -1892,8 +2155,13 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         if (!['RUNNING', 'VERIFYING'].includes(task.status)) return;
         const pending = this.store.hasUncertainOperation(task.runId, task.id);
         const reason = pending ? 'verification' : 'interrupted';
-        // Recovery does not rebuild a graph/checkpoint from all historical bodies.
-        // Preserve the last checkpoint and normalize only the interrupted live records.
+        /**
+         * 恢复不从全部历史正文重建依赖图或检查点。
+         * 保留最后检查点，只规范化被中断的活动记录。
+         *
+         * EN: Recovery does not rebuild a graph/checkpoint from all historical bodies.
+         * Preserve the last checkpoint and normalize only the interrupted live records.
+         */
         this.updateTask(task, 'WAITING', { waitReason: reason, waitingFor: [] });
         if (task.id === run.rootTaskId) this.updateRun(run, { status: 'WAITING', reason });
         this.event(task.runId, 'decision.required', { taskId: task.id, reason }, task.id);

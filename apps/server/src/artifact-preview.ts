@@ -1,4 +1,8 @@
-/** 提供交付物预览及相关读取服务。 */
+/**
+ * 提供交付物预览及相关读取服务。
+ * 兼容磁盘与 SQLite 压缩对象，管理文本分页、资源流、独立快照及摘要核验；只负责呈现和完整性，不执行产物或决定验收。
+ * EN: Provides artifact previews and associated resource reads. Supports disk/SQLite objects with text paging, resource streams, snapshots and integrity checks; owns presentation/integrity without executing artifacts or deciding acceptance.
+ */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,8 +28,16 @@ import {
   type TextReadHandle,
 } from './file-reader.js';
 
+/**
+ * 创建统一的对象摘要损坏错误，供压缩存储和文件读取路径共同使用。
+ * EN: Creates the shared digest-corruption error for compressed-object and file read paths.
+ */
 const corrupt = () => new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
 const cacheLimit = 16;
+/**
+ * 按本次可选字节上限检查大小；超限抛 413，未指定上限时不额外限制。
+ * EN: Checks the optional per-read byte cap, throwing 413 on excess and imposing no extra limit when absent.
+ */
 function sizeLimit(size: number, maxBytes?: number) {
   if (maxBytes !== undefined && size > maxBytes)
     throw new AppError('ARTIFACT_SIZE_LIMIT', '产物大小超过本次读取上限', false, { size, maxBytes }, 413);
@@ -39,6 +51,10 @@ class CompressedSnapshot {
   private sources = new Set<Readable>();
   private closed = false;
   onClose?: () => void;
+  /**
+   * 打开独立只读 SQLite 快照并验证对象存在、摘要及原始大小；初始化失败立即关闭连接。
+   * EN: Opens a separate read-only SQLite snapshot, validates existence/hash/raw size and closes the connection on initialization failure.
+   */
   constructor(
     store: Store,
     readonly ref: string,
@@ -60,6 +76,10 @@ class CompressedSnapshot {
       throw error;
     }
   }
+  /**
+   * 从冻结快照分块提取压缩字节并流式解压，返回受取消信号控制的流；登记源和解压器以便统一关闭，损坏与解压错误由流上报。
+   * EN: Extracts compressed bytes in chunks from the frozen snapshot and returns a cancellable gunzip stream. Tracks both streams for shutdown; corruption and decompression errors propagate through the stream.
+   */
   raw(signal?: AbortSignal) {
     const db = this.db,
       ref = this.ref,
@@ -87,12 +107,20 @@ class CompressedSnapshot {
       this.sources.delete(source);
     });
     this.active.add(stream);
+    /**
+     * 销毁当前解压流，使取消立即停止后续源读取。
+     * EN: Destroys the current decompression stream so cancellation stops subsequent source reads.
+     */
     const abort = () => stream.destroy(new Error('Artifact preview cancelled'));
     signal?.addEventListener('abort', abort, { once: true });
     stream.once('close', () => signal?.removeEventListener('abort', abort));
     source.pipe(stream);
     return stream;
   }
+  /**
+   * 幂等关闭快照、全部源/解压流与数据库，并通知所属预览服务解除登记。
+   * EN: Idempotently closes the snapshot, all source/decompression streams and database, then notifies its owning preview service.
+   */
   close() {
     if (this.closed) return;
     this.closed = true;
@@ -105,17 +133,27 @@ class CompressedSnapshot {
   }
 }
 
-// Random reads keep one decompressed chunk. Backward seeks restart the stream;
-// forward seeks skip bytes without accumulating the preceding text.
+/**
+ * 随机读取仅保留一个解压块；向后跳转重启解压流， 向前跳转只跳过字节，不累积前面的文本。
+ * EN: Random reads keep one decompressed chunk. Backward seeks restart the stream; forward seeks skip bytes without accumulating the preceding text.
+ */
 class CompressedReader {
   private stream: Readable | null = null;
   private iterator: AsyncIterator<Buffer> | null = null;
   private chunk = Buffer.alloc(0);
   private base = 0;
+  /**
+   * 绑定压缩快照和取消信号；实际解压流在首次读取时创建。
+   * EN: Binds a compressed snapshot and cancellation signal; decompression starts lazily on the first read.
+   */
   constructor(
     private snapshot: CompressedSnapshot,
     private signal?: AbortSignal,
   ) {}
+  /**
+   * 销毁旧解压流并从零重建迭代器，用重新解压换取有界内存下的向后定位。
+   * EN: Replaces the old stream with a fresh iterator from zero, trading repeated decompression for backward reads with bounded memory.
+   */
   private restart() {
     this.stream?.destroy();
     this.chunk = Buffer.alloc(0);
@@ -123,6 +161,10 @@ class CompressedReader {
     this.stream = this.snapshot.raw(this.signal);
     this.iterator = this.stream[Symbol.asyncIterator]();
   }
+  /**
+   * 读取指定解压偏移和长度；向前跳过无关块，向后请求则重启，EOF 返回已读部分；每轮检查取消。
+   * EN: Reads a decompressed range, skipping forward chunks and restarting for backward offsets. EOF returns available bytes and each loop observes cancellation.
+   */
   async readAt(offset: number, length: number) {
     this.signal?.throwIfAborted();
     if (!length) return Buffer.alloc(0);
@@ -144,29 +186,47 @@ class CompressedReader {
     }
     return output;
   }
+  /**
+   * 停止本读取器的解压流，不关闭可由其他读取器共享的快照。
+   * EN: Stops this reader's decompression stream without closing the snapshot shared by other readers.
+   */
   close() {
     this.stream?.destroy();
   }
 }
 
-/** 管理产物预览的对象验证与读取；关闭时取消服务生命周期并释放活动快照。 */
+/**
+ * 管理产物预览的对象验证与读取；关闭时取消服务生命周期并释放活动快照。
+ * EN: Manages artifact-object verification and reads; shutdown aborts service lifetime and releases active snapshots.
+ */
 export class ArtifactPreviewService {
   private verified = new Map<string, true>();
   private pending = new Map<string, Promise<void>>();
   private closed = false;
   private snapshots = new Set<CompressedSnapshot>();
   private lifetime = new AbortController();
+  /**
+   * 绑定存储及资源 URL 前缀；快照和核验工作在具体请求到来时创建。
+   * EN: Binds storage and resource URL prefix; snapshots and verification work are created on demand.
+   */
   constructor(
     private store: Store,
     private prefix = '',
   ) {}
+  /**
+   * 识别 SQLite 压缩对象引用，包括迁移后仍保留旧引用形式的对象，不加载正文。
+   * EN: Detects SQLite compressed objects, including migrated legacy references, without loading bodies.
+   */
   private compressedObject(artifact: Artifact) {
     return (
       artifact.objectRef.startsWith('sqlite:') ||
       !!this.store.db.prepare('SELECT 1 FROM compressed_objects WHERE ref=?').get(artifact.objectRef)
     );
   }
-  /** 同版本对象共享一次完整性核验；缓存只保存成功结果，失败 Promise 退出后可重新尝试。 */
+  /**
+   * 同版本对象共享一次完整性核验；缓存只保存成功结果，失败 Promise 退出后可重新尝试。
+   * EN: Shares one integrity check for the same object version. Only successful results remain cached; a failed promise can be retried after it leaves the cache.
+   */
   private async verify(key: string, work: () => Promise<void>) {
     invariant(!this.closed, 'PREVIEW_CLOSED', '预览服务已关闭');
     if (this.verified.has(key)) {
@@ -188,12 +248,19 @@ export class ArtifactPreviewService {
     this.pending.set(key, promise);
     return promise;
   }
+  /**
+   * 组合外部提交代际与当前连接写入计数，作为核验缓存的失效依据。
+   * EN: Combines external commit generation and this connection's write count for verification-cache invalidation.
+   */
   private dbVersion() {
     const version = this.store.db.prepare('PRAGMA data_version').get() as { data_version: number };
     const changed = this.store.db.prepare('SELECT total_changes() AS changes').get() as { changes: number };
     return `${version.data_version}:${changed.changes}`;
   }
-  /** 内容寻址磁盘对象必须满足引用格式、实际路径、版本、大小和完整 SHA-256，路径存在并不够。 */
+  /**
+   * 内容寻址磁盘对象必须满足引用格式、实际路径、版本、大小和完整 SHA-256，路径存在并不够。
+   * EN: Content-addressed disk objects must satisfy reference syntax, real path, version, size, and full SHA-256 checks; existence alone is insufficient.
+   */
   private async disk(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     invariant(
       /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/.test(artifact.objectRef),
@@ -228,8 +295,8 @@ export class ArtifactPreviewService {
     return { filename, info };
   }
   /**
-   * 取得压缩对象快照并流式核验原始字节；缓存键绑定数据库变化计数与压缩大小，
-   * 采集期间数据库变化时加入随机键以禁止复用可能过时的验证结果。
+   * 取得压缩对象快照并流式核验原始字节；缓存键绑定数据库变化计数与压缩大小， 采集期间数据库变化时加入随机键以禁止复用可能过时的验证结果。
+   * EN: Acquires a compressed-object snapshot and verifies raw bytes by streaming. Cache keys bind database change count and compressed size; changes during capture add a random key to prevent reuse of potentially stale proof.
    */
   private async compressed(artifact: Artifact, signal?: AbortSignal, maxBytes?: number) {
     const valid = /^sqlite:[a-f0-9]{64}$/.test(artifact.objectRef)
@@ -273,7 +340,10 @@ export class ArtifactPreviewService {
       throw error;
     }
   }
-  /** 按检测出的文件类型返回文本页或二进制元信息；退出时关闭解压读取器和快照，不长期持有正文。 */
+  /**
+   * 按检测出的文件类型返回文本页或二进制元信息；退出时关闭解压读取器和快照，不长期持有正文。
+   * EN: Returns a text page or binary metadata according to detected type, releasing decompression readers and snapshots rather than retaining full bodies.
+   */
   async preview(
     artifact: Artifact,
     encoding: TextFileEncoding = 'auto',
@@ -288,6 +358,10 @@ export class ArtifactPreviewService {
       reader: CompressedReader | null = null;
     let result: Awaited<ReturnType<typeof readTextPage>> | null = null,
       prefix: Buffer;
+    /**
+     * 根据媒体类型、文件名和前缀判断是否可文本预览；UTF-16 的磁盘零字节不按普通二进制处理。
+     * EN: Determines text preview eligibility from media type, filename and prefix while excluding UTF-16 padding zeros from ordinary binary detection.
+     */
     const canReadText = (prefix: Buffer) => {
       const unicode16 =
         encoding.startsWith('utf-16') ||
@@ -307,7 +381,15 @@ export class ArtifactPreviewService {
           const size = snapshot.row.raw_size;
           const stat = { size, mtimeMs: 0, ctimeMs: 0, dev: 0, ino: 0 } as FileStat;
           const handle = {
+            /**
+             * 向通用文本分页器返回当前已冻结对象的长度和版本元数据。
+             * EN: Returns frozen object length/version metadata to the generic text pager.
+             */
             stat: async () => stat,
+            /**
+             * 将压缩对象的逻辑随机读取结果复制到调用方缓冲区，返回实际字节数；读取错误继续上抛。
+             * EN: Copies logical compressed-object range bytes into the caller's buffer and returns bytesRead, propagating read failures.
+             */
             read: async (buffer: Buffer, offset: number, length: number, position: number) => {
               const bytes = await reader!.readAt(position, length);
               bytes.copy(buffer, offset);
@@ -320,6 +402,10 @@ export class ArtifactPreviewService {
               stat,
               version: artifact.hash,
               key: artifact.objectRef + ':' + artifact.hash,
+              /**
+               * 满足通用分页器校验接口；该读取已由独立 SQLite 事务冻结，不需再次查询可变路径。
+               * EN: Implements the pager validation hook; the dedicated SQLite transaction already freezes this read, so no mutable-path recheck is needed.
+               */
               validate: async () => {},
             },
             encoding,
@@ -371,8 +457,8 @@ export class ArtifactPreviewService {
     }
   }
   /**
-   * 返回已验证的原始资源流。磁盘对象支持 Range；压缩对象只提供完整流，随机文本访问
-   * 走 preview。流关闭即释放快照，服务关闭信号与单请求取消共同约束读取。
+   * 返回已验证的原始资源流。磁盘对象支持 Range；压缩对象只提供完整流，随机文本访问 走 preview。流关闭即释放快照，服务关闭信号与单请求取消共同约束读取。
+   * EN: Returns verified raw resource streams. Disk objects support Range; compressed objects stream whole and use preview for random text access. Closing the stream releases its snapshot; service shutdown and request abort both bound reading.
    */
   async resource(
     artifact: Artifact,
@@ -393,7 +479,10 @@ export class ArtifactPreviewService {
     }
     const snapshot = await this.compressed(artifact, options.signal, options.maxBytes);
     try {
-      // Gzip objects are streamed whole; random text access is supplied by /preview.
+      /**
+       * Gzip对象整流传输，随机文本访问由/preview提供。
+       * EN: Gzip objects are streamed whole; random text access is supplied by /preview.
+       */
       const stream = snapshot.raw(options.signal);
       stream.once('close', () => snapshot.close());
       return {
@@ -410,6 +499,10 @@ export class ArtifactPreviewService {
       throw error;
     }
   }
+  /**
+   * 终止服务生命周期信号，关闭所有快照，等待核验任务收束后清空缓存，防止关闭后继续读库。
+   * EN: Aborts service lifetime, closes snapshots, awaits pending verification and clears caches to prevent reads after shutdown.
+   */
   async close() {
     this.closed = true;
     this.lifetime.abort();

@@ -1,4 +1,8 @@
-/* 展示运行中的同行评审信息。 */
+/**
+ * 展示运行中的同行评审信息。
+ * 展示冻结策略、候选和逐轮评分，区分评分通过与目标最终完成；不代替服务端评审调度或写入最终结论。
+ * EN: Displays peer-review rounds for a run. Displays frozen policy, candidates, and per-round scores while distinguishing passing scores from final goal completion, without scheduling reviews or writing final decisions.
+ */
 import { useId } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type { PeerReviewRound } from '../../../packages/contracts/src/peer-review';
@@ -16,6 +20,7 @@ const verdictLabels = { pass: '通过', fail: '未通过', insufficient: '证据
 /**
  * 只读展示冻结的评审策略、候选和各轮逐项评分。通过评分与目标完成分别表达：
  * 只有当前合同候选通过且运行已 DONE 才展示最终确认，历史或 stale 轮次仍可展开核对。
+ * EN: Read-only frozen policy/candidates/per-item scores. Passing and task completion differ: final confirmation requires a passing current-contract candidate and a DONE run. Historical/stale rounds remain inspectable.
  */
 export function PeerReviewPanel({ run }: { run: Run }) {
   const id = useId();
@@ -23,7 +28,10 @@ export function PeerReviewPanel({ run }: { run: Run }) {
   if (!policy) return null;
   const rounds = run.peerReview?.rounds ?? [];
   const latest = rounds.at(-1);
-  // 最近一轮只有合同版本仍匹配且未标记过期时，才作为当前评审展示。
+  /**
+   * 最近一轮只有合同版本仍匹配且未标记过期时，才作为当前评审展示。
+   * EN: Treat the latest round as current only for a matching contract version and non-stale round.
+   */
   const current =
     latest && latest.candidate.contractVersion === run.contract.version && latest.status !== 'stale';
   const confirmed = run.status === 'DONE' && current && latest.status === 'passed';

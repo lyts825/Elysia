@@ -1,4 +1,11 @@
-/* 展示终端安装历史及运行进度。 */
+/**
+ * 展示终端安装历史及运行进度。
+ *
+ * EN: Displays terminal installation history and progress.
+ *
+ * 本模块分页展示指定应用的安装记录与阶段时长，展开面板才读取历史，并允许选择模板及修复入口；失败保留上次已读页及其来源，不把旧页当成新查询结果。
+ * EN: Pages installation jobs/phase ages for one app, reading history only while expanded and offering template/repair choices. Failures retain the prior page with its source rather than relabeling it as the new query result.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type {
   SurfaceTerminalSettings,
@@ -20,11 +27,19 @@ const phases: Record<string, string> = {
   verify: '验证 CLI',
   complete: '完成',
 };
-/** 将安装阶段转换为展示文案；未知阶段保留原始值。 */
+/**
+ * 将安装阶段转换为展示文案；未知阶段保留原始值。
+ *
+ * EN: Maps known installation phases to labels and preserves unknown values.
+ */
 export function installationPhase(job: TerminalCliInstallationJob) {
   return phases[job.phase || 'queued'] || job.phase || '安装中';
 }
-/** 显示当前安装阶段的经过时间，并在卸载时清理计时器。 */
+/**
+ * 显示当前安装阶段的经过时间，并在卸载时清理计时器。
+ *
+ * EN: Displays elapsed time in the current phase and cleans its timer on unmount.
+ */
 export function InstallationElapsed({ job }: { job: TerminalCliInstallationJob }) {
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
@@ -41,6 +56,8 @@ export function InstallationElapsed({ job }: { job: TerminalCliInstallationJob }
 /**
  * 分页展示指定应用的安装记录，允许用户选择模板并处理安装结果。
  * 历史面板展开时才读取；读取失败时保留上次结果及其来源页码。
+ *
+ * EN: Pages one app installation history and allows explicit template/result handling. Reads only while expanded; failure retains prior results with their original page source.
  */
 export function TerminalInstallHistory({
   appId,
@@ -69,11 +86,19 @@ export function TerminalInstallHistory({
   const [busy, setBusy] = useState(false),
     [readRequest, setReadRequest] = useState(0);
   const [readPage, setReadPage] = useState<{ number: number; appId: TerminalAppId } | null>(null);
-  // readPage 记录已经成功显示的数据来源，翻页失败时不会把旧结果标成新页。
+  /**
+   * readPage 记录已经成功显示的数据来源，翻页失败时不会把旧结果标成新页。
+   *
+   * EN: readPage tracks the successfully displayed source so a failed page change cannot relabel old results as new.
+   */
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!open) return;
-    // 应用、页游标或刷新键变化时撤销旧读取，避免旧响应覆盖当前页。
+    /**
+     * 应用、页游标或刷新键变化时撤销旧读取，避免旧响应覆盖当前页。
+     *
+     * EN: App/cursor/refresh changes cancel old reads to prevent stale results replacing the current page.
+     */
     const controller = new AbortController();
     active.current = controller;
     setError('');
@@ -136,7 +161,11 @@ export function TerminalInstallHistory({
         </p>
       )}
       {page?.items.map((job) => {
-        // 安装记录可绑定原模板；没有固定模板的历史任务需用户从同应用模板中明确选择。
+        /**
+         * 安装记录可绑定原模板；没有固定模板的历史任务需用户从同应用模板中明确选择。
+         *
+         * EN: A job may bind its original template; jobs without one require explicit selection of a same-app template.
+         */
         const profile = job.profileId
           ? settings.profiles.find((value) => value.id === job.profileId && value.agent === appId)
           : settings.profiles.find((value) => value.id === targets[job.id] && value.agent === appId);

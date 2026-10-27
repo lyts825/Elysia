@@ -1,4 +1,10 @@
-// 根据工具和参数计算工具调用的审核决策。
+/**
+ * 根据工具和参数计算工具调用的审核决策。
+ * EN: Compute tool-review decisions from tool identity and parsed arguments.
+ *
+ * 将参数与工具策略结合生成审核要求，供执行前门禁使用；审核结论与真实执行结果分别记录，不能互相替代。
+ * EN: Combine parsed arguments and policy into pre-execution review requirements; review decisions and actual execution outcomes remain distinct records.
+ */
 import type { Attempt, Task, ToolCall } from '../../contracts/src/index.js';
 import type { ToolReviewDecision, ToolReviewReceipt } from '../../contracts/src/execution-policy.js';
 
@@ -17,6 +23,9 @@ export type ReviewModel = (input: ToolReviewInput, signal: AbortSignal) => Promi
  * 对 exec 的程序名与参数应用有限的确定性拦截规则。
  * 规则允许只表示未命中已知模式；后续授权、路径限制及命令后端仍须执行检查。
  * 该函数不是完整命令解析器，也不能代替进程隔离。
+ * EN: Apply a limited deterministic filter to exec program names and arguments. Allow means no known
+ * rule matched; authorization, path checks, and the selected backend still apply. This is neither a
+ * complete command parser nor process isolation.
  */
 export function reviewToolRules(name: string, args: Record<string, unknown>): ToolReviewDecision {
   if (name !== 'exec') return { decision: 'allow', reason: '继续执行已有工具授权与路径校验' };

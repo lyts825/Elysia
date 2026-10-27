@@ -1,15 +1,18 @@
-# Dependencies and prescribed build outputs
+# 依赖和指定构建输出可由工作区重新生成，不纳入正式源码版本。
+# EN: Exclude reproducible dependencies and prescribed build outputs from formal source history.
 node_modules/
 /apps/web/dist/
 /apps/server/dist/
 /packages/*/dist/
 
-# Local validation materials and task scratch space
+# 本地测试材料、验证证据和临时工作文件保留在本机，排除规则限定到项目根目录。
+# EN: Keep local test materials, verification evidence, and scratch files outside Git with root-scoped exclusions.
 /.local-tests/
 /.local-qa/
 /.tmp/
 
-# Local secrets and optional workspace runtime data
+# 排除本地密钥和运行数据；环境变量示例显式保留，方便说明所需配置而不存储真实凭据。
+# EN: Exclude local secrets and runtime data while retaining the environment example to document configuration without credentials.
 /.env
 /.env.*
 !/.env.example

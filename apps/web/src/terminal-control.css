@@ -1,8 +1,14 @@
-/* 定义 terminal-control 对应界面的样式与布局。 */
+/*
+ * 终端控制中心：统一应用、连接、项目和维护标签页的骨架，布局应用卡片、连接编辑、安装状态与确认提示。主内容滚动、窄屏重排及短窗口整窗滚动分别约束空间，减少动态规则覆盖过渡反馈。
+ * EN: Terminal control center: provides the shell for app, connection, project, and maintenance tabs plus cards, editors, installation state, and confirmations. Main scrolling, narrow reflow, and short-window whole-modal scrolling handle constraints; reduced-motion rules limit transitions.
+ */
 .terminal-control-center.modal {
   width: min(1060px, calc(100vw - 40px));
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .terminal-control-tabs {
   display: flex;
   gap: var(--space-2);
@@ -21,7 +27,10 @@
   padding: var(--space-2) var(--space-4);
   font-weight: 600;
 }
-/* 当前选中的标签使用强调色，选中状态由 aria-selected 表达。 */
+/*
+ * 当前选中的标签使用强调色，选中状态由 aria-selected 表达。
+ * EN: Uses the accent color for the current tab; aria-selected supplies selection state.
+ */
 .terminal-control-tabs button[aria-selected='true'] {
   color: var(--accent-strong);
   background: var(--accent-pale);
@@ -400,7 +409,10 @@
 .terminal-control-center .modal-footer > span {
   margin-right: auto;
 }
-/* 窄屏收紧终端控制中心、内容和标签的宽度与间距。 */
+/*
+ * 窄屏收紧终端控制中心、内容和标签的宽度与间距。
+ * EN: Tightens terminal-control center/content/tab widths and spacing on narrow screens.
+ */
 @media (max-width: 760px) {
   .terminal-control-center.modal {
     width: calc(100vw - 20px);
@@ -467,7 +479,10 @@
     max-height: 12rem;
   }
 }
-/* 短窗口让控制中心整体滚动并固定标题，内容区不另设滚动容器。 */
+/*
+ * 短窗口让控制中心整体滚动并固定标题，内容区不另设滚动容器。
+ * EN: Scrolls the entire control center with a sticky heading in short windows; content has no separate scroll container.
+ */
 @media (max-height: 600px) {
   .terminal-control-center.modal {
     overflow-y: auto;
@@ -489,7 +504,10 @@
     overflow: visible;
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   .cli-visibility input,
   .cli-visibility input::after {
@@ -602,7 +620,10 @@
 .terminal-capabilities strong {
   font-weight: 600;
 }
-/* 窄屏减少终端确认区和次要按钮的内边距。 */
+/*
+ * 窄屏减少终端确认区和次要按钮的内边距。
+ * EN: Reduces terminal-confirmation and secondary-button padding on narrow screens.
+ */
 @media (max-width: 760px) {
   .terminal-control-confirm {
     padding: var(--space-3) var(--space-4);

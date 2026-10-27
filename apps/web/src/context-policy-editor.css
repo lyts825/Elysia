@@ -1,4 +1,7 @@
-/* 定义 context-policy-editor 对应界面的样式与布局。 */
+/*
+ * 上下文分配编辑：以指标网格展示各分区额度，标识校验失败状态，并调整分配预设的选择外观。长额度说明允许断行，防止高位数字或连续标识撑开表单。
+ * EN: Context allocation editor: grids allocation metrics, marks invalid state, and styles allocation presets. Long allocation text wraps so large values or uninterrupted identifiers do not widen the form.
+ */
 .context-allocation-metrics {
   display: flex;
   flex-wrap: wrap;
@@ -18,7 +21,10 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .context-allocation-metrics dd {
   margin: var(--space-1) 0 0;
   color: var(--text);

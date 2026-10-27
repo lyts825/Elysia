@@ -1,4 +1,11 @@
-/* 管理终端相关设置。 */
+/**
+ * 管理终端相关设置。
+ *
+ * EN: Manages terminal settings.
+ *
+ * 本模块编辑多终端模板与默认模板，分别保留本地草稿、提交基线和最新服务端版本；脏草稿保护及冲突展示防止后台更新覆盖输入，保存通过版本化 API 提交。
+ * EN: Edits profiles/default selection while retaining local drafts, submission baselines, and the latest server version separately. Dirty-state protection/conflict UI prevent background overwrites; versioned APIs perform saves.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { SurfaceTerminalSettings, type AgentTerminalProfile } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';
@@ -13,6 +20,8 @@ import './terminal-profile-settings.css';
 /**
  * 编辑终端模板及默认选择。baseline 是提交时的版本基线，profiles 是本地草稿；
  * 后台数据更新不会覆盖尚未保存的修改。
+ *
+ * EN: Edits templates/defaults with baseline as the submission revision and profiles as local drafts. Background updates never overwrite dirty changes.
  */
 export function TerminalSettings({
   initial,
@@ -48,7 +57,11 @@ export function TerminalSettings({
 }) {
   const { api, mutation } = useSurfaceClient();
   const [baseline, setBaseline] = useState(() => structuredClone(initial));
-  // latest 跟踪后台新版本，baseline 固定用户开始编辑时的依据，两者不可在脏草稿中自动合并。
+  /**
+   * latest 跟踪后台新版本，baseline 固定用户开始编辑时的依据，两者不可在脏草稿中自动合并。
+   *
+   * EN: latest follows newer server data while baseline fixes the editing origin; they cannot auto-merge into a dirty draft.
+   */
   const [latest, setLatest] = useState(initial);
   const [profiles, setProfiles] = useState(() => structuredClone(baseline.profiles));
   const [defaultProfileId, setDefaultProfileId] = useState(baseline.defaultProfileId);
@@ -78,7 +91,11 @@ export function TerminalSettings({
           : connectionOptions
             ? '指定连接已失效或不兼容，请重选'
             : '模板指定连接（当前未提供连接目录）';
-  /** 手动定位模板后把编辑标题滚入视口并聚焦，帮助键盘和读屏用户确认切换目标。 */
+  /**
+   * 手动定位模板后把编辑标题滚入视口并聚焦，帮助键盘和读屏用户确认切换目标。
+   *
+   * EN: Scrolls/focuses the template editor title after manual navigation for keyboard/screen-reader orientation.
+   */
   function revealEditor() {
     editorTitle.current?.scrollIntoView({ block: 'start' });
     editorTitle.current?.focus({ preventScroll: true });
@@ -89,7 +106,11 @@ export function TerminalSettings({
       revealEditor();
     }
   }, [selectedId]);
-  /** 只消费一次外部定位意图，避免父组件刷新后反复抢夺用户选中项。 */
+  /**
+   * 只消费一次外部定位意图，避免父组件刷新后反复抢夺用户选中项。
+   *
+   * EN: Consumes an external focus intent once so parent refreshes cannot repeatedly steal selection.
+   */
   function finishFocus() {
     focusIntent.current.handled = true;
     setFocusIssue('');
@@ -103,7 +124,11 @@ export function TerminalSettings({
   const changed =
     JSON.stringify(profiles) !== JSON.stringify(baseline.profiles) ||
     defaultProfileId !== baseline.defaultProfileId;
-  /** 用服务端配置重置草稿与基线，并尽量保留当前选中模板。 */
+  /**
+   * 用服务端配置重置草稿与基线，并尽量保留当前选中模板。
+   *
+   * EN: Resets draft/baseline from server settings while retaining the selected template where possible.
+   */
   function adopt(next: SurfaceTerminalSettings) {
     setBaseline(structuredClone(next));
     setProfiles(structuredClone(next.profiles));
@@ -123,11 +148,19 @@ export function TerminalSettings({
     if (initial.revision >= latest.revision) setLatest(initial);
   }, [initial, latest.revision]);
   useEffect(() => {
-    // 只有本地没有改动时才自动采用较新的服务端配置。
+    /**
+     * 只有本地没有改动时才自动采用较新的服务端配置。
+     *
+     * EN: Automatically adopts newer server settings only when the local draft is clean.
+     */
     if (!changed && latest.revision !== baseline.revision) adopt(latest);
   }, [latest, baseline.revision, changed]);
   useEffect(() => dirtyChanged?.(changed), [changed, dirtyChanged]);
-  // 定位到另一模板前保留所有 profiles 草稿；若当前有改动则显示独立的切换确认。
+  /**
+   * 定位到另一模板前保留所有 profiles 草稿；若当前有改动则显示独立的切换确认。
+   *
+   * EN: Preserves all profile drafts before navigating to another template; dirty edits require a separate switch confirmation.
+   */
   useEffect(() => {
     if (focusIntent.current.id !== focusProfileId || focusIntent.current.request !== focusRequest)
       focusIntent.current = { id: focusProfileId, request: focusRequest, handled: false };
@@ -142,7 +175,11 @@ export function TerminalSettings({
     else setSelectedId(focusProfileId);
     finishFocus();
   }, [focusProfileId, focusRequest, profiles, changed, selectedId, busy]);
-  /** 独立对话框关闭需要脏状态确认；嵌入模式的离开保护交给外层终端控制中心。 */
+  /**
+   * 独立对话框关闭需要脏状态确认；嵌入模式的离开保护交给外层终端控制中心。
+   *
+   * EN: Standalone close protects dirty state; embedded leave protection belongs to the outer control center.
+   */
   const requestClose = () => {
     if (busy) return;
     if (!embedded && changed) setConfirmClose(true);
@@ -152,7 +189,11 @@ export function TerminalSettings({
     <form
       className="terminal-profile-settings"
       onSubmit={async (event) => {
-        // ref 立即加锁，保存带编辑基线 revision；后台冲突只更新 latest，不覆盖当前草稿。
+        /**
+         * ref 立即加锁，保存带编辑基线 revision；后台冲突只更新 latest，不覆盖当前草稿。
+         *
+         * EN: A ref locks immediately; save binds baseline revision. Conflicts update latest, never the current draft.
+         */
         event.preventDefault();
         if (submitting.current || !valid || !changed) return;
         submitting.current = true;
@@ -178,7 +219,11 @@ export function TerminalSettings({
                 : '无法保存终端设置，请重试。',
           );
           if (issue instanceof ApiError && issue.code === 'REVISION_CONFLICT') {
-            // 读取新版供用户比较/重新采用，保留原有输入及 baseline，不能悄悄重试覆盖。
+            /**
+             * 读取新版供用户比较/重新采用，保留原有输入及 baseline，不能悄悄重试覆盖。
+             *
+             * EN: Reads newer settings for comparison/adoption while preserving inputs/baseline, never silently retries an overwrite.
+             */
             try {
               setLatest(await api<SurfaceTerminalSettings>('/terminal/settings'));
             } catch {}

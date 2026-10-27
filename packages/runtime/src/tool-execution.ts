@@ -1,4 +1,8 @@
-/** 执行工具调用并重放待处理调用。 */
+/**
+ * 执行工具调用并重放待处理调用。
+ * 顺序处理工具意图、保存结果/会话并恢复待决调用；网关掌管授权/动作、内核掌管状态，未知副作用待核验，终态停止后续调用。
+ * EN: Executes tool calls and replays pending calls. Orders tools with result/session persistence and pending recovery; gateway owns authority/effects, kernel owns state, unknown effects need verification and terminal states stop remaining calls.
+ */
 import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
@@ -19,14 +23,17 @@ import { delay } from './async.js';
 
 export class ToolExecutionService {
   private toolActive = 0;
+  /**
+   * 复用内核和统一工具网关，批次执行只负责时序、配对及进展记录，不复制权限实现。
+   * EN: Reuses the kernel and unified gateway; batch execution owns ordering, pairing, and progress records rather than duplicating authorization logic.
+   */
   constructor(
     readonly kernel: Kernel<Store>,
     readonly gateway: ToolGateway,
   ) {}
   /**
-   * 在执行器共享工具槽中调用网关，assistantMessageId 绑定产生调用的持久助手消息。
-   * 普通校验错误转成模型可读的恢复提示；预算、取消及副作用待核验则抛出中断当前步骤，
-   * 不能作为普通工具失败让模型立即再试。
+   * 在执行器共享工具槽中调用网关，assistantMessageId 绑定产生调用的持久助手消息。 普通校验错误转成模型可读的恢复提示；预算、取消及副作用待核验则抛出中断当前步骤， 不能作为普通工具失败让模型立即再试。
+   * EN: Invokes the gateway under shared executor tool slots; assistantMessageId binds the durable assistant message that produced the call. Ordinary validation failures become model-readable recovery advice, while budget, cancellation, and uncertain side effects interrupt the step rather than inviting an immediate retry.
    */
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
@@ -66,7 +73,10 @@ export class ToolExecutionService {
           .definitions(this.kernel.store.require<Task>('tasks', task.id))
           .map((definition) => definition.name);
       } catch {
-        // A revoked authorization must not be treated as a stale list of usable tools.
+        /**
+         * 已撤销的授权不能被当作仅工具清单过期来处理。
+         * EN: A revoked authorization must not be treated as a stale list of usable tools.
+         */
       }
       const code = e instanceof AppError ? e.code : 'TOOL_ERROR';
       return {
@@ -80,9 +90,8 @@ export class ToolExecutionService {
     }
   }
   /**
-   * 执行同一轮工具调用并按原始顺序保存结果，随后记录无进展失败和检查点。
-   * 仅当每个工具策略都显式允许并行时才并发执行；未知工具保守串行。
-   * 并行分支等待全部执行收束，再按模型顺序写结果，保证上下文中的调用/结果配对稳定。
+   * 执行同一轮工具调用并按原始顺序保存结果，随后记录无进展失败和检查点。 仅当每个工具策略都显式允许并行时才并发执行；未知工具保守串行。 并行分支等待全部执行收束，再按模型顺序写结果，保证上下文中的调用/结果配对稳定。
+   * EN: Executes one batch and records results in model order, then updates no-progress failures and checkpoints. Concurrency is allowed only when every tool policy explicitly permits it; unknown tools are serial. All parallel branches settle before ordered result persistence, preserving call/result pairing in context.
    */
   async executeCalls(
     task: Task,
@@ -102,7 +111,10 @@ export class ToolExecutionService {
       if (owners.size === 1) assistantMessageId = [...owners][0];
     }
     const outcomes: { call: ToolCall; result: unknown }[] = [];
-    // 只有所有调用都明确允许并行时才并发；否则保留原顺序及其副作用。
+    /**
+     * 只有所有调用都明确允许并行时才并发；否则保留原顺序及其副作用。
+     * EN: Run concurrently only when every call explicitly permits it; otherwise retain original ordering and side effects.
+     */
     if (calls.some((c) => this.gateway.toolPolicy(c.name)?.serial !== false)) {
       for (const call of calls) {
         const result = await this.tool(task, attempt, call, signal, assistantMessageId);
@@ -115,7 +127,10 @@ export class ToolExecutionService {
       const results = await Promise.allSettled(
         calls.map((call) => this.tool(task, attempt, call, signal, assistantMessageId)),
       );
-      // 即使并发完成顺序不同，也按模型给出的顺序写入结果。
+      /**
+       * 即使并发完成顺序不同，也按模型给出的顺序写入结果。
+       * EN: Persist results in model order even if concurrent completion order differs.
+       */
       for (let i = 0; i < calls.length; i++) {
         const r = results[i];
         if (r.status === 'fulfilled') {
@@ -130,16 +145,18 @@ export class ToolExecutionService {
     this.kernel.checkpoint(attempt.id);
   }
   /**
-   * 根据工具、规范化参数和错误码识别重复的确定性失败。
-   * 进展指纹改变会重置计数；重复失败先通知模型，再在仍无进展时暂停分支。
+   * 根据工具、规范化参数和错误码识别重复的确定性失败。 进展指纹改变会重置计数；重复失败先通知模型，再在仍无进展时暂停分支。
+   * EN: Identifies repeated deterministic failures by tool, normalized arguments, and error code. Changed progress resets counts; repeated failures first notify the model, then pause a branch that still makes no progress.
    */
   private observeToolFailures(
     task: Task,
     outcomes: { call: ToolCall; result: unknown }[],
     assistantMessageId?: string,
   ) {
-    // Only known, non-transient validation/authorization failures count. Polls, provider
-    // limits, unknown side effects and generic I/O errors must keep their own recovery rules.
+    /**
+     * 只统计已知、非瞬态的校验或授权失败；轮询、供应商 限流、未知副作用和一般I/O错误仍遵循各自恢复规则。
+     * EN: Only known, non-transient validation/authorization failures count. Polls, provider limits, unknown side effects and generic I/O errors must keep their own recovery rules.
+     */
     const deterministic = new Set([
       'TOOL_REVIEW_DENIED',
       'TOOL_ARGUMENTS',
@@ -196,7 +213,10 @@ export class ToolExecutionService {
       if (task.status !== 'RUNNING') return;
       const run = store.require<Run>('runs', task.runId);
       const progressKey = hash(
-        // 将实际领域状态和有进展的成功操作纳入指纹；单纯 READY/RUNNING 轮转不能重置失败计数。
+        /**
+         * 将实际领域状态和有进展的成功操作纳入指纹；单纯 READY/RUNNING 轮转不能重置失败计数。
+         * EN: Include actual domain state and successful progress-bearing operations in the fingerprint; READY/RUNNING rotation alone cannot reset failure counts.
+         */
         stable({
           contract: run.contract,
           authorized: run.authorized,
@@ -230,7 +250,10 @@ export class ToolExecutionService {
           if (call.name === 'join_tasks' && Array.isArray((args as any)?.taskIds))
             args = { ...(args as object), taskIds: [...(args as any).taskIds].sort() };
         } catch {
-          /* Invalid JSON is fingerprinted as raw text. */
+          /**
+           * 无效JSON按其原始文本计算指纹。
+           * EN: Invalid JSON is fingerprinted as raw text.
+           */
         }
         const fingerprint = hash(stable({ tool: call.name, args, code }));
         const prior = state.failures.find((failure) => failure.fingerprint === fingerprint);
@@ -263,13 +286,16 @@ export class ToolExecutionService {
         );
       }
       this.kernel.updateTask(task, task.status, { noProgress: state });
-      // Give the model one correction turn even when a single response repeated many invalid calls.
+      /**
+       * 即使单次回复重复了多个无效调用，也给模型一次纠正机会。
+       * EN: Give the model one correction turn even when a single response repeated many invalid calls.
+       */
       if (stopped && warnedBefore) this.kernel.wait(store.require<Task>('tasks', task.id), 'no_progress');
     });
   }
   /**
-   * 从持久消息找出尚未配对结果的调用，并交回同一网关路径核验/重放。
-   * 重放不是无条件重跑；网关会复用 DONE/FAILED 操作，对 UNCERTAIN 保持人工核验。
+   * 从持久消息找出尚未配对结果的调用，并交回同一网关路径核验/重放。 重放不是无条件重跑；网关会复用 DONE/FAILED 操作，对 UNCERTAIN 保持人工核验。
+   * EN: Finds calls without paired results in persistent messages and returns them through the same gateway validation and replay path. Replay is not an unconditional rerun: DONE and FAILED operations reuse their outcome; UNCERTAIN remains subject to manual verification.
    */
   async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
     const sequence = inspectToolCalls(this.kernel.history(task));

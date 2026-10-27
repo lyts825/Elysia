@@ -1,4 +1,8 @@
-/* 展示单条交付评审记录。 */
+/**
+ * 展示单条交付评审记录。
+ * 完整展示单次审计状态、标准结论、证据与原文入口，保留未知和不完整信息；不重算审计结果。
+ * EN: Displays one historical delivery-review record. Displays one audit state, criterion conclusions, evidence, and raw-text controls while retaining unknown/incomplete information without recomputing the verdict.
+ */
 import type { ReactNode } from 'react';
 import type { DeliveryReviewHistoryDetail } from '../../../packages/contracts/src/workflow';
 import { DeliveryChanges } from './DeliveryChanges';
@@ -9,6 +13,7 @@ import './review-record.css';
 /**
  * 展示单份不可编辑的历史结论及相对当前交付的差异，renderNotes 可替换为备注选择器。
  * 旧标准没有文字快照时明确提示缺失，不能用当前同索引的标准补写历史。
+ * EN: Render one immutable historical decision/comparison; renderNotes may supply a selector. Missing old criterion snapshots stay explicitly missing, never filled from current same-index criteria.
  */
 export function ReviewRecord({
   value,
@@ -21,7 +26,10 @@ export function ReviewRecord({
   reading?: boolean;
   renderNotes?: (value: DeliveryReviewHistoryDetail) => ReactNode;
 }) {
-  // 复核结论、比较结果和产物变更来自同一历史记录，由调用方控制刷新。
+  /**
+   * 复核结论、比较结果和产物变更来自同一历史记录，由调用方控制刷新。
+   * EN: Decision/comparison/artifact changes belong to one historical record; caller controls refresh.
+   */
   return (
     <section className="workflow-history-detail review-record review-entry-record" aria-label="历史复核详情">
       <header className="review-entry-heading">

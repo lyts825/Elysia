@@ -1,3 +1,4 @@
-# This image installs published Agent packages; no project files or secrets are needed.
+# 镜像只安装已发布的 Agent 包，构建上下文排除全部项目文件及密钥，仅保留 Dockerfile。
+# EN: The image installs published agent packages; exclude project files and secrets from the build context except for its Dockerfile.
 **
 !packages/runtime/docker-agent.Dockerfile

@@ -1,6 +1,10 @@
+# 格式化跳过依赖锁、安装目录和构建输出，避免重写工具生成内容。
+# EN: Skip dependency locks, installations, and build outputs so formatting does not rewrite generated content.
 pnpm-lock.yaml
 node_modules
 **/dist
+# 本地验证材料和临时文件由各自流程管理，执行记录保留现有文档排版。
+# EN: Local verification and scratch materials use their own workflows; preserve the execution log's existing formatting.
 .local-tests
 .local-qa
 .tmp

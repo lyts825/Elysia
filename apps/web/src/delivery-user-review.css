@@ -1,4 +1,7 @@
-/* 定义 delivery-user-review 对应界面的样式与布局。 */
+/*
+ * 用户交付审阅：组织当前与已保存状态、审阅依据、说明输入和保存反馈。依据摘要与完整正文分层呈现，计数自适应排布，较长依据独立滚动以保留编辑空间。
+ * EN: User delivery review: arranges current/saved status, review basis, notes, and save feedback. Summaries/full evidence have separate levels, counters adapt, and bounded basis scrolling preserves editing space.
+ */
 .delivery-user-review {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -37,7 +40,10 @@
   color: var(--secondary);
   font-size: var(--font-sm);
 }
-/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ */
 .delivery-review-basis > dl {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -58,7 +64,10 @@
 .delivery-review-basis dd {
   margin: var(--space-1) 0 0;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .delivery-review-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;

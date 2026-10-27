@@ -1,4 +1,8 @@
-/** 审核工具调用并处理执行决策。 */
+/**
+ * 审核工具调用并处理执行决策。
+ * 通过独立模型审阅核对受限返回结构并形成允许/拒绝决定；参数、权限和实际执行仍受网关/内核约束，审阅失败不能静默放行。
+ * EN: Reviews tool calls and handles execution decisions. Uses separate model reviews with restricted response validation for allow/deny; gateway/kernel retain argument/permission/execution enforcement and failures never silently allow work.
+ */
 import { readFileSync } from 'node:fs';
 import { AppError, invariant, type Agent, type RequestRecord, type Run } from '../../contracts/src/index.js';
 import { ToolReviewDecision, type ToolReviewReceipt } from '../../contracts/src/execution-policy.js';
@@ -15,17 +19,22 @@ import type { Kernel } from '../../kernel/src/index.js';
 import type { Store } from '../../storage/src/index.js';
 import type { ToolReviewInput } from '../../tools/src/tool-review.js';
 
-/** A bounded, tool-free request. Usage belongs to the same task and ancestor budgets. */
-/** 使用冻结的审核模型评估工具调用；审核请求受预算和输出限制约束。 */
+/**
+ * 有界且不带工具的独立请求；其用量计入同一任务及祖先预算。 使用冻结的审核模型评估工具调用；审核请求受预算和输出限制约束。
+ * EN: A bounded, tool-free request. Usage belongs to the same task and ancestor budgets. Evaluates a tool call with the frozen review model under budget and output limits.
+ */
 export class ToolCallReviewer {
+  /**
+   * 注入内核账本和按冻结代理绑定构造适配器的工厂，不在构造阶段请求模型或读取凭据。
+   * EN: Injects kernel accounting and a frozen-agent adapter factory without requesting a model or resolving credentials during construction.
+   */
   constructor(
     private kernel: Kernel<Store>,
     private adapterFactory: (agent: Agent) => ProviderAdapter,
   ) {}
   /**
-   * 发送独立无工具审核请求，复用任务及祖先预算和账号 RPM/TPM/并发账本。
-   * 审核绑定 input.fingerprint，不在此执行工具；响应必须是严格决定，超时/格式失败均拒绝调用，
-   * 已产生的供应商用量仍结算，不能因决定不可解析而免计费。
+   * 发送独立无工具审核请求，复用任务及祖先预算和账号 RPM/TPM/并发账本。 审核绑定 input.fingerprint，不在此执行工具；响应必须是严格决定，超时/格式失败均拒绝调用， 已产生的供应商用量仍结算，不能因决定不可解析而免计费。
+   * EN: Sends an independent tool-free review request using task and ancestor budgets and the account RPM, TPM, and concurrency ledger. The review binds input.fingerprint and does not execute the tool. Strict decisions are required; timeout or malformed output rejects execution while incurred provider usage is still settled.
    */
   async review(input: ToolReviewInput, signal: AbortSignal): Promise<ToolReviewReceipt> {
     const store = this.kernel.store,
@@ -99,7 +108,10 @@ export class ToolCallReviewer {
     let completed: Extract<ProviderEvent, { type: 'completed' }> | undefined,
       partial = '';
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(45000)]);
-    // 外部取消与审核超时共用信号；只有调用方取消保留原异常，其余失败包成明确的审核失败。
+    /**
+     * 外部取消与审核超时共用信号；只有调用方取消保留原异常，其余失败包成明确的审核失败。
+     * EN: External abort and review timeout share a signal. Only caller cancellation preserves the original exception; other failures become explicit review errors.
+     */
     try {
       for await (const event of adapter.stream(request, bounded)) {
         bounded.throwIfAborted();
@@ -136,7 +148,10 @@ export class ToolCallReviewer {
         'TOOL_REVIEW_RESPONSE',
         '审核响应缺失、过长或尝试调用工具',
       );
-      // Settle even a malformed decision: the provider has already consumed this request.
+      /**
+       * 即使决定格式损坏也要结算，因为供应商已经消耗本次请求。
+       * EN: Settle even a malformed decision: the provider has already consumed this request.
+       */
       this.kernel.settle(record.id, completed.usage);
       const decision = ToolReviewDecision.parse(JSON.parse(completed.text));
       const receipt: ToolReviewReceipt = {

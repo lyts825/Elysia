@@ -1,4 +1,11 @@
-/* 展示和处理工具操作评审。 */
+/**
+ * 展示和处理工具操作评审。
+ *
+ * EN: Displays tool-operation review decisions.
+ *
+ * 本模块展示运行创建时冻结的审核策略和当前已载入事件中的最近有效审核决定；仅解释已有证据，不主动补读全部历史，审核允许也不代表工具执行成功。
+ * EN: Displays frozen run review policy and recent valid review decisions in loaded events. It interprets existing evidence without fetching complete history, and an allowed review does not imply successful execution.
+ */
 import './peer-review.css';
 import type { Run } from '../../../packages/contracts/src/index';
 import { ToolReviewDecision } from '../../../packages/contracts/src/execution-policy';
@@ -6,6 +13,8 @@ import { ToolReviewDecision } from '../../../packages/contracts/src/execution-po
 /**
  * 展示创建运行时冻结的审核/命令策略，以及当前已载入事件中的最近十条有效审核决定。
  * 不主动补读全部审核历史，也不把“允许调用”当作“调用已经成功”，操作结果另由账本显示。
+ *
+ * EN: Shows creation-frozen review/backend policies and the last ten valid loaded decisions. Does not fetch all history or equate allowed execution with successful completion; outcomes come from the ledger.
  */
 export function ToolReviewPanel({
   run,
@@ -18,7 +27,11 @@ export function ToolReviewPanel({
     backend = run.contract.commandBackend;
   if ((!policy || policy.mode === 'off') && backend?.kind !== 'docker') return null;
   const receipts = events
-    // 只展示可解析的审核回执和最近十条，避免将无效事件当作审核结论。
+    /**
+     * 只展示可解析的审核回执和最近十条，避免将无效事件当作审核结论。
+     *
+     * EN: Displays only parseable receipts and the latest ten, never treating malformed events as review decisions.
+     */
     .filter((e) => e.type === 'tool.reviewed')
     .flatMap((e) => {
       const parsed = ToolReviewDecision.safeParse(

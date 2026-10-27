@@ -1,4 +1,10 @@
-// 渲染启动视觉内容并向桌面端记录启动阶段。
+/**
+ * 渲染启动视觉内容并向桌面端记录启动阶段。
+ * EN: Render startup visuals and report desktop startup stages.
+ *
+ * 依据启动配置选择静态、视频或动态图形，处理跳过与媒体回退，并上报资源展示阶段。
+ * EN: Select static, video, or animated startup media, handle skipping and fallback, and report display stages.
+ */
 (() => {
   const visual = document.getElementById('visual'),
     skip = document.getElementById('skip');
@@ -6,11 +12,17 @@
   let config,
     skipped = false,
     generation = 0;
+  /**
+   * 尽力通过桌面桥上报当前高精度启动时间，诊断失败不阻塞视觉显示。
+   * EN: Attempt to report a high-resolution startup mark through the bridge without blocking visuals on diagnostic failure.
+   */
   const mark = (stage, status = 'ok') =>
     void window.elysia
       ?.markStartupStage?.({ stage, status, atEpoch: performance.timeOrigin + performance.now() })
       .catch(() => {});
   // 替换动画前释放旧视频的来源，避免隐藏页面继续解码或播放。
+  // EN: Release the previous video source before replacing visuals so a hidden page does not keep
+  // decoding or playing it.
   const replaceVisual = (...elements) => {
     visual.querySelectorAll('video').forEach((element) => {
       element.pause();
@@ -19,6 +31,10 @@
     });
     visual.replaceChildren(...elements);
   };
+  /**
+   * 创建本地品牌装饰DOM作为默认或媒体加载失败后的回退。
+   * EN: Build local emblem DOM used by default and as a media-load fallback.
+   */
   const emblem = () => {
     const element = document.createElement('div');
     element.className = 'startup-emblem';
@@ -33,6 +49,8 @@
     return element;
   };
   // generation 防止较早的异步媒体读取覆盖最新偏好或已销毁的页面。
+  // EN: Use generation identity to prevent an older asynchronous media read from overwriting newer
+  // preferences or a disposed page.
   const render = async () => {
     const current = ++generation,
       moving = config?.enabled !== false && !skipped && !reduced.matches;
@@ -93,7 +111,8 @@
     replaceVisual();
   });
   void render();
-  // Preference and media reads never gate backend startup or navigation.
+  // 偏好与媒体读取不会阻塞后端启动或页面导航。
+  // EN: Preference and media reads do not gate backend startup or page navigation.
   window.elysia
     ?.readStartup?.()
     .then((value) => {

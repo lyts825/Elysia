@@ -1,4 +1,8 @@
-/* 组织项目工作台的内容与操作。 */
+/**
+ * 组织项目工作台的内容与操作。
+ * 整合交付看板、计划编辑、启动、清单、备份与设置面板，协调轮询、写入和离开保护；专用模块各自校验草稿及请求身份。
+ * EN: Organizes the project workbench and its actions. Composes board, plan editing, launch, manifests, backups, and settings with polling/write/leave coordination; dedicated modules validate their drafts and request identities.
+ */
 import {
   useEffect,
   useImperativeHandle,
@@ -24,7 +28,10 @@ import {
 } from './ProjectBoardDraft';
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
 import { ProjectDraftBackup } from './ProjectDraftBackup';
-// 计划导入预览与导航保护共享生命周期，离开前可检查是否仍有待处理内容。
+/**
+ * 计划导入预览与导航保护共享生命周期，离开前可检查是否仍有待处理内容。
+ * EN: Import preview and navigation guard share a lifecycle so leaving can detect unresolved content.
+ */
 import type { PlanImportLifecycle } from './ProjectPlanTransfer';
 import type { ProjectPlanNavigationLifecycle } from './ProjectPlanNavigation';
 import { projectPlanImportDraft, projectPlanImportPreflight } from './project-plan-transfer';
@@ -44,6 +51,7 @@ import './project-workbench.css';
  * 项目交付工作台同时维护服务端看板投影与本地编辑草稿，两者独立读取并保留版本基线。
  * 只在写操作前使用当前看板修订，成功后重新读取统一投影；轮询不会覆盖草稿。
  * 计划导入通过命令式生命周期向外层导航门禁报告未处理预览，防止离开时丢失核对意图。
+ * EN: Keep server board projection and local draft independent with version baselines. Mutations use current board revision, then reread one unified projection; polling never overwrites drafts. Import lifecycle reports unresolved previews to outer navigation guards.
  */
 export function ProjectWorkbench({
   project,
@@ -85,7 +93,15 @@ export function ProjectWorkbench({
     navigationLifecycle,
     () => ({
       projectId: project.id,
+      /**
+       * 查询当前计划导入组件是否还有待处理预览；组件不存在时返回false供导航协调器判断。
+       * EN: Queries the current plan importer for a pending preview, returning false when absent for navigation coordination.
+       */
       hasPending: () => planLifecycle.current?.hasPending() ?? false,
+      /**
+       * 让计划导入组件丢弃预览并清除工作台待离开动作，保持父子生命周期状态一致。
+       * EN: Discards the plan-import preview and clears the workbench pending-leave action, keeping parent and child lifecycle state aligned.
+       */
       discard: () => {
         planLifecycle.current?.discard();
         setPendingLeave(undefined);
@@ -99,7 +115,10 @@ export function ProjectWorkbench({
   useLayoutEffect(() => setSchedulesOpen(false), [project.id]);
   useLayoutEffect(() => setIntelligenceOpen(false), [project.id]);
   useLayoutEffect(() => setPendingLeave(undefined), [project.id, api]);
-  /** 导入预览尚未处理时延迟页内导航，获准后才执行原动作。 */
+  /**
+   * 导入预览尚未处理时延迟页内导航，获准后才执行原动作。
+   * EN: Defer in-page navigation for unresolved imports and execute the original action only after permission.
+   */
   const leavePlan = (action: () => boolean) => {
     if (planLifecycle.current?.hasPending()) setPendingLeave(() => action);
     else action();
@@ -128,12 +147,19 @@ export function ProjectWorkbench({
       active = false;
     };
   }, [cache, project.id, retry]);
-  // 先完成交付元数据预热再读取看板；后台轮询互斥，且写入期间不混入旧快照。
+  /**
+   * 先完成交付元数据预热再读取看板；后台轮询互斥，且写入期间不混入旧快照。
+   * EN: Warm delivery metadata before board reading; serialize polling and exclude stale snapshots during writes.
+   */
   useEffect(() => {
     const controller = new AbortController();
     readRequest.current = controller;
     let pending = false,
       firstRead = true;
+    /**
+     * 串行预热并读取项目交付看板，写入期间不刷新；首读展示进度，取消后不回写，后续轮询保留可读旧快照。
+     * EN: Serially warms and reads the project delivery board, skipping refresh during writes. Initial reads show progress, aborted reads do not publish, and later polling retains the readable snapshot.
+     */
     const read = async () => {
       if (pending || writing.current || controller.signal.aborted) return;
       pending = true;
@@ -193,8 +219,15 @@ export function ProjectWorkbench({
         draft?.filter === 'all' ||
         (draft?.filter === 'ready' ? item.readiness === 'ready' : item.readiness !== 'ready'),
     ) || [];
+  /**
+   * 调用看板草稿写入器更新本地缓存；成功返回true，校验或容量异常保留原稿并提示。
+   * EN: Updates the local board draft through its validated writer, returning true on success and preserving the source draft with feedback on validation or capacity failure.
+   */
   const change = (update: (value: ProjectBoardDraft) => ProjectBoardDraft) => {
-    // 草稿只更新本地缓存；校验或容量失败时保留上次内容并显示错误。
+    /**
+     * 草稿只更新本地缓存；校验或容量失败时保留上次内容并显示错误。
+     * EN: Draft changes update local cache only; retain previous content and show validation/capacity errors.
+     */
     try {
       writeProjectBoardDraft(cache, project.id, update);
       setDraftError('');
@@ -207,9 +240,13 @@ export function ProjectWorkbench({
   /**
    * 串行提交当前看板版本的动作，按请求来源保留失败提示；成功结果类型不一，因此不
    * 直接替换 board，而是触发完整重读。只有仍挂载的工作台才消费操作结果。
+   * EN: Serialize current-revision actions and keep errors at their origin. Responses may be different resource types, so reread board rather than replacing it directly. Only mounted workbenches consume results.
    */
   const action = async (path: string, body: Record<string, unknown>, method = 'POST') => {
-    // 使用当前看板版本执行写入，结束后重新读取统一投影而不混用不同接口的返回值。
+    /**
+     * 使用当前看板版本执行写入，结束后重新读取统一投影而不混用不同接口的返回值。
+     * EN: Mutate against current board revision and reread the common projection instead of mixing endpoint results.
+     */
     if (!board || readError || writing.current || board.archived || !live.current) return false;
     writing.current = true;
     setBusy(true);
@@ -221,7 +258,10 @@ export function ProjectWorkbench({
         actionIssueSource.current = null;
         setActionError('');
       }
-      // Mutations may return different resource types. Always render a fresh board projection.
+      /**
+       * 修改可能返回不同资源，始终展示新读的看板投影。
+       * EN: Mutations may return different resource types. Always render a fresh board projection.
+       */
       setRetry((n) => n + 1);
       return true;
     } catch (issue) {
@@ -238,7 +278,10 @@ export function ProjectWorkbench({
       if (live.current) setBusy(false);
     }
   };
-  /** 打开候选运行时防止重复导航，失败保留工作台及草稿并在本区域显示错误。 */
+  /**
+   * 打开候选运行时防止重复导航，失败保留工作台及草稿并在本区域显示错误。
+   * EN: Prevent duplicate candidate navigation; on failure retain workbench/draft and show a local error.
+   */
   const navigate = async (id: string, review?: boolean) => {
     if (opening) return;
     setOpening(true);
@@ -251,9 +294,15 @@ export function ProjectWorkbench({
       if (live.current) setOpening(false);
     }
   };
-  /** 以交付项和看板当前版本建立唯一创建草稿；已有草稿必须由用户先继续或移除。 */
+  /**
+   * 以交付项和看板当前版本建立唯一创建草稿；已有草稿必须由用户先继续或移除。
+   * EN: Create one launch draft from current item/board revision; existing drafts require explicit continuation or removal.
+   */
   const prepare = (item: ProjectDeliveryItem) => {
-    // 已有创建草稿时不覆盖；新草稿冻结交付项和看板版本供后续核对。
+    /**
+     * 已有创建草稿时不覆盖；新草稿冻结交付项和看板版本供后续核对。
+     * EN: Do not overwrite existing launch drafts; freeze item and board revision for later review.
+     */
     if (!board || !draft || readError) return;
     if (draft.launch) {
       actionIssueSource.current = null;
@@ -272,6 +321,10 @@ export function ProjectWorkbench({
     }));
     if (readProjectBoardDraft(cache.get(projectBoardKey(project.id))).launch?.itemId === item.id) launch();
   };
+  /**
+   * 将项目看板缓存原稿作为TXT下载，不依赖草稿成功解析，供错误恢复时保存输入。
+   * EN: Downloads the cached project-board source as TXT without requiring successful parsing, preserving input for recovery.
+   */
   const exportDraft = () => {
     const value = cache.get(projectBoardKey(project.id));
     const url = URL.createObjectURL(
@@ -285,6 +338,10 @@ export function ProjectWorkbench({
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  /**
+   * 包装原稿下载并把浏览器下载错误转换为草稿区反馈；输入本身不因导出失败而改变。
+   * EN: Wraps source-draft download and presents browser download errors in the draft area while retaining the input.
+   */
   const exportDraftSafely = () => {
     try {
       exportDraft();

@@ -1,4 +1,8 @@
-/** 注册项目智能信息相关接口。 */
+/**
+ * 注册项目智能信息相关接口。
+ * 仅原生入口提供能力/记忆配置，写入分别核对版本和幂等；编辑影响未来快照，既有运行不会自动获得新资料。
+ * EN: Registers project intelligence endpoints. Exposes native-only capability/memory settings with revisions/idempotency; edits affect future snapshots without giving existing runs new materials.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -17,10 +21,9 @@ import {
   updateProjectMemory,
 } from '../../../packages/context/src/project-intelligence.js';
 
-/** Register only in the native API. The terminal surface deliberately has no matching routes. */
 /**
- * 原生项目能力/记忆管理入口。所有写入经过项目可变性守卫和幂等命令，更新携带各自版本。
- * 这里修改项目当前配置；已有运行使用创建时冻结的能力快照，不因后续编辑自动获得新资料。
+ * 仅在原生 API 注册；终端入口刻意不提供对应路由。 原生项目能力/记忆管理入口。所有写入经过项目可变性守卫和幂等命令，更新携带各自版本。 这里修改项目当前配置；已有运行使用创建时冻结的能力快照，不因后续编辑自动获得新资料。
+ * EN: Register only in the native API. The terminal surface deliberately has no matching routes. Provides native project capability and memory writes behind mutability checks and idempotent commands, each with its own revision. Existing runs keep their frozen capability snapshot rather than inheriting later edits.
  */
 export function registerProjectIntelligenceRoutes(
   app: FastifyInstance,
@@ -31,6 +34,10 @@ export function registerProjectIntelligenceRoutes(
   if (surface !== 'native') return;
   const params = z.object({ id: z.string().uuid() });
   const command = z.object({ commandId: z.string().uuid() });
+  /**
+   * 先验证原生项目能力范围，再执行删除/可变性守卫，供所有智能配置写入复用。
+   * EN: Checks native project intelligence scope before deletion/mutability guards shared by intelligence writes.
+   */
   const mutable = (projectId: string) => {
     requireIntelligenceProject(store, projectId);
     assertMutable(null, projectId);

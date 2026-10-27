@@ -1,4 +1,8 @@
-/* 切换可用的界面视图。 */
+/**
+ * 切换可用的界面视图。
+ * 展示原生与终端入口选择菜单并管理视口定位、外部关闭和焦点恢复；入口切换的状态保存与导航由父组件完成。
+ * EN: Selects between available workspace surfaces. Displays native/terminal choices with viewport placement, outside dismissal, and focus return; parents preserve state and perform surface navigation.
+ */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
@@ -16,6 +20,7 @@ const surfaces = [
  * 按当前客户端显示入口菜单，change 只在未忙碌时发出目标入口选择。
  * portal 限定在当前入口根，菜单支持方向键/Home/End；外部点击、滚动或尺寸变化关闭，
  * Esc/Tab 关闭时恢复触发焦点，避免已改变布局的菜单仍悬在旧位置。
+ * EN: Show menu for current client; change reports target only when not busy. Portal inside surface root with arrows/Home/End. Outside click/scroll/resize closes it; Escape/Tab restores trigger focus so stale-position menus do not remain.
  */
 export function SurfaceSwitcher({
   disabled,
@@ -34,12 +39,19 @@ export function SurfaceSwitcher({
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const selected = surfaces.find((surface) => surface.id === localSurface)!;
+  /**
+   * 关闭入口切换菜单，按调用场景选择是否归还触发焦点，避免外部交互时抢焦点。
+   * EN: Closes the surface menu and optionally restores trigger focus according to the dismissal context, avoiding focus theft on outside interaction.
+   */
   const dismiss = (restore = false) => {
     setOpen(false);
     if (restore) trigger.current?.focus();
   };
   useLayoutEffect(() => {
-    // 菜单定位受视口边界约束，打开后将焦点移到当前入口。
+    /**
+     * 菜单定位受视口边界约束，打开后将焦点移到当前入口。
+     * EN: Constrain placement to viewport and focus current surface after opening.
+     */
     if (!open || !menu.current || !trigger.current) return;
     const rect = trigger.current.getBoundingClientRect();
     const node = menu.current;
@@ -51,10 +63,18 @@ export function SurfaceSwitcher({
   }, [open]);
   useEffect(() => {
     if (!open) return;
+    /**
+     * 仅当指针位于菜单与触发按钮之外时关闭，保留菜单内部操作。
+     * EN: Closes only for pointer events outside both menu and trigger, preserving interaction within them.
+     */
     const outside = (event: PointerEvent) => {
       if (!menu.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node))
         dismiss();
     };
+    /**
+     * 窗口调整或外部滚动时关闭已定位菜单；菜单内部滚动仍允许，以免选项较多时无法操作。
+     * EN: Closes the positioned menu after resize or outside scrolling while allowing internal menu scrolling when options overflow.
+     */
     const moved = (event: Event) => {
       if (event.target instanceof Node && menu.current?.contains(event.target)) return;
       dismiss();

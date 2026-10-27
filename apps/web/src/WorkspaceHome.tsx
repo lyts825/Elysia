@@ -1,4 +1,8 @@
-/* 展示工作区首页。 */
+/**
+ * 展示工作区首页。
+ * 汇总工作区入口、项目和会话操作并展示当前模型选择，使用父组件传入目录和动作；不创建第二套项目状态源。
+ * EN: Displays the workspace home composer. Composes workspace entry points, projects, conversations, and current model choices using parent-provided catalogs/actions without creating a second project state source.
+ */
 import type { AgentTerminalProfile, Project } from '../../../packages/contracts/src/index';
 import { useId, type ReactNode } from 'react';
 import type { SelectableProvider } from './ModelPicker';
@@ -12,6 +16,7 @@ import './workspace-home.css';
  * 首页输入区只展示父级持有的草稿、模型/终端模板和上下文就绪状态。
  * 独立对话可直接开始，项目任务由父级打开创建设置；终端没有项目时先引导选择项目。
  * 按钮与 Ctrl/Cmd+Enter 共用就绪门禁，输入法合成期间不触发快捷提交。
+ * EN: Show parent-owned draft/model/terminal/context readiness. Chat starts directly; project tasks open parent setup. Terminal without a project asks for project selection. Button and Ctrl/Cmd+Enter share readiness gates, and IME composition never submits.
  */
 export function WorkspaceHome({
   project,

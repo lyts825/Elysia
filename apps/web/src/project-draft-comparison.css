@@ -1,4 +1,7 @@
-/* 定义 project-draft-comparison 对应界面的样式与布局。 */
+/*
+ * 项目草稿差异选择：逐项展示差异、冲突状态、选择按钮及对照正文。状态由冲突与选择属性联合决定，长差异局部滚动，窄容器改变列布局以保留选择依据。
+ * EN: Project-draft comparison: shows item differences, conflict states, choices, and source bodies. Conflict/choice attributes jointly drive state styling; bounded differences and responsive columns keep choice evidence readable.
+ */
 .project-draft-differences {
   container: project-draft-comparison / inline-size;
   min-width: 0;
@@ -54,7 +57,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 选中项使用强调边框和背景，与组件提供的选中状态一致。 */
+/*
+ * 选中项使用强调边框和背景，与组件提供的选中状态一致。
+ * EN: Highlights selected items with an accent border/background matching component selection state.
+ */
 .project-difference-side[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);
@@ -74,7 +80,10 @@
   color: var(--accent);
   font-weight: 500;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-difference-content {
   max-height: clamp(10rem, 32vh, 18rem);
   overflow: auto;

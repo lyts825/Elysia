@@ -1,4 +1,8 @@
-/* 编辑并校验上下文窗口策略。 */
+/**
+ * 编辑并校验上下文窗口策略。
+ * 区分托管和手动窗口配置，并依据模型上限校验输入；只编辑策略值，保存与运行时压缩由上层负责。
+ * EN: Edits and validates context-window policies. Distinguishes managed/manual window policies and validates against model limits; it edits policy values while parents own saving and runtime compaction.
+ */
 import { useId, useState } from 'react';
 import {
   CONTEXT_MAX_WINDOW_TOKENS,
@@ -10,7 +14,10 @@ import { contextWindowSizeLabel } from './ContextLabel';
 import './context-window.css';
 import './context-policy-editor.css';
 
-/** 托管策略可不指定窗口；手动窗口还需符合最小值、模型上限与整千单位。 */
+/**
+ * 托管策略可不指定窗口；手动窗口还需符合最小值、模型上限与整千单位。
+ * EN: A managed policy may omit a window. A manual window must also satisfy the minimum, model ceiling, and whole-thousand unit.
+ */
 export function validContextPolicy(
   policy: ContextPolicy,
   minimumWindowTokens: number,
@@ -27,7 +34,10 @@ export function validContextPolicy(
   );
 }
 
-/** 优先选择范围内的首个预设，无法使用预设时选择不超过上限的整千值。 */
+/**
+ * 优先选择范围内的首个预设，无法使用预设时选择不超过上限的整千值。
+ * EN: Choose the first available preset in range; otherwise choose a whole-thousand value that does not exceed the ceiling.
+ */
 export function defaultManualContextWindowTokens(minimumWindowTokens: number, providerLimit: number) {
   const limit = Math.min(providerLimit, CONTEXT_MAX_WINDOW_TOKENS);
   const preset = CONTEXT_WINDOW_PRESETS.find((tokens) => tokens >= minimumWindowTokens && tokens <= limit);
@@ -38,6 +48,7 @@ export function defaultManualContextWindowTokens(minimumWindowTokens: number, pr
 /**
  * 受控窗口编辑器，只通过 change 上报草稿，不直接写入运行配置。
  * 手动输入以 K 展示、以 token 保存；自定义选项状态与当前值分开，保留用户选中自定义的意图。
+ * EN: This controlled window editor reports a draft through change and never writes run configuration directly. Show manual input in K while storing tokens. Track the custom-option choice separately from its value so the user can keep editing a custom window.
  */
 export function ContextPolicyEditor({
   value,

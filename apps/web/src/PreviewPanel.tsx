@@ -1,4 +1,8 @@
-/* 展示项目文件及相关预览。 */
+/**
+ * 展示项目文件及相关预览。
+ * 按任务目录和文件版本组织HTML、Markdown、源码与差异视图，支持分页定位、检查点和有界自动重试；正文仅在完整读取身份匹配时显示。
+ * EN: Displays workspace files and related previews. Organizes HTML, Markdown, source, and diff views by task directory/file revision with paged location, checkpoints, and bounded automatic retry; content displays only for a matching complete read identity.
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from './api';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
@@ -25,7 +29,10 @@ import {
 } from './ReadingCheckpoint';
 import type { FileLocation } from '../../../packages/contracts/src/file-location';
 
-// 状态标签只负责显示，文件读取、分页和检查点分别由下方逻辑管理。
+/**
+ * 状态标签只负责显示，文件读取、分页和检查点分别由下方逻辑管理。
+ * EN: Status labels only display state; reading, paging, and checkpoints are handled separately below.
+ */
 const labels: Record<string, string> = {
   READY: '就绪',
   RUNNING: '执行中',
@@ -43,7 +50,10 @@ const resourceReasons: Record<PreviewResourceIssue['reason'], string> = {
   restricted: '路径不允许预览',
   'not-file': '路径不是文件',
 };
-/** 外部文件定位请求；requestId 区分重复打开同一路径和锚点的独立操作。 */
+/**
+ * 外部文件定位请求；requestId 区分重复打开同一路径和锚点的独立操作。
+ * EN: An external file navigation request uses requestId to distinguish repeated independent opens of the same path and anchor.
+ */
 export interface PreviewFileTarget {
   taskId: string;
   path: string;
@@ -68,6 +78,7 @@ type Props = {
  * 展示一个任务工作区的文件、源码和实时执行资料。目录快照与文件正文分别读取，文件选择、
  * 编码、分页及滚动位置按运行/任务/文件身份保存；只在文件版本匹配时恢复阅读位置。
  * embedded 模式由外层 Dock 管理面板动画，其余读取与权限规则保持一致。
+ * EN: Display workspace files, source, and live execution data. Read directory snapshots and bodies separately; save selection, encoding, pages, and position by run/task/file identity and restore only matching versions. embedded delegates animation to Dock while retaining reading/permission rules.
  */
 export function PreviewPanel({
   embedded = false,
@@ -97,7 +108,10 @@ export function PreviewPanel({
   const task = tasks.find((t) => t.id === selectedTaskId) || tasks[0];
   const taskId = task?.id || '',
     agent = agents.find((a) => a.taskId === taskId);
-  // 首次有任务列表时恢复上次选中任务；明确传入的文件定位请求优先，不被旧偏好覆盖。
+  /**
+   * 首次有任务列表时恢复上次选中任务；明确传入的文件定位请求优先，不被旧偏好覆盖。
+   * EN: Restore the prior task once the task list arrives; explicit file navigation takes priority over saved preferences.
+   */
   const restoredTask = useRef(false);
   useEffect(() => {
     if (restoredTask.current || !tasks.length) return;
@@ -183,6 +197,7 @@ export function PreviewPanel({
   /**
    * 单独核对未出现在有界目录列表中的文件。相同身份共享在途读取，切换文件取消旧请求；
    * 结果还需匹配 selectedRef，防止慢请求把其他文件的元信息发布到当前选择。
+   * EN: Separately resolve files absent from bounded directory listing. Share identical reads and cancel on file change; require selectedRef identity before publishing late metadata.
    */
   const readEntry = useCallback(
     (next: PreviewSnapshot, name: string) => {
@@ -233,7 +248,10 @@ export function PreviewPanel({
     current?.baseline,
     current?.renderBase,
   ]);
-  // 元信息版本决定旧检查点是否可复用；正文分页的 version 还会由服务端进一步核对。
+  /**
+   * 元信息版本决定旧检查点是否可复用；正文分页的 version 还会由服务端进一步核对。
+   * EN: Metadata version controls checkpoint reuse; the server additionally validates body-page version.
+   */
   const selectedVersion = JSON.stringify(
     selectedEntry ? [selectedEntry.size, selectedEntry.modifiedAt, selectedEntry.change] : null,
   );
@@ -281,7 +299,10 @@ export function PreviewPanel({
       if (savedPosition?.view && !obsoletePosition) setView(savedPosition.view);
     }
   }, [checkpointKey, selectedVersion]);
-  /** 转到字节页并保留最多 128 个返回位置，继续使用当前正文的稳定版本。 */
+  /**
+   * 转到字节页并保留最多 128 个返回位置，继续使用当前正文的稳定版本。
+   * EN: Navigate to a byte page, retaining at most 128 return positions against the current stable body version.
+   */
   const moveTo = (
     offset: number,
     history = [...position.history, content?.page?.offset ?? position.offset],
@@ -294,7 +315,10 @@ export function PreviewPanel({
     });
     setFileNotice('');
   };
-  /** 选择文件时清除旧定位和大 HTML 许可；有锚点时创建独立定位意图。 */
+  /**
+   * 选择文件时清除旧定位和大 HTML 许可；有锚点时创建独立定位意图。
+   * EN: Selecting a file clears old location/large-HTML permission; an anchor creates a distinct navigation intent.
+   */
   const chooseFile = useCallback(
     (path: string, anchor = '') => {
       selectedRef.current = path;
@@ -307,7 +331,10 @@ export function PreviewPanel({
     },
     [taskId],
   );
-  /** Markdown 等内容中的本地链接在预览内选择文件，路径与锚点分开交由定位接口处理。 */
+  /**
+   * Markdown 等内容中的本地链接在预览内选择文件，路径与锚点分开交由定位接口处理。
+   * EN: Local document links select a preview file; path and anchor go separately to the location API.
+   */
   const followLocalLink = useCallback(
     (path: string) => {
       const hash = path.indexOf('#');
@@ -353,6 +380,7 @@ export function PreviewPanel({
   /**
    * 将标题或行号锚点解析为服务端分页偏移。扫描可能分批返回 cursor，只有当前定位身份
    * 的结果可改变页面；文件变化时保留明确提示，要求重新打开链接。
+   * EN: Resolve heading/line anchors to server byte pages. Continue batched scans via cursor; only current location identity may change pages. File changes require reopening the link rather than guessing its new position.
    */
   useEffect(() => {
     if (
@@ -418,12 +446,19 @@ export function PreviewPanel({
       });
     return () => controller.abort();
   }, [pendingAnchor?.requestId, readScope, position.encoding, locationCursor]);
-  // 目录快照按任务轮询；自动模式使用完成后定时，避免慢读取叠加并发请求。
+  /**
+   * 目录快照按任务轮询；自动模式使用完成后定时，避免慢读取叠加并发请求。
+   * EN: Poll directory snapshots per task and schedule after completion to avoid overlapping slow reads.
+   */
   useEffect(() => {
     if (!taskId) return;
     const controller = new AbortController();
     let disposed = false,
       timer: ReturnType<typeof setTimeout>;
+    /**
+     * 读取当前任务目录快照，仅在有效代次回写；保留相同快照对象、首次选择合适入口，并在完成后定时轮询以避免请求重叠。
+     * EN: Reads the task directory snapshot and publishes only for the live generation. It retains equal snapshot objects, chooses an initial entry, and schedules polling after completion to prevent overlap.
+     */
     const poll = async () => {
       try {
         const next = await api<PreviewSnapshot>(
@@ -474,6 +509,7 @@ export function PreviewPanel({
   /**
    * 正文读取只依赖完整 readKey 和手动刷新计数。新页先丢弃不匹配正文；自动模式最多
    * 尝试三次且不并发。FILE_CHANGED 使旧检查点失效，并从第一页重新取得新版本。
+   * EN: Read bodies by complete readKey and manual refresh sequence. Discard mismatches first; automatic mode tries at most three times serially. FILE_CHANGED invalidates old checkpoints and rereads version from page one.
    */
   useEffect(() => {
     setContent((old) =>
@@ -497,11 +533,19 @@ export function PreviewPanel({
       inFlight = false,
       failed = false,
       timer: ReturnType<typeof setTimeout> | undefined;
+    /**
+     * 停止尚未执行的正文重试计时并清除界面等待标志；当前请求的取消由所属控制器负责。
+     * EN: Stops a queued body-retry timer and clears its waiting indicator; the owning controller cancels any active request.
+     */
     const cancel = () => {
       clearTimeout(timer);
       timer = undefined;
       if (!disposed) setFileRetryPending(false);
     };
+    /**
+     * 仅在自动模式、上次失败且未达三次尝试上限时延迟重试；已有计时器或请求时跳过，避免并发。
+     * EN: Schedules a delayed retry only in automatic mode after failure and below the three-attempt cap; skips an existing timer or request to prevent concurrency.
+     */
     const resume = () => {
       if (disposed || !autoRef.current || timer || inFlight || !failed || attempts >= 3) return;
       setFileRetryPending(true);
@@ -512,6 +556,10 @@ export function PreviewPanel({
         void read();
       }, 1000);
     };
+    /**
+     * 读取选中文件的指定版本、编码和偏移页；旧代次不回写，FILE_CHANGED清除检查点并回到第一页，其他失败按策略重试。
+     * EN: Reads the selected file page by version, encoding, and offset. Obsolete generations do not publish; FILE_CHANGED clears its checkpoint and restarts at page one, while other failures use the retry policy.
+     */
     const read = async () => {
       if (disposed || inFlight) return;
       inFlight = true;
@@ -584,7 +632,10 @@ export function PreviewPanel({
       : current?.files || [];
   const visible = pickerFiles.filter((f) => f.path.toLowerCase().includes(filter.toLowerCase()));
   const selectedIndex = visible.findIndex((file) => file.path === selected);
-  // 目录、文件、请求页和编码全部吻合才显示正文，避免短暂展示上一个选择的内容。
+  /**
+   * 目录、文件、请求页和编码全部吻合才显示正文，避免短暂展示上一个选择的内容。
+   * EN: Show a body only when directory, file, requested page, and encoding all match, avoiding a flash of the prior selection.
+   */
   const selectedFile =
     selectedEntry &&
     content?.selectionContext === context &&
@@ -626,7 +677,10 @@ export function PreviewPanel({
     ]),
     !!selectedFile && !loading,
   );
-  // 高亮位置必须与当前正文页的 scope、版本及偏移一致，否则不复用旧定位结果。
+  /**
+   * 高亮位置必须与当前正文页的 scope、版本及偏移一致，否则不复用旧定位结果。
+   * EN: Reuse a highlight only for the current page scope, version, and offset.
+   */
   const located =
     location?.status === 'found' &&
     location.scope === readScope &&
@@ -634,6 +688,10 @@ export function PreviewPanel({
     location.offset === selectedFile?.page?.offset
       ? location
       : null;
+  /**
+   * 构建源码正文视图，传入行定位和由文件版本、分页版本及视图组成的阅读键，隔离不同正文的阅读位置。
+   * EN: Builds the source view with line location and a reading key including file revision, page revision, and view, isolating reading positions for distinct content.
+   */
   const sourceText = (text: string) => (
     <SourceText
       text={text}
@@ -660,7 +718,10 @@ export function PreviewPanel({
       selected.split('/').slice(0, -1).map(encodeURIComponent).join('/') +
       (selected.includes('/') ? '/' : '')
     : null;
-  // 超过 8 MiB 的 HTML 需要本次文件版本的显式许可，许可不会跨版本或跨文件继承。
+  /**
+   * 超过 8 MiB 的 HTML 需要本次文件版本的显式许可，许可不会跨版本或跨文件继承。
+   * EN: HTML above 8 MiB requires permission for this specific file version, never inherited across files or versions.
+   */
   const htmlPermissionKey = JSON.stringify([context, selectedVersion, selectedFile?.page?.version]);
   const htmlBytes = Math.max(selectedEntry?.size || 0, selectedFile?.page?.totalBytes || 0);
   const largeHtmlBlocked =
@@ -1239,6 +1300,10 @@ export function PreviewPanel({
     </aside>
   );
 }
+/**
+ * 统一展示预览空状态的文件图标、标题和说明，不发起文件读取。
+ * EN: Renders a consistent preview empty state with file icon, title, and explanation without initiating a file read.
+ */
 function PreviewEmpty({ title, text }: { title: string; text: string }) {
   return (
     <div className="preview-empty">

@@ -1,4 +1,8 @@
-/** 解析终端执行所需的连接配置。 */
+/**
+ * 解析终端执行所需的连接配置。
+ * 按适配器/协议把冻结绑定转为 CLI 环境/参数，密钥由宿主解析，预览用占位；不从当前可变设置重绑定旧任务。
+ * EN: Resolves connection configuration required by terminal execution. Converts frozen bindings to adapter/protocol CLI environment/arguments with host secret resolution/placeholders, never rebinding old runs from mutable settings.
+ */
 import {
   AgentTerminalProfile,
   AppError,
@@ -10,7 +14,10 @@ import { TerminalConnectionBinding as Binding } from '../../contracts/src/termin
 export interface TerminalConnectionConfiguration {
   command: string[];
   environment: Record<string, string>;
-  /** Relative to the container's private HOME. These files contain no credentials. */
+  /**
+   * 这些路径相对容器私有 HOME，文件本身不包含凭据。
+   * EN: Relative to the container's private HOME. These files contain no credentials.
+   */
   files: { path: string; content: string }[];
   secrets: string[];
 }
@@ -23,10 +30,9 @@ const supported = {
   custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
 };
 
-/** Build from the frozen binding and its exact credential reference, never a live provider record. */
 /**
- * 从冻结连接生成容器命令、环境和私有 HOME 配置。实际 credential 只进入环境及脱敏列表，
- * 不写入生成的普通配置文件；拒绝命令中已有的模型/端点覆盖参数，避免两份配置争夺优先级。
+ * 从冻结绑定及其精确凭据引用构建配置，绝不改读实时供应商记录。 从冻结连接生成容器命令、环境和私有 HOME 配置。实际 credential 只进入环境及脱敏列表， 不写入生成的普通配置文件；拒绝命令中已有的模型/端点覆盖参数，避免两份配置争夺优先级。
+ * EN: Build from the frozen binding and its exact credential reference, never a live provider record. Builds container commands, environment, and private-HOME configuration from the frozen connection. Credentials enter only the environment and redaction list, not ordinary generated files. Existing model or endpoint overrides are rejected to avoid competing configuration precedence.
  */
 export function terminalConnectionConfiguration(
   rawProfile: AgentTerminalProfile,
@@ -52,8 +58,15 @@ export function terminalConnectionConfiguration(
     files: [],
     secrets: [credential],
   };
+  /**
+   * 在冻结CLI参数中拒绝会覆盖管理连接的端点、模型和配置选项，避免配置优先级冲突。
+   * EN: Rejects frozen CLI flags that would override managed endpoints, models, or configuration, avoiding conflicting precedence.
+   */
   const refuseFlags = (flags: string[]) => {
-    // 必须先移除冲突参数再使用管理器连接，不能把用户自带配置静默覆盖成另一组授权。
+    /**
+     * 必须先移除冲突参数再使用管理器连接，不能把用户自带配置静默覆盖成另一组授权。
+     * EN: Conflicting arguments must be removed before using a managed connection; a user-supplied configuration cannot silently become a different authorization.
+     */
     if (command.slice(1).some((part) => flags.some((flag) => part === flag || part.startsWith(flag + '='))))
       throw new AppError(
         'TERMINAL_CONNECTION_COMMAND',
@@ -90,7 +103,10 @@ export function terminalConnectionConfiguration(
       DSH_PERMISSION_MODE: 'danger-full-access',
       DSH_TELEMETRY_DISABLED: '1',
     };
-    // JSON is a YAML subset. Explicit patch rows avoid project .env and implicit model defaults.
+    /**
+     * JSON 是 YAML 的子集；显式补丁行避免读取项目 .env 或隐式模型默认值。
+     * EN: JSON is a YAML subset. Explicit patch rows avoid project .env and implicit model defaults.
+     */
     result.files.push({
       path: 'elysia.dsh.patch.yml',
       content: JSON.stringify([
@@ -125,7 +141,10 @@ export function terminalConnectionConfiguration(
     };
     result.command.push('--model', binding.model);
   } else {
-    // Custom commands opt in to this documented neutral environment contract.
+    /**
+     * 自定义命令须显式采用此处约定的中立环境变量协议。
+     * EN: Custom commands opt in to this documented neutral environment contract.
+     */
     result.environment = {
       ELYSIA_API_KEY: credential,
       ELYSIA_API_BASE_URL: binding.baseUrl,

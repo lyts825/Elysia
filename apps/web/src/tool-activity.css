@@ -1,4 +1,7 @@
-/* 定义 tool-activity 对应界面的样式与布局。 */
+/*
+ * 工具活动账本：组织调用组、状态摘要、参数、结果、来源和展开内容。详情有界滚动并可聚焦，窄屏重排状态与箭头，减少动态规则确保展开反馈无需依赖运动。
+ * EN: Tool-activity ledger: arranges call groups, status summaries, arguments, results, provenance, and expanded content. Focusable bounded details and narrow status/chevron layouts preserve readability; reduced-motion rules avoid motion-dependent feedback.
+ */
 .tool-process {
   min-width: 0;
   margin-top: var(--space-4);
@@ -54,7 +57,10 @@
 .tool-activity > summary::-webkit-details-marker {
   display: none;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .tool-activity > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -197,7 +203,10 @@
   margin: 0;
   min-width: 0;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .tool-activity-body pre {
   margin: 0;
   max-height: min(18rem, 50dvh);
@@ -277,7 +286,10 @@
   font-size: var(--font-xs);
   line-height: var(--leading-body);
 }
-/* 窄屏调整活动摘要的网格、状态与展开箭头的位置。 */
+/*
+ * 窄屏调整活动摘要的网格、状态与展开箭头的位置。
+ * EN: Changes the activity-summary grid and repositions status/expand arrows on narrow screens.
+ */
 @media (max-width: 700px) {
   .tool-activity > summary {
     display: grid;
@@ -305,7 +317,10 @@
     gap: var(--space-1);
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   .tool-activity-chevron {
     transition: none;

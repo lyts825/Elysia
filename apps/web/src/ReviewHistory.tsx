@@ -1,4 +1,8 @@
-/* 展示交付评审历史。 */
+/**
+ * 展示交付评审历史。
+ * 按运行及复核基线浏览历史审计，提供原文和版本提示；历史结论不自动视为当前交付已通过。
+ * EN: Displays human delivery-review history. Browses historical audits against run/review baselines with raw-text and revision feedback; past conclusions do not automatically approve the current delivery.
+ */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryReviewHistory,
@@ -12,6 +16,7 @@ import './review-history.css';
 /**
  * 懒读取人工复核历史，列表游标与所选详情分别保存；version 变化刷新列表并取消旧详情读取。
  * renderNotes 可把只读记录嵌入来源选择流程，查看历史本身不替换当前复核或草稿。
+ * EN: Lazy history separates list cursor from selected details. Version changes refresh list/cancel old detail read. renderNotes can embed read-only history into selection; browsing does not replace current review/draft.
  */
 export function ReviewHistory({
   runId,
@@ -23,7 +28,10 @@ export function ReviewHistory({
   renderNotes?: (value: DeliveryReviewHistoryDetail) => ReactNode;
 }) {
   const { api } = useSurfaceClient();
-  // 列表分页和单条详情分别读取；切换详情时取消先前的在途请求。
+  /**
+   * 列表分页和单条详情分别读取；切换详情时取消先前的在途请求。
+   * EN: Read list/detail separately and cancel prior in-flight detail on change.
+   */
   const [open, setOpen] = useState(false),
     [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),
@@ -70,7 +78,10 @@ export function ReviewHistory({
       });
     return () => controller.abort();
   }, [api, runId, version, open, before, retry]);
-  /** 先取消此前所选详情，准备交付读模型后读取新记录；失败保留上次已读详情供参考。 */
+  /**
+   * 先取消此前所选详情，准备交付读模型后读取新记录；失败保留上次已读详情供参考。
+   * EN: Cancel prior selection, prepare read model, then read the record; keep old details for reference after failure.
+   */
   async function read(id: string) {
     detailRequest.current?.abort();
     const controller = new AbortController();

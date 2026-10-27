@@ -1,4 +1,10 @@
-// 协调应用启动、构建及桌面进程。
+/**
+ * 协调应用启动、构建及桌面进程。
+ * EN: Coordinate application builds, startup, and the Electron child lifecycle.
+ *
+ * 协调依赖检查、单实例握手、可复用构建和 Electron 子进程；退出与失败路径释放相关资源，详细构建工作委托给独立模块。
+ * EN: Coordinate dependency checks, single-instance handshakes, reusable builds, and Electron lifecycle; delegate builds and release resources on exit or failure.
+ */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
@@ -13,6 +19,10 @@ const require = createRequire(import.meta.url);
 const launchStartedAt = performance.timeOrigin + performance.now(),
   launchId = randomUUID(),
   launchMarks = [];
+/**
+ * 记录相对于启动入口的阶段耗时，供桌面诊断合并。
+ * EN: Record stage duration relative to launcher entry for later desktop diagnostic merging.
+ */
 const markLaunch = (stage) =>
   launchMarks.push({
     stage,
@@ -42,6 +52,8 @@ try {
   delete environment.ELECTRON_RUN_AS_NODE;
   const output = openSync(path.join(runtime, 'desktop-launch.log'), 'a');
   // 先启动 Electron，由获得单实例锁的进程请求构建，避免重复启动竞争。
+  // EN: Start Electron first, then let the single-instance-lock owner request the build, avoiding
+  // competing startup attempts.
   const child = spawn(electron, ['apps/desktop/main.cjs'], {
     cwd: root,
     detached: true,
@@ -59,6 +71,7 @@ try {
         300000,
       );
       // 就绪、启动错误、子进程退出及超时可能竞争，只处理首个结果。
+      // EN: Readiness, startup error, child exit, and timeout can race; accept only the first completion.
       const finish = (error) => {
         if (finished) return;
         finished = true;
@@ -69,7 +82,9 @@ try {
         if (message?.type === 'desktop-build-request' && !building && !finished) {
           building = true;
           try {
-            // The actual Electron owner holds its lock throughout the build and backend startup.
+            // 真正的Electron主实例在构建和后端启动期间持续持有单实例锁。
+            // EN: The actual Electron owner retains its single-instance lock throughout building and backend
+            // startup.
             const build = buildLaunch(root, markLaunch);
             if (!child.connected) throw new Error('桌面启动进程已退出，未启动新服务');
             child.send({ type: 'desktop-build-ready', build, marks: launchMarks });

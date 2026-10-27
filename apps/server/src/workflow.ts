@@ -1,4 +1,8 @@
-/** 捕获运行来源和交付证据并注册工作流接口。 */
+/**
+ * 捕获运行来源和交付证据并注册工作流接口。
+ * 按用户明确选择核验消息/产物/备注的字节、版本和归属并冻结来源，分别分页交付证据；导入不继承验收，证据展示不自动判定需求满足。
+ * EN: Captures run sources and delivery evidence and registers workflow routes. Freezes explicitly selected source messages/artifacts/notes after byte/revision/ownership checks and pages evidence separately; imports inherit no acceptance and display does not judge satisfaction.
+ */
 import type { FastifyInstance } from 'fastify';
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -43,6 +47,10 @@ import { withWarmDeliveryMetadata } from './delivery-artifact-warm.js';
 const textLimit = sourceTextLimitBytes;
 const artifactLimit = 8 * 1024 * 1024;
 type PublicArtifact = Pick<Artifact, 'id' | 'runId' | 'name' | 'version' | 'hash' | 'mediaType' | 'verified'>;
+/**
+ * 将产物元数据投影成来源可用公开字段，限制名称长度且不公开存储路径。
+ * EN: Projects artifacts into source-safe public metadata with bounded names and no private storage paths.
+ */
 const publicArtifact = (a: PublicArtifact): SourceArtifact => ({
   id: a.id,
   name: a.name.slice(0, 300),
@@ -51,11 +59,19 @@ const publicArtifact = (a: PublicArtifact): SourceArtifact => ({
   mediaType: a.mediaType,
   verified: a.verified,
 });
+/**
+ * 要求来源运行属于原生执行，缺少 execution 的旧记录按原生兼容处理。
+ * EN: Requires native source execution, treating legacy rows without execution metadata as native.
+ */
 function nativeRun(store: Store, runId: string) {
   const run = store.require<Run>('runs', runId);
   invariant((run.execution?.kind ?? 'native') === 'native', 'SOURCE_SURFACE', '只能在原生入口引用原生对话');
   return run;
 }
+/**
+ * 检查来源或交付预期版本，冲突返回当前版本，避免保存用户未核对的变化。
+ * EN: Checks source/delivery expected revision and reports current revision on conflict before retaining unreviewed changes.
+ */
 function assertRevision(expected: number, actual: number) {
   if (expected !== actual)
     throw new AppError(
@@ -66,7 +82,10 @@ function assertRevision(expected: number, actual: number) {
       409,
     );
 }
-/** Source import is intentionally bounded and verifies bytes before retaining the reference. */
+/**
+ * 来源导入有明确上限，保留引用前先核验字节。
+ * EN: Source import is intentionally bounded and verifies bytes before retaining the reference.
+ */
 function boundedObject(store: Store, ref: string, limit: number) {
   const sqlite = /^sqlite:[a-f0-9]{64}$/.test(ref);
   invariant(
@@ -74,7 +93,10 @@ function boundedObject(store: Store, ref: string, limit: number) {
     'INVALID_OBJECT',
     '来源对象引用无效',
   );
-  // Schema migration can retain a legacy objects/... reference in compressed_objects.
+  /**
+   * Schema 迁移可能在 compressed_objects 中保留旧版 objects/... 引用。
+   * EN: Schema migration can retain a legacy objects/... reference in compressed_objects.
+   */
   const meta = store.db
     .prepare('SELECT hash,raw_size,length(content) size FROM compressed_objects WHERE ref=?')
     .get(ref) as { hash: string; raw_size: number; size: number } | undefined;
@@ -103,7 +125,10 @@ function boundedObject(store: Store, ref: string, limit: number) {
   );
   return store.readObject(ref);
 }
-/** Do not hydrate native provider data, reasoning fields or tool payloads into the public source. */
+/**
+ * 不得将原生服务商数据、推理字段或工具载荷展开到公开来源中。
+ * EN: Do not hydrate native provider data, reasoning fields or tool payloads into the public source.
+ */
 function publicMessage(store: Store, messageId: string, runId: string): Message | null {
   const row = store.db
     .prepare('SELECT data,content FROM messages WHERE id=? AND run_id=?')
@@ -127,13 +152,19 @@ function publicMessage(store: Store, messageId: string, runId: string): Message 
     return null;
   return value;
 }
-/** 读取指定原生运行的公开用户或助手消息，供来源选择预览。 */
+/**
+ * 读取指定原生运行的公开用户或助手消息，供来源选择预览。
+ * EN: Reads public user/assistant messages from a native run for source-selection preview.
+ */
 export function sourceMessage(store: Store, runId: string, messageId: string): SourceMessage {
   nativeRun(store, runId);
   const message = publicMessage(store, messageId, runId);
   invariant(message, 'SOURCE_MESSAGE_PRIVATE', '只能读取公开用户或助手正文');
   const bytes = Buffer.from(message.text, 'utf8');
-  // Drop an incomplete trailing UTF-8 sequence rather than changing the source text.
+  /**
+   * 丢弃结尾不完整的 UTF-8 序列，避免改变来源正文。
+   * EN: Drop an incomplete trailing UTF-8 sequence rather than changing the source text.
+   */
   const text =
     bytes.length <= textLimit
       ? message.text
@@ -149,7 +180,10 @@ export function sourceMessage(store: Store, runId: string, messageId: string): S
     truncated: bytes.length > textLimit,
   };
 }
-/** 分别分页公开消息和产物元数据；一页原始消息可能无可选公开正文，但仍可有更早页面。 */
+/**
+ * 分别分页公开消息和产物元数据；一页原始消息可能无可选公开正文，但仍可有更早页面。
+ * EN: Pages public messages and artifact metadata independently; one raw page can have no selectable public body yet still have older pages.
+ */
 export function sourceOptions(
   store: Store,
   runId: string,
@@ -166,7 +200,10 @@ export function sourceOptions(
       throw new AppError('MESSAGE_CURSOR_MISSING', '来源消息位置已失效，请返回最新', false, null, 409);
     boundary = row.position;
   }
-  // Scan one bounded raw page; empty public pages may still have an earlier page.
+  /**
+   * 每次扫描一个有界原始页；公开页为空仍可能存在更早分页。
+   * EN: Scan one bounded raw page; empty public pages may still have an earlier page.
+   */
   const rows = store.db
     .prepare(
       `SELECT id FROM messages WHERE run_id=? ${boundary === undefined ? '' : 'AND rowid<?'} ORDER BY rowid DESC LIMIT 21`,
@@ -204,8 +241,8 @@ export function sourceOptions(
   };
 }
 /**
- * 将用户明确选择的来源固定为不可变快照：版本、公开消息、复核备注、产物变化及原始字节摘要
- * 均需核验。文本/单产物/总产物和快照大小分别有界，超限直接拒绝而不截断修改要求。
+ * 将用户明确选择的来源固定为不可变快照：版本、公开消息、复核备注、产物变化及原始字节摘要 均需核验。文本/单产物/总产物和快照大小分别有界，超限直接拒绝而不截断修改要求。
+ * EN: Freezes explicitly selected sources into immutable snapshots by checking revision, public messages, review notes, artifact changes and raw-byte hashes. Text, per-artifact, total-artifact and snapshot limits reject excess rather than truncating requirements.
  */
 export function captureRunSource(store: Store, selection: RunSourceSelection): RunSourceSnapshot {
   const source = nativeRun(store, selection.runId);
@@ -280,8 +317,8 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
   return { ...snapshot, hash: hash(stable(snapshot)) };
 }
 /**
- * 在创建命令事务中保存来源元数据对象及新的产物引用，再把快照绑定到新运行。
- * 复用相同对象正文而生成独立 importedId；导入来源保持 verified=false，不能继承上轮验收。
+ * 在创建命令事务中保存来源元数据对象及新的产物引用，再把快照绑定到新运行。 复用相同对象正文而生成独立 importedId；导入来源保持 verified=false，不能继承上轮验收。
+ * EN: Inside creation transactions, saves source metadata objects/new artifact references and binds the snapshot to the new run. Identical object bodies may be reused with distinct importedId; imported sources retain verified=false and inherit no prior acceptance.
  */
 export function attachRunSource(store: Store, run: Run, source: RunSourceSnapshot) {
   const bundle = store.object(stable(source));
@@ -313,6 +350,10 @@ export function attachRunSource(store: Store, run: Run, source: RunSourceSnapsho
     });
   return store.put<Run>('runs', { ...run, source }, run.revision);
 }
+/**
+ * 从原生运行读取根任务并核对可选版本，规范提取结果和原始证据供同一视图分页。
+ * EN: Reads a native run/root, checks optional root revision and extracts result/raw evidence for consistent paging.
+ */
 function deliveryState(store: Store, runId: string, expectedRootRevision?: number) {
   const run = nativeRun(store, runId),
     root = store.require<Task>('tasks', run.rootTaskId);
@@ -322,10 +363,18 @@ function deliveryState(store: Store, runId: string, expectedRootRevision?: numbe
   const rawEvidence = Array.isArray(result.evidence) ? result.evidence : [];
   return { run, root, result, rawEvidence };
 }
+/**
+ * 按偏移、页大小和总量计算后续页信息，末页 nextOffset 为 null。
+ * EN: Computes page continuation from offset/limit/total, returning null nextOffset on the last page.
+ */
 function deliveryPage(offset: number, limit: number, total: number): DeliveryPage {
   const hasMore = offset + limit < total;
   return { offset, limit, total, hasMore, nextOffset: hasMore ? offset + limit : null };
 }
+/**
+ * 生成有界公开证据，只有同运行产物才附元数据；full 模式保留原字段供已校验保存入口使用。
+ * EN: Builds bounded public evidence and attaches artifacts only from the same run; full mode retains original fields for validated persistence flows.
+ */
 function publicEvidence(
   runId: string,
   evidence: Evidence,
@@ -343,7 +392,10 @@ function publicEvidence(
         : null,
   };
 }
-/** Count matching evidence before paging it; unrelated criteria cannot consume this page's budget. */
+/**
+ * 分页前先计数匹配证据；无关验收项不能占用本页预算。
+ * EN: Count matching evidence before paging it; unrelated criteria cannot consume this page's budget.
+ */
 function criterionEvidence(
   store: Store,
   runId: string,
@@ -379,7 +431,10 @@ function criterionEvidence(
   }
   return groups;
 }
-/** 对指定验收项独立计数并分页证据；expectedRootRevision 防止把两版交付的证据页混合。 */
+/**
+ * 对指定验收项独立计数并分页证据；expectedRootRevision 防止把两版交付的证据页混合。
+ * EN: Counts/pages one acceptance criterion independently; expectedRootRevision prevents mixing evidence from different delivery versions.
+ */
 export function deliveryEvidencePage(
   store: Store,
   runId: string,
@@ -405,8 +460,8 @@ export function deliveryEvidencePage(
   };
 }
 /**
- * 从同一交付状态构造人工复核视图，标准、每项证据和产物均有独立分页。
- * 这里只展示提交时结构与引用证据，不把工具成功或文件存在等同于内容满足需求。
+ * 从同一交付状态构造人工复核视图，标准、每项证据和产物均有独立分页。 这里只展示提交时结构与引用证据，不把工具成功或文件存在等同于内容满足需求。
+ * EN: Builds manual-review views from one delivery state with independent criteria/evidence/artifact pages. Presents submitted structure and references without equating tool success or file existence with satisfying requirements.
  */
 export function deliveryReview(
   store: Store,
@@ -416,7 +471,10 @@ export function deliveryReview(
   expectedRootRevision?: number,
 ): DeliveryReview {
   const { run, root, result, rawEvidence } = deliveryState(store, runId, expectedRootRevision);
-  // Reuse the bounded database-generation snapshot for evidence and visible rows.
+  /**
+   * 证据和可见行复用同一个有界数据库代际快照。
+   * EN: Reuse the bounded database-generation snapshot for evidence and visible rows.
+   */
   const artifactRows = deliveryArtifactRows(store, run.id);
   const artifactMap = new Map(artifactRows.map((artifact) => [artifact.id, artifact]));
   const baseline = captureDeliveryBaseline(store, run, root);
@@ -482,6 +540,10 @@ export function deliveryReview(
       : null,
   };
 }
+/**
+ * 注册来源选择、交付证据、项目默认和人工复验接口；来源与验收证据分别核对归属/版本，所有修改复用幂等与可变性守卫。
+ * EN: Registers source selection, delivery evidence, project defaults and manual resolution routes with ownership/revision checks and shared idempotency/mutation guards.
+ */
 export function registerWorkflow(
   app: FastifyInstance,
   store: Store,
@@ -562,6 +624,10 @@ export function registerWorkflow(
       );
     },
   );
+  /**
+   * 返回项目原生默认配置与项目版本，未配置时明确为 null，供乐观并发编辑使用。
+   * EN: Returns native defaults with project revision, explicitly null when absent for optimistic editing.
+   */
   const view = (project: Project): NativeProjectDefaultsView => ({
     projectId: project.id,
     revision: project.revision,

@@ -1,4 +1,7 @@
-/* 定义界面共用的动态效果及相关样式。 */
+/*
+ * 共享动态行为：为按钮状态、页面进入、提示和工作中状态提供过渡或关键帧动画，并定义标签指示器与预算条的变换依据。减少动态效果偏好覆盖动画和过渡，避免运动成为读取或操作所必需的信号。
+ * EN: Shared motion: defines button-state transitions, surface entry, notices, working indicators, and transform origins for tab indicators/budget bars. Reduced-motion overrides limit animation/transitions so motion is not required for reading or interaction.
+ */
 button {
   transition:
     background-color var(--motion-fast),
@@ -35,6 +38,10 @@ button {
 .preview-panel[data-leaving] {
   pointer-events: none;
 }
+/*
+ * 建立局部层叠上下文，使负层级的活动标签指示器位于按钮后方但仍留在标签容器内。
+ * EN: Creates a local stacking context so the negative-z active indicator stays behind buttons without escaping the tab container.
+ */
 .motion-tabs {
   position: relative;
   isolation: isolate;
@@ -58,6 +65,10 @@ button {
 .preview-stream i {
   animation: working-pulse 1600ms ease-in-out infinite;
 }
+/*
+ * 预算条用左侧原点的 transform 表达比例，保留完整轨道宽度并对比例变化做过渡；实际比例由组件设置。
+ * EN: Uses a left-origin transform for the budget ratio while retaining full track width and interpolating changes; the component supplies the ratio.
+ */
 .budget-bar i {
   width: 100%;
   transform-origin: left center;
@@ -80,7 +91,10 @@ button {
     opacity: 0.45;
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

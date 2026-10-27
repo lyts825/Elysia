@@ -1,4 +1,8 @@
-/* 确认运行相关操作。 */
+/**
+ * 确认运行相关操作。
+ * 展示运行级待确认请求并收集明确选择，操作绑定当前问题与运行修订；有效性和最终提交结果由服务端确认。
+ * EN: Presents execution configuration for confirmation. Presents run-level confirmation requests and collects explicit choices bound to the current question/run revision; the server confirms validity and final outcome.
+ */
 import type { NativeProjectDefaults } from '../../../packages/contracts/src/workflow';
 import type { RunSetupDraft } from './RunSetupModal';
 import { requirementLines } from './TaskRequirements';
@@ -8,6 +12,7 @@ import './run-confirmation.css';
 /**
  * 以只读摘要展示本次原生任务配置，并突出与项目默认配置不同的字段。
  * adjust 仅返回编辑步骤，真正提交由上层表单负责；显示的权限来自当前 value，不从默认值补授。
+ * EN: Show read-only native-task configuration and differences from project defaults. adjust returns to editing; outer form submits. Display permissions from current value, never grant defaults implicitly.
  */
 export function RunConfirmation({
   projectName,
@@ -26,7 +31,10 @@ export function RunConfirmation({
   adjust: () => void;
   disabled: boolean;
 }) {
-  // 比较表单与项目默认值，提醒用户核对实际创建配置中的差异。
+  /**
+   * 比较表单与项目默认值，提醒用户核对实际创建配置中的差异。
+   * EN: Compare form with project defaults so the user reviews effective creation differences.
+   */
   const differences = [
     JSON.stringify(value.choice) !== JSON.stringify(defaults.modelChoice) && '模型',
     value.planMode !== defaults.planMode && '计划模式',

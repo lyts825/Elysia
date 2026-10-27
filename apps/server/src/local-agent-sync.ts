@@ -1,4 +1,8 @@
-/** 校验并同步本地代理配置。 */
+/**
+ * 校验并同步本地代理配置。
+ * 从用户选择的 CLI 来源核验路径/句柄、摘要、敏感信息与容量后导入私有库；不改源文件，不自动启用未补全 MCP。
+ * EN: Validates and synchronizes local-agent configuration. Imports selected CLI sources after path/handle/hash/secret/budget checks without modifying originals or enabling incomplete MCP.
+ */
 import { constants } from 'node:fs';
 import { lstat, realpath, opendir, open } from 'node:fs/promises';
 import path from 'node:path';
@@ -41,18 +45,37 @@ type Prepared = {
   resources: { path: string; text: string; hash: string }[];
 };
 type CachedScan = { result: LocalAgentScan; prepared: Map<string, Prepared>; createdAt: number };
+/**
+ * 检查可选扫描信号，已取消时抛统一的 499 领域错误，阻止继续读本机资料。
+ * EN: Checks the optional scan signal and throws a shared 499 cancellation error before further local reads.
+ */
 const cancelled = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new AppError('LOCAL_SCAN_CANCELLED', '本机同步已取消', false, null, 499);
 };
+/**
+ * 生成统一正斜杠的来源相对路径，供候选 ID 和公开路径使用。
+ * EN: Produces a forward-slash source-relative path for candidate IDs and public paths.
+ */
 const relative = (root: string, file: string) => path.relative(root, file).replace(/\\/g, '/');
+/**
+ * 按当前平台比较已规范化路径，Windows 忽略大小写，其他平台精确比较。
+ * EN: Compares normalized paths using case-insensitivity on Windows and exact matching elsewhere.
+ */
 const samePath = (a: string, b: string) =>
   process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+/**
+ * 检查词法路径是否位于来源根目录或其内部；链接身份仍由读取阶段单独验证。
+ * EN: Checks lexical inclusion in or equal to the source root; read stages separately validate link identity.
+ */
 const within = (root: string, file: string) => {
   const value = path.relative(root, file);
   return value === '' || (!value.startsWith('..' + path.sep) && value !== '..' && !path.isAbsolute(value));
 };
 
-/** 移除已识别的凭据形态和赋值；属于尽力脱敏，不能保证发现业务文本中所有秘密。 */
+/**
+ * 移除已识别的凭据形态和赋值；属于尽力脱敏，不能保证发现业务文本中所有秘密。
+ * EN: Removes recognized credential patterns and assignments as best-effort redaction, without claiming to discover every secret in business text.
+ */
 function redact(text: string) {
   return text
     .replace(
@@ -64,13 +87,25 @@ function redact(text: string) {
       '$1[已隐去凭据]',
     );
 }
+/**
+ * 识别脱敏器可检出或含凭据赋值语法的参数，供导入过滤使用；此判断不读取实际密钥。
+ * EN: Detects arguments recognized by redaction or credential-assignment syntax for import filtering without resolving secrets.
+ */
 const secretArgument = (value: string) =>
   redact(value) !== value || /(?:api[_-]?key|token|password|secret|authorization)\s*[=:]/i.test(value);
+/**
+ * 把非数组对象视为字段映射，其他未知输入降为新空对象，简化只读兼容解析。
+ * EN: Treats non-array objects as field maps and other unknown input as a fresh empty map for compatibility parsing.
+ */
 function plain(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
 }
+/**
+ * 校验有界短字符串数组并拒绝控制字符；无效输入返回 undefined，不截断后接受。
+ * EN: Validates bounded short-string arrays without control characters; invalid input returns undefined rather than accepting truncated data.
+ */
 function strings(value: unknown, maximum = 100) {
   if (
     !Array.isArray(value) ||
@@ -80,7 +115,10 @@ function strings(value: unknown, maximum = 100) {
     return undefined;
   return value as string[];
 }
-/** 只保留不含认证、查询和片段的 HTTP(S) 地址，避免把 URL 中的秘密同步入库。 */
+/**
+ * 只保留不含认证、查询和片段的 HTTP(S) 地址，避免把 URL 中的秘密同步入库。
+ * EN: Retains HTTP(S) URLs only without authentication, query, or fragment components so URL secrets are not imported.
+ */
 function safeUrl(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 4000) return undefined;
   try {
@@ -99,7 +137,10 @@ function safeUrl(value: unknown): string | undefined {
     return undefined;
   }
 }
-/** 识别环境变量引用语法，只返回变量名，不解析本机实际值。 */
+/**
+ * 识别环境变量引用语法，只返回变量名，不解析本机实际值。
+ * EN: Recognizes environment-reference syntax and returns names only, never resolving local values.
+ */
 function reference(value: unknown) {
   if (typeof value !== 'string') return undefined;
   return /^(?:\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|env:([A-Za-z_][A-Za-z0-9_]*))$/
@@ -109,9 +150,8 @@ function reference(value: unknown) {
 }
 
 /**
- * 校验用户保存的 MCP 安全配置：只接受显式字段、环境变量名称和有界参数。
- * stdio 命令/参数拒绝已知明文凭据，HTTP 地址拒绝用户信息及查询参数；此检查只描述
- * 连接配置，不建立连接、不证明远端工具安全，也不授予调用权限。
+ * 校验用户保存的 MCP 安全配置：只接受显式字段、环境变量名称和有界参数。 stdio 命令/参数拒绝已知明文凭据，HTTP 地址拒绝用户信息及查询参数；此检查只描述 连接配置，不建立连接、不证明远端工具安全，也不授予调用权限。
+ * EN: Validates saved MCP configuration using explicit fields, environment names, and bounded arguments. stdio rejects known plaintext credentials; HTTP rejects user info and queries. This describes configuration only: it neither connects, proves remote safety, nor grants invocation rights.
  */
 export function validateLocalMcpConfig(value: unknown): LocalMcpConfig {
   const config = plain(value);
@@ -204,8 +244,8 @@ export function validateLocalMcpConfig(value: unknown): LocalMcpConfig {
 }
 
 /**
- * 将不同代理的 MCP 格式转换为本地描述。无法安全保留的字段不执行，也不迁移实际秘密，
- * 而是设置 needsConfiguration，使导入项默认禁用并等待用户补齐引用。
+ * 将不同代理的 MCP 格式转换为本地描述。无法安全保留的字段不执行，也不迁移实际秘密， 而是设置 needsConfiguration，使导入项默认禁用并等待用户补齐引用。
+ * EN: Converts agent-specific MCP formats into local descriptions. Unsafe fields and real secrets are not executed or migrated; needsConfiguration disables imported entries until the user supplies references.
  */
 function normalizeMcp(value: unknown): LocalMcpConfig {
   const raw = plain(value),
@@ -290,13 +330,20 @@ function normalizeMcp(value: unknown): LocalMcpConfig {
   return config;
 }
 
-/** 禁止重复键、别名和有警告的 YAML，避免宽松解析把导入来源解释成不同配置。 */
+/**
+ * 禁止重复键、别名和有警告的 YAML，避免宽松解析把导入来源解释成不同配置。
+ * EN: Rejects duplicate keys, aliases, and YAML warnings so permissive parsing cannot reinterpret imported configuration.
+ */
 function yaml(source: string): unknown {
   const doc = parseDocument(source, { uniqueKeys: true, schema: 'core', strict: true });
   if (doc.errors.length || doc.warnings.length)
     throw new AppError('LOCAL_CONFIG_INVALID', 'YAML 配置格式无效');
   return doc.toJS({ maxAliasCount: 0 });
 }
+/**
+ * 解析 TOML 的 mcp_servers 映射，语法失败转为安全的本机配置错误。
+ * EN: Parses the TOML mcp_servers map and converts syntax failures to a safe local-configuration error.
+ */
 function tomlMcp(source: string): Record<string, unknown> {
   try {
     return plain(parseToml(source).mcp_servers);
@@ -304,9 +351,16 @@ function tomlMcp(source: string): Record<string, unknown> {
     throw new AppError('LOCAL_CONFIG_INVALID', 'MCP TOML 配置格式无效');
   }
 }
-/** 有界枚举全局/项目 MCP 配置；DSH 另按其插件节点结构查找，不递归执行任何来源代码。 */
+/**
+ * 有界枚举全局/项目 MCP 配置；DSH 另按其插件节点结构查找，不递归执行任何来源代码。
+ * EN: Enumerates global/project MCP files within bounds; DSH follows its plugin-node layout without recursively executing source code.
+ */
 function configEntries(value: unknown, kind: LocalAgentKind) {
   const result: { name: string; value: unknown }[] = [];
+  /**
+   * 从一个 MCP 映射最多收集 100 项并补来源前缀，保持目录扫描容量有界。
+   * EN: Collects at most 100 MCP entries from a map with an optional source prefix to bound catalog scanning.
+   */
   const addMap = (map: unknown, prefix = '') => {
     for (const [name, config] of Object.entries(plain(map)).slice(0, 100))
       result.push({ name: prefix + name, value: config });
@@ -318,6 +372,10 @@ function configEntries(value: unknown, kind: LocalAgentKind) {
       addMap(plain(config).mcpServers, `${project}: `);
   } else {
     addMap(plain(value).mcpServers ?? plain(value).mcp_servers);
+    /**
+     * 有界递归发现 DSH MCP 客户端节点，限制深度、子项数与结果数，避免任意配置树导致无限展开。
+     * EN: Recursively finds DSH MCP client nodes with depth, child and result caps to prevent unbounded configuration expansion.
+     */
     const visit = (node: unknown, depth: number) => {
       if (depth > 12 || result.length >= 100) return;
       if (Array.isArray(node)) for (const child of node.slice(0, 500)) visit(child, depth + 1);
@@ -337,6 +395,10 @@ function configEntries(value: unknown, kind: LocalAgentKind) {
   return result;
 }
 
+/**
+ * 从字符串或允许类型的文本块抽取公开正文，忽略其他结构而不序列化工具/私密载荷。
+ * EN: Extracts text from strings or allowlisted text blocks, ignoring other structures rather than serializing private/tool payloads.
+ */
 function textContent(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value))
@@ -347,8 +409,8 @@ function textContent(value: unknown): string {
   return '';
 }
 /**
- * 从多种 JSONL 日志中抽取公开用户/助手正文，跳过元事件、侧链和无法解析的行。
- * 尾部截取时丢弃第一条不完整行；结果只作为脱敏资料，不恢复原代理执行状态。
+ * 从多种 JSONL 日志中抽取公开用户/助手正文，跳过元事件、侧链和无法解析的行。 尾部截取时丢弃第一条不完整行；结果只作为脱敏资料，不恢复原代理执行状态。
+ * EN: Extracts public user/assistant text from JSONL logs, skipping meta events, side chains, and invalid lines. Tail reads drop the first incomplete line. Results are redacted reference material, never restored execution state.
  */
 function conversationText(source: string, truncated: boolean) {
   const lines = source.split('\n'),
@@ -381,13 +443,24 @@ function conversationText(source: string, truncated: boolean) {
   return result.join('\n\n').slice(-MAX_FILE / 2);
 }
 
-/** 扫描和同步本地代理资源；扫描结果与当前本地库分别管理。 */
+/**
+ * 扫描和同步本地代理资源；扫描结果与当前本地库分别管理。
+ * EN: Scans and synchronizes local resources while keeping scan candidates separate from the persisted library.
+ */
 export class LocalAgentSync {
   private scans = new Map<string, CachedScan>();
+  /**
+   * 绑定导入库存储和默认用户目录；构造阶段不扫描文件或读取外部 CLI 凭据。
+   * EN: Binds imported-library storage and default home without scanning files or reading external CLI credentials at construction.
+   */
   constructor(
     private store: Store,
     private home = os.homedir(),
   ) {}
+  /**
+   * 返回持久导入库的公开条目与各 CLI 默认来源目录，不包含保存的正文对象。
+   * EN: Returns public imported-library entries and CLI default source roots without retained content objects.
+   */
   overview(): LocalAgentOverview {
     const library = importedLibrary(this.store);
     return {
@@ -401,7 +474,10 @@ export class LocalAgentSync {
       ],
     };
   }
-  /** 同 commandId 只重放相同载荷；相同 ID 配不同选择或版本时拒绝，避免误合并请求。 */
+  /**
+   * 同 commandId 只重放相同载荷；相同 ID 配不同选择或版本时拒绝，避免误合并请求。
+   * EN: Replays a command ID only for identical payloads; changed selection or revision with the same ID is rejected.
+   */
   private replay(commandId: string | undefined, payload: unknown): LocalAgentOverview | undefined {
     if (!commandId) return undefined;
     const old = this.store.db.prepare('SELECT fingerprint FROM commands WHERE id=?').get(commandId) as
@@ -414,13 +490,17 @@ export class LocalAgentSync {
       throw new Error('unreachable');
     });
   }
+  /**
+   * 比较导入库预期版本，不匹配时抛冲突，防止旧扫描覆盖更新。
+   * EN: Checks imported-library expected revision and throws conflicts to prevent stale scans overwriting updates.
+   */
   private revision(expected: number) {
     if (importedLibrary(this.store).revision !== expected)
       throw new AppError('LOCAL_REVISION_CHANGED', '本机同步目录已更新，请刷新后重试', false, null, 409);
   }
   /**
-   * 核验本机来源根目录后扫描候选，结果在当前进程缓存十分钟且最多保留三次扫描。
-   * 扫描只生成可供选择的资料；持久库不变化，MCP 配置不会因此自动连接或启用。
+   * 核验本机来源根目录后扫描候选，结果在当前进程缓存十分钟且最多保留三次扫描。 扫描只生成可供选择的资料；持久库不变化，MCP 配置不会因此自动连接或启用。
+   * EN: Validates source roots and caches selectable candidates in process for ten minutes, retaining at most three scans. Scanning does not change the persistent library or connect/enable imported MCP entries.
    */
   async scan(kind: LocalAgentKind, requestedRoot?: string, signal?: AbortSignal): Promise<LocalAgentScan> {
     if (!['codex', 'claude', 'dsh'].includes(kind))
@@ -463,8 +543,8 @@ export class LocalAgentSync {
     return result;
   }
   /**
-   * 统一采集技能、记忆、会话正文和 MCP 描述。目录/文件/解压/总读取量均有独立上限；
-   * 未知文件、链接、敏感路径和不可解析来源通过警告保留，不推断其可安全导入。
+   * 统一采集技能、记忆、会话正文和 MCP 描述。目录/文件/解压/总读取量均有独立上限； 未知文件、链接、敏感路径和不可解析来源通过警告保留，不推断其可安全导入。
+   * EN: Collects skills, memories, public sessions, and MCP descriptions with separate bounds on directories, files, decompression, and total reads. Unknown files, links, sensitive paths, and invalid sources remain warnings rather than being assumed safe.
    */
   private async collect(source: LocalAgentSource, signal?: AbortSignal) {
     const prepared = new Map<string, Prepared>(),
@@ -476,11 +556,22 @@ export class LocalAgentSync {
     let total = 0,
       visited = 0,
       readBytes = 0;
+    /**
+     * 最多保留 100 条扫描警告，避免目录异常无限放大响应。
+     * EN: Retains at most 100 scan warnings so directory anomalies cannot grow responses indefinitely.
+     */
     const warn = (message: string) => {
       if (warnings.length < 100) warnings.push(message);
     };
+    /**
+     * 在来源根内安全读取候选文件或有界尾部，核对路径/句柄身份及前后版本并累计总读取预算；取消、链接、超限或检测到变化都使候选失败。
+     * EN: Safely reads a candidate or bounded tail inside the source root, validating path/handle identity and before/after versions while charging a shared budget. Cancellation, links, limits or detected changes fail the candidate.
+     */
     const read = async (file: string, tail = false) => {
-      // 路径和文件句柄都核验身份；读取前后的版本变化会使整个候选失效。
+      /**
+       * 路径和文件句柄都核验身份；读取前后的版本变化会使整个候选失效。
+       * EN: Validates both path and file-handle identity; detected version changes invalidate the candidate.
+       */
       cancelled(signal);
       const relativePath = relative(source.root, file);
       if (!within(source.root, file) || relativePath.split('/').some((part) => secretName.test(part)))
@@ -505,11 +596,18 @@ export class LocalAgentSync {
           throw new AppError('LOCAL_SOURCE_CHANGED', '扫描期间来源已改变', false, null, 409);
         let data: Buffer;
         if (file.endsWith('.zstd')) {
-          // 压缩输入和解压输出分别限流，只保留最近正文尾部，避免小压缩文件放大占用。
+          /**
+           * 压缩输入和解压输出分别限流，只保留最近正文尾部，避免小压缩文件放大占用。
+           * EN: Bounds compressed input and decompressed output separately and retains only a recent text tail to limit expansion.
+           */
           if (before.size > 4 * 1024 * 1024)
             throw new AppError('LOCAL_FILE_LIMIT', '压缩日志超过4MiB，请导出近期 JSONL 或 Markdown');
           const stream = fd.createReadStream({ autoClose: false, highWaterMark: 65536 }),
             decoder = createZstdDecompress();
+          /**
+           * 销毁压缩来源流和解码器，携带本机扫描取消错误终止解压。
+           * EN: Destroys compressed source/decoder with the local-scan cancellation error.
+           */
           const abort = () => {
             stream.destroy();
             decoder.destroy(new AppError('LOCAL_SCAN_CANCELLED', '本机同步已取消', false, null, 499));
@@ -559,7 +657,10 @@ export class LocalAgentSync {
           throw new AppError('LOCAL_SOURCE_CHANGED', '扫描期间来源已改变', false, null, 409);
         if (data.includes(0)) throw new AppError('LOCAL_BINARY_SKIPPED', '非 UTF-8 文本不导入');
         if (tail) {
-          // 尾部切片可能起于 UTF-8 续字节，先跳到完整字符边界再进行严格解码。
+          /**
+           * 尾部切片可能起于 UTF-8 续字节，先跳到完整字符边界再进行严格解码。
+           * EN: A tail slice may start on a UTF-8 continuation byte; advance to a full-character boundary before strict decoding.
+           */
           let start = 0;
           while (start < data.length && (data[start] & 0xc0) === 0x80) start++;
           data = data.subarray(start);
@@ -574,6 +675,10 @@ export class LocalAgentSync {
         await fd.close();
       }
     };
+    /**
+     * 按来源、路径及 MCP 名称派生稳定候选 ID，去重并累计正文/资源容量；达到项数或总量上限时保留警告，不创建半个候选。
+     * EN: Derives stable source/path/MCP IDs, deduplicates and charges text/resource budgets; limits warn and skip rather than create partial candidates.
+     */
     const add = (
       kind: LocalAgentCandidate['kind'],
       file: string,
@@ -612,6 +717,10 @@ export class LocalAgentSync {
         resources,
       });
     };
+    /**
+     * 递归收集技能目录内允许的文本资源，排除链接、隐藏/敏感和依赖目录；共享项数/字节预算并检查取消。
+     * EN: Recursively collects allowlisted skill text resources, excluding links, hidden/sensitive paths and dependencies under shared count/byte limits and cancellation.
+     */
     const resources = async (
       directory: string,
       depth = 0,
@@ -670,6 +779,10 @@ export class LocalAgentSync {
       }
       return result.slice(0, 100);
     };
+    /**
+     * 有界遍历来源目录并解析允许的技能、记忆和会话；标准根限制首层范围，链接与敏感目录跳过，异常以有界警告保留。
+     * EN: Traverses source roots within depth/entry/budget caps to parse skills, memory and sessions. Standard roots restrict first-level scope; links/sensitive paths are skipped with bounded diagnostics.
+     */
     const visit = async (directory: string, depth: number) => {
       if (depth > 8 || visited > 4000 || prepared.size >= MAX_ITEMS || total >= MAX_TOTAL) return;
       const directoryStat = await lstat(directory);
@@ -845,7 +958,10 @@ export class LocalAgentSync {
     };
     await visit(source.root, 0);
     cancelled(signal);
-    // DSH keeps immutable predecessor generations; import only the newest canonical log.
+    /**
+     * DSH保留不可变前代日志，仅导入最新规范日志。
+     * EN: DSH keeps immutable predecessor generations; import only the newest canonical log.
+     */
     if (source.kind === 'dsh') {
       for (const [id, item] of prepared) {
         const match = /^(.*\/)?session(?:\.v(\d+))?\.jsonl(\.zstd)?$/.exec(item.candidate.path);
@@ -856,8 +972,8 @@ export class LocalAgentSync {
     return { prepared, warnings };
   }
   /**
-   * 显式同步选中的候选：先重新采集并核对扫描时哈希，再在事务中复核库版本。
-   * 保留用户对 MCP 的本地覆盖；覆盖项的来源发生变化时要求重新核对，不能静默替换。
+   * 显式同步选中的候选：先重新采集并核对扫描时哈希，再在事务中复核库版本。 保留用户对 MCP 的本地覆盖；覆盖项的来源发生变化时要求重新核对，不能静默替换。
+   * EN: Explicitly synchronizes selected candidates: recollect and verify their scanned hashes, then recheck library revision in a transaction. Preserves local MCP overrides; changed override sources require revalidation rather than silent replacement.
    */
   async sync(
     scanId: string,
@@ -894,6 +1010,10 @@ export class LocalAgentSync {
         );
       return item;
     });
+    /**
+     * 在事务内重新核对库版本和已导入对象，保存选择的正文/资源对象并合并元数据；本地改写的 MCP 与变化来源冲突时拒绝覆盖。
+     * EN: Rechecks library revision/imported objects transactionally, saves selected text/resource objects and merges metadata; changed sources cannot overwrite locally edited MCP configuration.
+     */
     const commit = () =>
       this.store.tx(() => {
         this.revision(expectedRevision);
@@ -957,7 +1077,10 @@ export class LocalAgentSync {
       });
     return commandId ? this.store.command(commandId, payload, commit) : commit();
   }
-  /** 对单个持久项执行版本化修改；启用不完整 MCP 被拒绝，移除只影响本地导入库。 */
+  /**
+   * 对单个持久项执行版本化修改；启用不完整 MCP 被拒绝，移除只影响本地导入库。
+   * EN: Applies a versioned edit to one stored item. Incomplete MCP entries cannot be enabled; removal affects only the imported library.
+   */
   update(
     itemId: string,
     changes: { enabled?: boolean; remove?: boolean; config?: LocalMcpConfig },
@@ -967,6 +1090,10 @@ export class LocalAgentSync {
     const payload = { action: 'local-agents:update', itemId, changes, expectedRevision },
       replayed = this.replay(commandId, payload);
     if (replayed) return replayed;
+    /**
+     * 事务内按版本修改单项的启用、移除或 MCP 配置并递增库版本；未补全的 MCP 禁止启用，返回更新后的公开目录。
+     * EN: Transactionally revision-checks item enable/remove/MCP edits and increments library revision; incomplete MCP cannot be enabled, then returns the updated public catalog.
+     */
     const commit = () =>
       this.store.tx(() => {
         this.revision(expectedRevision);
@@ -994,12 +1121,19 @@ export class LocalAgentSync {
       });
     return commandId ? this.store.command(commandId, payload, commit) : commit();
   }
-  /** 以内容摘要分页预览已导入资料；MCP 展示的是规范化安全配置，而非原始秘密配置文件。 */
+  /**
+   * 以内容摘要分页预览已导入资料；MCP 展示的是规范化安全配置，而非原始秘密配置文件。
+   * EN: Paginates imported reference previews by content digest. MCP previews expose normalized safe configuration rather than original secret-bearing files.
+   */
   preview(itemId: string, options: { offset?: number; limit?: number; query?: string } = {}) {
     const item = localItem(this.store, itemId, undefined, true),
       text = item.kind === 'mcp' ? stable(item.config) : localItemText(this.store, item);
     return pageLocalText({ ...item, contentHash: hash(text) }, text, options);
   }
+  /**
+   * 释放进程内预扫描缓存；不删除已经持久导入的条目或来源文件。
+   * EN: Clears in-memory prepared scans without deleting imported entries or source files.
+   */
   close() {
     this.scans.clear();
   }

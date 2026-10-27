@@ -1,10 +1,17 @@
-/* 配置和校验工具评审及执行策略。 */
+/**
+ * 配置和校验工具评审及执行策略。
+ * 把模型能力和工具权限约束映射到策略表单，返回输入问题；实际工具批准、执行和副作用提交由服务端负责。
+ * EN: Edits and validates tool-review and command-execution policies. Maps model capabilities and tool-permission constraints into policy forms and validation issues; the server owns actual approval, execution, and side-effect commitment.
+ */
 import './peer-review.css';
 import { useId } from 'react';
 import { CommandBackendPolicy, ToolReviewPolicy } from '../../../packages/contracts/src/execution-policy';
 import type { SelectableProvider } from './ModelPicker';
 
-/** 校验审核策略与命令后端；模型审核必须选择当前版本已验证的连接。 */
+/**
+ * 校验审核策略与命令后端；模型审核必须选择当前版本已验证的连接。
+ * EN: Validate the review policy and command backend. Model review requires a connection verified at its current version.
+ */
 export function executionPolicyIssue(
   review: ToolReviewPolicy | undefined,
   backend: CommandBackendPolicy | undefined,
@@ -25,6 +32,7 @@ export function executionPolicyIssue(
 /**
  * 编辑创建时冻结的工具审核与 exec 命令后端，字段变化只回传策略，不直接发起审核或容器。
  * 规则审核、模型审核和后端隔离不扩大原授权；实际可执行性仍由创建及调用时的服务端门禁决定。
+ * EN: Edit the tool-review and exec backend frozen at creation. Field changes report policies only and do not start reviews or containers. Review or backend isolation does not expand original authorization; creation and execution gates on the server still decide eligibility.
  */
 export function ExecutionPolicySetup({
   review,

@@ -1,4 +1,8 @@
-/* 提供运行设置弹窗。 */
+/**
+ * 提供运行设置弹窗。
+ * 收集原生或终端运行配置并复用模型、权限、上下文和执行策略校验，形成启动参数；运行创建和错误回执由外层处理。
+ * EN: Provides run-creation setup UI. Collects native/terminal run configuration with shared model, permission, context, and execution-policy validation to form launch parameters; outer flows create runs and handle receipts.
+ */
 import { ExecutionPolicySetup, executionPolicyIssue } from './ExecutionPolicySetup';
 import type {
   ToolReviewPolicy,
@@ -31,7 +35,10 @@ import { TaskRequirements, requirementLines, validRequirements } from './TaskReq
 import './workflow.css';
 import './run-setup.css';
 import type { RunSetupDraft } from './RunSetupDraft';
-// 设置草稿由外层持久化；表单在提交前组合模型、权限、预算及可选审核策略。
+/**
+ * 设置草稿由外层持久化；表单在提交前组合模型、权限、预算及可选审核策略。
+ * EN: Outer state persists draft; combine model/permissions/budget/optional reviews only before submission.
+ */
 export type { RunSetupDraft } from './RunSetupDraft';
 const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
 
@@ -40,6 +47,7 @@ const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => 
  * initial 只初始化本次草稿，changed 将后续修改交由外层持久化；创建时重新校验全部门禁。
  * 原生、独立聊天和终端分别采用不同校验与提交字段，终端配置在创建时形成独立快照。
  * 恢复草稿不能恢复同模型复核授权，该例外始终要求用户本次重新确认。
+ * EN: Compose model/context/permissions/budget/requirements/reviews. initial initializes this form only; changed delegates persistence. Recheck all gates on creation. Native/chat/terminal use different fields and validation; freeze terminal profile at creation. Restored drafts never restore same-model exception authorization: require fresh confirmation.
  */
 export function RunModal({
   providers,
@@ -86,7 +94,10 @@ export function RunModal({
   const [defaultsBusy, setDefaultsBusy] = useState(false);
   const [appliedDefaults, setAppliedDefaults] = useState<NativeProjectDefaults>();
   const [expanded, setExpanded] = useState(false);
-  // A restored creation draft is not a saved contract: require a fresh explicit confirmation.
+  /**
+   * 恢复的创建草稿不是已保存合同，必须重新明确确认。
+   * EN: A restored creation draft is not a saved contract: require a fresh explicit confirmation.
+   */
   const [allowSameModelReview, setAllowSameModelReview] = useState(false);
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [toolReview, setToolReview] = useState<ToolReviewPolicy | undefined>(initial?.toolReview);
@@ -128,6 +139,10 @@ export function RunModal({
     chat || terminal || !executionPolicyIssue(toolReview, commandBackend, providers);
   const peerReviewReady =
     chat || terminal || !peerReviewSetupIssue(peerReview, providers, choice.model ?? selected?.model ?? '');
+  /**
+   * 将多行交付或验收输入拆为去空白、非空条目，生成服务端数组字段。
+   * EN: Splits multiline deliverable or acceptance input into trimmed nonempty entries for server array fields.
+   */
   const lines = (s: string) =>
     s
       .split('\n')
@@ -143,7 +158,10 @@ export function RunModal({
       urls: lines(urls),
       writePaths: lines(writePaths),
     }).success;
-  // “配置有效”与“需求/审核有效”分开计算，提交时必须全部满足，避免折叠区漏掉门禁。
+  /**
+   * “配置有效”与“需求/审核有效”分开计算，提交时必须全部满足，避免折叠区漏掉门禁。
+   * EN: Compute configuration and requirement/review validity separately, requiring all even for collapsed regions.
+   */
   const setupReady = terminal
     ? AgentTerminalProfile.safeParse(terminalProfile).success
     : modelReady &&
@@ -154,7 +172,10 @@ export function RunModal({
   const requirementsReady =
     chat || terminal || validRequirements(deliverables, acceptanceCriteria, !planMode);
   const compact = !chat && !terminal && !!appliedDefaults && setupReady && !expanded;
-  // 向外层报告的完整草稿保留表单原值；转换为权限数组和执行合同只发生在提交时。
+  /**
+   * 向外层报告的完整草稿保留表单原值；转换为权限数组和执行合同只发生在提交时。
+   * EN: Report complete raw form draft to parent; convert lines to permissions/contracts only on submit.
+   */
   const currentDraft: RunSetupDraft = {
     choice,
     planMode,
@@ -178,7 +199,10 @@ export function RunModal({
     commandBackend,
   };
   const changedRef = useRef(changed);
-  // 回调身份变化不应单独触发表单回写，使用 ref 取最新版回调而仅以表单字段作为 effect 依赖。
+  /**
+   * 回调身份变化不应单独触发表单回写，使用 ref 取最新版回调而仅以表单字段作为 effect 依赖。
+   * EN: Callback identity alone must not rewrite drafts; ref holds latest callback while effect depends on form fields.
+   */
   changedRef.current = changed;
   useEffect(() => {
     changedRef.current?.(currentDraft);
@@ -203,7 +227,10 @@ export function RunModal({
     toolReview,
     commandBackend,
   ]);
-  /** 载入项目默认只影响可复用配置；若用户已编辑则展开核对，执行权限仍由本次表单确认。 */
+  /**
+   * 载入项目默认只影响可复用配置；若用户已编辑则展开核对，执行权限仍由本次表单确认。
+   * EN: Load reusable defaults only; if user edited, expand review. This form still confirms actual execution permissions.
+   */
   const applyDefaults = (defaults: NativeProjectDefaults) => {
     setAppliedDefaults(defaults);
     if (edited.current) setExpanded(true);
@@ -229,7 +256,10 @@ export function RunModal({
         }}
         onSubmit={(e) => {
           e.preventDefault();
-          // 在创建负载之前统一检查各个折叠区域的门禁，不能只依赖按钮 disabled 状态。
+          /**
+           * 在创建负载之前统一检查各个折叠区域的门禁，不能只依赖按钮 disabled 状态。
+           * EN: Recheck every gate before payload construction instead of relying solely on disabled buttons.
+           */
           if (
             busy ||
             defaultsBusy ||
@@ -244,7 +274,10 @@ export function RunModal({
           )
             return;
           edited.current = true;
-          // 创建负载按入口显式构造：聊天无执行权限，终端冻结模板，原生任务保留本次细分授权。
+          /**
+           * 创建负载按入口显式构造：聊天无执行权限，终端冻结模板，原生任务保留本次细分授权。
+           * EN: Build payload per surface: no execution permissions for chat, frozen profile for terminal, specific authorization for native tasks.
+           */
           submit(
             {
               ...(terminal ? {} : { ...choice, contextPolicy: context }),
@@ -272,7 +305,10 @@ export function RunModal({
                   ? { read: true, write: true, exec: true, urls: [], writePaths: ['.'] }
                   : { read: true, write, exec, urls: lines(urls), writePaths: lines(writePaths) },
               budget: { maxRequests, maxTokens, maxCost },
-              // 此处形成新运行的累计限制；一次继续或重试不会据此自动重置旧运行限制。
+              /**
+               * 此处形成新运行的累计限制；一次继续或重试不会据此自动重置旧运行限制。
+               * EN: These are new-run cumulative limits; continuation/retry does not automatically reset an existing run.
+               */
               limits: {
                 maxDepth: chat ? 0 : 2,
                 maxAgents: chat ? 1 : 12,

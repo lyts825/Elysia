@@ -1,4 +1,8 @@
-/* 从项目交付项生成并展示待办。 */
+/**
+ * 从项目交付项生成并展示待办。
+ * 从看板交付项及其运行结果推导可读下一步，按明确状态映射展示；不新增持久待办或改变交付判定。
+ * EN: Builds project to-dos from delivery items. Derives readable next steps from board items and run results through explicit state mappings, without creating persisted todos or changing delivery decisions.
+ */
 import type {
   ProjectDeliveryBoard,
   ProjectDeliveryItem,
@@ -23,7 +27,10 @@ type Todo = {
   target: 'item' | 'run' | 'review';
 };
 
-/** 将交付就绪状态映射为待办原因和跳转目标；已就绪项不生成待办。 */
+/**
+ * 将交付就绪状态映射为待办原因和跳转目标；已就绪项不生成待办。
+ * EN: Map blockers to reasons/destinations; ready items yield no to-do.
+ */
 export function projectTodo(item: ProjectDeliveryItem): Todo | undefined {
   const current = item.current;
   switch (item.readiness) {
@@ -100,6 +107,7 @@ export function projectTodo(item: ProjectDeliveryItem): Todo | undefined {
 /**
  * 从每个交付项当前首个阻塞条件生成下一步入口，必需项优先且不尝试推断后续完成状态。
  * unavailable 表示看板尚未重新确认，此时显示读取缺口；待办只导航，不直接执行任务或验收。
+ * EN: Use each item's first current blocker and prioritize required items without predicting completion. unavailable exposes unconfirmed board reads. To-dos navigate only, never execute or accept tasks.
  */
 export function ProjectTodos({
   board,

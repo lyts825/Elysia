@@ -1,4 +1,8 @@
-/* 提供项目草稿备份相关界面。 */
+/**
+ * 提供项目草稿备份相关界面。
+ * 为看板原稿提供JSON备份、TXT保全及恢复预览，协调保护副本、跨窗口变化与关键写入阶段；底层格式和锁由备份模块实现。
+ * EN: Provides complete project-draft backup and recovery UI. Provides JSON backups, TXT preservation, and restore previews while coordinating protection copies, cross-window changes, and critical writes; the backup module implements format and locking rules.
+ */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WorkbenchCache } from './WorkbenchCache';
 import { projectBoardKey } from './ProjectBoardDraft';
@@ -17,8 +21,15 @@ import {
 } from './project-draft-backup';
 import './project-draft-backup.css';
 
+/**
+ * 以临时Blob URL触发指定文件名的原文下载；完成触发后释放URL，供JSON和TXT导出共用。
+ * EN: Triggers a raw-content download with the supplied filename through a temporary Blob URL and releases it afterward, supporting JSON and TXT exports.
+ */
 function download(raw: string, name: string, type = 'application/json;charset=utf-8') {
-  // 用临时对象 URL 导出，触发下载后释放浏览器持有的资源。
+  /**
+   * 用临时对象 URL 导出，触发下载后释放浏览器持有的资源。
+   * EN: Export with a temporary object URL and release it after triggering download.
+   */
   const url = URL.createObjectURL(new Blob([raw], { type }));
   try {
     const link = document.createElement('a');
@@ -33,6 +44,7 @@ function download(raw: string, name: string, type = 'application/json;charset=ut
  * 完整备份与恢复项目工作台草稿，绑定项目、入口及认证数据范围。
  * 预览固定当前原文和已有恢复前副本；恢复前必须确认仍未变化，并先保存且读回原稿副本。
  * 等待浏览器独占锁时允许取消，进入同步临界区后完成核验与应用；恢复和删除副本互斥。
+ * EN: Bind complete draft backup/recovery to project/surface/auth scope. Freeze current original and protection copy in preview, recheck unchanged bytes, then save/read back original before restore. Permit cancellation while waiting for an exclusive lock; finish synchronous verification/application inside it. Restore and copy deletion are exclusive.
  */
 export function ProjectDraftBackup({
   projectId,
@@ -86,12 +98,20 @@ export function ProjectDraftBackup({
     () => (protectedRaw === null ? undefined : projectDraftProtectionInfo(protectedRaw, binding)),
     [protectedRaw, ownerKey],
   );
+  /**
+   * 读取当前项目看板原稿；缺省视为空稿，非字符串立即报错，避免恢复流程覆盖不可读数据。
+   * EN: Reads the current project-board source draft, treating absence as empty and rejecting non-string data so recovery cannot overwrite unreadable input.
+   */
   const currentRaw = () => {
     const value = cache.get(projectBoardKey(projectId));
     if (value === undefined || value === '') return '';
     if (typeof value !== 'string') throw Error('当前工作台原稿无法读取，请先导出 TXT 核对。当前输入未改动。');
     return value;
   };
+  /**
+   * 按当前工作台和项目绑定读取本地保护副本，存储异常交由调用方呈现。
+   * EN: Reads the local protection copy for the current workbench/project binding, leaving storage-error presentation to its caller.
+   */
   const readProtection = () => localStorage.getItem(projectDraftProtectionKey(binding));
   useLayoutEffect(() => {
     setProtectedRaw(null);
@@ -108,6 +128,10 @@ export function ProjectDraftBackup({
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : '当前浏览器的备份存储不可用。');
     }
+    /**
+     * 仅响应当前保护键的跨窗口变化，更新副本并撤销旧确认，防止使用过期确认删除新副本。
+     * EN: Handles cross-window changes only for the active protection key, updating the copy and revoking old acknowledgement so it cannot authorize deletion of a newer copy.
+     */
     const onStorage = (event: StorageEvent) => {
       let key: string;
       try {
@@ -140,9 +164,15 @@ export function ProjectDraftBackup({
     setDeleteConfirmed(false);
     setDownloadedProtection(null);
   }, [protectedRaw]);
-  /** 固定“待恢复备份、当前原文、已有保护副本”三者，后续确认与执行都基于同一快照。 */
+  /**
+   * 固定“待恢复备份、当前原文、已有保护副本”三者，后续确认与执行都基于同一快照。
+   * EN: Freeze backup, current original, and existing protection copy together for confirmation/application.
+   */
   const prepare = (backup: ProjectDraftBackupPreview) => {
-    // 预览绑定当前原稿和已有保护副本，恢复时再次比较这些快照。
+    /**
+     * 预览绑定当前原稿和已有保护副本，恢复时再次比较这些快照。
+     * EN: Bind preview to current original/protection copy and compare again at restore.
+     */
     const protection = readProtection();
     setProtectedRaw(protection);
     setPreview({ backup, currentRaw: currentRaw(), protection });
@@ -154,8 +184,15 @@ export function ProjectDraftBackup({
     setError('');
     setOpen(true);
   };
+  /**
+   * 取消旧恢复并以新代次读取用户文件；完整解码、验证绑定后才展示恢复预览，旧代次结果忽略。
+   * EN: Cancels earlier recovery and reads the selected file under a new generation; a restore preview appears only after full decoding and binding validation, ignoring obsolete results.
+   */
   const read = async (file: File) => {
-    // 用代次忽略过期的文件读取；只有完整解码并验证后才展示预览。
+    /**
+     * 用代次忽略过期的文件读取；只有完整解码并验证后才展示预览。
+     * EN: Use generation to discard old file reads; preview only fully decoded, valid input.
+     */
     restoreController.current?.abort();
     const request = ++generation.current;
     setReading(true);
@@ -181,7 +218,10 @@ export function ProjectDraftBackup({
   try {
     unchanged = !!preview && preview.currentRaw === currentRaw() && preview.protection === protectedRaw;
   } catch {
-    /* The explicit restore handler reports the unreadable current draft. */
+    /**
+     * 显式恢复处理器报告当前草稿无法读取。
+     * EN: The explicit restore handler reports the unreadable current draft.
+     */
   }
   let differentProtection = preview?.protection !== undefined && preview.protection !== null;
   if (preview && preview.protection !== null) {
@@ -193,8 +233,16 @@ export function ProjectDraftBackup({
     }
   }
   const protectionReady = !differentProtection || (replace && downloadedProtection === preview?.protection);
+  /**
+   * 生成带类型、项目身份和随机UUID的备份文件名，降低多次导出时的命名冲突。
+   * EN: Builds a backup filename with kind, project identity, and a random UUID to reduce collisions between exports.
+   */
   const backupName = (kind: string, extension = 'json') =>
     `elysia-workbench-${kind}-${projectId}-${crypto.randomUUID()}.${extension}`;
+  /**
+   * 统一执行同步导出动作并管理错误；失败后尽力重读保护副本，读取失败保留最后可见副本。
+   * EN: Runs a synchronous export action with shared error handling; on failure it best-effort rereads protection state while retaining the last visible copy if that read fails.
+   */
   const attempt = (action: () => void) => {
     try {
       action();
@@ -203,14 +251,23 @@ export function ProjectDraftBackup({
       try {
         setProtectedRaw(readProtection());
       } catch {
-        /* Keep the last visible copy. */
+        /**
+         * 保留最后可见副本。
+         * EN: Keep the last visible copy.
+         */
       }
       setError(issue instanceof Error ? issue.message : '备份操作失败，当前原稿未改动。');
     }
   };
-  /** 在独占锁内重新核对当前身份与原文；成功只替换本地工作台草稿，不保存项目计划。 */
+  /**
+   * 在独占锁内重新核对当前身份与原文；成功只替换本地工作台草稿，不保存项目计划。
+   * EN: Recheck identity and original under exclusive lock. Replace local workbench draft only, not the saved plan.
+   */
   const restore = async () => {
-    // 恢复与删除互斥；进入临界区后仍核对界面代次和工作台作用域。
+    /**
+     * 恢复与删除互斥；进入临界区后仍核对界面代次和工作台作用域。
+     * EN: Restore/delete are exclusive; still check UI generation and workbench scope inside the critical section.
+     */
     if (!preview || restoringNow.current || deletingNow.current) return;
     restoringNow.current = true;
     restorePhaseNow.current = 'waiting';
@@ -230,12 +287,24 @@ export function ProjectDraftBackup({
         expectedProtection: preview.protection,
         replace,
         signal: controller.signal,
+        /**
+         * 记录恢复已进入不可随意打断的关键写入阶段，同时更新即时引用与渲染状态。
+         * EN: Records entry into the critical recovery write phase in both the immediate ref and rendered state.
+         */
         onCritical: () => {
           restorePhaseNow.current = 'critical';
           setRestorePhase('critical');
         },
         readCurrent: currentRaw,
+        /**
+         * 将已验证的恢复原文写入当前项目的看板缓存，持久化一致性由缓存层处理。
+         * EN: Writes verified recovery text to the current project-board cache, delegating persistence consistency to the cache layer.
+         */
         apply: (value) => cache.set(projectBoardKey(projectId), value),
+        /**
+         * 恢复写入前再次核对取消信号、页面代次和工作台作用域；变化时抛错保留当前原稿。
+         * EN: Rechecks abort state, page generation, and workbench scope before recovery writes; a mismatch throws and preserves the current draft.
+         */
         assertActive: () => {
           if (
             controller.signal.aborted ||
@@ -261,7 +330,10 @@ export function ProjectDraftBackup({
         try {
           setProtectedRaw(readProtection());
         } catch {
-          /* Keep the last visible copy. */
+          /**
+           * 保留最后可见副本。
+           * EN: Keep the last visible copy.
+           */
         }
         if (controller.signal.aborted && restorePhaseNow.current === 'waiting') {
           setError('');
@@ -277,8 +349,15 @@ export function ProjectDraftBackup({
       }
     }
   };
+  /**
+   * 只删除已另存、确认且仍为当前内容的保护副本；通过锁和作用域复核协调跨窗口竞争，并发布最终状态。
+   * EN: Deletes only the current protection copy after export and confirmation, coordinating cross-window races through locking and scope checks before publishing the final state.
+   */
   const deleteProtection = async () => {
-    // 仅允许删除已另存并确认的当前副本，其他状态不发起删除。
+    /**
+     * 仅允许删除已另存并确认的当前副本，其他状态不发起删除。
+     * EN: Delete only the current separately-saved and confirmed copy; other states issue no deletion.
+     */
     if (
       protectedRaw === null ||
       deletingNow.current ||
@@ -303,10 +382,18 @@ export function ProjectDraftBackup({
         current: binding,
         expectedProtection: expected,
         signal: controller.signal,
+        /**
+         * 将保护副本删除标记为关键阶段，并同步引用与界面状态，避免中途导航误报可取消。
+         * EN: Marks protection-copy deletion as critical in both ref and UI state so navigation does not misrepresent it as freely cancellable.
+         */
         onCritical: () => {
           deletePhaseNow.current = 'critical';
           setDeletePhase('critical');
         },
+        /**
+         * 删除前确认请求未取消、页面代次和工作台绑定仍有效；不匹配时中止且不删除副本。
+         * EN: Checks cancellation, page generation, and workbench binding before deletion; mismatches stop the operation without deleting the copy.
+         */
         assertActive: () => {
           if (
             controller.signal.aborted ||
@@ -328,7 +415,10 @@ export function ProjectDraftBackup({
         try {
           setProtectedRaw(readProtection());
         } catch {
-          /* Keep the last visible copy. */
+          /**
+           * 保留最后可见副本。
+           * EN: Keep the last visible copy.
+           */
         }
         if (controller.signal.aborted && deletePhaseNow.current === 'waiting') {
           setError('');

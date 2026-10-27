@@ -1,4 +1,7 @@
-/* 定义 surface 对应界面的样式与布局。 */
+/*
+ * 执行入口公共布局：补充入口载入状态、品牌、终端模板选择和模板列表/编辑区。长列表局部滚动，窄屏将列表与配置纵向排列，使两个入口共享的外壳可容纳终端设置。
+ * EN: Execution-surface layout: adds loading, branding, terminal profile selection, and profile list/editor regions. Long lists scroll locally; narrow screens stack list/configuration so the shared shell accommodates terminal settings.
+ */
 .surface-loading-switcher {
   position: absolute;
   top: 18px;
@@ -32,7 +35,10 @@
   min-width: 0;
   flex: none;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .terminal-settings-profiles {
   display: flex;
   flex-direction: column;
@@ -42,7 +48,10 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .terminal-settings-profiles > button {
   display: flex;
   align-items: center;
@@ -96,7 +105,10 @@
 .terminal-settings-actions > .check-label {
   flex: 1;
 }
-/* 窄屏将终端设置列表与配置区改为纵向排列。 */
+/*
+ * 窄屏将终端设置列表与配置区改为纵向排列。
+ * EN: Stacks terminal-settings navigation and configuration areas on narrow screens.
+ */
 @media (max-width: 760px) {
   .terminal-settings-body {
     flex-direction: column;

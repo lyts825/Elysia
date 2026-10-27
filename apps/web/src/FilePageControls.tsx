@@ -1,10 +1,17 @@
-/* 提供文件内容分页控制和字节数格式化。 */
+/**
+ * 提供文件内容分页控制和字节数格式化。
+ * 按服务端字节页信息展示前后页、跳转及重试控制，动作通过回调交回读取层；不自行拼接跨版本正文。
+ * EN: Provides file pagination controls and byte-size formatting. Displays previous/next, jump, and retry controls from server byte-page metadata, delegating actions to readers without joining content across revisions.
+ */
 import { useEffect, useId, useState } from 'react';
 import type { TextFilePage } from '../../../packages/contracts/src/files';
 import { Icon } from './Icon';
 import './file-page.css';
 
-/** 用二进制单位显示字节数量，保留最多一位小数。 */
+/**
+ * 用二进制单位显示字节数量，保留最多一位小数。
+ * EN: Format byte counts using binary units with at most one decimal place.
+ */
 export function formatFileBytes(bytes: number) {
   if (bytes < 1024) return `${bytes.toLocaleString()} B`;
   const divisor = bytes < 1024 ** 2 ? 1024 : bytes < 1024 ** 3 ? 1024 ** 2 : 1024 ** 3;
@@ -15,6 +22,7 @@ export function formatFileBytes(bytes: number) {
 /**
  * 控制字节分页，显示当前实际读取范围。百分比只是目标位置，服务端负责按编码边界对齐；
  * 100% 定位末页起点而非 EOF，确保仍有内容可读。翻页过程中禁用动作以免累积旧游标。
+ * EN: Control byte-based pagination and show the actual loaded range. A percentage is a target only; the server aligns to encoding boundaries. At 100%, target the final page start instead of EOF so content remains readable. Disable actions while paging to avoid accumulating stale cursors.
  */
 export function FilePageControls({
   page,
@@ -35,12 +43,19 @@ export function FilePageControls({
 }) {
   const positionHelpId = useId();
   const [percent, setPercent] = useState('0');
+  /**
+   * 服务端页偏移、总字节或版本变化时同步跳转百分比输入，避免新页沿用旧页的表单值。
+   * EN: Synchronizes the jump-percentage input after offset, total-byte, or revision changes so a new page does not retain the old form value.
+   */
   useEffect(() => {
     setPercent(String(page.totalBytes ? Math.floor((page.offset / page.totalBytes) * 100) : 0));
   }, [page.offset, page.totalBytes, page.version]);
   const target = Number(percent);
   const valid = percent.trim() !== '' && Number.isFinite(target) && target >= 0 && target <= 100;
-  // 百分之百定位到末页起点，其他比例预留末尾字节以便服务端对齐编码边界。
+  /**
+   * 百分之百定位到末页起点，其他比例预留末尾字节以便服务端对齐编码边界。
+   * EN: One hundred percent targets the final page start. Other percentages reserve trailing bytes so the server can align the encoding boundary.
+   */
   const targetOffset =
     target === 100
       ? Math.max(0, page.totalBytes - Math.max(4, page.endOffset - page.offset))

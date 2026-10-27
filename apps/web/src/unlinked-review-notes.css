@@ -1,4 +1,7 @@
-/* 定义 unlinked-review-notes 对应界面的样式与布局。 */
+/*
+ * 未关联复核备注：布局未关联数量、原始备注、读取状态、预览及关联操作。长原文可聚焦滚动，标题和计数层级明确，使选择关联前的来源核对保持完整。
+ * EN: Unlinked review notes: arranges counts, originals, read state, previews, and linking actions. Focusable bounded originals plus clear heading/count hierarchy preserve source inspection before linking.
+ */
 .unlinked-review-notes {
   min-width: 0;
 }
@@ -52,7 +55,10 @@
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .unlinked-review-notes .unlinked-review-identity {
   min-width: 0;
   max-height: min(12rem, 36dvh);
@@ -77,7 +83,10 @@
 .unlinked-review-notes .unlinked-review-identity dd:last-child {
   margin-bottom: 0;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .unlinked-review-notes .unlinked-review-identity:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

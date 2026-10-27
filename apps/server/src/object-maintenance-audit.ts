@@ -1,4 +1,8 @@
-/** 校验并读取对象维护审计数据。 */
+/**
+ * 校验并读取对象维护审计数据。
+ * 有界核对 JSONL 审计的计划绑定及删除事件配对，损坏/缺失保持未知或不完整；日志本身不产生新的删除授权。
+ * EN: Validates and reads object-maintenance audit data. Boundedly verifies audit plan binding/deletion pairs; damage or missing events remain unknown/incomplete and logs grant no new deletion authority.
+ */
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { hash, stable } from '../../../packages/storage/src/index.js';
@@ -19,8 +23,10 @@ const headerSchema = z
   })
   .strict();
 
-/** Object keys are canonicalized; array order remains part of the original execution plan. */
-/** 验证对象清理计划并提取入口及候选对象的审计绑定信息。 */
+/**
+ * 对象键规范排序，数组顺序仍属于原执行计划的一部分。 验证对象清理计划并提取入口及候选对象的审计绑定信息。
+ * EN: Object keys are canonicalized; array order remains part of the original execution plan. Validates cleanup plans and extracts audit binding for surfaces and selected objects.
+ */
 export function objectAuditPlan(value: unknown) {
   const plan = ObjectCleanupPlan.parse(value);
   const surfaces = new Set<string>(),
@@ -43,7 +49,10 @@ export function objectAuditPlan(value: unknown) {
   };
 }
 
-/** 生成审计开始记录，包含计划绑定信息但不复制候选对象清单。 */
+/**
+ * 生成审计开始记录，包含计划绑定信息但不复制候选对象清单。
+ * EN: Creates an audit start record with plan binding but without duplicating the candidate list.
+ */
 export function objectAuditHeader(plan: unknown) {
   const { candidates: _, ...binding } = objectAuditPlan(plan);
   return { type: 'started' as const, format: 2 as const, createdAt: new Date().toISOString(), ...binding };
@@ -61,11 +70,9 @@ type Binding = {
     | 'audit_invalid';
 };
 
-/** Verifies a receipt against an optional plan, never against current database or file state. */
 /**
- * 读取有界 JSONL 审计并可选绑定原执行计划。必须具备完整行分隔和正确的开始/结束顺序；
- * delete-started 没有对应完成记录时标记 incomplete，不能由退出状态推断文件未被删除。
- * verified 只证明该回执与给定计划一致，不重新证明当前数据库或对象文件的状态。
+ * 回执只与可选计划比较，不与当前数据库或文件状态比较。 读取有界 JSONL 审计并可选绑定原执行计划。必须具备完整行分隔和正确的开始/结束顺序； delete-started 没有对应完成记录时标记 incomplete，不能由退出状态推断文件未被删除。 verified 只证明该回执与给定计划一致，不重新证明当前数据库或对象文件的状态。
+ * EN: Verifies a receipt against an optional plan, never against current database or file state. Reads bounded JSONL audits and optionally binds the original plan. Requires complete delimiters and valid start/end order; unmatched delete-started records mean incomplete, not proof that deletion never happened. verified proves receipt/plan consistency only, not current database or object state.
  */
 export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
   try {
@@ -93,6 +100,10 @@ export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
       entries = 0,
       headerSeen = false,
       currentFormat = false;
+    /**
+     * 将当前审计标为不完整且计划绑定无效，后续展示不能据此声称删除证据完整。
+     * EN: Marks the audit incomplete and its plan binding invalid so later views cannot claim complete deletion evidence.
+     */
     const invalid = () => {
       incomplete = true;
       binding = { status: 'invalid', reason: 'audit_invalid' };
@@ -101,7 +112,10 @@ export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index];
       if (!line.trim()) continue;
-      // A JSON fragment without the record delimiter may be a torn write, even when it parses.
+      /**
+       * 即使JSON片段可解析，缺少记录分隔符也可能是撕裂写入。
+       * EN: A JSON fragment without the record delimiter may be a torn write, even when it parses.
+       */
       if (index === lines.length - 1) {
         invalid();
         break;
@@ -219,7 +233,10 @@ export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
       status === 'completed' &&
       (pending.size || (binding.status === 'verified' && plan && completed.size !== plan.candidates.size))
     ) {
-      // A successful footer cannot turn unfinished or omitted candidates into confirmed outcomes.
+      /**
+       * 成功页脚不能把未完成或遗漏候选变成已确认结果。
+       * EN: A successful footer cannot turn unfinished or omitted candidates into confirmed outcomes.
+       */
       invalid();
       status = 'unknown';
     }

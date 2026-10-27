@@ -1,4 +1,8 @@
-/** 管理终端通信并注册相关接口。 */
+/**
+ * 管理终端通信并注册相关接口。
+ * 管理同项目待收消息、双向回执及撤回/忽略，关联核对归属、原文和 ID；消息只排队，后续显式续接才进入 CLI。
+ * EN: Manages terminal messaging and registers endpoints. Manages same-project queued messages, verified bidirectional receipts and dispositions; explicit later continuation alone sends selected messages to CLI.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -26,19 +30,34 @@ const pageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   before: z.string().uuid().optional(),
 });
+/**
+ * 生成终端消息接收者的小型公开描述，标题有界且只暴露 CLI 类型。
+ * EN: Builds a compact public terminal peer with bounded title and CLI kind only.
+ */
 const peer = (run: Run): TerminalPeer => ({
   runId: run.id,
   title: (run.title || run.objective).slice(0, 240),
   agent: run.execution?.kind === 'docker-agent' ? run.execution.profile.agent : '',
 });
 
-/** 管理终端任务之间的消息、回执及需人工处理的消息状态。 */
+/**
+ * 管理终端任务之间的消息、回执及需人工处理的消息状态。
+ * EN: Manages messages, receipts and manual dispositions between terminal tasks.
+ */
 export class TerminalCommunication {
+  /**
+   * 绑定消息持久存储及内核事件能力，不创建跨终端直接 stdin 通道。
+   * EN: Binds message storage and kernel events without creating direct cross-terminal stdin channels.
+   */
   constructor(
     private store: Store,
     private kernel: Kernel<Store>,
   ) {}
 
+  /**
+   * 要求指定运行是终端 task，其他执行类型或不存在时立即拒绝。
+   * EN: Requires a terminal task run and rejects missing or other execution types.
+   */
   run(runId: string) {
     const run = this.store.require<Run>('runs', runId);
     invariant(
@@ -49,6 +68,10 @@ export class TerminalCommunication {
     return run;
   }
 
+  /**
+   * 按持久收件状态统计 PENDING 数量，供接收容量检查而不读取消息正文。
+   * EN: Counts persisted PENDING inbox rows for capacity checks without reading bodies.
+   */
   pendingCount(runId: string) {
     return Number(
       (
@@ -59,7 +82,10 @@ export class TerminalCommunication {
     );
   }
 
-  /** 以双向运行、收件 ID、方向和原文共同确认回执，不能仅凭客户端传来的收件 ID 关联。 */
+  /**
+   * 以双向运行、收件 ID、方向和原文共同确认回执，不能仅凭客户端传来的收件 ID 关联。
+   * EN: Matches receipts by both runs, inbox ID, direction and original text rather than trusting a client inbox ID alone.
+   */
   private boundReceipt(sent: InboxMessage, received: InboxMessage | undefined) {
     return !!(
       received &&
@@ -75,7 +101,10 @@ export class TerminalCommunication {
     );
   }
 
-  /** 发件视图的投递状态来自可核验的收件记录；收件缺失时显示 unavailable，不猜成已处理。 */
+  /**
+   * 发件视图的投递状态来自可核验的收件记录；收件缺失时显示 unavailable，不猜成已处理。
+   * EN: Derives sent delivery state from verifiable inbox records; missing inbox data is unavailable, never guessed handled.
+   */
   private item(item: InboxMessage): TerminalCommunicationItem {
     const outgoing = item.direction === 'outgoing';
     const other = outgoing ? item.target : item.source;
@@ -102,7 +131,10 @@ export class TerminalCommunication {
     };
   }
 
-  /** Resolve identity before authorization; never infer a recipient from caller-supplied IDs. */
+  /**
+   * 授权前先解析身份，不能根据调用方提供的 ID 猜测收件者。
+   * EN: Resolve identity before authorization; never infer a recipient from caller-supplied IDs.
+   */
   resolutionContext(runId: string, messageId: string) {
     const actor = this.run(runId);
     const message = this.store.require<InboxMessage>('inbox', messageId);
@@ -144,8 +176,8 @@ export class TerminalCommunication {
   }
 
   /**
-   * 仅可撤回/忽略仍为 PENDING 的消息；已加入 CLI 输入的内容不能通过修改收件状态撤销。
-   * 以收件记录 revision 校验并发，在同一事务保存说明和双方事件，使发件视图能追溯处置依据。
+   * 仅可撤回/忽略仍为 PENDING 的消息；已加入 CLI 输入的内容不能通过修改收件状态撤销。 以收件记录 revision 校验并发，在同一事务保存说明和双方事件，使发件视图能追溯处置依据。
+   * EN: Only pending messages can be withdrawn/ignored; inbox edits cannot revoke content already sent to CLI input. Uses inbox revision and atomically saves explanations and both events for traceable dispositions.
    */
   resolve(runId: string, messageId: string, expectedMessageRevision: number, note: string) {
     return this.store.tx(() => {
@@ -205,7 +237,10 @@ export class TerminalCommunication {
     });
   }
 
-  /** 分页列出同项目的其他终端；投影覆盖不完整时拒绝选择，防止隐藏不可读的可接收对象。 */
+  /**
+   * 分页列出同项目的其他终端；投影覆盖不完整时拒绝选择，防止隐藏不可读的可接收对象。
+   * EN: Pages other same-project terminals; incomplete projections block selection rather than silently hiding unreadable recipients.
+   */
   async peers(
     runId: string,
     query: z.infer<typeof pageQuery> & { query?: string },
@@ -268,7 +303,10 @@ export class TerminalCommunication {
     };
   }
 
-  /** 按持久 rowid 倒序分页；before 必须仍属于相同运行和过滤集合，否则要求回到最新。 */
+  /**
+   * 按持久 rowid 倒序分页；before 必须仍属于相同运行和过滤集合，否则要求回到最新。
+   * EN: Pages by persistent rowid descending; before must still belong to the same run and filter or the caller must restart at latest.
+   */
   messages(
     runId: string,
     query: z.infer<typeof pageQuery> & { pending?: 'true' },
@@ -310,8 +348,8 @@ export class TerminalCommunication {
   }
 
   /**
-   * 向同项目未结束的其他终端排队消息，写入收件与发件关联并发布双方事件。
-   * 只进入待处理箱，不注入正在运行的 stdin；接收者必须在后续显式续接中选择消费。
+   * 向同项目未结束的其他终端排队消息，写入收件与发件关联并发布双方事件。 只进入待处理箱，不注入正在运行的 stdin；接收者必须在后续显式续接中选择消费。
+   * EN: Queues messages to other unfinished same-project terminals and persists inbox/sent linkage plus both events. Does not inject active stdin; the recipient explicitly selects messages on later continuation.
    */
   send(sourceId: string, targetId: string, text: string, expectedRevision: number) {
     const source = this.run(sourceId),
@@ -368,6 +406,10 @@ export class TerminalCommunication {
   }
 }
 
+/**
+ * 注册同项目终端列表、消息和处置接口，写入先校验幂等命令、版本、可读性及可变性；消息只排队，不能自行驱动接收任务。
+ * EN: Registers same-project peers/messages/dispositions with command, revision, readability and mutability checks before writes; queued messages do not independently drive recipients.
+ */
 export function registerTerminalCommunication(
   app: FastifyInstance,
   store: Store,

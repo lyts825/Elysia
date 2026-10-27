@@ -1,4 +1,8 @@
-/* 展示上下文窗口用量、预算及详情。 */
+/**
+ * 展示上下文窗口用量、预算及详情。
+ * 从紧凑占用入口延伸到完整快照和新窗口策略编辑，保留未知指标；读取与修改需依赖当前代理和设置基线。
+ * EN: Displays context-window usage, budgets, and detailed measurements. Connects compact usage indicators to full snapshots and new-window policy editing while retaining unknown metrics; reads and changes depend on the current agent and configuration baseline.
+ */
 import { useState, type CSSProperties } from 'react';
 import type { ContextPolicy, ContextProjection, ProviderConfig } from '../../../packages/contracts/src/index';
 import { minimumContextWindowTokens } from '../../../packages/contracts/src/index';
@@ -10,11 +14,22 @@ import type { WorkbenchCache } from './WorkbenchCache';
 import './context-window.css';
 
 export { contextPolicyLabel } from './ContextLabel';
+/**
+ * 将已知token计数转换为区域化字符串；null和undefined保持未知占位。
+ * EN: Formats a known token count with locale separators while preserving a placeholder for null or undefined.
+ */
 const count = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
+/**
+ * 将上下文投影中的占用比例四舍五入为百分数；缺少比例时返回null供界面显示未知。
+ * EN: Rounds the projection usage ratio to a percentage, returning null when no ratio exists so the UI can show an unknown state.
+ */
 const percentage = (projection?: ContextProjection) =>
   projection?.usageRatio == null ? null : Math.round(projection.usageRatio * 100);
 
-/** 紧凑入口只展示估算压力；占用未知时显示占位，点击由上层打开完整快照。 */
+/**
+ * 紧凑入口只展示估算压力；占用未知时显示占位，点击由上层打开完整快照。
+ * EN: The compact entry shows estimated pressure only. Show a placeholder for unknown usage and ask the parent to open the complete snapshot on click.
+ */
 export function ContextMeter({
   projection,
   open,
@@ -27,7 +42,10 @@ export function ContextMeter({
   showStreaming?: boolean;
 }) {
   const used = percentage(projection);
-  // 缺少估算时显示占位；圆环限制在 100%，文字保留真实估算比例。
+  /**
+   * 缺少估算时显示占位；圆环限制在 100%，文字保留真实估算比例。
+   * EN: Show a placeholder when the estimate is missing. Clamp the ring to 100% while preserving the actual estimate ratio in text.
+   */
   return (
     <>
       <button
@@ -62,7 +80,10 @@ export function ContextMeter({
   );
 }
 
-/** 分开呈现输入估算、运行预留、压缩结果和最近供应商实测，避免将单次窗口等同累计预算。 */
+/**
+ * 分开呈现输入估算、运行预留、压缩结果和最近供应商实测，避免将单次窗口等同累计预算。
+ * EN: Separate estimated input, runtime reserve, compaction results, and the latest provider measurement; a single request window is not a cumulative budget.
+ */
 export function ContextWindowDetails({ projection }: { projection: ContextProjection }) {
   const used = percentage(projection);
   const compression = projection.compression;
@@ -150,7 +171,10 @@ export function ContextWindowDetails({ projection }: { projection: ContextProjec
   );
 }
 
-/** 展示各代理独立窗口，由上层根据 safeToConfigure 决定具体设置与刷新流程。 */
+/**
+ * 展示各代理独立窗口，由上层根据 safeToConfigure 决定具体设置与刷新流程。
+ * EN: Display independent agent windows. The parent uses safeToConfigure to control actual configuration and refresh workflows.
+ */
 export function ContextOverview({
   contexts,
   titleFor,
@@ -186,6 +210,7 @@ export function ContextOverview({
 /**
  * 打开时固定代理与运行修订作为编辑基线；外部快照变化即锁定提交，保留当前草稿供核对。
  * submit 同时携带两层期望修订，最终容量和安全检查点仍由内核验证。
+ * EN: Capture agent and run revisions as the editing baseline when opened. Lock submission after an external snapshot change, retaining the draft for review. Submit both expected revisions; the kernel still verifies capacity and safe checkpoints.
  */
 export function ContextWindowModal({
   projection,
@@ -268,7 +293,10 @@ export function ContextWindowModal({
   );
 }
 
-/** 新运行的初始窗口选择，没有持久修订；仅在型号可用且草稿满足当前容量限制时提交给上层。 */
+/**
+ * 新运行的初始窗口选择，没有持久修订；仅在型号可用且草稿满足当前容量限制时提交给上层。
+ * EN: Select an initial window for a new run without persistent revisions. Submit to the parent only when the model is usable and the draft satisfies current capacity limits.
+ */
 export function NewContextWindowModal({
   policy: initial,
   provider,

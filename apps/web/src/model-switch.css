@@ -1,5 +1,11 @@
-/* 定义 model-switch 对应界面的样式与布局。 */
-/* 列数随容器宽度变化；每列以 11rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 模型切换确认：并列当前绑定与候选模型，区分可切换、受阻及读取信息。绑定网格自适应容器，长模型身份换行，确认依据与状态反馈保持可读。
+ * EN: Model-switch confirmation: compares current/candidate bindings and distinguishes ready, blocked, and read states. Adaptive binding grids and wrapping model identities keep confirmation evidence readable.
+ */
+/*
+ * 列数随容器宽度变化；每列以 11rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting an 11rem minimum per column without exceeding a narrower container.
+ */
 .model-switch-modal .execution-config-binding {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
 }
@@ -9,7 +15,10 @@
 .model-switch-modal .execution-config-binding dd {
   white-space: pre-wrap;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .model-switch-state {
   margin: var(--space-3) 0 0;
   padding: var(--space-3);

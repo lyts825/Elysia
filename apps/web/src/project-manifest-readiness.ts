@@ -1,4 +1,8 @@
-/* 检查项目清单是否满足准备条件并汇总阻碍项。 */
+/**
+ * 检查项目清单是否满足准备条件并汇总阻碍项。
+ * 检查交付项运行、产物和复核依据是否可冻结成清单，返回阻碍和可用来源；它给出准备信息，不代替服务端生成清单时的复验。
+ * EN: Checks known manifest blockers and their repair destinations. Checks run, artifact, and review evidence for manifest freezing and returns blockers/available sources; server manifest creation still revalidates these conditions.
+ */
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import type { ProjectBoardDraft } from './ProjectBoardDraft';
 import { projectTodo } from './ProjectTodos';
@@ -15,6 +19,7 @@ export interface ProjectManifestBlocker {
 /**
  * 仅根据当前看板和冻结草稿列出已知阻塞项及修复目标：项是否存在、候选是否就绪、
  * 必需项与产物选择是否满足条件。这里的可冻结是界面门禁，服务端仍需重新校验版本和元数据。
+ * EN: Use current board/frozen draft to list missing items, candidate readiness, required selections, and artifacts. This is a UI freeze gate only; server still revalidates versions/metadata.
  */
 export function projectManifestReadiness(
   board: ProjectDeliveryBoard,
@@ -22,7 +27,10 @@ export function projectManifestReadiness(
   state: { unavailable: boolean; busy: boolean },
 ) {
   const blockers: ProjectManifestBlocker[] = [];
-  // 项目状态未知时不能根据缓存推断冻结资格，先要求重新读取。
+  /**
+   * 项目状态未知时不能根据缓存推断冻结资格，先要求重新读取。
+   * EN: Unknown project state cannot establish freeze eligibility from cache; reread first.
+   */
   if (state.unavailable)
     return {
       canFreeze: false,
@@ -52,7 +60,10 @@ export function projectManifestReadiness(
       target: board.items.length ? 'selection' : 'plan',
     });
   const selected = new Set(manifest.selected);
-  // 逐项检查选择是否仍存在、可交付且具备冻结所需的版本与复核依据。
+  /**
+   * 逐项检查选择是否仍存在、可交付且具备冻结所需的版本与复核依据。
+   * EN: Check each selection still exists, is deliverable, and has required version/review evidence.
+   */
   for (const itemId of selected) {
     const item = board.items.find((entry) => entry.id === itemId);
     if (!item) {
@@ -99,7 +110,10 @@ export function projectManifestReadiness(
       });
   }
   for (const item of board.items)
-    // 必需交付项即使未选中也要列为阻碍，不能被选择过滤掉。
+    /**
+     * 必需交付项即使未选中也要列为阻碍，不能被选择过滤掉。
+     * EN: Include unselected required items as blockers rather than filtering them away.
+     */
     if (item.required && !selected.has(item.id))
       blockers.push({
         id: `required:${item.id}`,

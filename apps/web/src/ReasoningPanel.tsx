@@ -1,12 +1,22 @@
-/* 展示模型返回的推理内容。 */
+/**
+ * 展示模型返回的推理内容。
+ * 将实时与已读推理内容组织为可展开阅读面板，保持流式状态和错误可见；推理正文来自请求记录，面板不生成额外推断。
+ * EN: Displays public reasoning returned by a model. Organizes live and loaded reasoning into an expandable reader with streaming/error feedback; text comes from request records rather than additional inference by the panel.
+ */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import './reasoning.css';
 
 export type ReasoningPanelProps = {
-  /** Stable identity of this public reasoning record, including its run. */
+  /**
+   * 公开推理记录的稳定身份，包括所属运行。
+   * EN: Stable identity of this public reasoning record, including its run.
+   */
   identity: string;
-  /** Undefined means the historical content has not been read yet. */
+  /**
+   * undefined 表示历史内容尚未读取。
+   * EN: Undefined means the historical content has not been read yet.
+   */
   text?: string;
   kind: 'reasoning_content' | 'summary';
   status: 'streaming' | 'complete' | 'interrupted' | 'failed';
@@ -18,20 +28,30 @@ export type ReasoningPanelProps = {
   onRetry?: () => void;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
-  /** Restored once, when this record first has visible text. */
+  /**
+   * 本记录首次有可见文本时恢复一次。
+   * EN: Restored once, when this record first has visible text.
+   */
   initialScrollTop?: number;
   onScrollTopChange?: (top: number) => void;
 };
 
-/** Only renders public text supplied by the caller; never reads provider-native payloads. */
+/**
+ * 仅渲染调用方提供的公开文字，不读取供应商私有载荷。
+ * EN: Only renders public text supplied by the caller; never reads provider-native payloads.
+ */
 export function ReasoningPanel(props: ReasoningPanelProps) {
-  // 使用公开推理记录的稳定身份重建内部展开和滚动状态。
+  /**
+   * 使用公开推理记录的稳定身份重建内部展开和滚动状态。
+   * EN: Rebuild disclosure/scroll state under stable public reasoning identity.
+   */
   return <ReasoningRecord key={props.identity} {...props} />;
 }
 
 /**
  * 单条公开推理的展示状态：支持受控或本地展开、按需首次读取、复制和阅读位置恢复。
  * 展示只消费传入 text，不触碰供应商私有载荷；同一 identity 的增量尽量复用 Text 节点。
+ * EN: Manage one public reasoning record: controlled/local disclosure, initial lazy read, copying, and position restoration. Consume supplied text only, never private provider payloads; reuse Text nodes for identity-stable increments.
  */
 function ReasoningRecord({
   identity,
@@ -85,14 +105,20 @@ function ReasoningRecord({
     };
   }, []);
   useEffect(() => {
-    // 自动读取每条记录最多发起一次；显式重试与读取更多由按钮回调决定，避免错误后无限请求。
+    /**
+     * 自动读取每条记录最多发起一次；显式重试与读取更多由按钮回调决定，避免错误后无限请求。
+     * EN: Auto-read at most once per record; explicit retry/more buttons control subsequent reads, preventing infinite retries.
+     */
     if (!open || text !== undefined || loading || error || !onLoad || requested.current) return;
     requested.current = true;
     onLoad();
   }, [open, text, loading, error, onLoad]);
 
   useLayoutEffect(() => {
-    // React 不直接替换 pre 的正文节点：追加保持浏览器选区，非前缀替换也尽量恢复原选区边界。
+    /**
+     * React 不直接替换 pre 的正文节点：追加保持浏览器选区，非前缀替换也尽量恢复原选区边界。
+     * EN: Keep React from replacing pre text nodes: append preserves browser selection, while non-prefix replacement tries to restore its boundaries.
+     */
     const element = content.current,
       scroller = viewport.current;
     if (!element || !scroller) return;
@@ -108,9 +134,15 @@ function ReasoningRecord({
         ? { top: scroller.scrollTop, left: scroller.scrollLeft }
         : readingPosition.current;
     if (leaf.data === value) {
-      // Keep the same node when only the disclosure state changes.
+      /**
+       * 仅展开状态变化时保持同一节点。
+       * EN: Keep the same node when only the disclosure state changes.
+       */
     } else if (value.startsWith(leaf.data)) {
-      // Appending to the same Text node preserves an existing browser selection.
+      /**
+       * 向同一 Text 节点追加可保留现有浏览器选区。
+       * EN: Appending to the same Text node preserves an existing browser selection.
+       */
       leaf.appendData(value.slice(leaf.length));
     } else {
       const selection = window.getSelection();
@@ -133,7 +165,10 @@ function ReasoningRecord({
         );
       }
     }
-    // A hidden scroller reports zero: retain its last readable position until reopened.
+    /**
+     * 隐藏滚动区会报告零，保留最后可读位置直至重开。
+     * EN: A hidden scroller reports zero: retain its last readable position until reopened.
+     */
     wasReadable.current = open && !!text;
     if (wasReadable.current) {
       scroller.scrollTop = position.top;
@@ -205,7 +240,10 @@ function ReasoningRecord({
               aria-label={partial ? '复制已显示内容' : `复制${label}`}
               onClick={async () => {
                 if (copying.current) return;
-                // 复制固定点击时的内容；流继续增长后提示已复制的是旧片段，不能声称新内容也已复制。
+                /**
+                 * 复制固定点击时的内容；流继续增长后提示已复制的是旧片段，不能声称新内容也已复制。
+                 * EN: Copy the click-time text. If the stream grows afterward, explain that the copied fragment is older, not newly received text.
+                 */
                 const value = text;
                 copying.current = true;
                 setCopy({ state: 'pending' });

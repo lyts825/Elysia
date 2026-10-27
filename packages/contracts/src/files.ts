@@ -1,8 +1,18 @@
-// 文本文件编码、分页与文件读取相关的数据契约。
+/**
+ * 文本文件编码、分页与文件读取相关的数据契约。
+ * 共享预览读取的字节边界、编码和类型判断；不承担文件访问授权。
+ *
+ * EN: Defines text encodings, file paging, and file-read contracts.
+ * Shares preview byte boundaries, encodings, and type classification without granting file access.
+ */
 export const textFileEncodings = ['auto', 'utf-8', 'utf-16le', 'utf-16be', 'gb18030'] as const;
 export type TextFileEncoding = (typeof textFileEncodings)[number];
 export type ResolvedTextEncoding = Exclude<TextFileEncoding, 'auto'>;
-// 分页同时记录请求偏移、实际字节范围和文件版本；nextOffset 为 null 表示结束。
+/**
+ * 分页同时记录请求偏移、实际字节范围和文件版本；nextOffset 为 null 表示结束。
+ *
+ * EN: A page records the requested offset, actual byte span, and file version; a null nextOffset means the end.
+ */
 export type TextFilePage = {
   requestedOffset: number;
   offset: number;
@@ -48,9 +58,16 @@ const media: Record<string, string> = {
   mp3: 'audio/mpeg',
 };
 
+/** 只提取最后一个路径段的扩展名并转小写；无扩展名返回空串。
+ * EN: Extracts and lowercases the final path segment extension, returning an empty string when absent.
+ */
 const extension = (name: string) => /\.([^./\\]+)$/.exec(name)?.[1]?.toLowerCase() || '';
 
-/** 用 NUL 字节或已知二进制扩展名判断展示方式；这是预览策略，不是完整文件格式验证。 */
+/**
+ * 用 NUL 字节或已知二进制扩展名判断展示方式；这是预览策略，不是完整文件格式验证。
+ *
+ * EN: Uses a NUL byte or a known binary extension to choose a preview mode; this is a display policy, not complete file-format validation.
+ */
 export function isBinaryFile(name: string, content: Uint8Array) {
   return (
     content.includes(0) ||
@@ -58,7 +75,11 @@ export function isBinaryFile(name: string, content: Uint8Array) {
   );
 }
 
-/** 优先使用已知扩展名的媒体类型；未知类型按二进制判定回退到 octet-stream 或 UTF-8 文本。 */
+/**
+ * 优先使用已知扩展名的媒体类型；未知类型按二进制判定回退到 octet-stream 或 UTF-8 文本。
+ *
+ * EN: Prefers a known extension media type; otherwise falls back to octet-stream or UTF-8 text according to the binary check.
+ */
 export function fileMediaType(name: string, content?: Uint8Array) {
   return (
     media[extension(name)] ||

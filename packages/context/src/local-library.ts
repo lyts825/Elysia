@@ -1,4 +1,10 @@
-// 管理导入的本地代理能力及其按作用域读取。
+/**
+ * 管理导入的本地代理能力及其按作用域读取。
+ * 冻结内容与当前撤销状态共同约束读取，禁止旧快照绕过撤销或偷偷回退新文件。
+ *
+ * EN: Manages imported local agent capabilities and scope-aware reads.
+ * Frozen content and current revocation jointly constrain reads; old snapshots cannot bypass withdrawal or borrow new files.
+ */
 import { AppError } from '../../contracts/src/index.js';
 import type {
   LocalAgentItem,
@@ -27,7 +33,11 @@ export interface LocalLibrary {
   sources: LocalAgentSource[];
   items: LocalStoredItem[];
 }
-// 未导入过本地资源时返回空库及修订 0；其余数据由持久化记录提供。
+/**
+ * 未导入过本地资源时返回空库及修订 0；其余数据由持久化记录提供。
+ *
+ * EN: Returns an empty library at revision zero before local import; other data comes from durable records.
+ */
 export function importedLibrary(store: Store): LocalLibrary {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(LOCAL_LIBRARY_KEY) as
     | { value: string }
@@ -49,13 +59,21 @@ export function importedLibrary(store: Store): LocalLibrary {
     throw new AppError('LOCAL_LIBRARY_INVALID', '本机同步目录损坏，请恢复备份', false, null, 409);
   }
 }
-/** 保存库记录；修订递增、来源扫描和冲突校验由上层同步服务负责，此处只执行序列化写入。 */
+/**
+ * 保存库记录；修订递增、来源扫描和冲突校验由上层同步服务负责，此处只执行序列化写入。
+ *
+ * EN: Serializes library records only; the upper sync service handles revision increments, source scans, and conflicts.
+ */
 export function writeImportedLibrary(store: Store, library: LocalLibrary) {
   store.db
     .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
     .run(LOCAL_LIBRARY_KEY, stable(library));
 }
-// 返回目录信息时剔除内部对象引用及冻结正文，避免把存储细节暴露给调用方。
+/**
+ * 返回目录信息时剔除内部对象引用及冻结正文，避免把存储细节暴露给调用方。
+ *
+ * EN: Catalog projections remove internal object references and frozen bodies so callers do not receive storage internals.
+ */
 export function publicLocalItem(item: LocalStoredItem): LocalAgentItem {
   const {
     contentRef: _contentRef,
@@ -67,7 +85,11 @@ export function publicLocalItem(item: LocalStoredItem): LocalAgentItem {
   } = item;
   return safe;
 }
-// 按项目、版本、大小和摘要校验快照；校验失败不使用当前资源替代。
+/**
+ * 按项目、版本、大小和摘要校验快照；校验失败不使用当前资源替代。
+ *
+ * EN: Checks snapshot project, version, size, and digest; invalid snapshots never fall back to current resources.
+ */
 export function capabilitySnapshot(scope?: CapabilityScope): ProjectCapabilitySnapshot | undefined {
   const snapshot = scope?.capabilities;
   if (snapshot == null) return undefined;
@@ -84,7 +106,11 @@ export function capabilitySnapshot(scope?: CapabilityScope): ProjectCapabilitySn
     throw new AppError('CAPABILITY_SCOPE', '任务能力快照无效或不属于当前项目', false, null, 409);
   return snapshot;
 }
-// 冻结内容仍受当前启用状态约束；已停用项目不会从旧快照重新启用。
+/**
+ * 冻结内容仍受当前启用状态约束；已停用项目不会从旧快照重新启用。
+ *
+ * EN: Frozen content still obeys current enablement; disabled items cannot be re-enabled through an old snapshot.
+ */
 export function scopedLocalItems(store: Store, scope?: CapabilityScope): LocalStoredItem[] {
   const current = importedLibrary(store).items;
   const snapshot = capabilitySnapshot(scope);
@@ -102,7 +128,11 @@ export function scopedLocalItems(store: Store, scope?: CapabilityScope): LocalSt
     ];
   });
 }
-/** 按作用域、身份和可选类型查询资源项；默认拒绝禁用项，不从冻结快照绕过当前撤销。 */
+/**
+ * 按作用域、身份和可选类型查询资源项；默认拒绝禁用项，不从冻结快照绕过当前撤销。
+ *
+ * EN: Finds an item by scope, identity, and optional kind; disabled entries are rejected by default, and snapshots cannot bypass current revocation.
+ */
 export function localItem(
   store: Store,
   id: string,
@@ -117,7 +147,11 @@ export function localItem(
     throw new AppError('LOCAL_ITEM_NOT_FOUND', '同步项不存在或尚未启用', false, null, 404);
   return item;
 }
-// 优先读取冻结正文，否则读取对象引用；两种路径都验证内容大小和摘要。
+/**
+ * 优先读取冻结正文，否则读取对象引用；两种路径都验证内容大小和摘要。
+ *
+ * EN: Prefers frozen bodies, otherwise reads an object reference; both paths verify size and digest.
+ */
 export function localItemText(store: Store, item: LocalStoredItem) {
   if (item.frozenContent !== undefined) {
     if (
@@ -133,13 +167,21 @@ export function localItemText(store: Store, item: LocalStoredItem) {
     throw new AppError('LOCAL_CONTENT_CHANGED', '同步项正文哈希不一致，请重新同步', false, null, 409);
   return bytes.toString('utf8');
 }
-/** 只列出当前范围内启用的记忆元数据，目录响应不携带完整正文或内部对象引用。 */
+/**
+ * 只列出当前范围内启用的记忆元数据，目录响应不携带完整正文或内部对象引用。
+ *
+ * EN: Lists metadata for enabled memories in the current scope without full bodies or internal references.
+ */
 export function listLocalMemories(store: Store, scope?: CapabilityScope) {
   return scopedLocalItems(store, scope)
     .filter((item) => item.kind === 'memory' && item.enabled)
     .map(publicLocalItem);
 }
-// 按字符偏移返回有界内容，查询时从匹配位置附近开始；分页边界保留完整代理对。
+/**
+ * 按字符偏移返回有界内容，查询时从匹配位置附近开始；分页边界保留完整代理对。
+ *
+ * EN: Returns a bounded page by character offset, optionally near a query match; page boundaries preserve complete surrogate pairs.
+ */
 export function pageLocalText(
   item: { id: string; contentHash: string },
   text: string,
@@ -161,7 +203,11 @@ export function pageLocalText(
       };
     offset = Math.max(0, found - 240);
   }
-  // Keep UTF-16 surrogate pairs together at page boundaries.
+  /**
+   * 分页边界保持 UTF-16 代理对完整。
+   *
+   * EN: Keep UTF-16 surrogate pairs together at page boundaries.
+   */
   if (offset > 0 && /[\uDC00-\uDFFF]/.test(text[offset] ?? '')) offset--;
   let end = Math.min(text.length, offset + limit);
   if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end] ?? '')) end--;
@@ -177,7 +223,11 @@ export function pageLocalText(
     trust: 'untrusted',
   };
 }
-/** 先校验记忆可见性及内容摘要，再按 UTF-16 偏移读取一页不可信资料。 */
+/**
+ * 先校验记忆可见性及内容摘要，再按 UTF-16 偏移读取一页不可信资料。
+ *
+ * EN: Verifies visibility and content digest before paging untrusted memory text by UTF-16 offset.
+ */
 export function readLocalMemory(
   store: Store,
   id: string,
@@ -190,6 +240,8 @@ export function readLocalMemory(
 /**
  * 读取已同步技能的入口或显式资源。拒绝绝对路径、目录跳转与控制字符；有快照时只使用
  * 该快照捕获的正文和资源，未冻结文件不能自动从更新后的本机来源补入。
+ *
+ * EN: Reads a synced skill entry or explicit resource, rejecting absolute paths, traversal, and control characters. With a snapshot, only captured bodies/resources are allowed; uncaptured files are not borrowed from newer local sources.
  */
 export function loadLocalSkillFile(
   store: Store,
@@ -231,7 +283,11 @@ export function loadLocalSkillFile(
     path: normalized,
   });
 }
-/** 返回当前授权范围内 MCP 配置副本；读取配置本身不启动进程、不连接远端。 */
+/**
+ * 返回当前授权范围内 MCP 配置副本；读取配置本身不启动进程、不连接远端。
+ *
+ * EN: Returns an MCP configuration copy in the authorized scope; reading it starts no process and opens no remote connection.
+ */
 export function readLocalMcpConfig(store: Store, id: string, scope?: CapabilityScope): LocalMcpConfig {
   const item = localItem(store, id, 'mcp', false, scope);
   if (!item.config) throw new AppError('MCP_CONFIG_MISSING', 'MCP 配置不存在');

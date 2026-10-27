@@ -1,4 +1,8 @@
-/* 展示记录历史。 */
+/**
+ * 展示记录历史。
+ * 分页呈现运行相关历史记录和原文阅读入口，保留截断、失败和重试状态；不据有限窗口推断缺失事件。
+ * EN: Displays request, operation, and artifact history. Presents paginated run history and raw-record reading with truncation/failure/retry feedback, without inferring events missing from a bounded window.
+ */
 import { useEffect, useState, type ReactNode } from 'react';
 import type { RecordPage, ProjectionReadCoverage } from '../../../packages/contracts/src/run-reads';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -9,6 +13,7 @@ type HistoryPage = { items: any[]; page: RecordPage; readCoverage?: ProjectionRe
 /**
  * 请求/操作/产物的按需历史列表，before 游标配合 trail 支持返回上一页。
  * 外部版本或总数变化触发当前页重读；readCoverage 另行展示无法读取记录，不把可读页当作全集。
+ * EN: Lazy history uses before/trail for back navigation. Version/total changes reread current page. readCoverage separately shows unreadable gaps; a readable page is not the whole set.
  */
 export function RecordHistory({
   runId,
@@ -26,7 +31,10 @@ export function RecordHistory({
   render?: (record: any) => ReactNode;
 }) {
   const { api } = useSurfaceClient();
-  // 历史分页按运行、记录类型和版本管理；展开后才读取。
+  /**
+   * 历史分页按运行、记录类型和版本管理；展开后才读取。
+   * EN: Track history paging by run/type/version and read only after expansion.
+   */
   const [page, setPage] = useState<HistoryPage | null>(null);
   const [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),
@@ -150,7 +158,10 @@ export function RecordHistory({
     </details>
   );
 }
-/** 展开时才读取完整记录，记录修订变化清空旧正文；读取失败仍保留上层已有摘要。 */
+/**
+ * 展开时才读取完整记录，记录修订变化清空旧正文；读取失败仍保留上层已有摘要。
+ * EN: Read full record on expansion; revision changes clear old body. Failed reads retain parent summary.
+ */
 function RecordItem({ runId, kind, record }: { runId: string; kind: string; record: any }) {
   const { api } = useSurfaceClient();
   const [value, setValue] = useState<any>(null),

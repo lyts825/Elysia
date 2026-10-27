@@ -1,5 +1,11 @@
-/* 定义 delivery-criteria 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 交付验收标准：布局标准标题、读取信息和对应证据。长证据以独立滚动区呈现并保留正文间距，避免一条标准的证据把其余标准挤出阅读区域。
+ * EN: Delivery criteria: arranges criterion headings, read information, and linked evidence. Long evidence scrolls locally with document spacing so one criterion does not displace all others.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .delivery-criteria,
 .delivery-criterion {
   min-width: 0;
@@ -16,7 +22,10 @@
 .delivery-criteria .delivery-criteria-heading h3 {
   margin: 0;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .delivery-criteria-reading,
 .delivery-criterion-evidence {
   overflow: auto;

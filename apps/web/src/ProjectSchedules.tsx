@@ -1,4 +1,8 @@
-/* 管理项目定时运行配置。 */
+/**
+ * 管理项目定时运行配置。
+ * 把列表基线、来源模板预览与持久草稿分开管理，创建或更新携带精确版本；未知写入保留原命令，启用执行与删除均需对应确认。
+ * EN: Manages scheduled project execution. Separates list baseline, source preview, and persisted draft with revision-bound create/update commands; unknown writes retain the exact command and execution/deletion require their respective acknowledgements.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import {
@@ -27,7 +31,10 @@ const fieldsShape = z
   })
   .strict();
 const pendingShape = z.discriminatedUnion('kind', [
-  // 待处理创建和更新请求按类型保存，恢复时保留原请求体。
+  /**
+   * 待处理创建和更新请求按类型保存，恢复时保留原请求体。
+   * EN: Persist pending create/update by type, restoring original bodies.
+   */
   z.object({ kind: z.literal('create'), body: ProjectScheduleCreate }).strict(),
   z.object({ kind: z.literal('update'), id: z.string().uuid(), body: ProjectScheduleUpdate }).strict(),
 ]);
@@ -36,12 +43,24 @@ const draftShape = z
   .strict();
 type Draft = z.infer<typeof draftShape>;
 type Pending = z.infer<typeof pendingShape>;
+/**
+ * 提取Error消息供定时任务界面显示，未知失败回退为统一重试提示。
+ * EN: Extracts Error messages for schedule UI feedback, falling back to a consistent retry prompt for unknown failures.
+ */
 const message = (error: unknown) => (error instanceof Error ? error.message : '请求失败，请重试。');
 const stateLabels = { draft: '待启用', enabled: '已启用', paused: '已暂停', completed: '已结束' };
+/**
+ * 将有效时间转换为本地datetime-local输入格式；先补偿时区偏移，防止输入框把本地时间误作UTC。
+ * EN: Converts a valid timestamp to datetime-local input format, compensating for timezone offset so local time is not presented as UTC.
+ */
 const localDate = (value: string) => {
   const date = new Date(value);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
+/**
+ * 返回新的定时任务表单默认值：复核模式、60分钟间隔、最多3次及七天后截止。
+ * EN: Returns fresh schedule defaults: review mode, a 60-minute interval, at most three runs, and an end time seven days ahead.
+ */
 const initialFields = (): Draft['fields'] => ({
   sourceRunId: '',
   name: '',
@@ -50,6 +69,10 @@ const initialFields = (): Draft['fields'] => ({
   count: '3',
   until: localDate(new Date(Date.now() + 7 * 86400000).toISOString()),
 });
+/**
+ * 把服务端定时任务转换成受控表单字符串并保留任务和来源身份，截止时间转换为本地输入。
+ * EN: Converts a server schedule into controlled string fields while retaining schedule/source identity and translating its end time for local input.
+ */
 const recordFields = (record: ProjectSchedule): Draft['fields'] => ({
   sourceRunId: record.template.sourceRunId,
   scheduleId: record.id,
@@ -59,7 +82,10 @@ const recordFields = (record: ProjectSchedule): Draft['fields'] => ({
   count: String(record.settings.maxRuns),
   until: localDate(record.settings.until),
 });
-/** 严格恢复定时表单和待核对命令；格式错误时抛错，禁止把原始输入静默当作空草稿。 */
+/**
+ * 严格恢复定时表单和待核对命令；格式错误时抛错，禁止把原始输入静默当作空草稿。
+ * EN: Strictly restore form/commands; malformed data throws rather than silently clearing input.
+ */
 function parseDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1, fields: initialFields() };
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('定时任务草稿无法读取，原文保留。');
@@ -74,12 +100,17 @@ type ProjectSchedulesProps = {
   archived?: boolean;
   openRun: (id: string) => Promise<void>;
 };
+/**
+ * 按项目ID挂载独立的定时任务面板，使项目切换重置内部读取和确认状态。
+ * EN: Mounts an isolated schedule panel by project ID so a project change resets internal read and acknowledgement state.
+ */
 export function ProjectSchedules(props: ProjectSchedulesProps) {
   return <ProjectSchedulePanel key={props.projectId} {...props} />;
 }
 /**
  * 项目定时任务编辑器。服务器列表、来源模板预览和本地草稿分别维护“当前有效”标记，
  * 编辑或重读撤销先前确认。未知写入结果保留精确命令，明确 HTTP 拒绝才解锁新操作。
+ * EN: Track list, source preview, and local draft validity separately. Editing/rereading revokes confirmation. Unknown writes keep exact pending commands; only definitive HTTP rejection unlocks new actions.
  */
 function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: ProjectSchedulesProps) {
   const { api, mutation } = useSurfaceClient();
@@ -109,6 +140,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     writing = useRef(false),
     listReader = useRef<AbortController | null>(null),
     previewReader = useRef<AbortController | null>(null);
+  /**
+   * 挂载标记定时任务面板有效；卸载同时取消列表和模板预览读取，写入回执仍需live检查。
+   * EN: Marks the schedules panel live on mount and aborts list/template-preview reads on teardown; write receipts must still check live.
+   */
   useEffect(() => {
     live.current = true;
     return () => {
@@ -117,6 +152,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       previewReader.current?.abort();
     };
   }, []);
+  /**
+   * 按缓存键和草稿重试确保原文载入成功才开放编辑；清理使旧Promise不能改变当前错误和就绪状态。
+   * EN: Loads source input by cache key/draft retry before enabling editing; cleanup prevents obsolete promises from changing current readiness/error state.
+   */
   useEffect(() => {
     let active = true;
     void cache
@@ -146,7 +185,15 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
   const locked = busy || !!pending || archived || !draft;
   const selected = list?.schedules.find((item) => item.id === fields?.scheduleId);
   const shown = preview ?? selected;
+  /**
+   * 所选任务ID或修订变化时撤销删除确认，防止旧版本的确认误用于已更新任务。
+   * EN: Revokes deletion acknowledgement when selected schedule ID or revision changes so confirmation for an old version cannot delete an updated schedule.
+   */
   useEffect(() => setDeleteTarget(undefined), [selected?.id, selected?.revision]);
+  /**
+   * 基于最新缓存执行草稿更新，重新Schema校验并限制体积；成功触发重绘，失败保留原稿并发布错误。
+   * EN: Updates the latest cached draft, revalidates its schema, and bounds size. Success triggers rendering; failure preserves the source draft and exposes an error.
+   */
   function change(update: (value: Draft) => Draft) {
     try {
       const next = draftShape.parse(update(parseDraft(cache.get(key))));
@@ -161,8 +208,15 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       return false;
     }
   }
+  /**
+   * 合并表单字段并撤销旧核对和自动执行确认；来源变化时同时取消旧预览，使保存必须重新核对。
+   * EN: Merges form fields and revokes prior review/automatic-execution acknowledgement; source changes also cancel the old preview so saving requires fresh inspection.
+   */
   function edit(values: Partial<Draft['fields']>) {
-    // 编辑后撤销先前确认；变更来源时废弃旧模板预览并取消读取。
+    /**
+     * 编辑后撤销先前确认；变更来源时废弃旧模板预览并取消读取。
+     * EN: Editing revokes confirmation; changing source invalidates old preview and cancels reading.
+     */
     if (locked) return;
     if (change((value) => ({ ...value, fields: { ...value.fields, ...values } }))) {
       setReviewed(false);
@@ -178,8 +232,15 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       }
     }
   }
+  /**
+   * 取消旧列表请求并读取当前项目定时任务，核对归属后才标记基线有效；错误保留旧列表和输入。
+   * EN: Cancels the old list request and reads this project schedules, marking the baseline current only after ownership validation; errors retain the prior list and input.
+   */
   async function read() {
-    // 读取新列表前取消旧请求，并核对返回的项目归属。
+    /**
+     * 读取新列表前取消旧请求，并核对返回的项目归属。
+     * EN: Cancel old list request and validate project ownership.
+     */
     listReader.current?.abort();
     const controller = new AbortController();
     listReader.current = controller;
@@ -203,11 +264,22 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       if (live.current && !controller.signal.aborted) setReading(false);
     }
   }
+  /**
+   * 入口或项目变化时读取定时任务列表，基线由read核对身份；不依赖表单字段，避免每次编辑重读覆盖输入。
+   * EN: Reads schedules when client/project changes, with read validating baseline identity; form fields are excluded so editing does not trigger rereads over input.
+   */
   useEffect(() => {
     void read();
   }, [api, projectId]);
+  /**
+   * 读取所选来源运行的冻结模板预览；先撤销旧预览有效性，再核对响应身份，只有当前未取消请求可发布。
+   * EN: Reads a frozen template preview for the selected source run, first invalidating the old preview and then checking identity; only the current non-aborted request may publish.
+   */
   async function readPreview() {
-    // 预览必须对应所选来源运行；成功前不能把旧预览作为当前结果。
+    /**
+     * 预览必须对应所选来源运行；成功前不能把旧预览作为当前结果。
+     * EN: Preview must match selected source; old preview is not current while reading.
+     */
     if (!fields?.sourceRunId || locked) return;
     previewReader.current?.abort();
     const controller = new AbortController();
@@ -237,6 +309,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       if (live.current && !controller.signal.aborted) setPreviewing(false);
     }
   }
+  /**
+   * 选择现有任务或新建表单，保存字段后取消旧预览并清空核对与删除确认，避免跨任务复用确认。
+   * EN: Selects an existing schedule or a new form, then cancels the old preview and clears review/deletion acknowledgement to avoid reusing it across tasks.
+   */
   function select(record?: ProjectSchedule) {
     if (locked) return;
     const next = record ? recordFields(record) : initialFields();
@@ -251,7 +327,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     setDeleteTarget(undefined);
     setNotice('');
   }
-  /** 解析数字和本地截止时间；未编辑的已有时间沿用原 ISO 值，避免时区往返造成变化。 */
+  /**
+   * 解析数字和本地截止时间；未编辑的已有时间沿用原 ISO 值，避免时区往返造成变化。
+   * EN: Parse numbers/local cutoff; preserve unchanged ISO values to avoid timezone round-trip edits.
+   */
   function settings() {
     if (!fields) throw Error('草稿尚未读取。');
     if (!fields.until || !Number.isFinite(Date.parse(fields.until))) throw Error('请选择有效截止时间。');
@@ -272,9 +351,13 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
   /**
    * 先持久化带 commandId 的请求，再发送创建或更新。响应需要核对项目、任务和来源；
    * 只有当前 pending 仍对应本次命令时才清理，网络及协议未知结果保留供原样重试。
+   * EN: Persist exact commandId/payload first. Validate project/schedule/source responses. Clear only matching pending; retain unknown network/protocol outcomes for identical retry.
    */
   async function send(request: Pending) {
-    // 发送前持久化原请求；网络或协议结果未知时保留请求供后续核对。
+    /**
+     * 发送前持久化原请求；网络或协议结果未知时保留请求供后续核对。
+     * EN: Persist original request and keep unknown outcomes for later reconciliation.
+     */
     if (writing.current || archived || !loaded) return;
     if (!change((value) => ({ ...value, pending: request }))) return;
     writing.current = true;
@@ -358,8 +441,15 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       if (live.current) setBusy(false);
     }
   }
+  /**
+   * 仅从已核对的当前列表和预览生成创建或刷新命令；携带来源修订及捕获哈希，把实际发送交给统一命令流程。
+   * EN: Builds create/refresh commands only from reviewed current list and preview, carrying source revision and capture hash and delegating transmission to the shared command flow.
+   */
   function saveTemplate() {
-    // 仅在当前列表和预览均已核对时创建或刷新模板，并携带来源版本及捕获哈希。
+    /**
+     * 仅在当前列表和预览均已核对时创建或刷新模板，并携带来源版本及捕获哈希。
+     * EN: Create/refresh only from reviewed current list/preview, carrying source revision and capture hash.
+     */
     if (locked || !current || !previewCurrent || !preview || !reviewed) return;
     try {
       const next = settings();
@@ -392,6 +482,10 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       setActionError(message(error));
     }
   }
+  /**
+   * 为启用、暂停或删除构造带修订的更新命令；启用需最新核对，执行模式需明确授权，删除需匹配当前确认。
+   * EN: Builds revision-bound enable/pause/delete commands. Enabling requires current review, execution mode requires explicit acknowledgement, and deletion must match its current confirmation.
+   */
   function act(record: ProjectSchedule, action: 'enable' | 'pause' | 'delete') {
     if (locked || !current) return;
     if (
@@ -427,10 +521,17 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
       ) &&
       (!preview || preview.captureHash === selected.captureHash);
   } catch {
-    /* Incomplete inputs keep activation disabled. */
+    /**
+     * 未完成输入不能启用定时执行。
+     * EN: Incomplete inputs keep activation disabled.
+     */
   }
   const totalRuns = Number(fields?.count) || 0,
     budget = shown?.template.contract.budget;
+  /**
+   * 把缓存原文以TXT导出，保留无法解析的草稿供人工恢复，下载后释放临时URL。
+   * EN: Exports cached source as TXT, preserving even unreadable drafts for manual recovery and releasing the temporary URL after download.
+   */
   const exportDraft = () => {
     const raw = cache.get(key),
       url = URL.createObjectURL(

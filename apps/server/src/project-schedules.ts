@@ -1,4 +1,8 @@
-/** 管理项目计划任务及其调度。 */
+/**
+ * 管理项目计划任务及其调度。
+ * 冻结原生项目执行授权指纹，事务内消费时段并创建有界任务，错过时段只记跳过；执行权限、预算与进程仍由内核/执行器负责。
+ * EN: Manages project schedules and their dispatch. Freezes native project authority, atomically consumes slots/creates bounded tasks and skips missed slots; kernel/executor retain permission, budget and process ownership.
+ */
 import { freezeExecutionPolicy } from '../../../packages/kernel/src/execution-policy.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -34,6 +38,10 @@ import type { Kernel } from '../../../packages/kernel/src/index.js';
 import { freezeRoleRouting } from '../../../packages/kernel/src/model-routing.js';
 import { hash, id, stable, type Store } from '../../../packages/storage/src/index.js';
 
+/**
+ * 为项目生成版本化定时元数据键，避免与其他配置命名冲突。
+ * EN: Builds a versioned project schedule metadata key without colliding with other configuration.
+ */
 export const projectSchedulesKey = (projectId: string) => `project-schedules:v1:${projectId}`;
 const prefix = 'project-schedules:v1:';
 const date = z.string().datetime(),
@@ -104,8 +112,20 @@ const historyRunSchema = z.object({
   execution: z.object({ kind: z.literal('native') }).optional(),
 });
 const historyReferences = z.tuple([z.string().uuid()]);
+/**
+ * 将毫秒时刻规范化为 UTC ISO 字符串；无效时间由 Date 明确抛错。
+ * EN: Normalizes milliseconds to UTC ISO text; invalid dates throw through Date.
+ */
 const iso = (time: number) => new Date(time).toISOString();
+/**
+ * 对完整稳定序列化模板计算摘要，保存及启用时用同一算法校验冻结来源。
+ * EN: Hashes the entire stable-serialized template for identical source validation on save and enable.
+ */
 const captureHash = (template: ProjectScheduleTemplate) => hash(stable(template));
+/**
+ * 校验计划或来源版本，不匹配返回携带当前版本的 409。
+ * EN: Checks schedule/source revision and returns 409 with current revision on mismatch.
+ */
 function conflict(expected: number, current: number) {
   if (expected !== current)
     throw new AppError(
@@ -116,7 +136,10 @@ function conflict(expected: number, current: number) {
       409,
     );
 }
-/** 读取并核验单项目的全部定时记录；摘要、归属或计数损坏时整组拒绝调度并保留原文。 */
+/**
+ * 读取并核验单项目的全部定时记录；摘要、归属或计数损坏时整组拒绝调度并保留原文。
+ * EN: Reads and validates every schedule in one project; damaged hashes, ownership or counts reject the whole group while preserving the original record.
+ */
 function readSchedules(store: Store, projectId: string): ProjectSchedule[] {
   const row = store.db
     .prepare('SELECT value FROM storage_meta WHERE key=?')
@@ -159,7 +182,10 @@ function readSchedules(store: Store, projectId: string): ProjectSchedule[] {
     );
   }
 }
-/** 保存经过 schema 校验且有界的元数据；空列表删除索引，避免遗留空项目占用全局容量。 */
+/**
+ * 保存经过 schema 校验且有界的元数据；空列表删除索引，避免遗留空项目占用全局容量。
+ * EN: Persists schema-checked bounded metadata; an empty list removes the index so empty projects do not consume global capacity.
+ */
 function writeSchedules(store: Store, projectId: string, schedules: ProjectSchedule[]) {
   if (!schedules.length) {
     store.db.prepare('DELETE FROM storage_meta WHERE key=?').run(projectSchedulesKey(projectId));
@@ -175,6 +201,10 @@ function writeSchedules(store: Store, projectId: string, schedules: ProjectSched
     .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
     .run(projectSchedulesKey(projectId), text);
 }
+/**
+ * 有界列出持有计划元数据的项目；超过全局项目上限即失败，不能仅扫描前一部分继续调度。
+ * EN: Boundedly lists projects with schedule metadata and fails above the global cap rather than dispatching a partial inventory.
+ */
 function scheduleProjects(store: Store) {
   const rows = store.db
     .prepare('SELECT key FROM storage_meta WHERE key LIKE ? ORDER BY key LIMIT ?')
@@ -186,13 +216,20 @@ function scheduleProjects(store: Store) {
   );
   return rows.map(({ key }) => key.slice(prefix.length));
 }
+/**
+ * 读取项目并核对删除守卫及非归档状态，返回可修改项目。
+ * EN: Reads the project and checks deletion guard/nonarchived state before returning it.
+ */
 function mutableProject(store: Store, projectId: string, assertMutable: SchedulerHooks['assertMutable']) {
   const project = store.require<Project>('projects', projectId);
   assertMutable(null, projectId);
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复项目再核对定时任务');
   return project;
 }
-/** 模板仅允许有界、无来源输入且连接已验证的任务；这些限制在读取旧记录时同样适用。 */
+/**
+ * 模板仅允许有界、无来源输入且连接已验证的任务；这些限制在读取旧记录时同样适用。
+ * EN: Only bounded templates without source input and with verified connections are allowed; the same restrictions apply when reading legacy records.
+ */
 function validateTemplate(template: ProjectScheduleTemplate) {
   invariant(
     Buffer.byteLength(stable(template)) <= PROJECT_SCHEDULE_LIMITS.templateBytes,
@@ -215,7 +252,10 @@ function validateTemplate(template: ProjectScheduleTemplate) {
     '请先验证模板使用的模型连接',
   );
 }
-/** 截止时间必须覆盖下次间隔且不超过最大天数；修改设置不能把累计创建次数清零。 */
+/**
+ * 截止时间必须覆盖下次间隔且不超过最大天数；修改设置不能把累计创建次数清零。
+ * EN: The deadline must cover the next interval and stay within the day limit; editing settings cannot reset the lifetime run count.
+ */
 function validateSettings(settings: ProjectScheduleSettings, at: number, count = 0) {
   const until = Date.parse(settings.until);
   invariant(
@@ -230,7 +270,10 @@ function validateSettings(settings: ProjectScheduleSettings, at: number, count =
     '最多创建次数必须大于已经创建的次数；累计次数不会清零',
   );
 }
-/** 未结算请求、未核验操作和持久暂停均阻止自动续跑；可选择只检查结果未知而非正在进行。 */
+/**
+ * 未结算请求、未核验操作和持久暂停均阻止自动续跑；可选择只检查结果未知而非正在进行。
+ * EN: Unsettled requests, unverified operations and persistent holds prevent automatic continuation; callers may check only unknown results instead of active work.
+ */
 function hasUncertainState(store: Store, runId: string, includePending = true) {
   return (
     !!store.getExecutionHold(runId) ||
@@ -246,14 +289,21 @@ function hasUncertainState(store: Store, runId: string, includePending = true) {
       .get(runId)
   );
 }
+/**
+ * 冻结影响执行的服务商配置，排除仅供观察的 checkedAt；实际配置与验证版本仍参与摘要。
+ * EN: Fingerprints executable provider settings excluding observation-only checkedAt; configuration and verification revision still participate.
+ */
 function providerFingerprint(provider: ProviderConfig) {
-  // Verification timestamps do not change authority; all executable provider settings do.
+  /**
+   * 核验时间戳不改变授权；所有可执行的服务商配置都会改变授权。
+   * EN: Verification timestamps do not change authority; all executable provider settings do.
+   */
   const { checkedAt: _checkedAt, ...settings } = provider;
   return hash(stable(settings));
 }
 /**
- * 冻结影响执行授权的环境指纹：项目目录/基线、能力、记忆、角色路由、主模型及审核模型。
- * 移除仅表示采集时间的字段并规范排序，避免无权限影响的时间变化使定时模板失效。
+ * 冻结影响执行授权的环境指纹：项目目录/基线、能力、记忆、角色路由、主模型及审核模型。 移除仅表示采集时间的字段并规范排序，避免无权限影响的时间变化使定时模板失效。
+ * EN: Freezes an authority fingerprint covering directory/baseline, capabilities, memory, role routing and main/review models. Observation timestamps are removed and fields sorted so irrelevant sampling changes do not invalidate a template.
  */
 function environment(
   store: Store,
@@ -322,18 +372,31 @@ export interface SchedulerHooks {
   onError?: (error: unknown) => void;
 }
 
-/** Owns only bounded task creation. Existing Kernel/executor own permissions, budgets and execution. */
-/** 管理项目定时任务的预览、创建与调度，保留来源运行及配置约束。 */
+/**
+ * 这里只负责有界任务创建；权限、预算和执行仍由既有 Kernel 和执行器负责。 管理项目定时任务的预览、创建与调度，保留来源运行及配置约束。
+ * EN: Owns only bounded task creation. Existing Kernel/executor own permissions, budgets and execution. Coordinates schedule preview, creation and dispatch while retaining source-run and configuration constraints.
+ */
 export class ProjectScheduler {
   private timer?: NodeJS.Timeout;
   private running = false;
+  /**
+   * 绑定存储、内核及宿主钩子；显式 start 后才恢复和布置定时唤醒。
+   * EN: Binds Store, kernel and host hooks; recovery/wake-up scheduling begin only on explicit start.
+   */
   constructor(
     private store: Store,
     private kernel: Kernel<Store>,
     private hooks: SchedulerHooks,
   ) {}
+  /**
+   * 上报安全的项目记录不可读诊断，禁止泄露原文；诊断回调失败自行隔离，不能阻断其他项目。
+   * EN: Reports safe unreadable-project diagnostics without raw content and isolates diagnostic callback failures from other projects.
+   */
   private reportError(projectId?: string) {
-    // Diagnostic callbacks never receive raw database bodies, task text or connector errors.
+    /**
+     * 诊断回调不会收到数据库原文、任务正文或连接器错误。
+     * EN: Diagnostic callbacks never receive raw database bodies, task text or connector errors.
+     */
     try {
       this.hooks.onError?.(
         new AppError(
@@ -345,10 +408,16 @@ export class ProjectScheduler {
         ),
       );
     } catch {
-      /* Diagnostics cannot interrupt other projects. */
+      /**
+       * 诊断异常不得中断其他项目。
+       * EN: Diagnostics cannot interrupt other projects.
+       */
     }
   }
-  /** 隔离单个损坏项目；全局数量无法证明满足上限时返回空清单，禁止继续自动创建。 */
+  /**
+   * 隔离单个损坏项目；全局数量无法证明满足上限时返回空清单，禁止继续自动创建。
+   * EN: Isolates an unreadable project; if the global cap cannot be established, returns no executable inventory and blocks further automatic creation.
+   */
   private inventory() {
     const result: { projectId: string; schedules: ProjectSchedule[] }[] = [];
     try {
@@ -371,8 +440,8 @@ export class ProjectScheduler {
     return result;
   }
   /**
-   * 在同一事务中捕获来源任务、主模型和执行环境。来源必须属于该原生项目且没有外部
-   * 输入/快照及未知副作用；captureHash 是保存和启用时核对完整模板的依据。
+   * 在同一事务中捕获来源任务、主模型和执行环境。来源必须属于该原生项目且没有外部 输入/快照及未知副作用；captureHash 是保存和启用时核对完整模板的依据。
+   * EN: Captures the source task, main model and execution environment in one transaction. The source must belong to the native project without external inputs, snapshots or unknown effects; captureHash validates the complete template on save and enable.
    */
   preview(projectId: string, sourceRunId: string): ProjectSchedulePreview {
     return this.store.tx(() => {
@@ -426,6 +495,10 @@ export class ProjectScheduler {
       return { projectId, template, captureHash: captureHash(template) };
     });
   }
+  /**
+   * 读取该项目全部计划及有界可选来源运行，明确标注来源列表是否超限；不启动任务。
+   * EN: Reads all project schedules plus a bounded source-run selection, explicitly marking source truncation without launching work.
+   */
   list(projectId: string): ProjectScheduleList {
     this.store.require<Project>('projects', projectId);
     const rows = this.store.db
@@ -441,18 +514,29 @@ export class ProjectScheduler {
       limits: PROJECT_SCHEDULE_LIMITS,
     };
   }
+  /**
+   * 仅扫描本计划最多 100 个时段命令，按游标返回创建历史和损坏/缺失缺口；严格绑定计划归属，不猜测歧义运行引用。
+   * EN: Scans at most this schedule's 100 slot commands and pages creation history with missing/corrupt gaps, strictly binding cursors and refusing ambiguous run links.
+   */
   history(projectId: string, scheduleId: string, before?: string): ProjectScheduleHistory {
     this.store.require<Project>('projects', projectId);
     const schedule = readSchedules(this.store, projectId).find((record) => record.id === scheduleId);
     invariant(schedule, 'SCHEDULE_MISSING', '定时任务已不存在或不属于当前项目');
     const lower = `schedule:${scheduleId}:`,
       upper = `schedule:${scheduleId};`;
+    /**
+     * 从当前计划命令键解析精确 ISO 时段，非法格式返回 null 而不修补日期。
+     * EN: Parses an exact ISO slot from this schedule's command key, returning null for invalid forms instead of repairing dates.
+     */
     const dueAtFromKey = (key: string) => {
       const value = key.slice(lower.length);
       try {
         if (value.length === 24 && new Date(value).toISOString() === value) return value;
       } catch {
-        /* Corrupt slot identities remain visible as gaps. */
+        /**
+         * 损坏的时段标识仍以缺口展示。
+         * EN: Corrupt slot identities remain visible as gaps.
+         */
       }
       return null;
     };
@@ -468,10 +552,10 @@ export class ProjectScheduler {
       'SCHEDULE_HISTORY_CURSOR',
       '历史位置不属于当前定时任务，请返回最新记录',
     );
-    // A schedule can create at most 100 runs. Read only this bounded primary-key
-    // range so coverage includes missing entries on other pages without inflating
-    // command bodies or inspecting unrelated commands. A deleted valid slot cursor
-    // remains usable; corrupt keys get an opaque identity that cannot grow the URL.
+    /**
+     * 每个计划最多创建 100 次运行；仅查询这段有界主键 范围，覆盖其他分页中的缺失项，同时避免扩大 命令正文或扫描无关命令。已删除的有效游标仍 可使用；损坏键使用不透明标识，避免 URL 随键长度增长。
+     * EN: A schedule can create at most 100 runs. Read only this bounded primary-key range so coverage includes missing entries on other pages without inflating command bodies or inspecting unrelated commands. A deleted valid slot cursor remains usable; corrupt keys get an opaque identity that cannot grow the URL.
+     */
     const rows = this.store.db
       .prepare(
         `SELECT id,CASE WHEN length(CAST(run_refs AS BLOB))<=4096 THEN run_refs END run_refs
@@ -484,6 +568,10 @@ export class ProjectScheduler {
     const issuesAvailable = !!this.store.db
       .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='projection_read_issues_v1'")
       .get();
+    /**
+     * 构造类型受限的历史缺口说明，供缺失和损坏分支统一返回。
+     * EN: Builds typed history-gap diagnostics shared by missing/corrupt branches.
+     */
     const issues = (code: NonNullable<ProjectScheduleHistoryItem['issue']>['code'], message: string) => ({
       code,
       message,
@@ -495,7 +583,10 @@ export class ProjectScheduler {
       try {
         runId = historyReferences.parse(JSON.parse(row.run_refs ?? 'null'))[0];
       } catch {
-        /* Ambiguous references must not be guessed. */
+        /**
+         * 存在歧义的引用必须拒绝猜测。
+         * EN: Ambiguous references must not be guessed.
+         */
       }
       return { row, dueAt, runId };
     });
@@ -604,8 +695,8 @@ export class ProjectScheduler {
     };
   }
   /**
-   * 重新生成来源预览并核对版本与摘要，再以幂等命令创建 draft 记录。
-   * 创建不等于启用；全局计数遇到不可读项目时预留其最大容量，避免绕过数量上限。
+   * 重新生成来源预览并核对版本与摘要，再以幂等命令创建 draft 记录。 创建不等于启用；全局计数遇到不可读项目时预留其最大容量，避免绕过数量上限。
+   * EN: Regenerates the source preview and validates revision/hash before idempotently creating a draft. Creation does not enable execution; unreadable projects reserve maximum capacity to preserve the global limit.
    */
   create(projectId: string, body: ProjectScheduleCreate, at = Date.now()) {
     const result = this.store.command(
@@ -630,8 +721,10 @@ export class ProjectScheduler {
           try {
             return sum + readSchedules(this.store, project).length;
           } catch {
-            // An unreadable project cannot execute. Reserve its maximum possible
-            // capacity so healthy projects can continue without weakening the cap.
+            /**
+             * 不可读项目无法执行；为它预留最大可能 容量，让正常项目继续工作而不放宽上限。
+             * EN: An unreadable project cannot execute. Reserve its maximum possible capacity so healthy projects can continue without weakening the cap.
+             */
             this.reportError(project);
             return sum + PROJECT_SCHEDULE_LIMITS.perProject;
           }
@@ -661,8 +754,8 @@ export class ProjectScheduler {
     return result;
   }
   /**
-   * 以 expectedRevision 防止覆盖其他窗口修改。pause 不停止已创建的任务；refresh 更换
-   * 模板后退回 draft 并保留累计次数；enable 重新校验完整指纹、上轮结果和自动执行确认。
+   * 以 expectedRevision 防止覆盖其他窗口修改。pause 不停止已创建的任务；refresh 更换 模板后退回 draft 并保留累计次数；enable 重新校验完整指纹、上轮结果和自动执行确认。
+   * EN: Uses expectedRevision to prevent overwriting another window. Pause leaves already created runs alone; refresh replaces the template, returns to draft and retains counts; enable rechecks the fingerprint, previous outcome and automatic-execution confirmation.
    */
   update(projectId: string, scheduleId: string, body: ProjectScheduleUpdate, at = Date.now()) {
     const result = this.store.command(
@@ -751,7 +844,10 @@ export class ProjectScheduler {
     this.arm();
     return result;
   }
-  /** 比较当前环境与创建时的冻结指纹，连接、能力或目录变化必须先由用户重新核对。 */
+  /**
+   * 比较当前环境与创建时的冻结指纹，连接、能力或目录变化必须先由用户重新核对。
+   * EN: Compares current authority with the frozen fingerprint; connection, capability or directory changes require renewed user review.
+   */
   private assertEnvironment(schedule: ProjectSchedule, project: Project) {
     const source = this.store.get<Run>('runs', schedule.template.sourceRunId);
     invariant(
@@ -767,7 +863,13 @@ export class ProjectScheduler {
       '项目目录、能力、记忆、角色路由或模型配置已变化，请重新核对后启用',
     );
   }
-  /** 上轮未完成只返回 false 以跳过时段；丢失、归档、失败或结果未知则抛错并暂停计划。 */
+  /**
+   * 上轮未完成时，普通调度返回 false 以跳过时段，重新启用则抛错拒绝；
+   * 丢失、归档、失败或结果未知也会抛错，由调用方处理暂停或拒绝启用。
+   * EN: An unfinished previous run returns false during dispatch but rejects re-enabling.
+   * Missing, archived, failed, or uncertain prior runs also throw; callers handle pausing or
+   * rejection of activation.
+   */
   private assertPriorRun(schedule: ProjectSchedule, enabling = false) {
     if (!schedule.lastRunId) return true;
     const previous = this.store.get<Run>('runs', schedule.lastRunId);
@@ -792,7 +894,10 @@ export class ProjectScheduler {
     if (enabling) invariant(done, 'SCHEDULE_PREVIOUS_ACTIVE', '上次任务尚未结束，暂不能重新启用定时任务');
     return done;
   }
-  /** 服务重启先推进并统计错过时段；过期时段不补跑，避免离线期间积累的任务突发执行。 */
+  /**
+   * 服务重启先推进并统计错过时段；过期时段不补跑，避免离线期间积累的任务突发执行。
+   * EN: On restart, advances and counts missed slots without replaying them, preventing a burst of accumulated offline work.
+   */
   recover(at = Date.now()) {
     for (const { projectId } of this.inventory()) {
       try {
@@ -833,26 +938,38 @@ export class ProjectScheduler {
       }
     }
   }
+  /**
+   * 幂等启动调度，先恢复过期时段统计再布置唤醒，避免重启补跑积压任务。
+   * EN: Idempotently starts scheduling, recovering missed-slot accounting before arming wake-up to avoid replay bursts.
+   */
   start() {
     if (this.running) return;
     this.running = true;
     this.recover();
     this.arm();
   }
-  /** 最近到期时间只决定唤醒时刻；真实派发由 tick 重读记录，写入失败时至少退避一秒。 */
+  /**
+   * 最近到期时间只决定唤醒时刻；真实派发由 tick 重读记录，写入失败时至少退避一秒。
+   * EN: The nearest due time only chooses wake-up timing; tick rereads records before dispatch, and write failures back off by at least one second.
+   */
   private arm(minimumDelay = 0) {
     if (!this.running) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     const at = Date.now();
-    // This is only a wake-up hint. tick() always reads fresh records before it
-    // considers dispatch, including changes committed through another connection.
+    /**
+     * 这里只提供唤醒提示；tick() 始终重读记录后才 判断派发，包括其他数据库连接提交的变更。
+     * EN: This is only a wake-up hint. tick() always reads fresh records before it considers dispatch, including changes committed through another connection.
+     */
     let wakeAt = at + 30000;
     for (const { schedules } of this.inventory())
       for (const record of schedules)
         if (record.status === 'enabled')
           wakeAt = Math.min(wakeAt, Date.parse(record.nextDueAt!), Date.parse(record.settings.until));
-    // A diagnostic callback can stop the scheduler while inventory is read.
+    /**
+     * 诊断回调可能在读取清单时停止调度器。
+     * EN: A diagnostic callback can stop the scheduler while inventory is read.
+     */
     if (!this.running) return;
     this.timer = setTimeout(
       () => {
@@ -865,21 +982,28 @@ export class ProjectScheduler {
           failed = true;
           this.reportError();
         } finally {
-          // A persistent write failure must not turn an overdue record into a busy loop.
+          /**
+           * 持久化写入失败不能把已过期记录变成忙循环。
+           * EN: A persistent write failure must not turn an overdue record into a busy loop.
+           */
           this.arm(failed ? 1000 : 0);
         }
       },
       Math.max(minimumDelay, wakeAt - Date.now(), 0),
     );
   }
+  /**
+   * 停止新唤醒并清除定时器；不取消已由内核创建的独立任务。
+   * EN: Stops future wake-ups and clears the timer without cancelling independent tasks already created by the kernel.
+   */
   stop() {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
   /**
-   * 每个到期记录在事务中重读，消费时段与创建任务原子提交；上一轮未结束或漏过多个
-   * 时段时只计入 skippedCount。执行模式在事务提交后唤醒执行器，review 模式仅创建暂停任务。
+   * 每个到期记录在事务中重读，消费时段与创建任务原子提交；上一轮未结束或漏过多个 时段时只计入 skippedCount。执行模式在事务提交后唤醒执行器，review 模式仅创建暂停任务。
+   * EN: Rereads each due record in a transaction so slot consumption and task creation commit atomically. Unfinished previous runs and missed intervals increment skippedCount; execution wakes only after commit, while review mode creates held runs.
    */
   tick(at = Date.now()) {
     for (const { projectId, schedules } of this.inventory()) {
@@ -917,10 +1041,15 @@ export class ProjectScheduler {
                   reason: !done ? '上次任务尚未结束，已跳过本时段' : '已跳过错过时段，未补跑',
                 };
               else {
-                // The due-slot command and all task rows commit with the consumed slot.
+                /**
+                 * 时段命令与所有任务行一同提交，并与已消费时段对应。
+                 * EN: The due-slot command and all task rows commit with the consumed slot.
+                 */
                 const dispatchId = 'schedule:' + current.id + ':' + current.nextDueAt;
-                // Store.tx nests without savepoints. Roll back partial Kernel writes before
-                // recording a paused schedule if creation fails inside the outer transaction.
+                /**
+                 * Store.tx 嵌套时不建立保存点；如果外层事务内创建 失败，必须先回滚 Kernel 的局部写入，再记录暂停计划。
+                 * EN: Store.tx nests without savepoints. Roll back partial Kernel writes before recording a paused schedule if creation fails inside the outer transaction.
+                 */
                 this.store.db.exec('SAVEPOINT schedule_dispatch');
                 try {
                   createdRun = this.store.command(
@@ -979,6 +1108,10 @@ export class ProjectScheduler {
   }
 }
 
+/**
+ * 注册计划查询、来源预览、历史及命令接口，校验边界参数并在服务关闭时停止调度器。
+ * EN: Registers schedule list/source/history/command routes with boundary validation and stops the scheduler on service close.
+ */
 export function registerProjectSchedules(
   app: FastifyInstance,
   store: Store,
@@ -986,6 +1119,10 @@ export function registerProjectSchedules(
   hooks: SchedulerHooks,
 ) {
   const scheduler = new ProjectScheduler(store, kernel, hooks);
+  /**
+   * 将路由 id 校验为 UUID 后传入项目服务，非法参数在 HTTP 边界失败。
+   * EN: Validates route id as UUID before project service access, rejecting invalid HTTP parameters.
+   */
   const projectId = (params: { id: string }) => z.string().uuid().parse(params.id);
   app.get<{ Params: { id: string } }>('/api/projects/:id/schedules', (request) =>
     scheduler.list(projectId(request.params)),

@@ -1,10 +1,16 @@
-/* 定义 review-source-notes 对应界面的样式与布局。 */
+/*
+ * 来源复核备注：以卡片呈现备注正文、来源和字段依据，并组织可展开的原始材料。长正文保留换行与独立滚动，避免来源文本把其他备注推离当前阅读区。
+ * EN: Source review notes: presents note bodies, provenance, field evidence, and expandable originals as cards. Wrapping/bounded reading keeps long source material from displacing neighboring notes.
+ */
 .review-source-notes,
 .review-source-note-card,
 .review-source-note-body {
   min-width: 0;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .review-source-note-body {
   display: grid;
   gap: var(--space-3);
@@ -46,7 +52,10 @@
   font: var(--font-sm) / var(--leading-body) var(--font-mono);
   overflow-wrap: anywhere;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .review-source-note-reading {
   min-width: 0;
   max-height: min(22rem, 50dvh);

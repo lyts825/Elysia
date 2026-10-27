@@ -1,4 +1,10 @@
-// 发现和加载内置及本地技能内容。
+/**
+ * 发现和加载内置及本地技能内容。
+ * 显式注册入口与参考资源，目录发现、正文加载及任务冻结分别进行并核验摘要。
+ *
+ * EN: Discovers and loads built-in and local skill contents.
+ * Explicitly registers entries/references, separating discovery, loading, and freezing with digest checks.
+ */
 import { readFileSync, realpathSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -24,7 +30,11 @@ export interface SkillSummary {
   resourcePaths?: string[];
 }
 
-// 加载结果在目录元数据之外携带版本、完整指导正文和内容摘要。
+/**
+ * 加载结果在目录元数据之外携带版本、完整指导正文和内容摘要。
+ *
+ * EN: Loaded results add version, complete instructions, and digest beyond catalog metadata.
+ */
 export interface LoadedSkill extends SkillSummary {
   version: string;
   instructions: string;
@@ -32,7 +42,11 @@ export interface LoadedSkill extends SkillSummary {
 }
 
 export const SKILL_CATALOG_VERSION = '3';
-// Only application-maintained entrypoints can become instructions. Metadata lives in SKILL.md.
+/**
+ * 只有应用维护的入口可成为指导，元数据保存在 SKILL.md。
+ *
+ * EN: Only application-maintained entrypoints can become instructions. Metadata lives in SKILL.md.
+ */
 const builtinResources: Record<string, readonly string[]> = {
   'data-analysis': ['references/joins-and-missing.md'],
   documents: ['references/preservation.md'],
@@ -46,7 +60,11 @@ const builtinResources: Record<string, readonly string[]> = {
 const skillIds = Object.keys(builtinResources);
 const BUILTIN_RESOURCE_BYTES = 64 * 1024;
 
-/** 解析真实路径并要求文件同时位于技能根和该技能目录内，拒绝通过链接越界。 */
+/**
+ * 解析真实路径并要求文件同时位于技能根和该技能目录内，拒绝通过链接越界。
+ *
+ * EN: Resolves real paths and requires containment in both skill root and selected skill directory, rejecting link escapes.
+ */
 function resourceFile(id: string, relativePath: string) {
   const root = realpathSync(builtinResourcePath('skills'));
   const skillRoot = realpathSync(path.join(root, id));
@@ -64,7 +82,11 @@ function resourceFile(id: string, relativePath: string) {
   return file;
 }
 
-/** 读取有界 UTF-8 资源并保存精确字节摘要；不能无损解码的文件不作为模型指导。 */
+/**
+ * 读取有界 UTF-8 资源并保存精确字节摘要；不能无损解码的文件不作为模型指导。
+ *
+ * EN: Reads bounded UTF-8 resources and exact-byte digests; files that cannot decode losslessly are not used as model guidance.
+ */
 function readResource(id: string, relativePath: string) {
   let bytes: Buffer;
   try {
@@ -84,7 +106,11 @@ function readResource(id: string, relativePath: string) {
   };
 }
 
-// 解析严格 YAML frontmatter；拒绝重复键和别名，并保留规范化后的正文。
+/**
+ * 解析严格 YAML frontmatter；拒绝重复键和别名，并保留规范化后的正文。
+ *
+ * EN: Parses strict YAML frontmatter, rejects duplicate keys and aliases, and preserves the normalized body.
+ */
 export function parseSkillMetadata(source: string, id: string) {
   const normalized = source
     .replace(/^\uFEFF/, '')
@@ -101,6 +127,9 @@ export function parseSkillMetadata(source: string, id: string) {
   } catch {
     throw new AppError('SKILL_INVALID', `技能 frontmatter 无效：${id}`);
   }
+  /** 读取顶层或 metadata 内的标量，允许数字版本并规范化为空白已裁剪的字符串。
+   * EN: Reads a top-level or nested metadata scalar, allowing numeric versions and normalizing to trimmed text.
+   */
   const scalar = (key: string, indent = '', required = true) => {
     const nested = indent ? metadata.metadata : metadata;
     const entry = nested && typeof nested === 'object' ? (nested as Record<string, unknown>)[key] : undefined;
@@ -115,6 +144,9 @@ export function parseSkillMetadata(source: string, id: string) {
     description = scalar('description');
   if (!name.trim() || name.length > 160 || !description.trim() || description.length > 4000)
     throw new AppError('SKILL_INVALID', `技能名称或说明长度无效：${id}`);
+  /** 兼容明确的布尔、0/1及常见布尔文字；未知值拒绝而不采用 JavaScript 真值转换。
+   * EN: Accepts explicit booleans, 0/1, and recognized boolean words; rejects unknown values instead of using JavaScript truthiness.
+   */
   const flag = (key: string, defaultValue: boolean) => {
     const value = metadata[key];
     if (value === undefined) return defaultValue;
@@ -137,6 +169,8 @@ export function parseSkillMetadata(source: string, id: string) {
 /**
  * 只接受应用维护的技能 ID；目录模式最多读取入口前 16 KiB，完整加载才读取全部正文。
  * 入口名称必须与注册 ID 一致，返回的 hash 绑定规范化后的完整或目录读取文本。
+ *
+ * EN: Accepts only application-maintained skill IDs. Catalog mode reads at most the first 16 KiB; full loading reads the complete body. Entry names must match registered IDs, and hash binds the normalized text actually read.
  */
 function readSkill(id: string, metadataOnly = false): LoadedSkill {
   if (!(skillIds as readonly string[]).includes(id))
@@ -179,14 +213,23 @@ function readSkill(id: string, metadataOnly = false): LoadedSkill {
   };
 }
 
-/** Capture resources with the entrypoint, but never inject their bodies into skill discovery. */
-// 捕获技能入口和已注册参考资源，供任务能力快照使用。
+/**
+ * 参考资源与入口一起捕获，但发现技能时绝不注入其正文。
+ * 捕获技能入口和已注册参考资源，供任务能力快照使用。
+ *
+ * EN: Capture resources with the entrypoint, but never inject their bodies into skill discovery.
+ * Captures a skill entry and registered references for a run capability snapshot.
+ */
 export function captureBuiltinSkill(id: string): CapturedSkill {
   const skill = readSkill(id);
   return { ...skill, resources: skill.resourcePaths!.map((resource) => readResource(id, resource)) };
 }
 
-// 参考文件按指定路径和偏移读取，具体权限与冻结范围由调用作用域决定。
+/**
+ * 参考文件按指定路径和偏移读取，具体权限与冻结范围由调用作用域决定。
+ *
+ * EN: Reads references by explicit path and offset; scope determines authorization and frozen-resource boundaries.
+ */
 export function loadSkillFile(
   store: Store | undefined,
   id: string,
@@ -207,13 +250,21 @@ export function loadSkillFile(
   )
     throw new AppError('SKILL_RESOURCE_PATH', '技能资源路径无效');
   const snapshot = capabilitySnapshot(scope);
-  // 显式注册清单与冻结资源构成读取边界，不提供任意技能目录文件读取能力。
+  /**
+   * 显式注册清单与冻结资源构成读取边界，不提供任意技能目录文件读取能力。
+   *
+   * EN: The registration list and frozen resources form the read boundary; arbitrary skill-directory file access is not exposed.
+   */
   let resource: NonNullable<CapturedSkill['resources']>[number];
   if (snapshot) {
     const skill = snapshot.builtinSkills.find((entry) => entry.id === id);
     if (!skill) throw new AppError('SKILL_NOT_FOUND', '此技能不在任务创建时冻结的能力范围内');
     const captured = skill.resources?.find((entry) => entry.path === normalized);
-    // A legacy snapshot must not silently acquire a newer built-in reference.
+    /**
+     * 旧快照不能静默获得更新后的内置参考文件。
+     *
+     * EN: A legacy snapshot must not silently acquire a newer built-in reference.
+     */
     if (!captured) throw new AppError('SKILL_RESOURCE_NOT_FOUND', '此参考资料未在任务创建时冻结');
     resource = captured;
   } else {
@@ -229,7 +280,11 @@ export function loadSkillFile(
   return pageLocalText({ id, contentHash: resource.hash }, resource.text, { ...options, path: normalized });
 }
 
-// 列出可用技能的目录信息；完整正文在选中后单独加载。
+/**
+ * 列出可用技能的目录信息；完整正文在选中后单独加载。
+ *
+ * EN: Lists skill catalog metadata; complete instructions load separately after selection.
+ */
 export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary[] {
   const snapshot = capabilitySnapshot(scope);
   const builtin = snapshot
@@ -254,7 +309,11 @@ export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary
   ];
 }
 
-// 根据技能 ID 选择本地或内置来源；冻结作用域只能读取创建时已捕获的入口。
+/**
+ * 根据技能 ID 选择本地或内置来源；冻结作用域只能读取创建时已捕获的入口。
+ *
+ * EN: Selects local or built-in sources by skill ID; frozen scopes may read only entries captured at creation.
+ */
 export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): LoadedSkill {
   if (id.startsWith('local:')) {
     if (!store) throw new AppError('SKILL_NOT_FOUND', `未注册的技能：${id}`);
@@ -279,6 +338,10 @@ export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): L
     const { resources: _resources, ...entrypoint } = skill;
     return structuredClone(entrypoint);
   }
-  // 仅没有任务快照的入口使用当前内置文件，旧任务不会因升级自动得到新技能正文。
+  /**
+   * 仅没有任务快照的入口使用当前内置文件，旧任务不会因升级自动得到新技能正文。
+   *
+   * EN: Only entry points without a task snapshot use current built-in files; upgrades do not automatically add newer instructions to old tasks.
+   */
   return readSkill(id);
 }

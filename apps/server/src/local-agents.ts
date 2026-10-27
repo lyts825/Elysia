@@ -1,4 +1,8 @@
-/** 注册本地代理管理接口。 */
+/**
+ * 注册本地代理管理接口。
+ * 组织概览、扫描、导入及编辑边界并合并内置技能；扫描可取消，持久修改复用版本/幂等规则，解析安全集中于同步服务。
+ * EN: Registers local-agent management endpoints. Organizes overview/scan/import/edit boundaries and built-ins with cancellable scans and revisioned idempotent writes; sync services own parsing safety.
+ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Command } from '../../../packages/contracts/src/index.js';
@@ -29,9 +33,16 @@ const configSchema = z
     needsConfiguration: z.boolean(),
   })
   .strict();
-/** 将客户端断开传到只读扫描/同步准备；正常响应完成后移除请求监听。 */
+/**
+ * 将客户端断开传到只读扫描/同步准备；正常响应完成后移除请求监听。
+ * EN: Propagates disconnect into read-only scan/sync preparation and removes listeners after a normal response.
+ */
 function signalFor(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
+  /**
+   * 中止当前 HTTP 关联的本机只读扫描。
+   * EN: Aborts the local read-only scan associated with this HTTP request.
+   */
   const abort = () => controller.abort();
   request.raw.once('aborted', abort);
   reply.raw.once('close', () => {
@@ -41,8 +52,8 @@ function signalFor(request: FastifyRequest, reply: FastifyReply) {
   return controller.signal;
 }
 /**
- * 本地资源采用扫描→选择→带版本同步的流程，配置写入携带 commandId 以处理网络重试。
- * MCP 检测是独立显式操作，导入配置本身不连接外部服务；HTTP 输入先接受有界 schema 校验。
+ * 本地资源采用扫描→选择→带版本同步的流程，配置写入携带 commandId 以处理网络重试。 MCP 检测是独立显式操作，导入配置本身不连接外部服务；HTTP 输入先接受有界 schema 校验。
+ * EN: Uses scan, selection, and revision-bound synchronization; writes carry commandId for network retries. MCP inspection is separate and explicit, while import itself never connects. HTTP input passes bounded schemas first.
  */
 export function registerLocalAgentRoutes(
   app: FastifyInstance,
@@ -54,6 +65,10 @@ export function registerLocalAgentRoutes(
   app.addHook('onClose', async () => {
     service.close();
   });
+  /**
+   * 将公开同步目录与内置技能目录合并，默认读取当前概览，不额外展开正文。
+   * EN: Combines public sync overview with built-in skills, defaulting to the current overview without expanding bodies.
+   */
   const view = (value = service.overview()) => ({ ...value, builtinSkills: listSkills() });
   app.get(prefix + '/api/local-agents', () => view());
   app.post(prefix + '/api/local-agents/scan', async (request, reply) => {

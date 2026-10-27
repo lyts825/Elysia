@@ -1,11 +1,18 @@
-// 在 Windows 上启动 MCP 子进程并管理其运行环境。
+/**
+ * 在 Windows 上启动 MCP 子进程并管理其运行环境。
+ * EN: Start MCP child processes on Windows and supervise their runtime lifecycle.
+ *
+ * 封装 Windows 命令定位、环境和子进程清理差异，使 MCP 客户端不必自行拼装平台启动细节。
+ * EN: Encapsulate Windows command resolution, environment, and child cleanup so MCP clients do not assemble platform-specific launch details themselves.
+ */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { AppError } from '../../contracts/src/index.js';
 
-// Keep the supervisor itself alive until the server exits. Windows closes this non-inheritable
-// Job Object on supervisor termination, including abrupt termination by taskkill or host shutdown.
-// Program and argv arrive as structured environment data, never as PowerShell expressions.
+// 监督进程持续存活直到服务退出；不可继承的Job Object在监督进程终止时关闭，包括强制结束与系统退出。程序和参数作为结构化环境数据传入，不作为PowerShell表达式解析。
+// EN: Keep the supervisor alive until the owner server exits. Its non-inheritable Job Object closes
+// when the supervisor terminates, including forced termination or host shutdown. Pass program and
+// arguments as structured environment data, never as PowerShell expressions.
 const supervisor = String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -110,6 +117,8 @@ public static class ElysiaMcpJob {
 /**
  * 创建带管道的 MCP 子进程。Windows 通过监督进程和 Job Object 管理进程树；
  * 程序、参数和目录以 JSON 传递，避免拼接为 PowerShell 表达式。
+ * EN: Create a piped MCP child process. On Windows, a supervisor and Job Object manage its process
+ * tree. Pass program, arguments, and cwd as JSON instead of interpolating PowerShell expressions.
  */
 export function spawnMcpProcess(
   program: string,

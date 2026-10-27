@@ -1,4 +1,7 @@
-/* 定义 Startup 对应界面的样式与布局。 */
+/*
+ * 启动界面：居中组织标志、状态文案、样式预设与页脚，使用共享设计变量统一视觉。呼吸及轨道动画提供等待反馈，窄屏改为两列预设，并为减少动态效果和高对比度偏好提供覆盖。
+ * EN: Startup surface: centers the emblem, status, style presets, and footer using shared design tokens. Breathing/orbit motion signals waiting; narrow screens use two preset columns, with reduced-motion and high-contrast overrides.
+ */
 @import './design-tokens.css';
 
 .startup-screen {
@@ -141,7 +144,10 @@
 .startup-skip:active {
   transform: scale(0.97);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .startup-skip:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
@@ -191,7 +197,10 @@
 .startup-settings-toggle input {
   width: 1.1rem;
 }
-/* 启动样式预设默认分为四列，窄屏规则会将其缩为两列。 */
+/*
+ * 启动样式预设默认分为四列，窄屏规则会将其缩为两列。
+ * EN: Startup presets use four columns by default and two columns on narrow screens.
+ */
 .startup-styles {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -287,7 +296,10 @@
     transform: rotate(360deg);
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   .startup-visual *,
   .startup-skip {
@@ -295,7 +307,10 @@
     transition: none !important;
   }
 }
-/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
+/*
+ * 遵循更高对比度偏好，调整此处颜色、边框或透明度。
+ * EN: Respects higher-contrast preferences by adjusting colors, borders, or opacity here.
+ */
 @media (prefers-contrast: more) {
   .startup-caption,
   .startup-status,
@@ -303,7 +318,10 @@
     opacity: 1;
   }
 }
-/* 窄屏将启动样式预设从四列改为两列，并允许页脚换行。 */
+/*
+ * 窄屏将启动样式预设从四列改为两列，并允许页脚换行。
+ * EN: Changes startup presets from four columns to two and lets the footer wrap on narrow screens.
+ */
 @media (max-width: 440px) {
   .startup-styles {
     grid-template-columns: repeat(2, 1fr);

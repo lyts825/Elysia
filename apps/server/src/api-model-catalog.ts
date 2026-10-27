@@ -1,4 +1,8 @@
-/** 读取并解析 API 服务商的模型目录。 */
+/**
+ * 读取并解析 API 服务商的模型目录。
+ * 使用服务端密钥能力处理有界目录请求、协议解析与安全失败；目录可读不代替指定模型的推理验证。
+ * EN: Reads and parses API-provider model catalogs. Uses server credentials for bounded catalog requests, protocol parsing and sanitized failures; catalog access never substitutes selected-model inference verification.
+ */
 import { z } from 'zod';
 import { AppError, invariant, type ProviderConfig } from '../../../packages/contracts/src/index.js';
 import { providerBaseUrl } from '../../../packages/providers/src/index.js';
@@ -27,8 +31,10 @@ const ModelCatalog = z
 
 export { officialDeepSeek } from '../../../packages/providers/src/deepseek.js';
 
-/** Preserve advertised capabilities; only the official API promises a non-thinking mode. */
-/** 校验服务商模型目录并整理可选模型及思考强度；目录格式无效时明确报错。 */
+/**
+ * 保留服务端声明的能力；只有官方API承诺可关闭思考模式。 校验服务商模型目录并整理可选模型及思考强度；目录格式无效时明确报错。
+ * EN: Preserve advertised capabilities; only the official API promises a non-thinking mode. Validates provider catalogs and normalizes model and reasoning-effort choices; invalid catalogs fail explicitly.
+ */
 export function parseApiModels(data: unknown, provider: ProviderConfig): AvailableModel[] {
   const result = ModelCatalog.safeParse((data as { data?: unknown } | null)?.data);
   invariant(result.success, 'MODEL_CATALOG', '模型目录格式无效；可检查端点或手动填写模型 ID');
@@ -56,11 +62,18 @@ export function parseApiModels(data: unknown, provider: ProviderConfig): Availab
 
 const catalogByteLimit = 2 * 1024 * 1024;
 
-/** 按实际到达字节限制目录为 2 MiB，取消时终止 reader 并在所有退出路径释放锁。 */
+/**
+ * 按实际到达字节限制目录为 2 MiB，取消时终止 reader 并在所有退出路径释放锁。
+ * EN: Bounds the catalog to 2 MiB of received bytes, cancels its reader on abort, and releases the lock on every exit path.
+ */
 async function catalogText(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string> {
   invariant(body, 'MODEL_CATALOG', '模型目录响应为空，请检查 API 端点');
   const reader = body.getReader();
   const decoder = new TextDecoder();
+  /**
+   * 取消目录响应读取；忽略 cancel 的收尾失败，让原始超时/取消原因向上传递。
+   * EN: Cancels catalog body reading and ignores cleanup rejection so the original timeout/cancellation remains authoritative.
+   */
   const cancel = () => void reader.cancel().catch(() => {});
   signal.addEventListener('abort', cancel, { once: true });
   let bytes = 0;
@@ -82,6 +95,10 @@ async function catalogText(body: ReadableStream<Uint8Array> | null, signal: Abor
   }
 }
 
+/**
+ * 将 HTTP 状态转换为目录领域错误和操作建议；仅限流与服务端错误标为可重试，不包含远端正文。
+ * EN: Maps HTTP status to catalog errors/advice without remote bodies; only throttling and server failures are retryable.
+ */
 function catalogHttpFailure(status: number): AppError {
   const advice =
     status === 401
@@ -106,7 +123,10 @@ function catalogHttpFailure(status: number): AppError {
   );
 }
 
-/** 只保留白名单网络错误码，区分连接/正文中断和用户取消，不把远端原文或端点回显到诊断。 */
+/**
+ * 只保留白名单网络错误码，区分连接/正文中断和用户取消，不把远端原文或端点回显到诊断。
+ * EN: Retains only allowlisted network error codes, distinguishes connection/body failures from cancellation, and never echoes remote text or endpoints in diagnostics.
+ */
 function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'connect' | 'body'): AppError {
   const codes = new Set([
     'ENOTFOUND',
@@ -158,10 +178,9 @@ function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'conn
   });
 }
 
-/** Listing uses the verified credential without spending inference tokens. */
 /**
- * 使用所选凭据读取 /models，不发送推理请求。凭据取消与 20 秒超时共同约束下载，
- * 拒绝重定向并分别报告连接、HTTP、正文和 JSON/目录结构错误，失败不自动切换型号。
+ * 目录读取使用已验证凭据，但不消耗推理Token。 使用所选凭据读取 /models，不发送推理请求。凭据取消与 20 秒超时共同约束下载， 拒绝重定向并分别报告连接、HTTP、正文和 JSON/目录结构错误，失败不自动切换型号。
+ * EN: Listing uses the verified credential without spending inference tokens. Reads /models with the selected credential without inference. Credential cancellation and a 20-second timeout bound downloading. Redirects are rejected; connection, HTTP, body, JSON, and catalog errors remain distinct, and failures never switch models automatically.
  */
 export async function apiModels(
   provider: ProviderConfig,

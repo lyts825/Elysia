@@ -1,4 +1,7 @@
-/* 定义 workspace-manager 对应界面的样式与布局。 */
+/*
+ * 工作区管理：组织搜索、当前作用域、来源说明和读取/管理错误。长来源可展开并聚焦阅读，短窗口让整个管理弹窗滚动，解除内部高度限制以保留表单操作。
+ * EN: Workspace manager: arranges search, scope, provenance, and read/management errors. Expandable focusable provenance and whole-modal scrolling in short windows release inner height constraints and preserve form access.
+ */
 .workspace-manager-modal .workspace-manager-search {
   display: flex;
   flex-wrap: wrap;
@@ -34,7 +37,10 @@
   color: var(--muted);
   cursor: pointer;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .workspace-manager-modal .workspace-manager-reading,
 .workspace-manager-modal .management-error {
   min-width: 0;
@@ -54,7 +60,10 @@
 .workspace-manager-modal .workspace-manager-reading dd {
   margin: var(--space-1) 0 var(--space-2);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .workspace-manager-modal .workspace-manager-reading:focus-visible,
 .workspace-manager-modal .management-error:focus-visible {
   outline: 2px solid var(--accent);
@@ -65,7 +74,10 @@
   color: var(--secondary);
   font-size: var(--font-sm);
 }
-/* 短窗口由工作区管理弹窗整体滚动，并释放内部内容区的高度约束。 */
+/*
+ * 短窗口由工作区管理弹窗整体滚动，并释放内部内容区的高度约束。
+ * EN: Scrolls the entire workspace-manager modal in short windows and releases internal content-height constraints.
+ */
 @media (max-height: 480px) {
   .workspace-manager-modal {
     overflow-y: auto;

@@ -1,10 +1,20 @@
-/* 按名称渲染界面图标。 */
+/**
+ * 按名称渲染界面图标。
+ * 将有限图标名称映射为统一SVG尺寸和描边，供交互控件复用；图标含义及可访问名称由调用方上下文决定。
+ * EN: Renders UI icons by their stable names. Maps a finite icon set to consistent SVG size/stroke for shared controls; callers provide semantic context and accessible names.
+ */
 import type React from 'react';
 import { BrandGlyph } from './Brand';
 
-/** 统一尺寸和描边的装饰图标；可访问名称由外层按钮或可见文本提供，图标不重复朗读。 */
+/**
+ * 统一尺寸和描边的装饰图标；可访问名称由外层按钮或可见文本提供，图标不重复朗读。
+ * EN: Use consistent sizes and strokes for decorative icons. The surrounding button or visible text supplies its accessible name, so the icon is not announced twice.
+ */
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
-  // 品牌标记使用专用组件，其余名称从统一的 SVG 路径表选择。
+  /**
+   * 品牌标记使用专用组件，其余名称从统一的 SVG 路径表选择。
+   * EN: The brand mark uses its dedicated component; other names select paths from the shared SVG table.
+   */
   if (name === 'spark') return <BrandGlyph size={size} />;
   const paths: Record<string, React.ReactNode> = {
     terminal: (

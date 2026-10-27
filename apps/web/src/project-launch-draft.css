@@ -1,4 +1,7 @@
-/* 定义 project-launch-draft 对应界面的样式与布局。 */
+/*
+ * 项目启动草稿：展示草稿标题、来源版本、状态及启动操作。读取依据有界滚动，窄屏把动作改为纵向并减少留白，保证长草稿不会挤掉状态和操作反馈。
+ * EN: Project launch draft: shows draft title, provenance revisions, state, and launch actions. Bounded evidence reading and stacked narrow-screen actions keep long drafts from displacing state/feedback.
+ */
 .project-launch-draft {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -29,7 +32,10 @@
   font-size: var(--font-sm);
   line-height: var(--leading-ui);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .project-launch-reading {
   min-width: 0;
   max-height: min(14rem, 42dvh);
@@ -46,7 +52,10 @@
   margin: var(--space-1) 0 var(--space-3);
   font-weight: 600;
 }
-/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ */
 .project-launch-versions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -93,7 +102,10 @@
   overflow-wrap: anywhere;
   scroll-margin-block: var(--space-3);
 }
-/* 窄屏减小草稿内边距，并将操作按钮纵向排列。 */
+/*
+ * 窄屏减小草稿内边距，并将操作按钮纵向排列。
+ * EN: Reduces draft padding and stacks action buttons on narrow screens.
+ */
 @media (max-width: 480px) {
   .project-launch-draft {
     padding: var(--space-3);

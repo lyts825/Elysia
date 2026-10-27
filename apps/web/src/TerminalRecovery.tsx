@@ -1,4 +1,11 @@
-/* 展示终端任务恢复操作。 */
+/**
+ * 展示终端任务恢复操作。
+ *
+ * EN: Displays terminal-task reconciliation actions.
+ *
+ * 本模块受控收集用户对中断终端操作的实际核验结论及说明；只提交人工声明，副作用核验、容器停止和运行状态转换由外层处理。
+ * EN: Collects controlled user verification outcomes/notes for interrupted terminal operations. It submits human declarations only; outer layers verify side effects, stop containers, and transition run state.
+ */
 import { useId } from 'react';
 import './terminal-recovery.css';
 
@@ -6,6 +13,8 @@ import './terminal-recovery.css';
  * 受控收集用户对中断操作的实际核验说明和结论，不自行读取文件或推断副作用是否发生。
  * note/changeNote 由外层保存草稿，disabled 或说明为空时禁止两个结果按钮。
  * submit 接收去除首尾空白后的说明与 confirmed/not_applied 结果；容器停止和状态变更由外层完成。
+ *
+ * EN: A controlled form collects user-verified outcomes without reading files or inferring side effects. The parent retains note/changeNote; disabled/empty notes block both buttons. submit receives trimmed notes plus confirmed/not_applied, while the parent stops containers and changes state.
  */
 export function TerminalRecovery({
   disabled,
@@ -18,7 +27,11 @@ export function TerminalRecovery({
   changeNote: (value: string) => void;
   submit: (outcome: 'confirmed' | 'not_applied', note: string) => void;
 }) {
-  // 仅收集人工核验说明及结论；操作结果由 submit 交给上层处理。
+  /**
+   * 仅收集人工核验说明及结论；操作结果由 submit 交给上层处理。
+   *
+   * EN: Collects human verification only; submit delegates actual outcome handling to the parent.
+   */
   const noteHelpId = useId(),
     scopeHelpId = useId(),
     noteStateId = useId(),

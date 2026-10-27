@@ -1,4 +1,8 @@
-/* 校验和管理产物修订选择草稿。 */
+/**
+ * 校验和管理产物修订选择草稿。
+ * 在续接草稿容器中维护差异条目、身份键和容量校验；仅请求上层保存本地输入，不直接执行产物修改。
+ * EN: Validates and manages draft selections for artifact revisions. Maintains difference entries, identity keys, and size checks inside a continuation draft; it requests parent persistence of local input rather than executing artifact changes.
+ */
 import { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import {
@@ -30,15 +34,25 @@ const entryShape = z.object({
   }),
 });
 export type ArtifactRevisionEntry = z.infer<typeof entryShape>;
-/** 缺省值视为空草稿，格式错误返回 undefined；选择条数有界。 */
+/**
+ * 缺省值视为空草稿，格式错误返回 undefined；选择条数有界。
+ * EN: Treat an absent value as an empty draft and return undefined for invalid data; bound the number of selections.
+ */
 export function readArtifactRevision(raw: unknown): ArtifactRevisionEntry[] | undefined {
   if (raw === undefined) return [];
   const result = z.array(entryShape).max(40).safeParse(raw);
   return result.success ? result.data : undefined;
 }
+/**
+ * 将复核标识与产物标识组合为草稿项身份；同一产物在不同复核中的修订保持独立。
+ * EN: Combines review and artifact IDs into the draft-entry identity, keeping revisions of the same artifact in different reviews separate.
+ */
 export const artifactRevisionKey = (entry: Pick<ArtifactRevisionEntry, 'reviewId' | 'change'>) =>
   `${entry.reviewId}:${entry.change.artifactId}`;
-/** 只检查已选差异的要求、数量及编码体积，超限时保留原文供调整。 */
+/**
+ * 只检查已选差异的要求、数量及编码体积，超限时保留原文供调整。
+ * EN: Validate requirements, count, and encoded size of selected differences only. Keep the original text when limits are exceeded so it can be adjusted.
+ */
 export function artifactRevisionIssue(entries: ArtifactRevisionEntry[]) {
   const selected = entries.filter((entry) => entry.added);
   if (selected.length > 20) return '最多带入 20 项差异，请减少选择。';
@@ -72,6 +86,7 @@ const Context = createContext<RevisionContext | null>(null);
 /**
  * 为同一运行的差异编辑器提供草稿能力。原始草稿格式损坏、上层无保存回调或已禁用时
  * 不暴露写接口，避免为了修改差异清单而覆盖来源不明的完整续接草稿。
+ * EN: Provide draft editing for one run. Do not expose writes if the source draft is malformed, no save callback exists, or editing is disabled; this prevents a local difference edit from overwriting an unknown continuation draft.
  */
 export function ArtifactRevisionProvider({
   runId,
@@ -108,12 +123,19 @@ export function ArtifactRevisionProvider({
           ? {
               runId,
               entries,
-              change: (next) => {
+              /**
+               * 接收完整差异列表并校验条数和草稿体积；从最新引用合并后通知上层保存，失败时保留旧稿并返回false。
+               * EN: Accepts the complete difference list and enforces count and draft-size limits. It merges against the latest ref before requesting persistence; failure retains the prior draft and returns false.
+               */
+                            change: (next) => {
                 if (next.length > 40) {
                   setError('差异草稿最多保留 40 项，请先移除不再需要的内容。');
                   return false;
                 }
-                // 从 ref 取最新整体草稿再只替换 artifactRevision，保留其他面板刚写入的字段。
+                /**
+                 * 从 ref 取最新整体草稿再只替换 artifactRevision，保留其他面板刚写入的字段。
+                 * EN: Read the latest complete draft from the ref, then replace only artifactRevision, preserving fields just written by other panels.
+                 */
                 let latest: Record<string, unknown> = {};
                 try {
                   if (rawRef.current) latest = JSON.parse(String(rawRef.current));
@@ -152,6 +174,7 @@ export function ArtifactRevisionProvider({
 /**
  * 编辑一项差异的要求。输入文字只保存待加入状态，明确点击加入后才参与后续提交；
  * 当前交付指纹变化使旧选择过期，必须核对并重新加入。
+ * EN: Edit the requirement for one difference. Typing saves a pending selection; only an explicit Add includes it in later submissions. A changed delivery fingerprint makes the old selection stale and requires review and re-adding.
  */
 export function ArtifactRevisionEditor({
   runId,

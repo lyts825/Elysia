@@ -1,4 +1,8 @@
-/** 捕获运行来源中的交付物变更。 */
+/**
+ * 捕获运行来源中的交付物变更。
+ * 为变化比较提供稳定的产物摘要和版本元数据，保留不可读缺口；文件存在不代表内容满足需求。
+ * EN: Captures artifact changes from a run's delivery source. Provides stable artifact hashes/revisions for change comparison with explicit unreadable gaps; existence never establishes requirement satisfaction.
+ */
 import { invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import {
   artifactChangeTextByteLength,
@@ -10,10 +14,9 @@ import {
 import { stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactChanges, savedReviewSnapshot } from './delivery-review-history.js';
 
-/** Only server-derived, version-pinned comparison metadata can become a source instruction. */
 /**
- * 以服务器保存的复核基线重新计算每个选中产物的变化，只接受版本固定且仍可唯一比较的项。
- * 客户端只提供修改要求，不提供可信比较元数据；输出绑定原复核和当前交付双指纹。
+ * 只有服务端推导且绑定固定版本的比较元数据才能成为来源指令。 以服务器保存的复核基线重新计算每个选中产物的变化，只接受版本固定且仍可唯一比较的项。 客户端只提供修改要求，不提供可信比较元数据；输出绑定原复核和当前交付双指纹。
+ * EN: Only server-derived, version-pinned comparison metadata can become a source instruction. Recomputes selected artifact changes against the stored review baseline, accepting only pinned and uniquely comparable entries. Clients supply change requests, not trusted comparison metadata; output binds both the original review and current delivery fingerprints.
  */
 export function captureArtifactChanges(store: Store, run: Run, selection: RunSourceSelection) {
   const selected = selection.artifactChanges ?? [];

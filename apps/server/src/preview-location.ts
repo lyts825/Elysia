@@ -1,4 +1,8 @@
-/** 注册预览位置相关接口。 */
+/**
+ * 注册预览位置相关接口。
+ * 将通用定位器接入产物/工作区路由并管理请求取消；路径和文件版本由对应预览服务校验，不扩大原读权限。
+ * EN: Registers preview-location endpoints. Connects location to artifact/workspace routes with request cancellation; preview services enforce paths/versions without widening read permission.
+ */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { textFileEncodings } from '../../../packages/contracts/src/files.js';
@@ -18,8 +22,8 @@ const querySchema = z.object({
     .optional(),
 });
 /**
- * 注册入口和锚点定位查询，路径/编码/版本/续读游标均由服务端 schema 校验。
- * 客户端提前断开时取消当前扫描，finally 卸载监听；定位服务再按任务授权和文件版本核验来源。
+ * 注册入口和锚点定位查询，路径/编码/版本/续读游标均由服务端 schema 校验。 客户端提前断开时取消当前扫描，finally 卸载监听；定位服务再按任务授权和文件版本核验来源。
+ * EN: Registers surface and anchor queries with server schemas for path, encoding, version, and continuation cursor. Early disconnect aborts scans and finally removes listeners; the locator rechecks task authorization and file version.
  */
 export function registerPreviewLocationRoutes(app: FastifyInstance, previews: PreviewService) {
   app.get<{ Params: { runId: string; taskId: string }; Querystring: { path: string } }>(
@@ -30,7 +34,15 @@ export function registerPreviewLocationRoutes(app: FastifyInstance, previews: Pr
         .strict()
         .parse(request.query);
       const controller = new AbortController(),
+        /**
+         * 中止当前产物定位的只读扫描。
+         * EN: Aborts the current read-only artifact-location scan.
+         */
         abort = () => controller.abort();
+      /**
+       * 产物定位响应提前关闭时取消扫描，已正常写完则保持完成状态。
+       * EN: Cancels artifact location on premature response closure while preserving completed sends.
+       */
       const disconnect = () => {
         if (!reply.raw.writableEnded) abort();
       };
@@ -51,7 +63,15 @@ export function registerPreviewLocationRoutes(app: FastifyInstance, previews: Pr
   }>('/api/runs/:runId/tasks/:taskId/preview/locate', async (request, reply) => {
     const { path, ...options } = querySchema.parse(request.query);
     const controller = new AbortController(),
+      /**
+       * 中止当前工作区定位的只读扫描。
+       * EN: Aborts the current read-only workspace-location scan.
+       */
       abort = () => controller.abort();
+    /**
+     * 工作区定位响应提前关闭才取消扫描，不影响正常完成的结果。
+     * EN: Cancels workspace location only on premature response closure, not normal completion.
+     */
     const disconnect = () => {
       if (!reply.raw.writableEnded) abort();
     };

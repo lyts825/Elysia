@@ -1,4 +1,10 @@
-// 注册工作区文件与命令相关工具。
+/**
+ * 注册工作区文件与命令相关工具。
+ * EN: Register workspace file and command tools.
+ *
+ * 将文件发现、读写与命令执行接入统一工具接口；路径策略和命令权限在对应服务中核对，工具层不自行放宽范围。
+ * EN: Adapt file discovery, reads/writes, and commands into the shared tool interface, retaining service-side path and command restrictions.
+ */
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -65,6 +71,9 @@ const schemas = {
 /**
  * 注册目录、文件、命令、产物和工作树工具。文件路径经网关授权；写入使用 expectedHash
  * 检测并发修改，null 表示目标应不存在，不能用占位哈希覆盖现有文件。
+ * EN: Register directory, file, command, artifact, and worktree tools. Authorize paths through the
+ * gateway. expectedHash detects conflicting writes; null requires an absent target and is not a
+ * placeholder permitting overwrite.
  */
 export function workspaceTools(
   context: Pick<
@@ -72,7 +81,11 @@ export function workspaceTools(
     'store' | 'path' | 'snapshot' | 'artifact' | 'diff' | 'definitions' | 'processes' | 'runCommand'
   > & { kernel: Pick<ToolServices['kernel'], 'permissions' | 'ancestors'> },
 ): PluginContributions<ToolContribution> {
-  /** 返回授权目录的前 200 项和链接标记，隐藏 .git；目录列表不代表已读取其中文件。 */
+  /**
+   * 返回授权目录的前 200 项和链接标记，隐藏 .git；目录列表不代表已读取其中文件。
+   * EN: Return up to two hundred authorized directory entries with link flags, hiding .git. Listing a
+   * directory does not read its file contents.
+   */
   async function execute_list({ task }: ToolInvocation, args: z.output<typeof schemas.list>) {
     let result: unknown;
 
@@ -88,7 +101,11 @@ export function workspaceTools(
 
     return result;
   }
-  /** 只读取当前运行中已授权的产物；文本分页保留完整字符，二进制内容不内联返回。 */
+  /**
+   * 只读取当前运行中已授权的产物；文本分页保留完整字符，二进制内容不内联返回。
+   * EN: Read only artifacts authorized within the current run; page text at complete-character
+   * boundaries and do not inline binary bytes.
+   */
   function execute_read_artifact({ task }: ToolInvocation, args: z.output<typeof schemas.read_artifact>) {
     let result: unknown;
 
@@ -143,7 +160,11 @@ export function workspaceTools(
 
     return result;
   }
-  /** 限制读取大小并保存原文快照；二进制仅返回元信息，文本预览可能截断。 */
+  /**
+   * 限制读取大小并保存原文快照；二进制仅返回元信息，文本预览可能截断。
+   * EN: Bound file size and persist a source snapshot. Binary files return metadata only; text
+   * previews may be truncated.
+   */
   async function execute_read({ task }: ToolInvocation, args: z.output<typeof schemas.read>) {
     let result: unknown;
 
@@ -168,13 +189,21 @@ export function workspaceTools(
 
     return result;
   }
-  /** 有界字面搜索：跳过链接和常见构建目录，返回匹配行及文件内容哈希。 */
+  /**
+   * 有界字面搜索：跳过链接和常见构建目录，返回匹配行及文件内容哈希。
+   * EN: Perform bounded literal search, skipping links and common build directories and returning
+   * matching lines with file-content digests.
+   */
   async function execute_search({ task }: ToolInvocation, args: z.output<typeof schemas.search>) {
     let result: unknown;
 
     const root = await context.path(task, args.path);
     const matches: unknown[] = [];
     let inspected = 0;
+    /**
+     * 有界递归目录搜索，逐文件重新验证路径并跳过链接和构建目录。
+     * EN: Search directories recursively within limits, revalidating each path and skipping links/build outputs.
+     */
     const walk = async (p: string, depth: number) => {
       if (depth > 8 || inspected >= 500 || matches.length >= 100) return;
       for (const e of await fs.readdir(p, { withFileTypes: true })) {
@@ -201,6 +230,9 @@ export function workspaceTools(
   /**
    * 核对原文哈希并记录预期前后哈希，再写临时文件；重命名前重新检查权限和原文。
    * 补丁要求旧文本唯一匹配，来源产物复制还要求当前运行明确选择且内容哈希一致。
+   * EN: Validate the original digest and persist before/after evidence before writing a temporary
+   * file. Recheck path permissions and source bytes before rename. Patches require one exact old-text
+   * match; copying an input artifact also requires explicit run selection and matching content digest.
    */
   async function execute_write({ task, operation, signal }: ToolInvocation, args: any, name: string) {
     let result: unknown;
@@ -270,14 +302,22 @@ export function workspaceTools(
 
     return result;
   }
-  /** 将解析后的程序、参数及操作身份交给网关命令入口，冻结后端和路径边界在那里统一核验。 */
+  /**
+   * 将解析后的程序、参数及操作身份交给网关命令入口，冻结后端和路径边界在那里统一核验。
+   * EN: Pass parsed command arguments and operation identity to the gateway command entry, which
+   * centrally validates the frozen backend and path boundary.
+   */
   async function execute_exec(
     { task, operation, signal }: ToolInvocation,
     args: z.output<typeof schemas.exec>,
   ) {
     return context.runCommand(task, operation, args, signal);
   }
-  /** 仅把任务自身工作区内、大小合规的文件注册为产物；源文件内容被复制为可回查对象。 */
+  /**
+   * 仅把任务自身工作区内、大小合规的文件注册为产物；源文件内容被复制为可回查对象。
+   * EN: Register only size-bounded files from the task own workspace, copying their contents into
+   * retrievable objects.
+   */
   async function execute_artifact({ task }: ToolInvocation, args: z.output<typeof schemas.artifact>) {
     let result: unknown;
 
@@ -289,11 +329,19 @@ export function workspaceTools(
 
     return result;
   }
-  /** 返回网关生成的基线差异产物，保留取消信号与真实命令结果。 */
+  /**
+   * 返回网关生成的基线差异产物，保留取消信号与真实命令结果。
+   * EN: Return the gateway baseline-diff artifact while preserving cancellation and actual command
+   * results.
+   */
   async function execute_diff({ task, signal }: ToolInvocation) {
     return await context.diff(task, signal);
   }
-  /** 只集成已完成、基线相同的后代工作区；逐个生成暂存补丁并通过三方合并应用。 */
+  /**
+   * 只集成已完成、基线相同的后代工作区；逐个生成暂存补丁并通过三方合并应用。
+   * EN: Integrate only completed descendant workspaces with the same baseline, generating staged
+   * patches and applying them through three-way merge.
+   */
   async function execute_integrate_worktrees(
     { task, operation, signal }: ToolInvocation,
     args: z.output<typeof schemas.integrate_worktrees>,
@@ -317,6 +365,10 @@ export function workspaceTools(
         'INTEGRATE_SCOPE',
         '只能集成已完成且基线相同的 Git 后代工作区',
       );
+      /**
+       * 在所选工作目录执行有界Git命令，复用任务身份和取消信号。
+       * EN: Run bounded Git commands in the selected workspace with task ownership and cancellation.
+       */
       const run = async (args: string[], cwd: string) =>
         context.processes.run(task.id, 'git', args, cwd, 60000, 200000, signal);
       const add = await run(['add', '--all'], child.workspace!);

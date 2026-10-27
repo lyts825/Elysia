@@ -1,4 +1,8 @@
-/* 配置 Codex 连接及相关设置。 */
+/**
+ * 配置 Codex 连接及相关设置。
+ * 读取并编辑Codex连接、登录与探测状态，按配置版本核对保存结果；认证和实际连接检查由宿主服务执行。
+ * EN: Edits Codex connection configuration and related settings. Reads and edits Codex connection, sign-in, and probe state and reconciles saves by configuration revision; authentication and actual connection checks run in the host service.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -26,6 +30,7 @@ type State = {
  * 将本机 Codex 登录或 Elysia 独立登录绑定到供应商草稿，登录状态和型号目录分别核对。
  * refresh 序号使切换来源后的旧结果失效；只有账号身份、当前目录、文字型号和思考强度
  * 都匹配才向父级报告 ready，连接成功本身不代表型号选择已可保存。
+ * EN: Bind either local Codex login or a separate Elysia login to the provider draft, checking login state and model catalog separately. A refresh sequence invalidates old results after source changes. Report ready only when account identity, current catalog, text model, and reasoning effort agree; a connected account alone is not a saveable model selection.
  */
 export function CodexSettings({
   config,
@@ -37,7 +42,10 @@ export function CodexSettings({
   ready?: (valid: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
-  // 连接来源、登录状态和模型目录分别维护，更新配置由父组件持有。
+  /**
+   * 连接来源、登录状态和模型目录分别维护，更新配置由父组件持有。
+   * EN: Track connection source, login status, and model catalog independently; the parent owns configuration updates.
+   */
   const [source, setSource] = useState(
     config.subscriptionAccountId?.startsWith('codex-elysia-') ? 'elysia' : 'local',
   );
@@ -51,6 +59,10 @@ export function CodexSettings({
     current = useRef({ config, change });
   const errorRef = useRef<HTMLParagraphElement>(null);
   const focusError = useRef(false);
+  /**
+   * 仅对操作流程请求聚焦的新错误移动焦点和滚动；消费一次标志，避免后续渲染反复抢焦点。
+   * EN: Focuses and reveals a new error only when requested by an action flow, consuming the flag to prevent repeated focus theft on rerender.
+   */
   useEffect(() => {
     if (!error || !focusError.current) return;
     focusError.current = false;
@@ -58,7 +70,10 @@ export function CodexSettings({
     errorRef.current?.scrollIntoView({ block: 'nearest' });
   }, [error]);
   current.current = { config, change };
-  /** 先读取连接状态再读取该账号目录；仅空型号自动选默认，已保存但失效型号保留供用户处理。 */
+  /**
+   * 先读取连接状态再读取该账号目录；仅空型号自动选默认，已保存但失效型号保留供用户处理。
+   * EN: Read connection status before the account-specific catalog. Auto-select a default only for an empty model field; keep a saved but invalid model visible for the user to resolve.
+   */
   const refresh = async (reconnect = false, focusOnFailure = reconnect) => {
     const seq = ++generation.current;
     setBusy(true);
@@ -98,6 +113,10 @@ export function CodexSettings({
       if (generation.current === seq) setBusy(false);
     }
   };
+  /**
+   * 连接来源变化时清空目录并刷新；清理增加代次，让refresh中的版本检查拒绝已过期结果。
+   * EN: Clears the catalog and refreshes when connection source changes; cleanup advances the generation so refresh guards reject obsolete results.
+   */
   useEffect(() => {
     setStatus(undefined);
     setModels([]);
@@ -106,6 +125,10 @@ export function CodexSettings({
       generation.current++;
     };
   }, [source]);
+  /**
+   * 登录尝试待完成时每两秒读取状态，完成后刷新目录；状态离开pending或卸载时停止定时器，已发出的读取由其回调处理。
+   * EN: Polls sign-in status every two seconds while pending and refreshes the catalog after completion; leaving pending or unmounting clears the interval while dispatched reads finish through their callbacks.
+   */
   useEffect(() => {
     if (status?.attempt?.status !== 'pending') return;
     const timer = setInterval(async () => {
@@ -119,7 +142,10 @@ export function CodexSettings({
     }, 2000);
     return () => clearInterval(timer);
   }, [status?.attempt?.status]);
-  /** 登录或退出动作完成后统一重读状态，错误只改变反馈，不替换父级尚未保存的草稿。 */
+  /**
+   * 登录或退出动作完成后统一重读状态，错误只改变反馈，不替换父级尚未保存的草稿。
+   * EN: Reread status after login or logout. Errors change feedback only and do not replace an unsaved parent draft.
+   */
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError('');
@@ -144,6 +170,10 @@ export function CodexSettings({
     !!selected &&
     supportsText(selected) &&
     (!selected.efforts?.length || selected.efforts.includes(config.reasoningEffort || ''));
+  /**
+   * 选值有效性或回调变化时向父组件同步就绪标志，供外层控制保存和启动。
+   * EN: Reports readiness to the parent when validity or its callback changes so outer flows can gate saving and launch.
+   */
   useEffect(() => {
     ready?.(valid);
   }, [valid, ready]);

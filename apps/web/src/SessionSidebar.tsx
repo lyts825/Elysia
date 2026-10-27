@@ -1,4 +1,10 @@
-/* 展示会话侧栏并管理会话选择。 */
+/**
+ * 展示会话侧栏并管理会话选择。
+ * EN: Displays the session sidebar and selection actions.
+ *
+ * 集中呈现分页会话与项目分组，协调右键菜单、快捷键和带版本的管理操作。完整目标按需读取，列表摘要、未加载计数及旧终端只读状态各有明确处理。
+ * EN: Present paged runs and project groups with context menus, shortcuts, and revision-checked actions. Load full objectives on demand and explicitly handle summaries, unknown counts, and read-only legacy terminals.
+ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -17,7 +23,10 @@ import { captureHistoryAnchor, historyViewportVisible, restoreHistoryAnchor } fr
 import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: RunListItem };
-// 菜单操作携带目标实体，避免项目与运行使用同一个未区分的标识。
+/**
+ * 菜单操作携带目标实体，避免项目与运行使用同一个未区分的标识。
+ * EN: Menu actions carry typed target entities so project/run IDs cannot be confused.
+ */
 export type SessionTarget = Target;
 export type SessionUpdateResult = boolean | 'conflict';
 type Dialog = { target: Target; action: 'rename' | 'delete' | 'move'; value: string };
@@ -26,6 +35,7 @@ type MenuAction = { label: string; icon: string; shortcut?: string; danger?: boo
  * 将项目与运行列表组织为侧栏树，并承接外层的分页、选择和持久标记操作。
  * 列表刷新用可见锚点保留阅读位置，自动加载只响应可见区域的滚动意图；菜单通过 portal
  * 显示在入口根节点内，键盘操作在弹窗或输入控件活跃时暂停，避免夺取编辑快捷键。
+ * EN: Organize project/run tree with outer paging/selection/markers. Preserve list anchors on refresh; auto-load requires visible scroll intent. Portal menus stay inside surface root. Suspend keys during dialogs or input editing to avoid stealing shortcuts.
  */
 export function SessionSidebar({
   projects,
@@ -112,7 +122,10 @@ export function SessionSidebar({
   const listIdentity = `${spaceId}:${listQuery || ''}`;
   const previousListIdentity = useRef(listIdentity);
   const previousListBefore = useRef(listPage?.before);
-  // 查询/空间变化或返回最新页时从顶部开始；同一窗口数据更新才恢复旧锚点。
+  /**
+   * 查询/空间变化或返回最新页时从顶部开始；同一窗口数据更新才恢复旧锚点。
+   * EN: Reset to top after query/space changes or latest-page return; restore anchors only for updates within one window.
+   */
   useLayoutEffect(() => {
     const tree = treeRef.current;
     if (!tree) return;
@@ -127,8 +140,15 @@ export function SessionSidebar({
     lastTreeScroll.current = tree.scrollTop;
     treeAnchor.current = captureHistoryAnchor(tree);
   }, [runs, projects, listIdentity, listPage?.before]);
+  /**
+   * 接近列表底部时请求更早记录，检查加载、错误、窗口上限及游标状态。同一游标只发起一次请求，避免滚动事件重复翻页。
+   * EN: Request older records near the list bottom after checking loading, errors, window limits, and cursor identity; deduplicate requests for the same cursor.
+   */
   const requestOlderList = () => {
-    // 仅在列表可见且接近底部时请求下一页，同一游标不重复触发。
+    /**
+     * 仅在列表可见且接近底部时请求下一页，同一游标不重复触发。
+     * EN: Load more only while visible near bottom and do not repeat the same cursor.
+     */
     const tree = treeRef.current;
     const cursor = listPage?.nextBefore;
     if (
@@ -147,40 +167,77 @@ export function SessionSidebar({
     olderRequested.current = cursor;
     listNavigate('older');
   };
+  /**
+   * 把缓存中的严格布尔 true 解释为启用状态，缺失值或字符串不会误启用侧栏偏好。
+   * EN: Treat only the cached boolean true as enabled; missing values and strings do not activate sidebar preferences.
+   */
   const flag = (key: string) => entries[key]?.value === true;
   const terminal = localSurface === 'terminal';
+  /**
+   * 识别原生界面中的旧 Docker 终端记录，使菜单与快捷键遵循其只读限制。
+   * EN: Identify legacy Docker terminal records on the native surface so menus and shortcuts honor their read-only state.
+   */
   const readOnlyRun = (run: RunListItem) => !terminal && run.execution?.kind === 'docker-agent';
+  /**
+   * 统一返回项目名称或会话标题，缺失会话标题时回退到目标文本，用于菜单和确认提示。
+   * EN: Resolve project names or run titles, falling back to the objective for menu and confirmation labels.
+   */
   const title = (target: Target) =>
     target.kind === 'project' ? target.item.name : target.item.title || target.item.objective;
   const searchValue = changeListQuery ? listQuery || '' : search;
   const query = searchValue.trim().toLocaleLowerCase();
+  /**
+   * 服务端搜索时采用记录的匹配标记，本地模式才比较标题和目标，避免仅用已加载片段重复筛选。
+   * EN: Honor server match flags for remote search; compare title and objective only in local mode to avoid filtering incomplete projections again.
+   */
   const matches = (run: RunListItem) =>
     changeListQuery
       ? !('matchesQuery' in run) || run.matchesQuery !== false
       : `${run.title} ${run.objective}`.toLocaleLowerCase().includes(query);
+  /**
+   * 读取项目的服务端会话计数；计数尚未提供时显示未知标记，避免把未加载误报成零。
+   * EN: Read server-provided project run counts and display an unknown marker when counts have not been loaded.
+   */
   const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : '—');
   const activeProjects = projects.filter((p) => !p.archived && p.spaceId === spaceId);
   const visibleRuns = runs.filter(
-    // 归档运行不进入常规侧栏；终端入口只展示任务。
+    /**
+     * 归档运行不进入常规侧栏；终端入口只展示任务。
+     * EN: Exclude archived runs from ordinary sidebar; terminal surface shows task runs only.
+     */
     (r) =>
       !r.archived &&
       (!terminal || r.kind === 'task') &&
       (r.kind === 'chat' || activeProjects.some((p) => p.id === r.projectId)),
   );
+  /**
+   * 复制记录后按创建时间倒序排列，保持最新会话优先且不修改父组件传入的数组。
+   * EN: Sort a copied list by descending creation time, keeping recent runs first without mutating parent-owned arrays.
+   */
   const ordered = (list: RunListItem[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pinned = ordered(visibleRuns.filter((r) => flag(`pinned:run:${r.id}`) && matches(r)));
   const chats = ordered(visibleRuns.filter((r) => r.kind === 'chat' && matches(r)));
-  // 项目列表尚未读到的任务单独保留，不能把未观测所属误当作任务不存在。
+  /**
+   * 项目列表尚未读到的任务单独保留，不能把未观测所属误当作任务不存在。
+   * EN: Keep tasks whose project is not yet loaded; unobserved ownership does not mean task absence.
+   */
   const pendingProjectRuns = ordered(
     runs.filter(
       (r) => !r.archived && r.kind === 'task' && !projects.some((p) => p.id === r.projectId) && matches(r),
     ),
   );
+  /**
+   * 关闭右键菜单，并按调用需要把焦点还给仍连接到文档的触发按钮。
+   * EN: Close the context menu and optionally restore focus to its trigger when that element remains attached.
+   */
   const closeMenu = (restore = false) => {
     if (restore && menu?.trigger.isConnected) menu.trigger.focus({ preventScroll: true });
     setMenu(null);
   };
-  /** 保存触发元素用于菜单关闭后恢复焦点；鼠标右键与按钮点击分别采用指针或按钮坐标。 */
+  /**
+   * 保存触发元素用于菜单关闭后恢复焦点；鼠标右键与按钮点击分别采用指针或按钮坐标。
+   * EN: Keep opener for focus restore. Context-menu coordinates come from pointer while button menus anchor to button.
+   */
   const openMenu = (event: React.MouseEvent<HTMLElement>, target: Target) => {
     event.preventDefault();
     event.stopPropagation();
@@ -194,7 +251,15 @@ export function SessionSidebar({
       y: event.type === 'contextmenu' ? event.clientY : rect.bottom,
     });
   };
+  /**
+   * 以实体类型、标识和操作组成对话框草稿键，使不同对象及改名、移动输入相互隔离。
+   * EN: Build a dialog draft key from entity kind, ID, and action to isolate edits across targets and operations.
+   */
   const draftKey = (target: Target, action: Dialog['action']) => `${target.kind}:${target.item.id}:${action}`;
+  /**
+   * 关闭确认框并清理该次冲突草稿、引用及删除同意状态，防止下次操作沿用旧确认。
+   * EN: Close the dialog and clear its conflict draft, reference, and archive consent so later actions cannot reuse stale confirmation.
+   */
   const closeDialog = () => {
     if (dialogRef.current)
       conflictDrafts.current.delete(draftKey(dialogRef.current.target, dialogRef.current.action));
@@ -202,7 +267,10 @@ export function SessionSidebar({
     setDialog(null);
     setArchiveConsent(undefined);
   };
-  /** 只更新仍属于当前弹窗实例的输入，避免异步冲突处理改写后来打开的目标。 */
+  /**
+   * 只更新仍属于当前弹窗实例的输入，避免异步冲突处理改写后来打开的目标。
+   * EN: Update inputs only for the same dialog instance so async conflicts cannot rewrite a later target.
+   */
   const changeDialogValue = (source: Dialog, value: string) => {
     if (dialogRef.current !== source) return;
     const next = { ...source, value };
@@ -219,8 +287,15 @@ export function SessionSidebar({
         : dialog.target.kind !== 'project' ||
           terminal ||
           archiveConsent?.projectId === dialog.target.item.id);
+  /**
+   * 打开指定实体的操作框，优先恢复同一目标的冲突输入，并重置删除确认；重试时保留用户已编辑内容。
+   * EN: Open a target action, restoring its conflict draft when present and resetting deletion consent so retries preserve user edits.
+   */
   const showDialog = (target: Target, action: Dialog['action']) => {
-    // 并发冲突后恢复同一目标与操作的输入草稿，避免用户重新填写。
+    /**
+     * 并发冲突后恢复同一目标与操作的输入草稿，避免用户重新填写。
+     * EN: Retain rename/move input after conflict for the same target/action.
+     */
     setArchiveConsent(undefined);
     const next: Dialog = {
       target,
@@ -236,6 +311,10 @@ export function SessionSidebar({
     dialogRef.current = next;
     setDialog(next);
   };
+  /**
+   * 异步复制文本到剪贴板；浏览器拒绝访问时把错误反馈到侧栏，便于用户重新处理。
+   * EN: Copy text asynchronously and surface clipboard-access failures in the sidebar for recovery.
+   */
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -243,7 +322,10 @@ export function SessionSidebar({
       setClipboardError('无法复制，请检查剪贴板权限后重试。');
     }
   };
-  /** 列表目标可能被截断；复制目标或据此新建前先读取完整运行头信息。 */
+  /**
+   * 列表目标可能被截断；复制目标或据此新建前先读取完整运行头信息。
+   * EN: List targets may be truncated; read complete run header before copying or deriving a new task.
+   */
   async function fullObjective(run: RunListItem, action: (run: Run) => void | Promise<void>) {
     try {
       const full = await api<Run>(`/runs/${run.id}/header`);
@@ -252,11 +334,14 @@ export function SessionSidebar({
       setClipboardError(issue instanceof Error ? issue.message : '无法读取完整目标，请重试。');
     }
   }
-  /** 按目标类型构建菜单；原生入口中的旧终端记录只保留查看和本地标记操作。 */
+  /**
+   * 按目标类型构建菜单；原生入口中的旧终端记录只保留查看和本地标记操作。
+   * EN: Build menu by target kind; legacy terminal records in native surface permit view/local markers only.
+   */
   const actions = (target: Target): MenuAction[] => {
     const item = target.item;
     const common: MenuAction[] = [
-      { label: '重命名', icon: 'edit', shortcut: 'Ctrl+Alt+R', action: () => showDialog(target, 'rename') },
+      { label: '重命名', icon: 'edit', shortcut: 'Ctrl+Alt+R', /** 打开当前目标的改名输入框，实际版本校验和提交留给统一确认流程。 EN: Open rename input for the current target; the shared confirmation flow performs revision checks and submission. */ action: () => showDialog(target, 'rename') },
     ];
     if (target.kind === 'run') {
       const run = target.item;
@@ -265,39 +350,59 @@ export function SessionSidebar({
           label: flag(`pinned:run:${run.id}`) ? '取消置顶' : '置顶',
           icon: 'pin',
           shortcut: 'Ctrl+Alt+P',
+          /**
+           * 切换当前会话的置顶偏好，按会话标识保存，不改变服务端会话内容。
+           * EN: Toggle the run-specific pin preference without changing the server-side conversation content.
+           */
           action: () => setValue(`pinned:run:${run.id}`, !flag(`pinned:run:${run.id}`)),
         },
         {
           label: flag(`unread:run:${run.id}`) ? '标记为已读' : '标记为未读',
           icon: 'eye',
           shortcut: 'Ctrl+Shift+U',
+          /**
+           * 切换当前会话的未读偏好，使列表的未读标记与缓存保持一致。
+           * EN: Toggle the run-specific unread preference so the sidebar marker follows cached state.
+           */
           action: () => setValue(`unread:run:${run.id}`, !flag(`unread:run:${run.id}`)),
         },
-        { label: '打开对话', icon: 'chat', action: () => selectRun(run) },
+        { label: '打开对话', icon: 'chat', /** 选择当前会话，通过父组件的导航流程处理详情切换和离开保护。 EN: Select the run through parent navigation, which handles detail switching and leave protection. */ action: () => selectRun(run) },
         {
           label: '以此目标新建',
           icon: 'plus',
+          /**
+           * 先读取完整目标再创建同项目的新会话，避免从列表截断摘要复制任务意图。
+           * EN: Load the full objective before creating another run in the same project, avoiding truncated list projections.
+           */
           action: () => void fullObjective(run, (full) => create(full.projectId || '', full.objective)),
         },
-        { label: '复制名称', icon: 'copy', action: () => void copy(title(target)) },
+        { label: '复制名称', icon: 'copy', /** 复制当前会话标题或其目标回退文本，复用统一剪贴板错误处理。 EN: Copy the run title or objective fallback using the shared clipboard error handling. */ action: () => void copy(title(target)) },
         {
           label: '复制目标',
           icon: 'copy',
+          /**
+           * 先取得完整目标再复制，确保剪贴板包含原始任务要求而非列表摘要。
+           * EN: Load the complete objective before copying so the clipboard receives the original request rather than a list summary.
+           */
           action: () => void fullObjective(run, (full) => copy(full.objective)),
         },
       );
     } else {
       const project = target.item;
       common.push(
-        { label: terminal ? '新建终端任务' : '新建项目对话', icon: 'plus', action: () => create(project.id) },
+        { label: terminal ? '新建终端任务' : '新建项目对话', icon: 'plus', /** 在当前项目中新建会话，项目标识随动作传递以维持正确归属。 EN: Create a new conversation in the current project, carrying its ID to preserve ownership. */ action: () => create(project.id) },
         {
           label: flag(`collapsed:project:${project.id}`) ? '展开项目' : '收起项目',
           icon: 'chevron',
+          /**
+           * 切换当前项目的折叠偏好，并通过工作台缓存保存以便后续恢复。
+           * EN: Toggle the project collapse preference through the workbench cache for later restoration.
+           */
           action: () => setValue(`collapsed:project:${project.id}`, !flag(`collapsed:project:${project.id}`)),
         },
-        { label: '浏览项目资料', icon: 'folder', action: () => files(project) },
-        { label: '移动到项目空间', icon: 'grid', action: () => showDialog(target, 'move') },
-        { label: '复制文件夹路径', icon: 'copy', action: () => void copy(project.workspaceRoot) },
+        { label: '浏览项目资料', icon: 'folder', /** 打开项目文件入口，交由父组件协调文件视图及导航状态。 EN: Open project files through the parent callback that coordinates the file view and navigation. */ action: () => files(project) },
+        { label: '移动到项目空间', icon: 'grid', /** 为当前项目打开移动对话框，待用户选择目标空间后再提交。 EN: Open the project move dialog and defer submission until a destination space is selected. */ action: () => showDialog(target, 'move') },
+        { label: '复制文件夹路径', icon: 'copy', /** 复制当前项目资料目录的完整路径，便于在外部工具中定位资料。 EN: Copy the complete project workspace path for locating its files in external tools. */ action: () => void copy(project.workspaceRoot) },
       );
     }
     common.push(
@@ -305,9 +410,13 @@ export function SessionSidebar({
         label: item.archived ? '恢复归档' : '归档',
         icon: 'archive',
         shortcut: 'Ctrl+Shift+A',
+        /**
+         * 翻转当前目标的归档状态，复用带版本检查的更新流程处理并发修改。
+         * EN: Toggle archive state through the revision-checked update flow to handle concurrent edits.
+         */
         action: () => void update(target, { archived: !item.archived }),
       },
-      { label: '永久删除', icon: 'trash', danger: true, action: () => showDialog(target, 'delete') },
+      { label: '永久删除', icon: 'trash', danger: true, /** 打开永久删除确认，保持具体删除与版本核对集中在统一对话框流程。 EN: Open permanent-deletion confirmation, leaving deletion and revision validation to the shared dialog flow. */ action: () => showDialog(target, 'delete') },
     );
     return target.kind === 'run' && readOnlyRun(target.item)
       ? common.filter((action) => !['重命名', '归档', '恢复归档', '永久删除'].includes(action.label))
@@ -323,9 +432,17 @@ export function SessionSidebar({
   }, [menu]);
   useEffect(() => {
     if (!menu) return;
+    /**
+     * 指针落在菜单外部时关闭菜单，点击菜单内部时保留当前交互。
+     * EN: Dismiss the menu on outside pointer input while preserving interaction inside it.
+     */
     const dismiss = (event: Event) => {
       if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
     };
+    /**
+     * 滚动或窗口尺寸改变后关闭菜单，避免菜单继续停留在已失效的屏幕坐标。
+     * EN: Close the menu after scrolling or resizing so it cannot remain at stale screen coordinates.
+     */
     const resized = (event: Event) => {
       if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
     };
@@ -341,8 +458,15 @@ export function SessionSidebar({
   useEffect(() => {
     if (busy) setMenu(null);
   }, [busy]);
-  // 快捷键按当前菜单目标或所选实体执行；输入法、表单和任一可见弹窗活跃时完全让出。
+  /**
+   * 快捷键按当前菜单目标或所选实体执行；输入法、表单和任一可见弹窗活跃时完全让出。
+   * EN: Keys use current menu/selection; IME/forms/visible dialogs take complete precedence.
+   */
   useEffect(() => {
+    /**
+     * 处理侧栏改名、置顶、未读和归档快捷键。输入法、表单和可见对话框优先，旧终端只读限制同样适用，避免快捷键触发意外修改。
+     * EN: Handle rename, pin, unread, and archive shortcuts while yielding to IME, form inputs, and visible dialogs; enforce legacy-terminal read-only restrictions.
+     */
     const hotkey = (event: KeyboardEvent) => {
       if (
         busy ||
@@ -391,6 +515,10 @@ export function SessionSidebar({
     document.addEventListener('keydown', hotkey);
     return () => document.removeEventListener('keydown', hotkey);
   });
+  /**
+   * 绘制单条会话的选中、状态、未读、置顶与草稿信息，并同时提供鼠标和键盘菜单入口。
+   * EN: Render a run row with selection, status, unread, pin, and draft indicators, plus mouse and keyboard menu access.
+   */
   const runRow = (run: RunListItem, section = 'run') => (
     <div
       data-history-anchor={`${section}:${run.id}`}
@@ -465,6 +593,10 @@ export function SessionSidebar({
       </button>
     </div>
   );
+  /**
+   * 绘制可折叠分组标题、计数和附加按钮；展开状态统一由缓存偏好驱动。
+   * EN: Render a collapsible group heading, count, and optional actions with expansion controlled by cached preferences.
+   */
   const heading = (key: string, label: string, count: number, extra?: React.ReactNode) => (
     <div className="side-heading session-heading">
       <button
@@ -760,7 +892,10 @@ export function SessionSidebar({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                // 固定提交时的弹窗实例，异步结果不能关闭后来为另一个目标打开的新弹窗。
+                /**
+                 * 固定提交时的弹窗实例，异步结果不能关闭后来为另一个目标打开的新弹窗。
+                 * EN: Freeze submitting dialog identity; async success cannot close a newer dialog for another target.
+                 */
                 const submitted = dialog;
                 if (!canSubmitDialog || dialogRef.current !== submitted) return;
                 void update(
@@ -779,7 +914,10 @@ export function SessionSidebar({
                   if (result === false || dialogRef.current !== submitted) return;
                   if (result === 'conflict' && submitted.action === 'delete') return;
                   const key = draftKey(submitted.target, submitted.action);
-                  // 版本冲突保留重命名/移动文字，删除则留在原确认流程要求重新核对。
+                  /**
+                   * 版本冲突保留重命名/移动文字，删除则留在原确认流程要求重新核对。
+                   * EN: Keep rename/move text on conflict; deletion stays in confirmation for renewed review.
+                   */
                   if (result === 'conflict' && submitted.action !== 'delete')
                     conflictDrafts.current.set(key, submitted.value);
                   else conflictDrafts.current.delete(key);

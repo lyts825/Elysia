@@ -1,4 +1,8 @@
-/** 保存交付审阅基线、快照与变更历史。 */
+/**
+ * 保存交付审阅基线、快照与变更历史。
+ * 将历史复核绑定内容哈希和当时交付基线，分别比较合同、结果与产物；缺失或坏基线显示未知，不能显示为零变化。
+ * EN: Stores delivery-review baselines, snapshots, and change history. Binds reviews to content hashes/baselines and compares contract/result/artifacts separately; missing or invalid baselines mean unknown rather than zero changes.
+ */
 import { AppError, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import { z } from 'zod';
 import type {
@@ -16,7 +20,10 @@ import { deliveryArtifactMetadata, deliveryFingerprintFromArtifacts } from './de
 import { cachedDeliveryRead } from './delivery-read-cache.js';
 import { equalDeliveryArtifactMetadata } from '../../../packages/storage/src/artifact-delivery-metadata.js';
 
-/** 只保存比较所需摘要与产物语义字段；它不是旧文件内容的永久备份。 */
+/**
+ * 只保存比较所需摘要与产物语义字段；它不是旧文件内容的永久备份。
+ * EN: Stores only comparison summaries and semantic artifact metadata, not permanent copies of old file bytes.
+ */
 export type DeliveryBaseline = {
   version: 1;
   fingerprint: string;
@@ -54,7 +61,10 @@ const baselineSchema = z.object({
     )
     .refine((items) => new Set(items.map((artifact) => artifact.id)).size === items.length),
 });
-/** Stored comparison metadata may come from older or damaged records; never infer a comparison from it. */
+/**
+ * 比较元数据可能来自旧版或损坏记录，不能据此猜测比较结果。
+ * EN: Stored comparison metadata may come from older or damaged records; never infer a comparison from it.
+ */
 function readBaseline(raw: string): DeliveryBaseline | undefined {
   try {
     const parsed = baselineSchema.safeParse(JSON.parse(raw));
@@ -75,6 +85,10 @@ type HistoryRow = {
 };
 const itemColumns =
   'id,decision,reviewed_at,fingerprint,note_preview,criteria_notes_count,origin,baseline_json IS NOT NULL AS baseline_available';
+/**
+ * 将历史索引行转为公开小型视图，转换布尔字段且不加载完整复核正文。
+ * EN: Maps a history index row to a small public view, converting booleans without loading full reviews.
+ */
 const item = (row: HistoryRow): DeliveryReviewHistoryItem => ({
   id: row.id,
   decision: row.decision,
@@ -85,9 +99,16 @@ const item = (row: HistoryRow): DeliveryReviewHistoryItem => ({
   origin: row.origin,
   baselineAvailable: !!row.baseline_available,
 });
+/**
+ * 排除 reviewId 后计算复核内容哈希，使相同正文的身份不依赖记录 ID。
+ * EN: Hashes review content without reviewId so content identity does not depend on record ID.
+ */
 const reviewHash = ({ reviewId: _reviewId, ...review }: DeliveryUserReview) => hash(stable(review));
 
-/** Authoritative review snapshots, independent of large run.updated events and binary object retention. */
+/**
+ * 权威复核快照独立于大型run.updated事件和二进制对象保留。
+ * EN: Authoritative review snapshots, independent of large run.updated events and binary object retention.
+ */
 export function initializeDeliveryReviewHistory(store: Store) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS delivery_review_history_v1(
@@ -100,13 +121,20 @@ export function initializeDeliveryReviewHistory(store: Store) {
     CREATE INDEX IF NOT EXISTS delivery_review_history_run ON delivery_review_history_v1(run_id);
   `);
 }
-/** 捕获交付指纹及产物元数据，作为后续复核和差异比较的基线。 */
+/**
+ * 捕获交付指纹及产物元数据，作为后续复核和差异比较的基线。
+ * EN: Captures delivery fingerprints and artifact metadata as the baseline for later reviews and comparisons.
+ */
 export function captureDeliveryBaseline(
   store: Store,
   run: Run,
   root: Task,
   artifacts?: DeliveryArtifactMetadata[],
 ): DeliveryBaseline {
+  /**
+   * 从同一运行、根任务和产物元数据构造完整交付基线，分别绑定合同、结果和产物摘要供后续变化比较。
+   * EN: Captures a baseline from one run/root/artifact view, separately hashing contract, result and artifacts for later change comparison.
+   */
   const capture = (): DeliveryBaseline => {
     const metadata = artifacts ?? deliveryArtifactMetadata(store, run.id);
     return {
@@ -126,7 +154,10 @@ export function captureDeliveryBaseline(
     ? capture()
     : cachedDeliveryRead(store, `baseline:${run.id}:${root.id}:${root.revision}`, capture);
 }
-/** 将用户复核及其基线写入历史，保留记录来源。 */
+/**
+ * 将用户复核及其基线写入历史，保留记录来源。
+ * EN: Writes a user review and its baseline to history while retaining record provenance.
+ */
 export function appendDeliveryReview(
   store: Store,
   runId: string,
@@ -156,8 +187,10 @@ export function appendDeliveryReview(
     );
   return snapshot;
 }
-/** Only the currently surviving old review can be imported; earlier ordinary events are not reconstructed. */
-/** 已有用户复核时确保存在对应的历史快照；没有复核时返回 undefined。 */
+/**
+ * 只迁移当前仍存在的旧复核，不从更早普通事件重建历史。 已有用户复核时确保存在对应的历史快照；没有复核时返回 undefined。
+ * EN: Only the currently surviving old review can be imported; earlier ordinary events are not reconstructed. Ensures a historical snapshot exists for the surviving review; no current review returns undefined.
+ */
 export function ensureCurrentReviewSnapshot(store: Store, run: Run): string | undefined {
   if (!run.deliveryReview) return;
   return store.tx(() => {
@@ -176,7 +209,10 @@ export function ensureCurrentReviewSnapshot(store: Store, run: Run): string | un
     ).reviewId;
   });
 }
-/** Read only: strict run ownership; never import or mutate a source while validating a selection. */
+/**
+ * 严格限定运行归属，只读校验选择时不导入或修改来源。
+ * EN: Read only: strict run ownership; never import or mutate a source while validating a selection.
+ */
 export function savedReviewSnapshot(
   store: Store,
   runId: string,
@@ -214,6 +250,10 @@ export function savedReviewSnapshot(
     );
   }
 }
+/**
+ * 构造无法证明当前变化的明确 unknown 摘要，保留原因与基线可读性，避免伪造零变化。
+ * EN: Builds an explicit unknown-change summary with reason/baseline availability instead of inventing zero changes.
+ */
 const unknown = (
   reason: 'baseline_missing' | 'baseline_invalid' | 'current_unreadable',
   baseline: 'known' | 'unknown',
@@ -224,7 +264,10 @@ const unknown = (
   fields: null,
   artifacts: null,
 });
-/** 按稳定产物 ID 比较增删改，并核对整体指纹与逐字段差异是否自洽，不一致时返回未知。 */
+/**
+ * 按稳定产物 ID 比较增删改，并核对整体指纹与逐字段差异是否自洽，不一致时返回未知。
+ * EN: Compares additions, removals, and changes by stable artifact ID and verifies consistency between whole fingerprints and field differences; inconsistency returns unknown.
+ */
 function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): DeliveryChangeSummary {
   const previous = new Map(before.artifacts.map((artifact) => [artifact.id, artifact]));
   let added = 0,
@@ -248,7 +291,10 @@ function compareBaselines(before: DeliveryBaseline, current: DeliveryBaseline): 
     return unknown('baseline_invalid', 'unknown');
   return { baseline: 'known', status: unchanged ? 'unchanged' : 'changed', fields, artifacts };
 }
-/** 历史基线缺失、损坏和当前不可读分别返回原因，不能将无法比较视为未变化。 */
+/**
+ * 历史基线缺失、损坏和当前不可读分别返回原因，不能将无法比较视为未变化。
+ * EN: Reports missing/corrupt baselines separately from unreadable current delivery; inability to compare is never treated as unchanged.
+ */
 function reviewComparison(store: Store, runId: string, reviewId: string, current: DeliveryBaseline | null) {
   const row = store.db
     .prepare('SELECT baseline_json,fingerprint FROM delivery_review_history_v1 WHERE run_id=? AND id=?')
@@ -262,7 +308,10 @@ function reviewComparison(store: Store, runId: string, reviewId: string, current
     summary: current ? compareBaselines(before, current) : unknown('current_unreadable', 'known'),
   };
 }
-/** 返回某份历史复核相对当前基线的字段级比较摘要。 */
+/**
+ * 返回某份历史复核相对当前基线的字段级比较摘要。
+ * EN: Returns a field-level summary comparing a historical review baseline with current delivery.
+ */
 export function deliveryChanges(
   store: Store,
   runId: string,
@@ -271,7 +320,10 @@ export function deliveryChanges(
 ): DeliveryChangeSummary {
   return reviewComparison(store, runId, reviewId, current).summary;
 }
-/** A page is pinned to one immutable review and one current delivery fingerprint. */
+/**
+ * 一页比较绑定一份不可变复核和一个当前交付指纹。
+ * EN: A page is pinned to one immutable review and one current delivery fingerprint.
+ */
 export function deliveryArtifactChanges(
   store: Store,
   run: Run,
@@ -297,7 +349,10 @@ export function deliveryArtifactChanges(
   }
   if (current.fingerprint !== expectedCurrentFingerprint)
     throw new AppError('DELIVERY_CHANGED', '交付内容已变化，请重新读取后查看产物变更', false, null, 409);
-  // 缓存键同时绑定不可变复核和当前指纹；未知基线返回 page=null，不伪造零差异集合。
+  /**
+   * 缓存键同时绑定不可变复核和当前指纹；未知基线返回 page=null，不伪造零差异集合。
+   * EN: Cache keys bind both immutable review and current fingerprint; unknown baselines return page=null rather than a fabricated zero-difference set.
+   */
   const comparison = cachedDeliveryRead(store, `changes:${run.id}:${reviewId}:${current.fingerprint}`, () => {
     const { before, summary } = reviewComparison(store, run.id, reviewId, current);
     const items: DeliveryArtifactChange[] = [];
@@ -339,7 +394,10 @@ export function deliveryArtifactChanges(
     page: { offset, limit: 20, total, hasMore, nextOffset: hasMore ? offset + 20 : null },
   };
 }
-/** 保留当前可迁移旧结论后按 rowid 倒序分页，游标必须属于本运行；覆盖字段揭示旧版历史缺口。 */
+/**
+ * 保留当前可迁移旧结论后按 rowid 倒序分页，游标必须属于本运行；覆盖字段揭示旧版历史缺口。
+ * EN: Preserves a migratable legacy decision before rowid-descending pagination. Cursors must belong to this run; coverage fields disclose legacy-history gaps.
+ */
 export function deliveryReviewHistory(store: Store, run: Run, before?: string): DeliveryReviewHistory {
   ensureCurrentReviewSnapshot(store, run);
   const limit = 20;
@@ -380,7 +438,10 @@ export function deliveryReviewHistory(store: Store, run: Run, before?: string): 
     },
   };
 }
-/** 读取冻结复核正文并尽力比较当前交付；当前不可读仍保留历史记录，数据库错误不降级吞掉。 */
+/**
+ * 读取冻结复核正文并尽力比较当前交付；当前不可读仍保留历史记录，数据库错误不降级吞掉。
+ * EN: Reads frozen review bodies and attempts current comparison. Unreadable current delivery retains history, while database errors are not swallowed as degradation.
+ */
 export function deliveryReviewHistoryDetail(
   store: Store,
   run: Run,

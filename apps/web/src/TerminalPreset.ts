@@ -1,9 +1,18 @@
-/* 生成终端代理配置的预设值。 */
+/**
+ * 生成终端代理配置的预设值。
+ *
+ * EN: Generates terminal agent configuration presets.
+ *
+ * 本模块生成互不共享可编辑数组的终端代理初始配置，包含命令参数、结果协议、镜像和资源默认值；仅生成配置与身份，启动、镜像核验和凭据注入由后续流程完成。
+ * EN: Builds initial agent profiles with independent editable arrays, command arguments, result protocol, image, and resource defaults. It creates configuration/identity only; later flows start agents, verify images, and inject credentials.
+ */
 import type { AgentTerminalProfile } from '../../../packages/contracts/src/index';
 /**
  * 生成独立可编辑模板：按代理类型选择非交互命令、结果协议和环境变量名，分配新 ID。
  * 数组复制避免修改预设共享值；镜像与标准资源只是初始值，创建任务时还需冻结并核验。
  * 环境数组保存变量名称，不包含任何凭据原文，函数也不会启动 CLI 或下载镜像。
+ *
+ * EN: Creates an independently editable template with a noninteractive command, output protocol, env names, and new ID. Copies arrays to protect shared defaults; image/resources are initial values still frozen/validated at creation. Env arrays contain names only; no CLI starts and no image downloads.
  */
 export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): AgentTerminalProfile {
   const choices = {

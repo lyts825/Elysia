@@ -1,4 +1,8 @@
-/** 管理维护操作的存储快照、锁和恢复安装。 */
+/**
+ * 管理维护操作的存储快照、锁和恢复安装。
+ * 支持离线备份验证、升级发布与中断安装恢复，只处理可核验普通目录和已支持 schema；未知文件及未来格式不能猜测覆盖。
+ * EN: Manages maintenance snapshots, locks, and restoration installation. Supports offline backup validation, upgrade publication and interrupted-install recovery for verified directories/supported schemas, preserving unknown/future data.
+ */
 import {
   Store,
   acquireLock,
@@ -45,8 +49,16 @@ export type BackupMetadata = {
   surfaces: Partial<Record<Surface, SurfaceBackup>>;
 };
 export const fileNames = ['state.db', 'state.db-wal', 'state.db-shm', 'objects', 'logs'];
+/**
+ * 判断存储版本是否为当前可处理的整数范围；未知未来版本不能进入维护升级。
+ * EN: Checks the integer range supported by this build; unknown future schemas cannot enter maintenance upgrades.
+ */
 export const supportedSchema = (version: unknown): version is number =>
   Number.isInteger(version) && Number(version) >= 1 && Number(version) <= STORAGE_SCHEMA_VERSION;
+/**
+ * 根据 schema 版本声明文件格式及最低读取器版本，用于备份兼容性描述而不修改数据。
+ * EN: Describes data format and minimum reader version from schema version without modifying data.
+ */
 export const dataFormat = (version: number): DataFormat => ({
   name: 'elysia-sqlite',
   version,
@@ -67,7 +79,10 @@ export const dataFormat = (version: number): DataFormat => ({
                   ? '0.25.0-preview.1'
                   : '0.24.0-preview.1',
 });
-/** 核对备份声明的数据格式和最低读取版本；旧备份按兼容规则处理。 */
+/**
+ * 核对备份声明的数据格式和最低读取版本；旧备份按兼容规则处理。
+ * EN: Checks backup format and minimum reader declarations, applying compatibility rules to legacy backups.
+ */
 export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   if (!entry.dataFormat) {
     if (required || entry.schemaVersion >= 4) throw new Error('备份缺少数据格式及最低读取版本');
@@ -81,7 +96,10 @@ export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   )
     throw new Error('备份数据格式或最低读取版本不相容');
 }
-/** 用相对路径判断目标是否位于根目录内，allowRoot 控制是否允许根目录本身。 */
+/**
+ * 用相对路径判断目标是否位于根目录内，allowRoot 控制是否允许根目录本身。
+ * EN: Checks containment with relative paths; allowRoot controls whether the root itself is accepted.
+ */
 export function isWithin(root: string, candidate: string, allowRoot = false) {
   const relative = path.relative(root, candidate);
   return (
@@ -92,7 +110,10 @@ export function isWithin(root: string, candidate: string, allowRoot = false) {
   );
 }
 
-/** 解析已存在的真实路径；尚不存在的部分从最近的现有祖先逐层还原。 */
+/**
+ * 解析已存在的真实路径；尚不存在的部分从最近的现有祖先逐层还原。
+ * EN: Resolves existing real paths and rebuilds missing suffixes from the nearest existing ancestor.
+ */
 export function canonicalDestination(destination: string): string {
   if (existsSync(destination)) return realpathSync(destination);
   const parent = path.dirname(destination);
@@ -100,18 +121,28 @@ export function canonicalDestination(destination: string): string {
   return path.join(canonicalDestination(parent), path.basename(destination));
 }
 
-/** 原生入口使用根目录，终端入口使用独立子目录；备份恢复均以此映射避免混用数据库。 */
+/**
+ * 原生入口使用根目录，终端入口使用独立子目录；备份恢复均以此映射避免混用数据库。
+ * EN: Maps native data to the root and terminal data to its own subdirectory, preventing backup/restore database mixing.
+ */
 export function surfaceDirectory(root: string, surface: Surface) {
   return surface === 'native' ? root : path.join(root, 'surfaces', 'terminal');
 }
 
+/**
+ * 要求维护路径为真实目录；链接或特殊文件立即失败。
+ * EN: Requires a real maintenance directory and rejects symlinks/special files.
+ */
 export function assertDirectory(directory: string) {
   const stat = lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink())
     throw new Error('维护目录不能是链接或特殊文件：' + directory);
 }
 
-/** 验证入口目录和数据库是普通文件，并拒绝两个入口通过硬链接指向同一个数据库。 */
+/**
+ * 验证入口目录和数据库是普通文件，并拒绝两个入口通过硬链接指向同一个数据库。
+ * EN: Validates regular surface directories/databases and rejects both surfaces pointing to the same hard-linked database.
+ */
 export function assertSurfacePath(root: string, surface: Surface) {
   if (surface === 'terminal') {
     for (const item of [path.join(root, 'surfaces'), surfaceDirectory(root, surface)])
@@ -131,13 +162,16 @@ export function assertSurfacePath(root: string, surface: Surface) {
 }
 
 /**
- * 使用 SQLite backup 捕获已提交 WAL 页面，随后转换为独立 DELETE 日志模式数据库。
- * 校验 schema 和完整性只作用于副本；expectedVersion 用于防止备份元数据与实际库版本不符。
+ * 使用 SQLite backup 捕获已提交 WAL 页面，随后转换为独立 DELETE 日志模式数据库。 校验 schema 和完整性只作用于副本；expectedVersion 用于防止备份元数据与实际库版本不符。
+ * EN: Uses SQLite backup to capture committed WAL pages, then converts the copy to standalone DELETE journal mode. Schema/integrity checks affect only the copy; expectedVersion prevents declared and actual schema mismatch.
  */
 export async function snapshotDatabase(source: string, target: string, expectedVersion?: number) {
   if (!lstatSync(source).isFile() || lstatSync(source).isSymbolicLink())
     throw new Error('数据库不能是链接或特殊文件');
-  // SQLite backup includes committed WAL pages without upgrading or changing its source.
+  /**
+   * SQLite备份包含已提交WAL页，不升级或改变来源数据库。
+   * EN: SQLite backup includes committed WAL pages without upgrading or changing its source.
+   */
   const database = new DatabaseSync(source, { readOnly: true });
   try {
     await backup(database, target);
@@ -166,7 +200,10 @@ export async function snapshotDatabase(source: string, target: string, expectedV
   }
 }
 
-/** 递归复制普通对象/日志文件并在复制前后核对 SHA-256，来源变化或链接使备份失败。 */
+/**
+ * 递归复制普通对象/日志文件并在复制前后核对 SHA-256，来源变化或链接使备份失败。
+ * EN: Recursively copies regular object/log files and verifies SHA-256 around copying; source changes or links fail the backup.
+ */
 export function copyDirectory(source: string, target: string) {
   assertDirectory(source);
   mkdirSync(target, { recursive: true });
@@ -177,6 +214,10 @@ export function copyDirectory(source: string, target: string) {
     if (stat.isSymbolicLink()) throw new Error('备份对象和日志不能包含链接：' + from);
     if (stat.isDirectory()) copyDirectory(from, to);
     else if (stat.isFile()) {
+      /**
+       * 同步读取维护文件并计算 SHA-256，供快照/清单完整性比对；文件错误直接传播。
+       * EN: Synchronously hashes a maintenance file with SHA-256 for snapshot/manifest integrity, propagating I/O failures.
+       */
       const digest = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
       const before = digest(from);
       cpSync(from, to);
@@ -186,8 +227,8 @@ export function copyDirectory(source: string, target: string) {
 }
 
 /**
- * 将单入口数据库、对象和日志准备到目标目录。migrate 只升级准备副本，随后再次快照为
- * 独立数据库，并验证交付归档引用；所有入口准备完成前不改写当前运行数据。
+ * 将单入口数据库、对象和日志准备到目标目录。migrate 只升级准备副本，随后再次快照为 独立数据库，并验证交付归档引用；所有入口准备完成前不改写当前运行数据。
+ * EN: Prepares one surface's database, objects, and logs in a destination. migrate upgrades only the prepared copy, then resnapshots a standalone database and validates delivery references. Live data is untouched until every surface is prepared.
  */
 export async function prepareSurface(
   source: string,
@@ -209,7 +250,10 @@ export async function prepareSurface(
     includes.push('logs');
   }
   if (migrate) {
-    // Migrate and validate only the prepared copy; a bad second surface cannot alter the first.
+    /**
+     * 只迁移及验证准备副本，第二入口损坏不能改变第一入口。
+     * EN: Migrate and validate only the prepared copy; a bad second surface cannot alter the first.
+     */
     const store = new Store(target);
     try {
       const integrity = store.db.prepare('PRAGMA integrity_check').all() as any[];
@@ -233,7 +277,10 @@ export async function prepareSurface(
   return { schemaVersion, dataFormat: dataFormat(schemaVersion), includes };
 }
 
-/** 解析备份封装并核对入口目录和最低读取格式；旧版根备份只认作原生入口，不猜测终端数据。 */
+/**
+ * 解析备份封装并核对入口目录和最低读取格式；旧版根备份只认作原生入口，不猜测终端数据。
+ * EN: Parses the backup envelope and checks surface directories and minimum format. A legacy root backup is native only; terminal data is not guessed.
+ */
 export function backupSurfaces(source: string): Partial<Record<Surface, SurfaceBackup>> {
   const metadata = JSON.parse(readFileSync(path.join(source, 'backup.json'), 'utf8'));
   if (!supportedSchema(metadata.schemaVersion)) throw new Error('备份 schema 不相容');
@@ -246,7 +293,10 @@ export function backupSurfaces(source: string): Partial<Record<Surface, SurfaceB
   )
     throw new Error('备份封装格式或应用版本无效');
   if (!modern && metadata.schemaVersion >= 4) throw new Error('备份缺少封装格式与应用版本');
-  // Legacy backups have only the native root. Never infer a terminal backup from its filename.
+  /**
+   * 旧备份仅含原生根目录，不按文件名推断终端备份。
+   * EN: Legacy backups have only the native root. Never infer a terminal backup from its filename.
+   */
   if (!modern && metadata.surface === undefined && metadata.surfaces === undefined)
     return { native: { path: '.', schemaVersion: metadata.schemaVersion, includes: metadata.includes } };
   if (!['native', 'terminal', 'all'].includes(metadata.surface) || !metadata.surfaces)
@@ -274,7 +324,10 @@ export function backupSurfaces(source: string): Partial<Record<Surface, SurfaceB
   return selected;
 }
 
-/** 只移除数据目录的 .maintenance-* 直属临时目录，防止计算错误扩大递归删除范围。 */
+/**
+ * 只移除数据目录的 .maintenance-* 直属临时目录，防止计算错误扩大递归删除范围。
+ * EN: Removes only direct .maintenance-* temporary children of the data directory, containing recursive cleanup scope.
+ */
 export function removeStage(stage: string, directory: string) {
   if (
     path.dirname(path.resolve(stage)) !== path.resolve(directory) ||
@@ -293,13 +346,20 @@ type InstallJournal = {
   originals: Record<string, boolean>;
 };
 const journalName = '.maintenance-install.json';
+/**
+ * 先以私有权限写入并刷新临时日志，再重命名发布完整安装日志；失败保留错误供恢复流程处理。
+ * EN: Writes and flushes a private temporary journal before renaming it into place, propagating failures for recovery handling.
+ */
 function saveJournal(directory: string, journal: InstallJournal) {
   const target = path.join(directory, journalName);
   writeFileSync(target + '.tmp', stable(journal), { mode: 0o600, flush: true });
   renameSync(target + '.tmp', target);
 }
 
-// Both startup and maintenance hold these locks through all reads, installation and database use.
+/**
+ * 启动和维护在全部读取、安装和数据库使用期间始终持有这些锁。
+ * EN: Both startup and maintenance hold these locks through all reads, installation and database use.
+ */
 export function acquireSurfaceLocks(directory: string) {
   const release = acquireLock(directory);
   let releaseTerminal: (() => void) | undefined;
@@ -323,8 +383,8 @@ export function acquireSurfaceLocks(directory: string) {
 }
 
 /**
- * 依据持久安装日志完成启动恢复。installing 表示替换尚未提交，逐项从原件归档回滚；
- * committed 表示新数据已生效，只清理日志/准备目录。任何归属不明的路径都拒绝自动恢复。
+ * 依据持久安装日志完成启动恢复。installing 表示替换尚未提交，逐项从原件归档回滚； committed 表示新数据已生效，只清理日志/准备目录。任何归属不明的路径都拒绝自动恢复。
+ * EN: Recovers from a durable installation journal. installing rolls replacements back from original archives; committed keeps new data and cleans journal/staging. Unknown path ownership rejects automatic recovery.
  */
 export function recoverPreparedInstall(directory: string) {
   const filename = path.join(directory, journalName);
@@ -357,7 +417,10 @@ export function recoverPreparedInstall(directory: string) {
       if (typeof journal.originals[surface + '/' + name] !== 'boolean')
         throw new Error('维护恢复原始清单不完整');
   }
-  // 安装未提交时用归档回滚；已提交时只清理日志和暂存目录。
+  /**
+   * 安装未提交时用归档回滚；已提交时只清理日志和暂存目录。
+   * EN: Rolls back from archives if uncommitted; after commit, only journal and staging cleanup remain.
+   */
   if (journal.phase === 'installing') {
     for (const surface of journal.surfaces) {
       for (const name of fileNames) {
@@ -380,8 +443,8 @@ export function recoverPreparedInstall(directory: string) {
 }
 
 /**
- * 在双方入口锁保护下安装已校验的准备副本。先记录原始存在性并 fsync 日志，再归档旧文件
- * 和移动新文件；只有全部替换完成才提交日志。失败尝试恢复原件，失败的回滚留待下次启动。
+ * 在双方入口锁保护下安装已校验的准备副本。先记录原始存在性并 fsync 日志，再归档旧文件 和移动新文件；只有全部替换完成才提交日志。失败尝试恢复原件，失败的回滚留待下次启动。
+ * EN: Installs verified prepared copies while holding both surface locks. Persists original existence and fsyncs the journal before archiving/moving files, committing only after all replacements. Failures attempt rollback; failed rollback remains recoverable on startup.
  */
 export function installPrepared(directory: string, stage: string, surfaces: Surface[]) {
   if (path.dirname(stage) !== directory || !/^\.maintenance-[a-zA-Z0-9_-]+$/.test(path.basename(stage)))
@@ -409,7 +472,10 @@ export function installPrepared(directory: string, stage: string, surfaces: Surf
     surfaces,
     originals,
   };
-  // 先持久化恢复日志，再移动任何原文件，保证中断后可恢复。
+  /**
+   * 先持久化恢复日志，再移动任何原文件，保证中断后可恢复。
+   * EN: Persist the recovery journal before moving any original file so interruption remains recoverable.
+   */
   saveJournal(directory, journal);
   try {
     for (const surface of surfaces) {

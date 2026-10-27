@@ -1,4 +1,7 @@
-/* 定义 reasoning 对应界面的样式与布局。 */
+/*
+ * 推理内容面板：用可展开标题、状态和箭头组织推理正文，aria-expanded 同时驱动视觉展开反馈。正文有界滚动；减少动态与高对比度规则保留静态可读状态。
+ * EN: Reasoning panel: organizes reasoning behind an expandable heading/status/chevron, with aria-expanded driving visual state. Bodies scroll within bounds; reduced-motion/high-contrast rules preserve static readability.
+ */
 .reasoning-panel {
   min-width: 0;
   margin: 0 0 var(--space-4);
@@ -57,7 +60,10 @@
   transform: rotate(0deg);
   transition: transform var(--motion-fast) ease;
 }
-/* 展开状态由 aria-expanded 表达；箭头同步旋转而不另设一份视觉状态。 */
+/*
+ * 展开状态由 aria-expanded 表达；箭头同步旋转而不另设一份视觉状态。
+ * EN: Uses aria-expanded as the open-state source and rotates the arrow from that same state.
+ */
 .reasoning-toggle[aria-expanded='true'] .reasoning-chevron {
   transform: rotate(90deg);
 }
@@ -132,7 +138,10 @@
 .reasoning-notice button:active:not(:disabled) {
   background: var(--surface-selected);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .reasoning-viewport {
   min-width: 0;
   max-height: min(26rem, 48vh);
@@ -191,14 +200,20 @@
 .reasoning-more {
   margin-top: var(--space-2);
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   .reasoning-toggle,
   .reasoning-chevron {
     transition: none;
   }
 }
-/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
+/*
+ * 遵循更高对比度偏好，调整此处颜色、边框或透明度。
+ * EN: Respects higher-contrast preferences by adjusting colors, borders, or opacity here.
+ */
 @media (prefers-contrast: more) {
   .reasoning-panel,
   .reasoning-content {

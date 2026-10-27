@@ -1,4 +1,8 @@
-/* 处理来源备注及其解决状态。 */
+/**
+ * 处理来源备注及其解决状态。
+ * 为带入备注记录逐项复验、证据和处理结论，保存绑定四层版本依据；交付变化后保留输入并核对真实保存结果。
+ * EN: Records source-note resolutions and their state. Records per-note retests, evidence, and resolutions with four-layer revision evidence; delivery changes retain input and require reconciliation of actual save outcomes.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryCriterion,
@@ -15,7 +19,10 @@ import { z } from 'zod';
 import './source-note-resolutions.css';
 
 type RowDraft = {
-  // 保留来源哈希、交付指纹及版本，以便检测旧备注与当前记录是否仍匹配。
+  /**
+   * 保留来源哈希、交付指纹及版本，以便检测旧备注与当前记录是否仍匹配。
+   * EN: Retain source hash/delivery fingerprint/revision to detect stale links.
+   */
   sourceHash: string;
   fingerprint: string;
   revision: number;
@@ -55,7 +62,10 @@ const rowShape = z.object({
     }),
   ),
 });
-/** 解析有界本机草稿；缺省为空，损坏则禁用写入以保护原始输入，不自动重置。 */
+/**
+ * 解析有界本机草稿；缺省为空，损坏则禁用写入以保护原始输入，不自动重置。
+ * EN: Parse bounded drafts: absence is empty, corruption disables writes and preserves originals rather than resetting.
+ */
 function readDraft(raw: unknown): Draft | undefined {
   if (!raw) return { version: 1, items: {} };
   if (typeof raw !== 'string' || raw.length > 200000) return;
@@ -76,6 +86,7 @@ const labels: Record<SourceNoteResolutionStatus, string> = {
 /**
  * 逐条登记来源反馈的人工复验结论。草稿按来源哈希和备注索引隔离，并绑定当前交付指纹、
  * 单条处理修订、手选标准与证据；新交付或并发保存后必须明确重新核对才能提交。
+ * EN: Record human retest decisions per source hash/note index, binding delivery fingerprint/item revision/manually selected criteria/evidence. New delivery or concurrent save requires explicit recheck before submission.
  */
 export function SourceNoteResolutions({
   delivery,
@@ -110,12 +121,20 @@ export function SourceNoteResolutions({
   latestDelivery.current = delivery;
   const savePending = useRef(false);
   const live = useRef(true);
+  /**
+   * 通过live引用标记复验面板生命周期，卸载后保存响应只能保留服务端结果，不能继续更新已离开的界面。
+   * EN: Tracks the retest panel lifetime through live; after teardown a save may retain its server outcome but cannot update the departed view.
+   */
   useEffect(() => {
     live.current = true;
     return () => {
       live.current = false;
     };
   }, []);
+  /**
+   * 交付的运行、指纹及修订或重试变化时读取备注复验；响应核对归属和根版本，旧请求取消，冲突保留草稿并要求重读。
+   * EN: Reads note resolutions after delivery run/fingerprint/revision or retry changes, validating ownership/root revision and aborting obsolete requests; conflicts retain drafts and require rereading.
+   */
   useEffect(() => {
     const controller = new AbortController();
     setReading(true);
@@ -148,7 +167,10 @@ export function SourceNoteResolutions({
       });
     return () => controller.abort();
   }, [api, delivery.runId, delivery.fingerprint, delivery.rootRevision, delivery.runRevision, retry]);
-  // 屏幕上只采用仍匹配当前交付的服务端处理视图，旧 value 保留也不能开放保存。
+  /**
+   * 屏幕上只采用仍匹配当前交付的服务端处理视图，旧 value 保留也不能开放保存。
+   * EN: Use only service views matching current delivery; retaining old value cannot enable saving.
+   */
   const current =
     value?.runId === delivery.runId &&
     value.currentFingerprint === delivery.fingerprint &&
@@ -157,7 +179,10 @@ export function SourceNoteResolutions({
       : undefined;
   const locked =
     disabled || !change || reading || saving !== undefined || !current?.writable || !!error || !draft;
-  /** 局部编辑只写上层本机草稿，超容量拒绝本次修改，完整旧草稿继续保留。 */
+  /**
+   * 局部编辑只写上层本机草稿，超容量拒绝本次修改，完整旧草稿继续保留。
+   * EN: Edit parent-local draft only; reject oversized edits and keep the complete old draft.
+   */
   function write(items: Draft['items']) {
     const text = JSON.stringify({ version: 1, items });
     if (text.length > 200000) {
@@ -169,12 +194,17 @@ export function SourceNoteResolutions({
     setNotice('');
     return true;
   }
+  /**
+   * 基于最新备注处理草稿合并一个条目，保留其他备注的编辑；没有当前草稿时不写入。
+   * EN: Merges one entry into the latest note-resolution draft, preserving edits to other notes and skipping writes when no current draft exists.
+   */
   function patch(key: string, next: RowDraft) {
     if (ref.current) write({ ...ref.current.items, [key]: next });
   }
   /**
    * 保存单条明确选择的复验，提交四层版本依据：运行、根任务、交付指纹及备注处理修订。
    * 响应回来若交付已更新，仅提示核对实际保存结果，不用旧响应清除当前输入。
+   * EN: Save one explicit retest with run/root revisions, delivery fingerprint, and resolution revision. If delivery changes during save, report actual-result review instead of clearing new input with old response.
    */
   async function save(index: number, key: string, item: RowDraft) {
     if (
@@ -224,7 +254,10 @@ export function SourceNoteResolutions({
         throw Error('返回的来源版本不一致，草稿仍保留。');
       setValue(next);
       updated(next.runRevision);
-      // 只清掉与发起时完全相同的草稿，保存期间的新编辑不能因旧请求成功而丢失。
+      /**
+       * 只清掉与发起时完全相同的草稿，保存期间的新编辑不能因旧请求成功而丢失。
+       * EN: Clear only exactly unchanged submitted draft; later edits survive old success.
+       */
       if (ref.current && JSON.stringify(ref.current.items[key]) === token) {
         const items = { ...ref.current.items };
         delete items[key];
@@ -286,7 +319,10 @@ export function SourceNoteResolutions({
           saved = row.resolution;
         const stale = !!item && item.fingerprint !== current.currentFingerprint,
           concurrent = !!item && item.revision !== (saved?.revision || 0);
-        // 旧交付的已保存结论只恢复文字和状态，标准/证据必须重新手选，不能沿用失效关联。
+        /**
+         * 旧交付的已保存结论只恢复文字和状态，标准/证据必须重新手选，不能沿用失效关联。
+         * EN: An older saved decision restores text/status only; reselect criteria/evidence rather than reusing invalid links.
+         */
         const begin = () =>
           patch(key, {
             sourceHash: current.sourceHash!,

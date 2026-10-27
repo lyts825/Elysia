@@ -1,4 +1,10 @@
-// 校验和管理任务工作状态检查点及其上下文。
+/**
+ * 校验和管理任务工作状态检查点及其上下文。
+ * 事实采集与用户批准分开，摘要绑定原历史前缀，保存批准不直接恢复或启动任务。
+ *
+ * EN: Validates and manages task working-state checkpoints and their context.
+ * Separates fact capture/user approval, binds the original prefix, and never resumes/starts execution by saving approval.
+ */
 import { Evidence, AppError, type Message, type Run, type Task } from '../../contracts/src/index.js';
 import type {
   ApprovedTaskWorkingState,
@@ -12,19 +18,31 @@ export type WorkingStateContext = { run: Run; task: Task };
 export const WORKING_STATE_REQUIREMENTS_MAX_CHARS = 16_000;
 const MAX_EVIDENCE = 40;
 
-/** 合同、任务规范及合同版本共同确定当前需求；执行状态变化不使需求摘要失效。 */
+/**
+ * 合同、任务规范及合同版本共同确定当前需求；执行状态变化不使需求摘要失效。
+ *
+ * EN: Contract, task specification, and contract version determine current requirements; execution-status changes do not invalidate the requirement digest.
+ */
 function requirementsHash({ run, task }: WorkingStateContext) {
   return hash(stable({ contract: run.contract, spec: task.spec, contractVersion: task.contractVersion }));
 }
 
-/** 草稿摘要覆盖版本、来源和事实快照，供批准时确认用户核对的是同一份内容。 */
+/**
+ * 草稿摘要覆盖版本、来源和事实快照，供批准时确认用户核对的是同一份内容。
+ *
+ * EN: The draft digest covers version, source, and fact snapshot so approval checks the exact reviewed content.
+ */
 function draftHash(draft: Omit<TaskWorkingStateDraft, 'snapshotHash'> | TaskWorkingStateDraft) {
   return hash(
     stable({ version: draft.version, revision: draft.revision, source: draft.source, state: draft.state }),
   );
 }
 
-/** 将用户确认的有效要求与批准命令绑定到草稿，防止保存后单独改写确认内容。 */
+/**
+ * 将用户确认的有效要求与批准命令绑定到草稿，防止保存后单独改写确认内容。
+ *
+ * EN: Binds user-confirmed active requirements and the approval command to the draft, preventing later isolated rewrites.
+ */
 function approvedHash(state: ApprovedTaskWorkingState) {
   return hash(
     stable({
@@ -38,8 +56,13 @@ function approvedHash(state: ApprovedTaskWorkingState) {
   );
 }
 
-/** Only source-backed facts are generated here. Deciding which prior requests remain active is a user action. */
-// 绑定运行、会话和合同修订，并记录历史与需求摘要；这里只收集事实，不替用户确认要求。
+/**
+ * 这里只生成有来源依据的事实；哪些先前要求仍有效由用户决定。
+ * 绑定运行、会话和合同修订，并记录历史与需求摘要；这里只收集事实，不替用户确认要求。
+ *
+ * EN: Only source-backed facts are generated here. Deciding which prior requests remain active is a user action.
+ * Binds run, session, and contract revisions and records history/requirement digests; collects facts without deciding requirements for the user.
+ */
 export function captureTaskWorkingState(
   input: WorkingStateContext & {
     children: Task[];
@@ -121,8 +144,13 @@ export function captureTaskWorkingState(
   return { ...draft, snapshotHash: draftHash(draft) };
 }
 
-/** The caller must obtain this confirmation from the human and check the current draft hash before saving. */
-// 要求明确确认、非空要求和匹配的草稿摘要，再生成可复核的批准记录。
+/**
+ * 调用方必须向用户取得该确认，并在保存前核对当前草稿哈希。
+ * 要求明确确认、非空要求和匹配的草稿摘要，再生成可复核的批准记录。
+ *
+ * EN: The caller must obtain this confirmation from the human and check the current draft hash before saving.
+ * Requires explicit confirmation, nonempty requirements, and a matching draft digest before generating an auditable approval.
+ */
 export function approveTaskWorkingState(
   draft: TaskWorkingStateDraft,
   input: {
@@ -152,8 +180,13 @@ export function approveTaskWorkingState(
 
 export type WorkingStateValidation = { valid: true } | { valid: false; reason: string };
 
-/** Later messages are not covered. Every correction after this prefix remains verbatim in compaction. */
-// 验证摘要、作用域、当前需求和已覆盖历史；较晚的消息不属于这个检查点。
+/**
+ * 不覆盖后续消息；该前缀之后的所有更正在压缩中逐字保留。
+ * 验证摘要、作用域、当前需求和已覆盖历史；较晚的消息不属于这个检查点。
+ *
+ * EN: Later messages are not covered. Every correction after this prefix remains verbatim in compaction.
+ * Checks digest, scope, current requirements, and covered history; later messages are outside this checkpoint.
+ */
 export function validateTaskWorkingState(
   state: ApprovedTaskWorkingState,
   input: WorkingStateContext & {
@@ -208,8 +241,13 @@ export function validateTaskWorkingState(
   }
 }
 
-/** Current operational facts are still supplied by the normal task context. This checkpoint is explicitly dated. */
-/** 生成明确带时间的历史检查点；其中的子任务状态和证据不代表当前仍然有效。 */
+/**
+ * 当前操作事实仍由正常任务上下文提供，此检查点明确带有日期。
+ * 生成明确带时间的历史检查点；其中的子任务状态和证据不代表当前仍然有效。
+ *
+ * EN: Current operational facts are still supplied by the normal task context. This checkpoint is explicitly dated.
+ * Builds an explicitly dated historical checkpoint; child-task states/evidence within it do not claim current validity.
+ */
 export function workingStateMemory(state: ApprovedTaskWorkingState, originalRef: string) {
   return {
     revision: state.revision,
@@ -224,9 +262,16 @@ export function workingStateMemory(state: ApprovedTaskWorkingState, originalRef:
   };
 }
 
+/** 将运行和任务身份一起编码到工作状态键，隔离不同任务的批准记录。
+ * EN: Includes run and task identity in the working-state key to isolate approval records.
+ */
 const recordKey = (runId: string, taskId: string) => `task-working-state:v1:${runId}:${taskId}`;
 
-/** Inline metadata contains no GC-sensitive object reference; original messages remain in the session table. */
+/**
+ * 内联元数据没有受对象回收影响的引用；原始消息仍保存在会话表。
+ *
+ * EN: Inline metadata contains no GC-sensitive object reference; original messages remain in the session table.
+ */
 export function readTaskWorkingState(store: Store, runId: string, taskId: string): TaskWorkingStateRecord {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(recordKey(runId, taskId)) as
     | { value: string }
@@ -258,6 +303,8 @@ export function readTaskWorkingState(store: Store, runId: string, taskId: string
 /**
  * 按 expectedRevision 做乐观并发保存；批准快照须正好对应下一个修订及同一运行/任务。
  * approved 为 null 表示清除当前批准内容，但修订仍递增，避免旧页面覆盖新决定。
+ *
+ * EN: Saves optimistically against expectedRevision; the approved snapshot must match the next revision and same run/task. null clears approval but still increments revision so an old page cannot overwrite a later decision.
  */
 export function saveTaskWorkingState(
   store: Store,

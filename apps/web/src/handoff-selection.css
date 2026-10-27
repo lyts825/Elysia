@@ -1,4 +1,7 @@
-/* 定义 handoff-selection 对应界面的样式与布局。 */
+/*
+ * 交接材料选择：排列备注选择、版本对照、产物摘要和可读正文。对照列可收缩并在窄屏调整，正文有界滚动，避免大段来源信息遮蔽选择控件。
+ * EN: Handoff selection: arranges note choices, version comparisons, artifact summaries, and source text. Comparison columns shrink/adapt while bounded reading regions keep long sources from hiding selection controls.
+ */
 .handoff-review,
 .handoff-artifacts,
 .handoff-artifact-summary,
@@ -22,7 +25,10 @@
   width: auto;
   margin-top: var(--space-1);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .handoff-reading {
   min-width: 0;
   max-height: min(14rem, 45dvh);
@@ -69,7 +75,10 @@
   font-size: var(--font-md);
   font-weight: 600;
 }
-/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+ */
 .handoff-version-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -115,7 +124,10 @@
   max-width: 100%;
   scroll-margin-block: var(--space-3);
 }
-/* 窄屏调整交接版本对照的列数和间距。 */
+/*
+ * 窄屏调整交接版本对照的列数和间距。
+ * EN: Changes handoff version-comparison column count and spacing on narrow screens.
+ */
 @media (max-width: 480px) {
   .handoff-version-pair {
     grid-template-columns: minmax(0, 1fr);

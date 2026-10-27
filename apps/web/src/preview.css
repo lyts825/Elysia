@@ -1,11 +1,17 @@
-/* 定义 preview 对应界面的样式与布局。 */
+/*
+ * 运行预览主面板：布局预览标题、画布、空状态、活动、文件与文档内容，并覆盖展开和退出状态。min-width/min-height 约束与局部滚动支持会话旁嵌入；窄屏与短窗口减少装饰留白而保留正文。
+ * EN: Run-preview panel: lays out headings, canvas, empty state, activity, files, and documents across expanded/leaving states. Shrink constraints/local scrolling support embedding beside conversations; constrained screens reduce decorative spacing while retaining content.
+ */
 .run-layout {
   position: relative;
 }
 .preview-open > .conversation {
   min-width: 0;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .preview-panel {
   container-type: inline-size;
   --preview-reading-height: min(16rem, 50dvh);
@@ -20,6 +26,10 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+/*
+ * 标题及控制区不参与纵向压缩，画布和活动区承担剩余空间变化，避免内容变长时按钮被挤扁。
+ * EN: Prevents headings/controls from shrinking vertically; canvas/activity absorb remaining-space changes so long content cannot flatten controls.
+ */
 .preview-panel > :not(.preview-canvas, .preview-activity) {
   flex-shrink: 0;
 }
@@ -321,7 +331,10 @@
   font-size: var(--font-sm);
   line-height: 1.8;
 }
-/* 高度受限时压缩空预览的留白和文字间距。 */
+/*
+ * 高度受限时压缩空预览的留白和文字间距。
+ * EN: Compacts empty-preview whitespace and text spacing when height is limited.
+ */
 @media (max-height: 760px) {
   .preview-empty {
     padding: var(--space-4) var(--space-6);
@@ -627,7 +640,10 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .preview-activity details pre:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -692,7 +708,10 @@
   max-width: 180px;
   font-variant-numeric: tabular-nums;
 }
-/* 较窄窗口使用完整宽度的预览面板，并隐藏部分预览标签。 */
+/*
+ * 较窄窗口使用完整宽度的预览面板，并隐藏部分预览标签。
+ * EN: Uses a full-width preview panel and hides some preview labels in narrower windows.
+ */
 @media (max-width: 1100px) {
   .preview-panel {
     width: 100%;
@@ -718,7 +737,10 @@
 .preview-tools button:hover:not(:disabled) {
   background: var(--accent-pale);
 }
-/* 极窄屏收紧预览标签、徽标和 Markdown 区域的水平留白。 */
+/*
+ * 极窄屏收紧预览标签、徽标和 Markdown 区域的水平留白。
+ * EN: Tightens preview tabs, badges, and Markdown horizontal padding on very narrow screens.
+ */
 @media (max-width: 420px) {
   .preview-tabs button {
     padding-inline: 2px;

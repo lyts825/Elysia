@@ -1,4 +1,8 @@
-/* 处理运行反馈的数据和状态。 */
+/**
+ * 处理运行反馈的数据和状态。
+ * 从运行状态、当前问题和速率等待记录推导可用反馈及恢复提示，区分读取不足和执行暂停；不自行恢复运行。
+ * EN: Derives run feedback and available next actions. Derives feedback/resume notices from run state, current questions, and rate waits, distinguishing incomplete reads from paused execution without resuming runs itself.
+ */
 import type { Event, Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 import type { CurrentQuestion, RunCurrentQuestions } from '../../../packages/contracts/src/run-reads';
 import { detailReadReason, type DetailReadState } from './DetailReadState';
@@ -31,13 +35,23 @@ const limitCodes =
   /^(?:TIME_BUDGET|STEP_LIMIT|REQUEST_BUDGET|TOKEN_BUDGET|COST_BUDGET|CONTEXT_LIMIT|ACCOUNT_TOKEN_LIMIT)$/;
 
 type QuestionDetail = Pick<FeedbackDetail, 'tasks' | 'events' | 'currentQuestions'> & { run?: Run };
+/**
+ * 判断运行是否已结束、取消或由终端执行器托管；这些状态不再显示活动原生运行的问题覆盖提示。
+ * EN: Detects completed, cancelled, or terminal-executor runs, which no longer need active native-run question-coverage warnings.
+ */
 const questionsInactive = (detail: Pick<QuestionDetail, 'run'>) =>
   !!detail.run &&
   (['DONE', 'CANCELLED'].includes(detail.run.status) || detail.run.execution?.kind === 'docker-agent');
 
-/** 仅为活动原生运行返回问题覆盖不足文案；空字符串表示没有需要额外展示的读取提示。 */
+/**
+ * 仅为活动原生运行返回问题覆盖不足文案；空字符串表示没有需要额外展示的读取提示。
+ * EN: Return question-coverage warnings for active native runs only; empty text means no extra read notice.
+ */
 export function currentQuestionsReadNotice(detail: Pick<QuestionDetail, 'run' | 'currentQuestions'>) {
-  // 仅活动运行显示覆盖不足提示；截断与读取故障使用不同文案。
+  /**
+   * 仅活动运行显示覆盖不足提示；截断与读取故障使用不同文案。
+   * EN: Only active runs show incomplete coverage; distinguish limit truncation from read failures.
+   */
   if (questionsInactive(detail) || detail.currentQuestions?.coverage.complete !== false) return '';
   return detail.currentQuestions.coverage.limited
     ? '部分待答问题超出单次核对范围，暂无法完整确认；已有输入和任务状态保持。'
@@ -47,9 +61,13 @@ export function currentQuestionsReadNotice(detail: Pick<QuestionDetail, 'run' | 
 /**
  * 新服务端以当前问题投影为准，包括显式空列表；只保留实际仍 WAITING/user 的任务。
  * 旧服务端兼容路径反向查看事件，遇到离开等待状态的事件即停止，避免复活已回答的问题。
+ * EN: Use current-question projections, including explicit empty lists, and retain actual WAITING/user tasks only. Legacy fallback walks events backward and stops after leaving the waiting state so answered questions cannot reappear.
  */
 export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
-  // 新服务端的当前问题投影优先；旧服务端才从最近事件向前查找。
+  /**
+   * 新服务端的当前问题投影优先；旧服务端才从最近事件向前查找。
+   * EN: Prefer server current-question projection; only old servers fall back to recent events.
+   */
   if (questionsInactive(detail)) return [];
   const waiting = detail.tasks.filter(
     (item) =>
@@ -57,8 +75,14 @@ export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
       item.waitReason === 'user' &&
       (!detail.run || item.runId === detail.run.id),
   );
-  // An explicit empty projection closes older questions. Only older servers
-  // without this field use the recent-event compatibility path.
+  /**
+   * 显式空投影关闭旧问题，只有缺少此字段的旧服务端
+   * EN: An explicit empty projection closes older questions. Only older servers
+   */
+  /**
+   * 使用近期事件兼容路径。
+   * EN: without this field use the recent-event compatibility path.
+   */
   if (detail.currentQuestions !== undefined) {
     const taskIds = new Set(waiting.map((task) => task.id));
     return [...detail.currentQuestions.items]
@@ -99,9 +123,15 @@ export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
   return questions.sort((a, b) => a.seq - b.seq);
 }
 
-/** 解析可信的正数恢复时间；明确出现新版 rateLimit 字段时不回退 result 中的旧值。 */
+/**
+ * 解析可信的正数恢复时间；明确出现新版 rateLimit 字段时不回退 result 中的旧值。
+ * EN: Parse a valid positive resume time; explicit new rateLimit prevents fallback to stale result values.
+ */
 export function rateResumeAt(task: Task): number | null {
-  // 兼容旧任务的 result.resumeAt，同时优先使用明确的速率限制记录。
+  /**
+   * 兼容旧任务的 result.resumeAt，同时优先使用明确的速率限制记录。
+   * EN: Prefer explicit rate-limit records while supporting legacy result.resumeAt.
+   */
   const value =
     task.rateLimit === undefined
       ? (task.result as { resumeAt?: unknown } | null)?.resumeAt
@@ -112,6 +142,7 @@ export function rateResumeAt(task: Task): number | null {
 /**
  * 把限流来源、恢复时间、自动执行资格及依赖状态组合为展示文本。
  * now 由外层计时器传入；本函数只计算提示，不负责计时或安排真正重试。
+ * EN: Combine rate source/time, automatic eligibility, and dependencies into display text. Outer timer supplies now; this function neither schedules nor performs retry.
  */
 export function rateWaitText(
   task: Task,
@@ -119,7 +150,10 @@ export function rateWaitText(
   now = Date.now(),
   dependenciesReady = true,
 ): string {
-  // 暂停或依赖未就绪时不承诺自动重试；倒计时只用于展示。
+  /**
+   * 暂停或依赖未就绪时不承诺自动重试；倒计时只用于展示。
+   * EN: Paused or blocked dependencies do not promise automatic retry; countdown is presentation only.
+   */
   const resumeAt = rateResumeAt(task);
   const providerWait = task.rateLimit?.source === 'provider';
   const label = providerWait ? '模型服务暂时受限' : '账号速率受限';
@@ -136,9 +170,13 @@ export function rateWaitText(
  * 将运行、任务、请求和操作记录归纳为一个优先级明确的状态提示与可用动作。
  * 读取不完整、归档和终态先处理；副作用核验、预算、依赖和用户问题再决定动作。
  * control/action 是界面建议，实际恢复或重试仍必须由服务端核验，不能据此绕过预算。
+ * EN: Prioritize run/task/request/operation feedback. Incomplete reads/archive/terminal states come first, followed by uncertain effects, budgets, dependencies, and questions. control/action suggest UI only; server revalidates resume/retry and budgets.
  */
 export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = Date.now()): RunFeedback {
-  // 详情不完整和归档状态优先，其余状态再决定可展示的操作与原因。
+  /**
+   * 详情不完整和归档状态优先，其余状态再决定可展示的操作与原因。
+   * EN: Handle incomplete detail and archive first, then determine actions/reasons.
+   */
   if (detailReadReason(detail))
     return { text: '部分执行记录无法读取；请查看读取提示并重试，运行状态保持原记录' };
   const { run, tasks, operations, events } = detail;
@@ -185,7 +223,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     const expired = !!run.startedAt && now - run.startedAt >= run.limits.maxMinutes * 60000;
     const targets = limited.length ? limited : tasks.filter((task) => task.id === run.rootTaskId);
     const currentLimits = targets.map((task) => {
-      // 仅关联当前这次 limit 等待期间的限制事件，不能把上次已解除的错误套到现状态。
+      /**
+       * 仅关联当前这次 limit 等待期间的限制事件，不能把上次已解除的错误套到现状态。
+       * EN: Associate limits with the current waiting period, never an already-cleared earlier error.
+       */
       let waitingFrom = -1;
       for (let index = events.length - 1; index >= 0; index--) {
         const item = events[index];
@@ -223,7 +264,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     const message =
       currentLimits.length === 1 ? currentLimits[0].message : `${currentLimits.length} 个任务达到运行上限`;
     const chatTime = run.kind === 'chat' && code === 'TIME_BUDGET';
-    // 聊天单轮计时可重开；累计步骤/请求等硬上限不会因点击恢复而重置。
+    /**
+     * 聊天单轮计时可重开；累计步骤/请求等硬上限不会因点击恢复而重置。
+     * EN: Chat round timing may restart; cumulative steps/requests and hard limits do not reset on resume.
+     */
     const hard =
       (expired && run.kind !== 'chat') ||
       currentLimits.some(
@@ -266,7 +310,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
       : rateTasks;
   const timedRateTasks = rateTargets.filter((task) => rateResumeAt(task) !== null);
   const nextRateTask = [...timedRateTasks]
-    // 只有依赖已经完成的限流任务才有资格形成最近自动重试提示。
+    /**
+     * 只有依赖已经完成的限流任务才有资格形成最近自动重试提示。
+     * EN: Only dependency-ready rate-limited tasks determine the nearest automatic-retry notice.
+     */
     .filter((task) =>
       (detail.edges || [])
         .filter((edge) => edge.taskId === task.id)
@@ -303,7 +350,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
             ? 'pause'
             : 'resume'
           : undefined;
-  // 已发生但结果未知的副作用优先要求用户核验，不能被普通暂停或失败文案掩盖。
+  /**
+   * 已发生但结果未知的副作用优先要求用户核验，不能被普通暂停或失败文案掩盖。
+   * EN: Uncertain effects take priority over ordinary pause/failure text and require verification.
+   */
   if (uncertain)
     return {
       text: `${run.reason === 'paused' ? '已暂停；' : ''}${uncertain} 项副作用待核验，请检查本机证据`,
@@ -336,7 +386,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
     detail.requests?.some((request) => request.status === 'UNKNOWN') ||
     (run.status === 'WAITING' &&
       ['plan', 'verification', 'rate_limit', 'subscription_limit'].includes(run.reason || ''));
-  // 仅在没有更高优先级阻塞时突出待答问题；其他代理仍活动时不把整个运行误显示为停住。
+  /**
+   * 仅在没有更高优先级阻塞时突出待答问题；其他代理仍活动时不把整个运行误显示为停住。
+   * EN: Emphasize questions only without higher-priority blockers; active peer agents prevent mislabeling the entire run as stopped.
+   */
   if (run.kind === 'task' && userTasks.length && !priorityWait) {
     const active =
       tasks.some((task) => ['READY', 'RUNNING', 'VERIFYING'].includes(task.status)) ||
@@ -391,7 +444,10 @@ export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = 
   };
 }
 
-/** 区分终结记录、新任务入口与项目级归档限制，给出解除当前归档影响所需的操作。 */
+/**
+ * 区分终结记录、新任务入口与项目级归档限制，给出解除当前归档影响所需的操作。
+ * EN: Distinguish ended records, new-task actions, and project archive boundaries when explaining recovery.
+ */
 export function archiveFeedback(run: Run, projectArchived: boolean): string {
   if (run.status === 'DONE' || run.status === 'CANCELLED')
     return `记录已归档。恢复后可查看记录；继续工作请新建${run.kind === 'chat' ? '独立对话' : '任务'}。`;

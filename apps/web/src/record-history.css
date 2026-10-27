@@ -1,5 +1,11 @@
-/* 定义 record-history 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 记录历史：组织可展开摘要、来源说明、分页和记录列表。长记录有界滚动并允许文本断行，使历史长度不无限扩大外层任务面板。
+ * EN: Record history: arranges expandable summaries, provenance, paging, and records. Bounded list scrolling/wrapping keep growing history from indefinitely extending its task panel.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .record-history {
   min-width: 0;
   padding: var(--space-3);
@@ -31,7 +37,10 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .record-history-list {
   max-height: min(32rem, 65dvh);
   overflow: auto;

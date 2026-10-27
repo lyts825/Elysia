@@ -1,11 +1,17 @@
-/* 定义 handoff-review-confirmation 对应界面的样式与布局。 */
+/*
+ * 交接复核确认：组织人工选择、选中数量、依据和确认输入，区分已选项与说明文字。计数使用自适应网格，长确认材料允许断行，保持用户在提交前可核对依据。
+ * EN: Handoff review confirmation: arranges user choices, counts, evidence, and confirmation input with distinct choice/guidance hierarchy. Adaptive counts and wrapping material keep the basis reviewable before submission.
+ */
 .handoff-confirmation {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
 }
 
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .handoff-confirmation .field-help {
   margin: 0;
   overflow-wrap: anywhere;
@@ -32,7 +38,10 @@
   font-weight: 600;
 }
 
-/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ */
 .handoff-confirmation-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));

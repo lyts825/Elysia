@@ -1,4 +1,8 @@
-/* 展示项目定时运行的历史记录。 */
+/**
+ * 展示项目定时运行的历史记录。
+ * 按入口、项目和定时任务分页读取执行历史，保留最后成功页并支持打开运行；取消或失败不会推进可见页位置。
+ * EN: Displays scheduled project run history. Paginates execution history by surface/project/schedule, retaining the last successful page and run navigation; cancellation or failure does not advance the visible position.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectScheduleHistory as HistoryPage } from '../../../packages/contracts/src/project-schedules';
 import { executionLabel } from './ProjectRunList';
@@ -14,18 +18,34 @@ type Props = {
 };
 type Position = { before: string | null; trail: (string | null)[] };
 type Display = { page: HistoryPage; position: Position; receivedAt: string };
+/**
+ * 生成独立的定时执行历史首页位置，无游标和返回轨迹。
+ * EN: Creates a fresh first-page position for schedule history without a cursor or return trail.
+ */
 const first = (): Position => ({ before: null, trail: [] });
+/**
+ * 将历史读取异常转成可读消息；未知异常使用统一重试提示。
+ * EN: Converts history-read errors into readable messages, using a retry prompt for unknown exceptions.
+ */
 const message = (error: unknown) => (error instanceof Error ? error.message : '历史读取失败，请重试。');
 
+/**
+ * 按入口、项目和定时任务身份重建历史组件，使各范围分页和错误状态隔离。
+ * EN: Keys schedule history by surface, project, and schedule so each scope has isolated pagination and error state.
+ */
 export function ProjectScheduleHistory(props: Props) {
   const { surface } = useSurfaceClient();
-  // 入口、项目或定时任务变化时重置分页状态。
+  /**
+   * 入口、项目或定时任务变化时重置分页状态。
+   * EN: Reset paging after surface/project/schedule changes.
+   */
   return <ScheduleHistory key={`${surface}:${props.projectId}:${props.scheduleId}`} {...props} />;
 }
 
 /**
  * 保留最后成功历史页，目标游标与可见位置分开维护，取消或错误不会推进显示页码。
  * 每页核对项目、定时任务、页码及基本形状，打开运行也是可失败的独立动作。
+ * EN: Keep last successful page and separate intent from displayed position. Validate project/schedule/page/shape; errors/cancellation do not advance the label. Opening a run is independently fallible.
  */
 function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props) {
   const { api } = useSurfaceClient();
@@ -39,7 +59,10 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
     live = useRef(true),
     target = useRef<Position>(first());
 
-  /** 同类新读取取消旧请求；仅最新 controller 的成功结果可提交 display。 */
+  /**
+   * 同类新读取取消旧请求；仅最新 controller 的成功结果可提交 display。
+   * EN: Cancel old same-kind reads; publish display only from latest successful controller.
+   */
   async function read(position: Position) {
     reader.current?.abort();
     const controller = new AbortController();
@@ -87,6 +110,10 @@ function ScheduleHistory({ projectId, scheduleId, name, close, openRun }: Props)
       reader.current?.abort();
     };
   }, [api, projectId, scheduleId]);
+  /**
+   * 串行打开历史运行并显示跳转中的身份；失败只回写仍挂载的组件，完成后解除忙碌。
+   * EN: Opens one historical run at a time and tracks its identity; failures update only a mounted view and completion clears busy state.
+   */
   async function navigate(id: string) {
     if (opening) return;
     setOpening(id);

@@ -1,4 +1,8 @@
-/** 捕获交付审阅使用的来源快照。 */
+/**
+ * 捕获交付审阅使用的来源快照。
+ * 把有界修订意见绑定当前交付与原验收标准，saved 必须逐字匹配权威记录，draft 保持用户输入语义；不自动产生新验收结论。
+ * EN: Captures source snapshots for delivery reviews. Binds bounded feedback to delivery/original criteria; saved text must match authority exactly and drafts stay user input, never automatic acceptance.
+ */
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import {
   ReviewSourceNote,
@@ -12,11 +16,9 @@ import { stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryFingerprint } from './delivery-fingerprint.js';
 import { savedReviewSnapshot } from './delivery-review-history.js';
 
-/** Saved reviews are verified against their record; drafts remain explicitly user-supplied material. */
 /**
- * 从已交付原生项目任务捕获修订意见，绑定当前交付指纹并限制正文与快照大小。
- * origin=saved 的备注必须逐字匹配保存记录和原验收标准；草稿仍明确是用户输入资料，
- * 不能借提供 reviewId 把未保存文字伪装成已保存的复核结论。
+ * 保存的审阅必须与其记录核对；草稿始终明确标为用户提供的资料。 从已交付原生项目任务捕获修订意见，绑定当前交付指纹并限制正文与快照大小。 origin=saved 的备注必须逐字匹配保存记录和原验收标准；草稿仍明确是用户输入资料， 不能借提供 reviewId 把未保存文字伪装成已保存的复核结论。
+ * EN: Saved reviews are verified against their record; drafts remain explicitly user-supplied material. Captures bounded revision feedback from a delivered native-project run and binds its delivery fingerprint. Saved notes must exactly match saved records and original acceptance criteria; supplying a reviewId cannot disguise draft text as saved review evidence.
  */
 export function captureReviewSource(store: Store, run: Run, selection: RunSourceSelection) {
   const notes = (selection.reviewNotes ?? []).map((note) => ({

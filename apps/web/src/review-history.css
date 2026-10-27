@@ -1,10 +1,16 @@
-/* 定义 review-history 对应界面的样式与布局。 */
+/*
+ * 复核历史与记录定位：布局记录列表、当前项提示、跳转入口和选中记录正文。当前项由 aria-current 标记，长记录可局部阅读，历史列表与当前详情保持清晰区分。
+ * EN: Review history/navigation: arranges lists, current-record cues, jump controls, and selected bodies. aria-current marks the active item; bounded reading distinguishes history navigation from current detail.
+ */
 .review-history,
 .review-record {
   color: var(--text);
   background: var(--surface);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .review-history-list {
   max-height: min(26rem, 55dvh);
   overflow: auto;
@@ -48,7 +54,10 @@
 .review-record-notes > li {
   min-width: 0;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .review-record-reading,
 .review-history-error {
   max-height: min(16rem, 45dvh);

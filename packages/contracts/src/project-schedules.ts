@@ -1,4 +1,10 @@
-// 项目定时运行的限制、配置及记录契约。
+/**
+ * 项目定时运行的限制、配置及记录契约。
+ * 模板捕获、自动分发和历史记录均显式绑定身份；定时规则不扩大原始任务授权。
+ *
+ * EN: Defines limits, configuration, and records for scheduled project runs.
+ * Capture, dispatch, and history explicitly bind identity; scheduling does not expand original authorization.
+ */
 import { z } from 'zod';
 import type { ContextPolicy, Contract, Limits, ProviderConfig, Status } from './index.js';
 
@@ -14,7 +20,11 @@ export const PROJECT_SCHEDULE_LIMITS = {
   sourcePage: 50,
 } as const;
 
-// 任务模板限定运行方式、间隔、次数与截止时间；默认先走评审模式。
+/**
+ * 任务模板限定运行方式、间隔、次数与截止时间；默认先走评审模式。
+ *
+ * EN: Task templates constrain execution mode, interval, count, and end time; review mode is the default.
+ */
 export const ProjectScheduleSettings = z
   .object({
     name: z.string().trim().min(1).max(160),
@@ -30,7 +40,11 @@ export const ProjectScheduleSettings = z
   .strict();
 export type ProjectScheduleSettings = z.infer<typeof ProjectScheduleSettings>;
 
-/** All task text is inline. A schedule never borrows run-scoped object references. */
+/**
+ * 所有任务文本内联保存，定时计划不借用运行范围内的对象引用。
+ *
+ * EN: All task text is inline. A schedule never borrows run-scoped object references.
+ */
 export interface ProjectScheduleTemplate {
   sourceRunId: string;
   sourceRevision: number;
@@ -51,13 +65,21 @@ export interface ProjectScheduleTemplate {
     toolReviewProviderHash?: string;
   };
 }
-/** 保存前的模板捕获及摘要，提交时必须核对相同来源修订和 captureHash。 */
+/**
+ * 保存前的模板捕获及摘要，提交时必须核对相同来源修订和 captureHash。
+ *
+ * EN: A captured template and digest before saving; submission must match the same source revision and captureHash.
+ */
 export interface ProjectSchedulePreview {
   projectId: string;
   template: ProjectScheduleTemplate;
   captureHash: string;
 }
-/** 定时计划持久状态；创建次数和跳过次数累计，暂停或刷新不会自动清零。 */
+/**
+ * 定时计划持久状态；创建次数和跳过次数累计，暂停或刷新不会自动清零。
+ *
+ * EN: Durable schedule state; creation and skip counts accumulate and do not reset on pause or refresh.
+ */
 export interface ProjectSchedule extends ProjectSchedulePreview {
   version: 1;
   id: string;
@@ -76,16 +98,28 @@ export interface ProjectSchedule extends ProjectSchedulePreview {
 export interface ProjectScheduleList {
   projectId: string;
   schedules: ProjectSchedule[];
-  /** Latest native tasks; preview explains any source that cannot be reused. */
+  /**
+   * 最近的原生任务；预览说明任何无法复用的来源。
+   *
+   * EN: Latest native tasks; preview explains any source that cannot be reused.
+   */
   sources: { id: string; title: string; revision: number; status: Status }[];
   sourcesLimited: boolean;
   limits: typeof PROJECT_SCHEDULE_LIMITS;
 }
 export interface ProjectScheduleHistoryItem {
-  /** Exact dispatch key, or a bounded opaque identity when the stored key is corrupt. */
+  /**
+   * 精确的分发键；存储键损坏时使用有界不透明身份。
+   *
+   * EN: Exact dispatch key, or a bounded opaque identity when the stored key is corrupt.
+   */
   dispatchId: string;
   dueAt: string | null;
-  /** Current lightweight run state; missing or unverified associations never expose a run identifier. */
+  /**
+   * 当前运行的轻量状态；缺失或未核验关联不会暴露运行标识。
+   *
+   * EN: Current lightweight run state; missing or unverified associations never expose a run identifier.
+   */
   run: {
     id: string;
     revision: number;
@@ -106,7 +140,11 @@ export interface ProjectScheduleHistoryItem {
     message: string;
   } | null;
 }
-/** 历史读取同时报告关联覆盖情况；无法追踪的分发记录不能计作已核验任务。 */
+/**
+ * 历史读取同时报告关联覆盖情况；无法追踪的分发记录不能计作已核验任务。
+ *
+ * EN: History reads report association coverage; untraceable dispatches cannot count as verified tasks.
+ */
 export interface ProjectScheduleHistory {
   projectId: string;
   scheduleId: string;
@@ -116,7 +154,11 @@ export interface ProjectScheduleHistory {
   page: { limit: 20; before: string | null; nextBefore: string | null; hasMore: boolean };
   coverage: {
     complete: boolean;
-    /** More than the supported 100 dispatch records exist; counts cover only the bounded read. */
+    /**
+     * 存在超过所支持的 100 条分发记录；计数只覆盖有界读取。
+     *
+     * EN: More than the supported 100 dispatch records exist; counts cover only the bounded read.
+     */
     scanLimited: boolean;
     retainedDispatches: number;
     traceableRuns: number;
@@ -135,7 +177,11 @@ export const ProjectScheduleCreate = z
     settings: ProjectScheduleSettings,
   })
   .strict();
-/** enable/refresh 可要求重新核对捕获摘要；自动执行必须有显式确认字段。 */
+/**
+ * enable/refresh 可要求重新核对捕获摘要；自动执行必须有显式确认字段。
+ *
+ * EN: enable/refresh may require reconfirming the captured digest; automatic execution requires an explicit confirmation field.
+ */
 export const ProjectScheduleUpdate = z
   .object({
     commandId: z.string().uuid(),

@@ -1,4 +1,7 @@
-/* 定义 native-project-defaults 对应界面的样式与布局。 */
+/*
+ * 原生项目默认配置：布局版本说明、当前/候选配置对照、可展开摘要及操作。自适应比较网格兼顾窄容器，详细依据独立滚动以保留选择与保存入口。
+ * EN: Native project defaults: arranges version guidance, current/candidate comparisons, expandable summaries, and actions. Adaptive comparison grids support narrow containers while bounded evidence keeps selection/save controls reachable.
+ */
 .native-project-defaults {
   min-width: 0;
   color: var(--text);
@@ -20,7 +23,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 列数随容器宽度变化；每列以 18rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 18rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting an 18rem minimum per column without exceeding a narrower container.
+ */
 .native-defaults-comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
@@ -51,7 +57,10 @@
 .native-project-defaults :is(button, summary, .native-defaults-reading) {
   scroll-margin-block: var(--space-3);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .native-defaults-reading {
   max-height: min(16rem, 42dvh);
   overflow: auto;

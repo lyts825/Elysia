@@ -1,5 +1,11 @@
-/* 定义 contract-modal 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 合同编辑弹窗的局部补充样式：突出当前编辑状态及预算说明，并允许长状态文本断行。弹窗骨架、表单和按钮沿用公共样式，本文件只控制合同编辑特有的提示层级。
+ * EN: Contract-editor modal overrides: emphasizes editing state/budget notes and wraps long state text. Shared styles provide modal/form/button structure; this file controls contract-specific guidance hierarchy.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .contract-editor-modal .contract-editor-state {
   display: flex;
   flex-wrap: wrap;

@@ -1,4 +1,7 @@
-/* 定义 workspace-home 对应界面的样式与布局。 */
+/*
+ * 工作区首页：在公共首页输入框上补充项目、模型完整身份、草稿标签及读取反馈。元数据采用内容与操作两列，窄容器重排；长身份可聚焦滚动，避免仅截断关键来源。
+ * EN: Workspace home: adds project/model identities, draft labels, and read feedback to the shared composer. Metadata uses content/action columns with narrow-container reflow; focusable identity scrolling preserves full provenance.
+ */
 .workspace-home {
   min-width: 0;
   container-type: inline-size;
@@ -16,7 +19,10 @@
   border-left: 2px solid var(--border-strong);
   color: var(--secondary);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .home-project-reading,
 .home-model-reading {
   overflow: auto;
@@ -39,7 +45,10 @@
 .workspace-home .composer textarea {
   padding-top: var(--space-2);
 }
-/* 内容列占用剩余空间，操作列按自身内容确定宽度。 */
+/*
+ * 内容列占用剩余空间，操作列按自身内容确定宽度。
+ * EN: Lets the content column consume remaining space while sizing the action column to its content.
+ */
 .workspace-home .composer-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

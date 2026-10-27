@@ -1,4 +1,8 @@
-/** 读取和更新来源备注的处理状态。 */
+/**
+ * 读取和更新来源备注的处理状态。
+ * 人工逐项复验绑定原快照、当前指纹和单项版本，证据来自明确选择的当前验收项；变化标 stale，解决状态不修改执行或验收决定。
+ * EN: Reads and updates source-note resolution state. Manual rechecks bind source/current fingerprint/item revision and explicitly selected evidence; changes mark stale without changing execution/acceptance.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
@@ -56,9 +60,17 @@ type EvidenceReader = (
   indices: number[],
 ) => (DeliveryEvidence & { index: number })[];
 
+/**
+ * 抛出来源复验的统一 409 冲突，具体代码和说明由校验分支给出。
+ * EN: Throws a shared 409 source-resolution conflict using branch-specific code/message.
+ */
 function conflict(code: string, message: string): never {
   throw new AppError(code, message, false, null, 409);
 }
+/**
+ * 读取或复用同一运行/根任务/指纹，验证原生归属与来源快照原始哈希，解析有界备注并计算当前可写性；损坏来源不得继续保存复验。
+ * EN: Reads or reuses one run/root/fingerprint, validates native ownership and the source's original hash, parses bounded notes and computes writability; corrupted sources cannot accept resolutions.
+ */
 function sourceState(store: Store, runId: string, known?: { run: Run; root: Task; fingerprint: string }) {
   const run = known?.run ?? store.require<Run>('runs', runId),
     root = known?.root ?? store.require<Task>('tasks', run.rootTaskId);
@@ -68,7 +80,10 @@ function sourceState(store: Store, runId: string, known?: { run: Run; root: Task
     '来源复验仅支持原生任务',
   );
   if (run.source) {
-    // Keep historical snapshot hashing exact: never add new optional defaults before verification.
+    /**
+     * 历史快照哈希必须保持精确；校验前不得补入新的可选默认值。
+     * EN: Keep historical snapshot hashing exact: never add new optional defaults before verification.
+     */
     const { hash: expected, ...snapshot } = run.source;
     invariant(
       hash(stable(snapshot)) === expected,
@@ -92,6 +107,10 @@ function sourceState(store: Store, runId: string, known?: { run: Run; root: Task
     notes.length > 0;
   return { run, root, notes, fingerprint, writable };
 }
+/**
+ * 读取单备注保存复验并核对行版本、来源哈希及索引身份；缺失返回 undefined，损坏明确返回 422。
+ * EN: Reads one note resolution and verifies row revision/source hash/index; absent returns undefined and damaged identity returns 422.
+ */
 function rowResolution(
   store: Store,
   runId: string,
@@ -119,6 +138,10 @@ function rowResolution(
     );
   }
 }
+/**
+ * 将来源状态与每项保存复验合并为公开视图，当前交付指纹不同则标 stale，而不修改历史结论。
+ * EN: Combines source state with saved resolutions into public views, marking fingerprint mismatches stale without rewriting historical conclusions.
+ */
 function view(store: Store, state: ReturnType<typeof sourceState>): SourceNoteResolutions {
   const { run, root, notes, fingerprint, writable } = state;
   return {
@@ -139,15 +162,16 @@ function view(store: Store, state: ReturnType<typeof sourceState>): SourceNoteRe
     }),
   };
 }
-/** 根据运行、根任务和当前交付指纹生成来源备注处理状态。 */
+/**
+ * 根据运行、根任务和当前交付指纹生成来源备注处理状态。
+ * EN: Derives source-note resolution state from the run, root task and current delivery fingerprint.
+ */
 export function sourceNoteResolutionsFor(store: Store, run: Run, root: Task, fingerprint: string) {
   return view(store, sourceState(store, run.id, { run, root, fingerprint }));
 }
-/** Manual follow-up conclusions are independent of execution and saved acceptance decisions. */
 /**
- * 保存用户对来源意见的逐项复验，绑定来源快照、当前交付指纹和复验记录自己的版本。
- * 证据只能来自手工选定的当前验收项；交付变化后旧结论显示 stale，不自动宣告继续有效。
- * “已解决”是独立人工结论，不修改执行状态或替代已保存的验收决定。
+ * 人工跟进结论独立于执行状态和已保存的验收决定。 保存用户对来源意见的逐项复验，绑定来源快照、当前交付指纹和复验记录自己的版本。 证据只能来自手工选定的当前验收项；交付变化后旧结论显示 stale，不自动宣告继续有效。 “已解决”是独立人工结论，不修改执行状态或替代已保存的验收决定。
+ * EN: Manual follow-up conclusions are independent of execution and saved acceptance decisions. Saves per-note manual rechecks tied to source snapshot, current delivery fingerprint and their own revision. Evidence comes only from manually selected current acceptance items; delivery changes mark old conclusions stale. Resolution never changes execution or substitutes saved acceptance decisions.
  */
 export function registerSourceNoteResolutions(
   app: FastifyInstance,

@@ -1,4 +1,8 @@
-/* 展示原始评审内容。 */
+/**
+ * 展示原始评审内容。
+ * 读取并呈现来源复核的完整记录，来源删除时保留本任务携带的备注快照；不把历史结论视为当前交付结论。
+ * EN: Displays the source review attached to notes. Reads and presents the complete source review, retaining the task-carried note snapshot if its source is deleted, without treating historical conclusions as current delivery decisions.
+ */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DeliveryReviewHistoryDetail, ReviewSourceNote } from '../../../packages/contracts/src/workflow';
@@ -12,6 +16,7 @@ import './original-review.css';
 /**
  * 以 portal 弹窗核对备注携带的来源复核；响应必须匹配运行与复核 ID。
  * 来源删除或暂不可读时仍展示本任务保存的备注快照，两者不相互覆盖，也不修改当前复核草稿。
+ * EN: Use a portal dialog to inspect source review, validating run/review ID. If removed or unreadable, retain the saved note snapshot; neither source overwrites the other or edits the current draft.
  */
 export function OriginalReview({
   runId,
@@ -29,7 +34,10 @@ export function OriginalReview({
   const [reading, setReading] = useState(true),
     [retry, setRetry] = useState(0);
   useEffect(() => {
-    // 按来源复核 ID 读取原始记录；组件关闭或切换时取消旧读取。
+    /**
+     * 按来源复核 ID 读取原始记录；组件关闭或切换时取消旧读取。
+     * EN: Read by source-review ID and cancel on close or identity changes.
+     */
     const controller = new AbortController();
     setReading(true);
     setError('');

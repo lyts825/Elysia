@@ -1,4 +1,7 @@
-/* 定义 task-working-state 对应界面的样式与布局。 */
+/*
+ * 任务工作状态检查点：布局读取依据、要求输入、确认与批准/撤销反馈。长快照和错误可聚焦阅读，操作行可换行，使原始依据和编辑区域都能保留空间。
+ * EN: Task working-state checkpoints: arranges read evidence, requirement input, confirmations, and approval/revocation feedback. Focusable snapshot/error regions and wrapping actions preserve space for both evidence and editing.
+ */
 .task-working-state {
   margin-top: var(--space-5);
   padding-top: var(--space-4);
@@ -34,7 +37,10 @@
 .task-working-state summary {
   cursor: pointer;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .task-working-state pre,
 .working-state-text,
 .task-working-state .working-state-reading {
@@ -46,7 +52,10 @@
   line-height: var(--leading-body);
   scrollbar-gutter: stable;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .task-working-state :is(pre, .working-state-text, .working-state-reading):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

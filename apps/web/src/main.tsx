@@ -1,4 +1,10 @@
-/* Web 界面的入口：挂载应用并引入全局样式。 */
+/**
+ * Web 界面的入口：挂载应用并引入全局样式。
+ * EN: The Web entry mounts the application and imports global styles.
+ *
+ * 装配双入口界面、导航、请求协调器、草稿同步与实时事件流。异步结果以请求序号、实体和导航代次核对归属；具体领域面板与缓存实现分别委托给独立模块。
+ * EN: Assemble dual surfaces, navigation, request coordination, draft synchronization, and event streams. Check async ownership by request, entity, and navigation epoch, delegating domain panels and cache mechanics to modules.
+ */
 import { ToolReviewPanel } from './ToolReviewPanel';
 import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -259,6 +265,7 @@ type ReadIssue = { message: string; retryable: boolean; reopen: boolean; request
 /**
  * 将读取错误转换为界面可消费的状态。request 用于防止旧错误清除新请求的失败，runId
  * 将详情错误绑定到所属运行；认证和来源校验错误额外提示重新打开应用。
+ * EN: Convert read failures to UI state. request prevents an older error/success clearing newer failure; runId binds detail errors to their run. Authentication/origin failures additionally ask the user to reopen the app.
  */
 function readIssueFor(error: unknown, request: number, runId?: string): ReadIssue {
   return {
@@ -299,6 +306,10 @@ const reasons: Record<string, string> = {
   dependency_failed: '依赖分支失败或已取消，等待局部恢复',
   no_progress: '相同工具错误重复发生，已暂停此代理',
 };
+/**
+ * 把执行状态映射为中文标签和对应 CSS 类；未知状态保留原值，便于识别新增或异常状态。
+ * EN: Map execution status to a localized label and CSS class, retaining unknown values to make new or unexpected states visible.
+ */
 function Badge({ status }: { status: string }) {
   return (
     <span className={'badge ' + status.toLowerCase()}>
@@ -311,6 +322,7 @@ function Badge({ status }: { status: string }) {
  * 一个原生或终端入口的完整工作台。客户端由 Context 固定，导航、草稿、分页与流状态
  * 均属于该入口；外层 Activity 隐藏入口时保留 React 状态，读取 effect 会停止并在返回后恢复。
  * 服务端实体通过请求序号和导航 epoch 防止迟到覆盖，草稿则通过 WorkbenchCache 独立持久化。
+ * EN: Own one native or terminal workbench under a Context-fixed client. Navigation/drafts/pages/streams stay surface-local. Activity retains hidden React state while effects stop and resume. Request sequence/navigation epoch reject late entity snapshots; WorkbenchCache persists drafts independently.
  */
 function App({
   changeSurface,
@@ -329,7 +341,10 @@ function App({
 }) {
   const client = useSurfaceClient();
   const { api, apiUrl, mutation, initializeSession, surface: localSurface } = client;
-  // 客户端固定绑定原生或终端入口，所有后续读取和写入沿用该入口。
+  /**
+   * 客户端固定绑定原生或终端入口，所有后续读取和写入沿用该入口。
+   * EN: The client is permanently bound to native or terminal; later reads/writes keep that scope.
+   */
   const terminalSurface = localSurface === 'terminal';
   const [ready, setReady] = useState(false),
     [error, setError] = useState(''),
@@ -370,9 +385,15 @@ function App({
   cacheStateRef.current = cacheState;
   const modalCurrent = useRef(modal);
   modalCurrent.current = modal;
-  // 分页位置使用 ref 同步更新，historyPending 只在详情读取成功后提交可见位置；失败可回滚。
+  /**
+   * 分页位置使用 ref 同步更新，historyPending 只在详情读取成功后提交可见位置；失败可回滚。
+   * EN: Update pagination refs synchronously; historyPending commits visible position only after successful detail read and supports rollback.
+   */
   const historyPosition = useRef<HistoryPosition>({
-    // 保存分页游标和跳转轨迹；读取失败时可恢复原位置。
+    /**
+     * 保存分页游标和跳转轨迹；读取失败时可恢复原位置。
+     * EN: Retain cursors/navigation trail for restoration after failed reads.
+     */
     runId: '',
     before: '',
     trail: [],
@@ -439,7 +460,10 @@ function App({
     anchor?: string;
     requestId: string;
   }>();
-  // 将消息、请求和工具操作先建立配对索引，再隐藏已并入模型回复的独立工具回执。
+  /**
+   * 将消息、请求和工具操作先建立配对索引，再隐藏已并入模型回复的独立工具回执。
+   * EN: Index messages/requests/operations first, then hide receipts embedded into model replies.
+   */
   const messageIndex = useMemo(
     () => conversationIndex(detail),
     [detail?.messages, detail?.requests, detail?.agents, detail?.tasks, detail?.operations],
@@ -451,7 +475,10 @@ function App({
       ),
     [detail?.messages, messageIndex],
   );
-  // 终端日志产物的运行归属只在具备读取权限时传给预览，避免跨任务链接扩大访问范围。
+  /**
+   * 终端日志产物的运行归属只在具备读取权限时传给预览，避免跨任务链接扩大访问范围。
+   * EN: Provide terminal-log run identity to preview only with read eligibility, avoiding cross-task permission expansion.
+   */
   const logContexts = useMemo(
     () =>
       Object.fromEntries(
@@ -466,7 +493,10 @@ function App({
       ),
     [detail?.operations, detail?.run.contract.permissionProfile.read],
   );
-  /** 将文件链接拆成路径与锚点；每次生成新请求 ID，使重复点击同一链接也能重新定位。 */
+  /**
+   * 将文件链接拆成路径与锚点；每次生成新请求 ID，使重复点击同一链接也能重新定位。
+   * EN: Split links into path/anchor and create fresh request ID so repeated clicks can locate again.
+   */
   const openPreviewFile = useCallback((taskId: string, target: string) => {
     const hash = target.indexOf('#');
     const path = hash < 0 ? target : target.slice(0, hash);
@@ -500,7 +530,10 @@ function App({
     typeof cacheState.entries[draftKey]?.value === 'string'
       ? (cacheState.entries[draftKey].value as string)
       : '';
-  /** 首次编辑即固定当前导航，避免异步恢复的上次选择覆盖用户正在输入的新草稿。 */
+  /**
+   * 首次编辑即固定当前导航，避免异步恢复的上次选择覆盖用户正在输入的新草稿。
+   * EN: First editing fixes current navigation so late restored selection cannot replace a new draft.
+   */
   const setDraft = (value: string) => {
     if (!navigationInitialized.current) {
       navigationInitialized.current = true;
@@ -513,7 +546,10 @@ function App({
   const [homeModels, setHomeModels] = useState<Record<string, ModelChoice>>({});
   const homeModel = homeModels[draftKey] || defaultChoice(providers);
   const homeProvider = providers.find((provider) => provider.id === homeModel.providerId);
-  // 型号和连接修订共同构成校验身份；连接更新后不能沿用旧选择的“已就绪”结果。
+  /**
+   * 型号和连接修订共同构成校验身份；连接更新后不能沿用旧选择的“已就绪”结果。
+   * EN: Model plus connection revision form validation identity; updates invalidate old ready status.
+   */
   const homeModelKey = JSON.stringify([
     draftKey,
     homeModel.providerId,
@@ -524,6 +560,10 @@ function App({
     homeProvider?.keyConfigured,
   ]);
   const [homeModelReady, setHomeModelReady] = useState({ key: '', valid: false });
+  /**
+   * 按当前输入草稿键保存首页模型选择，切换项目后保留各自配置而不互相覆盖。
+   * EN: Save the home model choice under the current draft key so project-specific selections remain independent.
+   */
   const changeHomeModel = (choice: ModelChoice) =>
     setHomeModels((previous) => ({ ...previous, [draftKey]: choice }));
   const updateHomeModelReady = useCallback(
@@ -543,7 +583,10 @@ function App({
         !terminalControl ||
         terminalControl.apps.entries.some((entry) => entry.id === profile.agent && entry.visible),
     ) || [];
-  // 选择优先级为当前草稿、项目默认、全局默认、默认应用、首个可见配置。
+  /**
+   * 选择优先级为当前草稿、项目默认、全局默认、默认应用、首个可见配置。
+   * EN: Choice priority is current draft, project defaults, global defaults, default app, then first visible profile.
+   */
   const chosenTerminalProfile =
     terminalProfiles.find((profile) => profile.id === terminalProfileId) ||
     terminalProfiles.find((profile) => profile.id === projectPreferences?.defaultProfileId) ||
@@ -553,7 +596,10 @@ function App({
   const inheritedConnection = terminalControl?.connections.find(
     (connection) => connection.id === projectPreferences?.connectionId,
   );
-  // 项目继承连接只有协议与所选终端应用兼容时才覆盖配置本身的连接。
+  /**
+   * 项目继承连接只有协议与所选终端应用兼容时才覆盖配置本身的连接。
+   * EN: Inherited project connection overrides profile connection only when protocol matches selected terminal app.
+   */
   const compatibleProjectConnection =
     inheritedConnection &&
     terminalControl?.catalog
@@ -660,7 +706,10 @@ function App({
       ? contextSnapshot.agents.find((item) => item.agentId === modal.slice(8))
       : undefined
     : undefined;
-  // 上下文设置是读取时快照；运行或代理版本前进后仍可查看，但不可按旧快照直接保存。
+  /**
+   * 上下文设置是读取时快照；运行或代理版本前进后仍可查看，但不可按旧快照直接保存。
+   * EN: Context settings are a read-time snapshot; newer run/agent revisions may be viewed but not saved through the old snapshot.
+   */
   const contextReadStale =
     !!contextReadAgent &&
     !!contextSnapshot &&
@@ -685,7 +734,10 @@ function App({
     : detail && rootAgent
       ? modelSwitchReason(detail, archived, rootAgent.taskId)
       : '模型正在准备中。';
-  /** 汇总副作用核验的只读原因；只有未结束、未归档且仍 UNCERTAIN 的操作可提交。 */
+  /**
+   * 汇总副作用核验的只读原因；只有未结束、未归档且仍 UNCERTAIN 的操作可提交。
+   * EN: Collect verification read-only reasons; submit only for non-ended/non-archived runs with an operation still UNCERTAIN.
+   */
   const decisionDisabledReason = (operation: Operation) => {
     if (detailReadOnlyReason) return detailReadOnlyReason;
     if (legacyTerminal) return '旧终端记录仅供查看，请在 Agent 终端入口创建新任务。';
@@ -698,7 +750,10 @@ function App({
     if (operation.status !== 'UNCERTAIN') return '该操作已完成核验，无需重复提交。';
     return '';
   };
-  /** 以可用连接默认值填充计划建议，保留计划明确指定的型号和推理强度。 */
+  /**
+   * 以可用连接默认值填充计划建议，保留计划明确指定的型号和推理强度。
+   * EN: Fill plan suggestions with usable connection defaults while retaining explicit model/effort choices.
+   */
   const proposedChoice = (task: Task['spec']): ModelChoice & { contextPolicy?: ContextPolicy } => {
     const fallback = defaultChoice(providers, task.providerId);
     return {
@@ -712,14 +767,20 @@ function App({
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
-  /** 打开弹窗时收起两个抽屉；不同设置意图递增 epoch，避免退出动画中的旧表单被复用。 */
+  /**
+   * 打开弹窗时收起两个抽屉；不同设置意图递增 epoch，避免退出动画中的旧表单被复用。
+   * EN: Opening settings closes both drawers; each intent advances epoch so exiting retained forms cannot be reused.
+   */
   const setModal = (value: string, target?: typeof settingsTarget) => {
     setNavigationOpen(false);
     setDetailsDrawerOpen(false);
     const settings = ['settings', 'run-settings', 'handoff-settings', 'project-item-run-settings'].includes(
       value,
     );
-    // A fresh opening must not reuse settings still mounted for the exit animation.
+    /**
+     * 新打开不能复用仍为退出动画挂载的设置。
+     * EN: A fresh opening must not reuse settings still mounted for the exit animation.
+     */
     if (settings && settingsIntent.current !== value) setSettingsEpoch((epoch) => epoch + 1);
     settingsIntent.current = settings ? value : undefined;
     setSettingsTarget(target);
@@ -764,6 +825,10 @@ function App({
         setPendingProjectLeave,
       ),
   );
+  /**
+   * 取消待确认的项目离开流程并打开草稿保存面板，让用户先处理未保存内容。
+   * EN: Cancel pending project-leave confirmation and open draft persistence so unsaved content can be handled first.
+   */
   const openPersistence = () => {
     projectLeaveGuard.cancel();
     setCachePanelOpen(true);
@@ -792,8 +857,14 @@ function App({
     typeof cacheState.entries[replyKey]?.value === 'string'
       ? (cacheState.entries[replyKey].value as string)
       : '';
-  // Fresh replan choices belong to this run and surface. Only a matching unknown
-  // send receipt may restore one after reopening, to retry that exact command.
+  /**
+   * 新的重规划选择属于此运行与入口，只有匹配的未知发送
+   * EN: Fresh replan choices belong to this run and surface. Only a matching unknown
+   */
+  /**
+   * 回执才可在重新打开后恢复，以重试同一命令。
+   * EN: send receipt may restore one after reopening, to retry that exact command.
+   */
   const [replyIntents, setReplyIntents] = useState<Map<string, { value: 'continue' | 'replan' }>>(
     () => new Map(),
   );
@@ -814,9 +885,19 @@ function App({
       (replyChanges.current.get(replyIntentKey) ?? 0)
       ? cachedReplyReceipt
       : null;
-  // Restoring an unknown send restores its original intent only for the same
-  // command. A fresh draft still defaults to continue.
+  /**
+   * 未知发送恢复时仅对同一命令恢复原始意图，
+   * EN: Restoring an unknown send restores its original intent only for the same
+   */
+  /**
+   * 新草稿仍默认继续。
+   * EN: command. A fresh draft still defaults to continue.
+   */
   const replyIntent = replyIntents.get(replyIntentKey)?.value ?? pendingReplyReceipt?.intent ?? 'continue';
+  /**
+   * 递增当前回复意图的编辑计数，异步提交可据此判断发送期间是否出现新输入。
+   * EN: Increment the reply-intent change counter so asynchronous submission can detect edits made while sending.
+   */
   const markReplyChanged = () =>
     replyChanges.current.set(replyIntentKey, (replyChanges.current.get(replyIntentKey) ?? 0) + 1);
   const canChooseReplyIntent =
@@ -826,7 +907,15 @@ function App({
     detail.run.planMode !== false &&
     !!(detail.run.plan || detail.run.authorized);
   useEffect(() => {
+    /**
+     * 在页面生命周期事件中请求缓存立即刷出待保存项，复用缓存自身的串行和版本保护。
+     * EN: Request a cache flush from page lifecycle events, retaining its serialization and revision protections.
+     */
     const flush = () => void cache.flush();
+    /**
+     * 页面进入隐藏状态时触发最后一次保存，缩小切后台后编辑尚未同步的窗口。
+     * EN: Flush pending edits when the document becomes hidden to reduce unsynchronized work on backgrounding.
+     */
     const hidden = () => {
       if (document.visibilityState === 'hidden') flush();
     };
@@ -835,15 +924,24 @@ function App({
     return () => {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', hidden);
-      // Activity hides a workspace without unmounting its state. Keep draft
-      // persistence alive; only the outer host stops caches on actual teardown.
+      /**
+       * Activity 隐藏工作区但不卸载状态，保持草稿
+       * EN: Activity hides a workspace without unmounting its state. Keep draft
+       */
+      /**
+       * 持久化工作，仅外层最终销毁时停止缓存。
+       * EN: persistence alive; only the outer host stops caches on actual teardown.
+       */
       void cache.flush();
     };
   }, [cache]);
   const closeArtifact = useCallback(() => {
     setArtifactView(null);
   }, []);
-  /** 只清除不晚于指定请求的错误，较新请求的失败不能被旧成功结果抹掉。 */
+  /**
+   * 只清除不晚于指定请求的错误，较新请求的失败不能被旧成功结果抹掉。
+   * EN: Clear only failures no newer than the specified request; old success cannot erase later failure.
+   */
   const clearReadIssue = useCallback((source: ReadSource, request = Infinity) => {
     setReadIssues((old) => {
       if (!old[source] || old[source]!.request > request) return old;
@@ -855,6 +953,7 @@ function App({
   /**
    * 提交已获准的导航。跨运行时重置详情、预览和流游标，并恢复目标会话的阅读锚点；
    * 显式导航递增 epoch，使所有基于旧选择发出的异步动作失效。
+   * EN: Commit allowed navigation. Cross-run changes reset detail/preview/stream cursors and restore target reading anchor. Explicit navigation advances epoch to invalidate async actions from prior selection.
    */
   const commitNavigation = useCallback(
     (next: NavigationState, explicit = false) => {
@@ -899,6 +998,7 @@ function App({
   /**
    * 导航统一经过项目草稿离开门禁。用户显式离开可触发保存/保留确认；列表自动协调选择
    * 则直接提交，并废弃旧项目导航意图，避免恢复结果弹出已失效的离开确认。
+   * EN: Route navigation through project-draft leave guards. Explicit departure may require save/preserve confirmation; automatic list reconciliation commits directly and retires old project intents so restoration cannot reopen stale leave dialogs.
    */
   const navigate = useCallback(
     (
@@ -916,6 +1016,10 @@ function App({
         current.spaceId !== next.spaceId ||
         current.projectId !== next.projectId ||
         current.runId !== next.runId;
+      /**
+       * 提交已通过离开检查的导航，再执行附带动作；将清理界面等副作用放在真正切换成功之后。
+       * EN: Commit navigation after leave checks, then run its continuation so UI cleanup occurs only after an accepted transition.
+       */
       const commit = () => {
         commitNavigation(next, explicit);
         options.after?.();
@@ -935,6 +1039,7 @@ function App({
   /**
    * 独立刷新模型或终端配置，普通调用在 60 秒内复用读取时效；force 安排尾随刷新。
    * 各配置并行读取，成功部分及时发布；一个接口失败只产生配置错误，不阻止会话列表使用。
+   * EN: Refresh model/terminal configuration independently, reusing ordinary freshness for 60 seconds; force requests a trailing refresh. Parallel reads publish successful parts; one config error does not block session lists.
    */
   const refreshConfiguration = useCallback(
     (force = false) => {
@@ -943,6 +1048,10 @@ function App({
         'configuration',
         async (signal) => {
           const request = ++configurationRequest.current;
+          /**
+           * 同时核对取消信号和配置请求序号，阻止前一次配置响应回写当前界面。
+           * EN: Check both abort state and configuration request sequence before accepting an asynchronous result.
+           */
           const current = () => !signal.aborted && request === configurationRequest.current;
           const result = await Promise.allSettled([
             terminalSurface
@@ -985,6 +1094,7 @@ function App({
    * 协调项目、空间和分页会话列表。查询键相同的调用共享请求；保留窗口合并新旧记录，
    * 游标失效时仅在仍属于原导航的情况下回到最新页。显式导航后，迟到列表可更新数据，
    * 但不能再替用户恢复或改变选择。配置读取独立发起，不成为列表成功的前提。
+   * EN: Coordinate project/space/paged-run lists with shared reads for equal query keys and bounded retained windows. Reset bad cursor only if still on original navigation. Late lists may update data but cannot restore/change selection after explicit navigation. Config reads are independent of list success.
    */
   const refresh = useCallback(
     async (forceConfiguration = false, trailing = false) => {
@@ -1023,6 +1133,10 @@ function App({
             readCoverage?: { complete: boolean; unavailable: number };
             unavailableIds?: string[];
           };
+          /**
+           * 读取当前列表页；仅在仍有效的请求遇到已失效的记录游标时清除游标和累积窗口，再从首段重读。其他错误继续上抛，避免把普通失败误判为分页过期。
+           * EN: Read the list page; when a still-current request encounters an invalidated cursor, reset cursor and retained window and retry from the beginning. Propagate other errors unchanged.
+           */
           const readListing = async () => {
             try {
               return await api<Listing>('/runs?' + listQuery.toString(), undefined, undefined, signal);
@@ -1046,8 +1160,15 @@ function App({
               throw issue;
             }
           };
+          /**
+           * 核对列表请求的取消状态与序号，只有最新有效请求可以更新列表状态。
+           * EN: Check list-request cancellation and sequence so only the latest active request can update list state.
+           */
           const current = () => !signal.aborted && request === listRequest.current;
-          // 先发布成功列表；后续其他接口失败时，保留这些已核验的新记录。
+          /**
+           * 先发布成功列表；后续其他接口失败时，保留这些已核验的新记录。
+           * EN: Publish successful lists before later endpoint errors, retaining verified records.
+           */
           const publishListing = (listing: Listing) => {
             if (!current()) return;
             const window = runListWindow.current;
@@ -1074,7 +1195,10 @@ function App({
             }
           };
           const [projectResult, listingResult, spaceResult] = await Promise.allSettled([
-            // 互不依赖的列表并行读取；部分失败不会丢弃已成功更新的内容。
+            /**
+             * 互不依赖的列表并行读取；部分失败不会丢弃已成功更新的内容。
+             * EN: Read independent lists in parallel and retain successful updates after partial failure.
+             */
             api<Project[]>('/projects', undefined, undefined, signal).then((value) => {
               if (current()) {
                 listData.current.projects = value;
@@ -1117,7 +1241,10 @@ function App({
           };
           if (projectResult.status === 'fulfilled')
             cache.prune(listedEntities.current.projects, listedEntities.current.runs, false);
-          // 只有项目和空间都成功，且期间没有显式导航，才重新协调保存的选择。
+          /**
+           * 只有项目和空间都成功，且期间没有显式导航，才重新协调保存的选择。
+           * EN: Reconcile saved selection only after both project/space succeeded and no explicit navigation intervened.
+           */
           if (
             epoch !== navigationEpoch.current ||
             projectResult.status === 'rejected' ||
@@ -1145,9 +1272,15 @@ function App({
     },
     [navigate, clearReadIssue, cache, refreshConfiguration],
   );
-  /** 切换会话列表页；较早页可追加到有界窗口，失败时恢复游标和追加方式。 */
+  /**
+   * 切换会话列表页；较早页可追加到有界窗口，失败时恢复游标和追加方式。
+   * EN: Change run-list page; append older pages within bounds, restoring cursor/append mode on failure.
+   */
   async function changeRunList(direction: 'older' | 'newer' | 'latest') {
-    // 乐观更新游标；读取失败时恢复原游标和追加方式。
+    /**
+     * 乐观更新游标；读取失败时恢复原游标和追加方式。
+     * EN: Optimistically change cursor, rolling back cursor/append mode on read failure.
+     */
     if (runListMoving.current) return;
     const prior = runListPosition.current;
     const priorAppend = runListAppend.current;
@@ -1210,6 +1343,7 @@ function App({
    * 读取当前运行的会话详情。参数分别控制尾随刷新、完整统计和不可读投影重试。
    * 请求键包含运行、消息窗口与保留消息；只有活动运行和请求序号仍匹配才发布结果。
    * 合并时保留更高修订的运行状态，事件只保留最近 100 条；消息分页失败则回滚待提交位置。
+   * EN: Read current run detail with trailing/full-summary/projection-retry controls. Key includes run/message window/retained messages; publish only for current run and request sequence. Keep higher run revision and latest 100 events; roll back pending history position on failure.
    */
   const refreshDetail = useCallback(
     async (trailing = false, forceSummary = false, retryProjections = false) => {
@@ -1232,6 +1366,10 @@ function App({
           let result: Detail;
           try {
             let retryUnreadable = retryProjections;
+            /**
+             * 按锚点或前向游标读取会话消息页，附带需要保留的消息标识；不可读投影仅在本轮首次请求附带重试参数，限制重复恢复。
+             * EN: Read conversation messages around an anchor or before a cursor, retaining requested message IDs; attach projection-retry parameters only once per recovery round.
+             */
             const read = (cursor: string, anchor?: string) => {
               const retryQuery = retryUnreadable ? '&retryProjections=true' : '';
               retryUnreadable = false;
@@ -1290,7 +1428,10 @@ function App({
               startupMeasured.current.messages = true;
               markStartupStage('messages-ready', { surface: localSurface });
             }
-            // 同一收件消息可能有多份显示投影，阅读锚点应归一到当前可见的消息身份。
+            /**
+             * 同一收件消息可能有多份显示投影，阅读锚点应归一到当前可见的消息身份。
+             * EN: An inbox message may have multiple projections; normalize reading anchors to the visible message identity.
+             */
             if (around) {
               const target = result.messages.find((message) => message.id === around);
               const canonical =
@@ -1326,7 +1467,10 @@ function App({
               ]
                 .sort((a, b) => a.seq - b.seq)
                 .slice(-100);
-              // SSE 后触发的较早快照不能让运行状态倒退；不可读状态仍采用本次明确诊断。
+              /**
+               * SSE 后触发的较早快照不能让运行状态倒退；不可读状态仍采用本次明确诊断。
+               * EN: An older post-SSE snapshot cannot roll run state backward; explicit unreadability diagnostics still apply.
+               */
               return old.run.revision > result.run.revision
                 ? detailReadReason(result)
                   ? { ...result, run: old.run, messages, events }
@@ -1344,6 +1488,7 @@ function App({
   /**
    * 请求消息历史窗口。向前读且容量允许时追加，否则替换并重新定位；pending 保存旧位置，
    * 由 refreshDetail 在结果确认后提交，防止读取失败后界面游标与正文不一致。
+   * EN: Request a history window, appending older pages only within capacity; otherwise replace/relocate. pending retains prior position until refreshDetail confirms success, keeping cursor and body aligned on failure.
    */
   async function changeHistory(before: string, trail: string[], around?: string) {
     if (historyMoving.current) return;
@@ -1371,7 +1516,10 @@ function App({
       }
     }
   }
-  /** 显式加载代理、产物和用量统计，完成时再次确认用户仍停留在原运行。 */
+  /**
+   * 显式加载代理、产物和用量统计，完成时再次确认用户仍停留在原运行。
+   * EN: Load complete agents/artifacts/usage explicitly and confirm original run is still selected before publication.
+   */
   async function loadDetailedSummary() {
     if (summaryLoading || !activeRunId.current) return false;
     const wanted = activeRunId.current;
@@ -1383,7 +1531,10 @@ function App({
       if (activeRunId.current === wanted) setSummaryLoading(false);
     }
   }
-  /** 对不可读投影执行一次显式重试；重试标记防止普通刷新同时绕过该过程。 */
+  /**
+   * 对不可读投影执行一次显式重试；重试标记防止普通刷新同时绕过该过程。
+   * EN: Explicitly retry unreadable projections; retry flag prevents normal refresh bypassing that workflow.
+   */
   async function retryDetailRecords(forceSummary = true) {
     const wanted = activeRunId.current;
     if (!wanted || detailRetryRun.current) return;
@@ -1399,6 +1550,7 @@ function App({
   /**
    * 为指定代理读取一致上下文快照。新打开会取消旧读取，结果还需同时匹配运行和弹窗身份；
    * 关闭弹窗或切换运行的清理 effect 会中止请求。
+   * EN: Read a consistent agent context snapshot. Cancel old open requests; validate both run and dialog identity. Closing/switching cleanup aborts the read.
    */
   async function openContext(agentId: string) {
     const target = detailSnapshot.current;
@@ -1433,6 +1585,7 @@ function App({
   /**
    * 初始化入口会话，绑定导航与草稿的认证范围，然后分别加载列表和持久草稿。
    * 已认证时按 source 仅重试相关读取；会话初始化及写操作期间避免重复发起连接流程。
+   * EN: Initialize surface session and bind auth scope for navigation/drafts, then load lists and persistent drafts independently. Authenticated retries target their failed source only; prevent duplicate init during session/write activity.
    */
   const connect = useCallback(
     async (retry = false, source?: ReadSource, target?: string) => {
@@ -1458,12 +1611,21 @@ function App({
           cache.bindScope(client.workbenchScope());
           conversationHistory.bindScope(client.workbenchScope());
           markStartupStage('auth-ready', { surface: localSurface });
-          // The authenticated workbench and lists do not depend on each other.
+          /**
+           * 认证后的工作台与列表互不依赖。
+           * EN: The authenticated workbench and lists do not depend on each other.
+           */
           sessionReady.current = true;
           setReady(true);
           registerSession(localSurface);
-          // The workbench is usable after authentication. History and persisted
-          // drafts reconcile independently, preserving edits made while loading.
+          /**
+           * 认证后工作台即可使用，历史与持久
+           * EN: The workbench is usable after authentication. History and persisted
+           */
+          /**
+           * 草稿独立协调并保留加载期间的编辑。
+           * EN: drafts reconcile independently, preserving edits made while loading.
+           */
           void cache.load().catch(() => {});
           void refresh();
           return;
@@ -1495,7 +1657,10 @@ function App({
   useEffect(() => {
     void connect();
   }, [connect]);
-  // 仅按当前项目、运行及待核验操作补读所需草稿，避免一次载入全部历史草稿正文。
+  /**
+   * 仅按当前项目、运行及待核验操作补读所需草稿，避免一次载入全部历史草稿正文。
+   * EN: Read draft bodies only for current project/run/uncertain operations instead of all historical drafts.
+   */
   useEffect(() => {
     if (!ready) return;
     const keys = [newDraftKey(projectId), runSetupDraftKey(projectId)];
@@ -1515,7 +1680,10 @@ function App({
       if (operation.status === 'UNCERTAIN') keys.push(`draft:terminal-recovery:${runId}:${operation.id}`);
     void cache.ensureKeys(keys).catch(() => {});
   }, [ready, projectId, runId, detail?.operations, cache]);
-  // 项目默认配置属于当前终端项目；切换项目立即取消旧请求并清除不适用的继承值。
+  /**
+   * 项目默认配置属于当前终端项目；切换项目立即取消旧请求并清除不适用的继承值。
+   * EN: Project defaults belong to current terminal project; switching immediately aborts read and clears inapplicable inheritance.
+   */
   useEffect(() => {
     if (!terminalSurface || !ready || !projectId) {
       setTerminalPreferences(null);
@@ -1546,6 +1714,7 @@ function App({
    * 当前运行的实时同步生命周期：先读取可靠详情取得事件游标，再订阅 SSE。
    * 文本片段按动画帧合并发布，状态事件以短延迟合并详情刷新；存在偏移缺口时回查快照。
    * 清理时关闭事件源、定时器与动画帧，隐藏/切换入口后的旧事件不能继续写入界面。
+   * EN: Synchronize current run by reading reliable detail/event cursor before SSE. Batch text per animation frame and coalesce state refreshes with short delay; backfill offset gaps from snapshots. Cleanup closes source/timers/frames so hidden/switched surfaces reject old events.
    */
   useEffect(() => {
     if (streamRun.current !== runId) {
@@ -1554,8 +1723,14 @@ function App({
       setStreaming({});
       setStreamingReasoning({});
     }
-    // Preserve the last task view on a hot return while reconciling it with the
-    // server. A different run was already cleared by navigate().
+    /**
+     * 热返回时保留上次任务视图并与服务端协调；
+     * EN: Preserve the last task view on a hot return while reconciling it with the
+     */
+    /**
+     * 切换到其他运行时 navigate 已清空旧状态。
+     * EN: server. A different run was already cleared by navigate().
+     */
     setDetail((old) => (old?.run.id === runId ? old : null));
     setConnection('connecting');
     if (!ready || !runId) return;
@@ -1563,6 +1738,10 @@ function App({
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let frame: number | null = null;
+    /**
+     * 把高频流式文本更新合并到单个动画帧，并在卸载后停止发布。文本和推理同时读取同一累积器，减少渲染压力及显示不同步。
+     * EN: Coalesce streaming updates into one animation frame and stop publishing after disposal; read text and reasoning from the same accumulator to reduce render load and visual skew.
+     */
     const publishStream = () => {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
@@ -1574,7 +1753,10 @@ function App({
       });
     };
     let listsDirty = false;
-    // 多个邻近事件共用一次详情读取；会改变侧栏状态的事件再额外刷新列表。
+    /**
+     * 多个邻近事件共用一次详情读取；会改变侧栏状态的事件再额外刷新列表。
+     * EN: Coalesce nearby events into one detail read; refresh lists separately for sidebar-affecting events.
+     */
     const reload = (lists = false) => {
       listsDirty ||= lists;
       if (!disposed && !timer)
@@ -1585,6 +1767,10 @@ function App({
           listsDirty = false;
         }, 120);
     };
+    /**
+     * 先成功刷新会话详情，再用已确认游标连接事件流；详情未读成功时延迟重试。连接事件驱动列表、上下文和实时内容更新，所有回调受当前会话及清理状态约束，避免串入旧会话事件。
+     * EN: Refresh run details before opening the event stream from its confirmed cursor, retrying later if refresh fails. Stream callbacks coordinate list, context, and live content while honoring active-run identity and disposal.
+     */
     const start = async () => {
       const read = await refreshDetail();
       if (disposed || activeRunId.current !== runId) return;
@@ -1699,13 +1885,17 @@ function App({
     setAssignmentReady({});
   }, [assignmentKey]);
   useEffect(() => setError(''), [modal]);
-  // Closing or replacing a source dialog retires its unfinished navigation request.
+  /**
+   * 关闭或替换来源弹窗会废弃尚未完成的导航请求。
+   * EN: Closing or replacing a source dialog retires its unfinished navigation request.
+   */
   React.useLayoutEffect(() => {
     projectLeaveGuard.begin();
   }, [modal, projectLeaveGuard]);
   /**
    * 串行化用户写操作并统一呈现错误。动作成功后刷新配置、列表与详情；失败不清空草稿，
    * 返回布尔值供调用方决定是否关闭弹窗或重置自身输入。
+   * EN: Serialize writes and present errors centrally. After success refresh config/lists/detail; preserve drafts on failure. Return boolean so caller decides whether to close/reset its own form.
    */
   async function act(fn: () => Promise<unknown>) {
     if (actionPending.current) return false;
@@ -1725,7 +1915,10 @@ function App({
       setBusy(false);
     }
   }
-  /** 写操作先取得项目离开意图；需要用户处理草稿时返回 false，获准后才调用 action。 */
+  /**
+   * 写操作先取得项目离开意图；需要用户处理草稿时返回 false，获准后才调用 action。
+   * EN: Acquire leave intent before project writes; return false while draft needs handling and call action only after approval.
+   */
   const submitAfterProjectLeave = (label: string, action: (intent: number) => Promise<boolean>) => {
     const intent = projectLeaveGuard.begin();
     let result: Promise<boolean> | undefined;
@@ -1740,6 +1933,7 @@ function App({
   /**
    * 项目内先打开任务设置；独立对话直接用当前型号、上下文和无文件/执行权限配置创建运行。
    * 创建完成只清除与发送时相同的原草稿，期间新增输入或导航不会被迟到结果覆盖。
+   * EN: Open task settings within projects; create chat directly with current model/context and no file/exec permissions. Clear only original unchanged creation draft; later input/navigation survives late success.
    */
   const startConversation = () => {
     if (terminalSurface && (!project || !terminalProfile || !projectPreferences)) return;
@@ -1779,6 +1973,7 @@ function App({
    * 发送补充前固定运行版本、文字和继续/重规划意图，并保存带 commandId 的回执。
    * 未确认结果重试沿用同一负载；明确的版本拒绝才允许重新形成请求。
    * 成功清理仅作用于本次未变化的草稿和意图，保护发送期间的新输入。
+   * EN: Freeze run revision/text/continue-or-replan intent and persist commandId receipt before supplement. Unknown retries keep exact payload; only definitive version rejection creates new request. Clear only unchanged submitted draft/intent, preserving later typing.
    */
   const sendReply = () => {
     if (
@@ -1801,13 +1996,22 @@ function App({
     void act(async () => {
       const receiptKey = `draft:terminal-send:${target}`;
       if (!terminalInput) {
-        // Read before replacing a durable receipt, including a late first load.
+        /**
+         * 替换持久回执前先读取，包括迟到的首次加载。
+         * EN: Read before replacing a durable receipt, including a late first load.
+         */
         await cache.ensureKey(receiptKey);
         const previousRead = inspectReplyReceipt(cache.get(receiptKey), target);
         if (previousRead.status === 'unreadable') throw new Error(previousRead.message);
         const previous = previousRead.status === 'ready' ? previousRead.receipt : null;
-        // A first read may finish after send was clicked. The render-time default
-        // must not replace the intent of an untouched, unresolved stored request.
+        /**
+         * 首次读取可能晚于点击发送，渲染时默认值
+         * EN: A first read may finish after send was clicked. The render-time default
+         */
+        /**
+         * 不能替换未修改且尚未确认的保存请求意图。
+         * EN: must not replace the intent of an untouched, unresolved stored request.
+         */
         const requestedIntent =
           !selectedIntent && change === 0 && previous?.text === text && !previous.outcome
             ? previous.intent
@@ -1830,8 +2034,14 @@ function App({
         try {
           await mutation('/runs/' + target + '/messages', replyReceiptPayload(receipt));
         } catch (error) {
-          // This CAS rejection proves the command did not commit. Refreshing can
-          // create a new request; transport/5xx failures retain the exact payload.
+          /**
+           * 此 CAS 拒绝证明命令没有提交，刷新可形成
+           * EN: This CAS rejection proves the command did not commit. Refreshing can
+           */
+          /**
+           * 新请求；传输或5xx失败保留精确负载。
+           * EN: create a new request; transport/5xx failures retain the exact payload.
+           */
           if (
             error instanceof ApiError &&
             error.kind === 'http' &&
@@ -1884,8 +2094,14 @@ function App({
       if (terminalInput && cache.get(receiptKey) === JSON.stringify(receipt)) cache.set(receiptKey, '');
       if (intent)
         setReplyIntents((current) => {
-          // A late success may clear only its own unchanged choice, never a
-          // newer selection or another run's draft.
+          /**
+           * 迟到成功只能清除属于自身且未改变的选择，不能清除
+           * EN: A late success may clear only its own unchanged choice, never a
+           */
+          /**
+           * 新选择或其他运行的草稿。
+           * EN: newer selection or another run's draft.
+           */
           if (current.get(intentKey) !== selectedIntent) return current;
           const next = new Map(current);
           next.delete(intentKey);
@@ -1896,6 +2112,7 @@ function App({
   /**
    * 使用保存的原始回执核对未知发送。明确未提交时保存 not-sent 与原文；确认已提交时
    * 清除回执但保留当前草稿，不将重试过程当成新的用户补充。
+   * EN: Reconcile unknown send with saved original receipt. Definitively uncommitted requests keep not-sent/original text; confirmed commits clear receipt but preserve current draft. Reconciliation is not a new supplement.
    */
   const reconcileReply = () => {
     if (busy || !cachedReplyReceipt || cachedReplyReceipt.outcome || cachedReplyReceipt.targetRunId !== runId)
@@ -1938,7 +2155,10 @@ function App({
       }
     });
   };
-  /** 通过导航门禁选择运行；提交选择后展开所属项目、清除未读标记并重置详情默认页。 */
+  /**
+   * 通过导航门禁选择运行；提交选择后展开所属项目、清除未读标记并重置详情默认页。
+   * EN: Choose runs through navigation guard, then expand project, clear unread flag, and reset detail default page.
+   */
   const selectRun = (
     run: RunListItem,
     options: { intent?: number; bypass?: boolean; after?: () => void } = {},
@@ -1954,6 +2174,10 @@ function App({
       {
         ...options,
         label: `任务「${run.title || '未命名'}」`,
+        /**
+         * 会话导航成功后清除未读、展开所属项目并初始化详情页签，再执行调用方后续动作。
+         * EN: After accepted run navigation, clear unread state, expand its project, initialize the detail tab, and invoke the caller continuation.
+         */
         after: () => {
           if (cache.get(`unread:run:${run.id}`) === true) cache.set(`unread:run:${run.id}`, false);
           if (run.projectId && cache.get(`collapsed:project:${run.projectId}`) === true)
@@ -1966,7 +2190,10 @@ function App({
       },
     );
   };
-  /** 普通操作打开核验弹窗；终端操作滚动到恢复卡片，动画帧执行前再检查导航身份。 */
+  /**
+   * 普通操作打开核验弹窗；终端操作滚动到恢复卡片，动画帧执行前再检查导航身份。
+   * EN: Ordinary uncertain operations open dialog; terminal operations scroll to recovery card after frame-time navigation recheck.
+   */
   const openVerification = (operation: Operation, ownerRunId: string, epoch = navigationEpoch.current) => {
     if (operation.name !== 'terminal_agent') {
       setModal('decision:' + operation.id);
@@ -1983,7 +2210,10 @@ function App({
       } else replyRef.current?.focus();
     });
   };
-  /** 等 DOM 更新后定位待答问题；问题区不存在时退到回复框，旧导航不得夺取焦点。 */
+  /**
+   * 等 DOM 更新后定位待答问题；问题区不存在时退到回复框，旧导航不得夺取焦点。
+   * EN: Wait for DOM then focus questions, falling back to reply input; stale navigation cannot take focus.
+   */
   const focusQuestions = (ownerRunId = runId, epoch = navigationEpoch.current) => {
     setPreviewOpen(false);
     requestAnimationFrame(() => {
@@ -1995,7 +2225,10 @@ function App({
       } else replyRef.current?.focus();
     });
   };
-  /** 任务中心跳转先要求详情读取晚于点击时的请求，避免依据列表旧快照定位操作入口。 */
+  /**
+   * 任务中心跳转先要求详情读取晚于点击时的请求，避免依据列表旧快照定位操作入口。
+   * EN: Task-center navigation requires detail newer than click-time request instead of acting on old list snapshot.
+   */
   const openTaskCenterTarget = (id: string, category: TaskCenterTarget) => {
     setTaskCenterTarget({
       id,
@@ -2003,7 +2236,10 @@ function App({
       epoch: navigationEpoch.current,
       afterRequest: detailRequest.current,
     });
-    // Even reopening the currently selected run must read past the list/header snapshot.
+    /**
+     * 重开当前运行也必须读取晚于列表或头快照的数据。
+     * EN: Even reopening the currently selected run must read past the list/header snapshot.
+     */
     void refreshDetail(true, true);
   };
   useEffect(() => {
@@ -2022,6 +2258,10 @@ function App({
     setTaskCenterTarget(undefined);
     setPreviewOpen(false);
     setDetailsDrawerOpen(false);
+    /**
+     * 下一动画帧把目标区滚入视野并聚焦；执行前再次检查会话、导航代次和弹窗，避免迟到的焦点跳转干扰新界面。
+     * EN: Scroll and focus the target on the next frame only if run, navigation epoch, and modal state still match, preventing late focus jumps.
+     */
     const focus = (element: React.RefObject<HTMLDivElement | null>) => {
       requestAnimationFrame(() => {
         if (
@@ -2089,7 +2329,7 @@ function App({
           !projectLeaveGuard.current(intent)
         )
           return;
-        selectRun(target, { intent, after: () => setModal('') });
+        selectRun(target, { intent, /** 仅在关联导航成功后关闭当前弹窗，保留离开检查取消时的原界面。 EN: Close the modal only after its associated navigation succeeds, preserving the current view when leave checks cancel it. */ after: () => setModal('') });
       })
       .catch((issue) => {
         if (!controller.signal.aborted && projectLeaveGuard.current(intent))
@@ -2100,6 +2340,7 @@ function App({
   /**
    * 从资源跳到所属运行，并在需要时定位未知操作。读取头信息期间保存导航意图；
    * 如果用户已离开，结果被忽略。尚未载入的操作通过 heldNavigation 等待详情到达。
+   * EN: Navigate from resource to owner run and optionally uncertain operation. Save intent during header read, ignore if user left, and hold absent-operation navigation until detail arrives.
    */
   const openResourceOwner = async (ownerRunId: string, operationId?: string) => {
     if (actionPending.current) return;
@@ -2110,6 +2351,10 @@ function App({
       if (epoch !== navigationEpoch.current || !projectLeaveGuard.current(intent)) return;
       selectRun(target, {
         intent,
+        /**
+         * 导航到产物区后读取完整详情并展开侧栏；不确定操作可立即打开复核，尚未读到的操作则记录导航意图等待详情到达。
+         * EN: Open artifacts with full details after navigation; inspect an uncertain operation immediately when loaded, or retain its navigation intent until details arrive.
+         */
         after: () => {
           setTab('artifacts');
           fullDetailRequested.current = true;
@@ -2146,22 +2391,38 @@ function App({
     heldNavigation.current = undefined;
     if (operation?.status === 'UNCERTAIN') openVerification(operation, target.runId, target.epoch);
   }, [detail]);
+  /**
+   * 通过统一导航进入空会话，可显式传递已处理的离开检查；切换成功后才清除旧详情和预览。
+   * EN: Navigate to an empty conversation through the shared leave flow, optionally bypassing already-handled checks; clear old details and preview only after acceptance.
+   */
   const newRun = (bypass = false) => {
     navigate({ ...navigation.current, runId: '' }, true, {
       bypass,
       label: '新会话',
+      /**
+       * 新会话导航确认后清除旧会话详情和预览，避免界面继续显示先前内容。
+       * EN: Clear prior run details and preview after new-conversation navigation is accepted.
+       */
       after: () => {
         setDetail(null);
         setPreviewOpen(false);
       },
     });
   };
+  /**
+   * 把当前会话的完整目标放入新输入区，关闭弹窗并发起新会话导航。
+   * EN: Copy the current full objective into the new input, close the modal, and initiate new-conversation navigation.
+   */
   const startFromRun = () => {
     if (!detail) return;
     setDraft(detail.run.objective);
     setModal('');
     newRun();
   };
+  /**
+   * 把反馈中声明的动作分派到对应面板、焦点或管理入口；产物请求完整摘要，任务动作携带被阻塞任务标识。
+   * EN: Dispatch feedback actions to panels, focus targets, or management views; load full artifact summaries and pass blocked-task IDs to task actions.
+   */
   const feedbackAction = () => {
     switch (feedback?.action) {
       case 'artifacts':
@@ -2198,7 +2459,10 @@ function App({
         break;
     }
   };
-  /** 展开任务详情并请求完整统计；任务 DOM 尚未出现时保留 pendingTaskFocus 供后续定位。 */
+  /**
+   * 展开任务详情并请求完整统计；任务 DOM 尚未出现时保留 pendingTaskFocus 供后续定位。
+   * EN: Expand task detail and request full summary; retain pendingTaskFocus until its DOM appears.
+   */
   const openTaskDetails = (taskId?: string) => {
     pendingTaskFocus.current = taskId;
     setPreviewOpen(false);
@@ -2215,6 +2479,10 @@ function App({
       }
     });
   };
+  /**
+   * 根据项目归属选择空间并清空会话标识，经过统一离开保护后清理旧详情，再调用后续动作。
+   * EN: Select the project ownership space and clear run selection through shared leave protection, then reset prior details and run the continuation.
+   */
   const selectProject = (id: string, after?: () => void, bypass = false) => {
     const owner = projects.find((p) => p.id === id);
     return navigate(
@@ -2223,6 +2491,10 @@ function App({
       {
         bypass,
         label: owner ? `项目「${owner.name}」` : '新建独立对话',
+        /**
+         * 项目切换成功后清除旧详情及预览，再执行调用方动作，避免在导航被取消时提前清空界面。
+         * EN: Reset old details and preview after project navigation succeeds, then run the caller action without clearing UI on cancellation.
+         */
         after: () => {
           setDetail(null);
           setPreviewOpen(false);
@@ -2234,6 +2506,7 @@ function App({
   /**
    * 管理操作完成后协调当前选择、阅读位置和关联草稿。删除运行或项目时只清理其明确
    * 所属的缓存键，其余草稿保留；最后重新读取列表并返回读取结果。
+   * EN: After management reconcile selection/reading/cache. Delete only keys explicitly owned by removed run/project, preserve others, then reread lists and return result.
    */
   const managed = async (deleted?: { kind: 'project' | 'run' | 'space'; id: string; runIds?: string[] }) => {
     if (deleted) conversationHistory.remove(deleted.kind === 'run' ? [deleted.id] : deleted.runIds || []);
@@ -2295,6 +2568,7 @@ function App({
   /**
    * 重命名、归档或删除会话/项目时提交用户看到的 expectedRevision。
    * 版本冲突返回独立 conflict 状态并刷新记录，要求重新核对，不能自动重放修改。
+   * EN: Send user-seen expectedRevision for rename/archive/delete. Conflicts return separate state and refresh records for review rather than automatically replaying edits.
    */
   const updateSession = async (
     target: SessionTarget,
@@ -2343,13 +2617,20 @@ function App({
     detail?.usageSummary?.totalTokens ??
     detail?.requests.reduce((s, r) => s + (r.usage?.inputTotal ?? 0) + (r.usage?.outputTotal ?? 0), 0) ??
     0;
-  /** 运行控制始终带当前运行版本；归档、旧入口或详情不可读时直接拒绝界面操作。 */
+  /**
+   * 运行控制始终带当前运行版本；归档、旧入口或详情不可读时直接拒绝界面操作。
+   * EN: Run controls carry current revision and reject archived/legacy-surface/unreadable-detail UI actions.
+   */
   const runAction = (action: string, taskId?: string) =>
     runReadOnly
       ? Promise.resolve(false)
       : act(() =>
           mutation('/runs/' + runId + '/actions', { action, taskId, expectedRevision: detail!.run.revision }),
         );
+  /**
+   * 在空闲且初始化完成时切换原生/终端界面，先请求保存当前缓存，使切换前的输入进入同步流程。
+   * EN: Switch native/terminal surfaces only when idle and initialized, requesting a cache flush before changing surfaces.
+   */
   const switchSurface = (surface: 'native' | 'terminal') => {
     if (surface === localSurface || actionPending.current || sessionInitializing) return;
     void cache.flush();
@@ -2358,7 +2639,10 @@ function App({
   const surfaceSwitcher = (
     <SurfaceSwitcher disabled={busy || sessionInitializing} switching={false} change={switchSurface} />
   );
-  /** 仅为当前运行打开产物预览，避免迟到的列表点击在切换会话后展示错属资源。 */
+  /**
+   * 仅为当前运行打开产物预览，避免迟到的列表点击在切换会话后展示错属资源。
+   * EN: Open artifact preview only for current run so late clicks cannot show resources of another run.
+   */
   function openArtifact(a: Artifact) {
     if (a.runId !== activeRunId.current) return;
     setArtifactView(a);
@@ -2397,7 +2681,10 @@ function App({
         )}
       </StartupTransition>
     );
-  // 首页输入器作为独立对话首页或项目工作台的自由输入区复用，草稿键仍按项目区分。
+  /**
+   * 首页输入器作为独立对话首页或项目工作台的自由输入区复用，草稿键仍按项目区分。
+   * EN: Reuse home composer for chat home/project free input while keeping draft keys project-specific.
+   */
   const workspaceHome = (
     <WorkspaceHome
       project={project}
@@ -2756,6 +3043,10 @@ function App({
                     return;
                   selectRun(target, {
                     intent,
+                    /**
+                     * 进入目标会话后按需打开任务复核入口，等待导航成功再定位任务。
+                     * EN: Open task review when requested after navigating successfully to the owning run.
+                     */
                     after: () => {
                       if (review) openTaskCenterTarget(id, 'review');
                     },
@@ -4391,6 +4682,10 @@ function App({
                       return;
                     selectRun(target, {
                       intent,
+                      /**
+                       * 进入目标会话后打开指定任务分类并关闭当前弹窗，使定位动作应用到正确会话。
+                       * EN: Open the requested task category after reaching its run, then close the current modal.
+                       */
                       after: () => {
                         openTaskCenterTarget(id, category);
                         setModal('');
@@ -4464,6 +4759,10 @@ function App({
                           navigate({ spaceId: p.spaceId, projectId: p.id, runId: '' }, true, {
                             intent,
                             bypass: true,
+                            /**
+                             * 关联会话导航成功后关闭弹窗，避免离开检查取消时丢失当前操作上下文。
+                             * EN: Close the modal after associated run navigation succeeds so cancelled leave checks preserve the current action context.
+                             */
                             after: () => setModal(''),
                           });
                         }),
@@ -4529,6 +4828,10 @@ function App({
                           selectRun(created, {
                             intent,
                             bypass: true,
+                            /**
+                             * 创建成功后仅清理仍等于已发送 launch 配置的项目草稿；提交期间的新编辑保留，再关闭弹窗。
+                             * EN: After creation, clear project launch draft only if it still matches the submitted configuration, preserving edits made during submission before closing the modal.
+                             */
                             after: () => {
                               const current = readProjectBoardDraft(cache.get(projectBoardKey(project.id)));
                               if (JSON.stringify(current.launch) === JSON.stringify(sentLaunch))
@@ -4578,6 +4881,10 @@ function App({
                           selectRun(run, {
                             intent,
                             bypass: true,
+                            /**
+                             * 创建成功后逐项比较已发送目标和配置，仅清除未被用户再次编辑的草稿，再关闭弹窗。
+                             * EN: After creation, clear objective and setup drafts only when each still matches its submitted value, preserving concurrent typing before closing the modal.
+                             */
                             after: () => {
                               if (cache.get(draftKey) === sentObjective) cache.set(draftKey, '');
                               if (cache.get(runSetupKey) === sentSetup) cache.set(runSetupKey, '');
@@ -4935,7 +5242,10 @@ function App({
     </div>
   );
 }
-/** 统一空状态插画与说明，kind 只决定视觉，不隐含数据是否已经加载。 */
+/**
+ * 统一空状态插画与说明，kind 只决定视觉，不隐含数据是否已经加载。
+ * EN: Use common empty artwork/copy; kind selects visuals and does not imply data readiness.
+ */
 function Empty({
   kind = 'delivery',
   title,
@@ -4956,6 +5266,7 @@ function Empty({
 /**
  * 呈现运行的可观测用量。优先使用服务端完整汇总，旧数据回退到当前请求列表；
  * 未知费用、缺失缓存指标与终端未观测用量明确保留为未知，不以零代替。
+ * EN: Show observable usage, preferring complete server summary and falling back to visible requests for legacy data. Keep unknown cost/cache/terminal measurement unknown instead of zero.
  */
 function UsagePanel({
   detail,
@@ -4999,7 +5310,10 @@ function UsagePanel({
     );
   const settled = detail.requests.filter((r) => r.status === 'SETTLED'),
     unknown = detail.requests.filter((r) => r.status === 'UNKNOWN');
-  // 当前列表只在每条已结算记录都有费用值时展示合计；服务端汇总可覆盖分页限制。
+  /**
+   * 当前列表只在每条已结算记录都有费用值时展示合计；服务端汇总可覆盖分页限制。
+   * EN: Sum visible records only when all settled records have cost; full server summary can span pagination.
+   */
   const totalCostKnown = settled.length && settled.every((r) => r.usage?.cost !== null);
   const costs = settled.reduce((sum, r) => sum + (r.usage?.cost || 0), 0);
   const summary = detail.usageSummary;
@@ -5139,6 +5453,7 @@ function UsagePanel({
 /**
  * 新建项目先检查本机目录，再允许提交规范化路径和 Git 基线。目录选择器与检查请求
  * 使用同一递增序号互斥，关闭或卸载时取消；自动名称只在用户尚未编辑名称时填写。
+ * EN: Check local directory before project creation and submit normalized path/Git baseline. Chooser/check share sequence, cancel/invalidate on close/unmount, and auto-name only while name untouched.
  */
 function ProjectModal({
   spaces,
@@ -5181,7 +5496,10 @@ function ProjectModal({
       chooser.current = null;
     };
   }, []);
-  /** 同时失效原生选择器结果和可取消的目录检查，防止关闭后回填表单。 */
+  /**
+   * 同时失效原生选择器结果和可取消的目录检查，防止关闭后回填表单。
+   * EN: Invalidate both native chooser and cancellable directory checks to prevent post-close form updates.
+   */
   const cancelRead = () => {
     readSequence.current++;
     inspection.current?.controller.abort();
@@ -5191,6 +5509,10 @@ function ProjectModal({
     setChoosing(false);
     setError('');
   };
+  /**
+   * 项目创建中保持弹窗；其余情况下先取消在途目录读取再关闭，阻止迟到结果更新已关闭界面。
+   * EN: Keep the dialog open during project creation; otherwise cancel in-flight directory reading before closing to prevent late UI updates.
+   */
   const closeProject = () => {
     if (creating.current) return;
     cancelRead();
@@ -5200,12 +5522,19 @@ function ProjectModal({
     (item) =>
       item.spaceId === spaceId && item.workspaceRoot.toLowerCase() === folder?.workspaceRoot?.toLowerCase(),
   );
-  /** 检查服务器实际可用的工作区根路径；只发布当前序号的结果，失败保留错误供用户处理。 */
+  /**
+   * 检查服务器实际可用的工作区根路径；只发布当前序号的结果，失败保留错误供用户处理。
+   * EN: Check server-usable root and publish only current-sequence results; preserve errors for correction.
+   */
   const inspect = async (directory: string) => {
     if (creating.current || inspection.current || chooser.current !== null || !mounted.current) return;
     const sequence = ++readSequence.current,
       controller = new AbortController();
     inspection.current = { sequence, controller };
+    /**
+     * 同时核对组件存活、读取取消信号和请求序号，仅接收当前目录读取结果。
+     * EN: Accept directory results only while mounted, not aborted, and still associated with the current read sequence.
+     */
     const current = () => mounted.current && !controller.signal.aborted && readSequence.current === sequence;
     setInspecting(true);
     setError('');
@@ -5226,7 +5555,10 @@ function ProjectModal({
       }
     }
   };
-  /** 原生目录选择不能被 AbortController 取消，故用序号和 mounted 双重检查丢弃迟到结果。 */
+  /**
+   * 原生目录选择不能被 AbortController 取消，故用序号和 mounted 双重检查丢弃迟到结果。
+   * EN: Native chooser is not abortable, so sequence and mounted checks discard late results.
+   */
   const chooseFolder = async () => {
     if (creating.current || inspection.current || chooser.current !== null || !window.elysia) return;
     const sequence = ++readSequence.current;
@@ -5411,6 +5743,7 @@ function ProjectModal({
 /**
  * 收集未知副作用的人工核验结论与证据说明。可选结果必须先通过 JSON 解析；
  * disabledReason 来自外层当前运行状态，核验记录本身不会在此组件中被改写。
+ * EN: Collect human verification/outcome/evidence for unknown effects. Parse optional result JSON first; outer run state supplies disabledReason. This form does not itself rewrite verification records.
  */
 function DecisionModal({
   operation,
@@ -5498,6 +5831,7 @@ function DecisionModal({
 /**
  * 为一个入口提供固定客户端和 DOM 根引用。隐藏入口保留 React 状态并设为 inert，
  * Activity 负责停用其 effect；恢复时仍使用原客户端、草稿缓存和消息阅读状态。
+ * EN: Provide fixed client/DOM root per surface. Hidden surface retains state/inert; Activity disables effects. Resume with original client/cache/reading state.
  */
 function SurfaceEntry({
   client,
@@ -5546,9 +5880,13 @@ function SurfaceEntry({
 /**
  * 管理两个入口的访问集合、客户端和资源生命周期。首次访问才挂载工作台，随后切换
  * 只改变可见性；最终卸载时才停止所有缓存与阅读状态。桌面通知会先切换入口再传递定位目标。
+ * EN: Own visited surfaces, clients, and resource lifecycle. Mount on first visit; later switch visibility only. Final unmount stops caches/reading state. Desktop notification switches surface before delivering navigation target.
  */
 function SurfaceWorkspaces() {
-  // 每个入口创建独立客户端；已访问入口保持挂载以保留草稿和页面状态。
+  /**
+   * 每个入口创建独立客户端；已访问入口保持挂载以保留草稿和页面状态。
+   * EN: Create independent clients per surface and keep visited workspaces mounted for draft/page retention.
+   */
   const [current, setCurrent] = useState(localSurface);
   const [visited, setVisited] = useState(() => new Set([localSurface]));
   const [notificationTarget, setNotificationTarget] = useState<{
@@ -5581,7 +5919,10 @@ function SurfaceWorkspaces() {
     [],
   );
   const changeSurface = useCallback((surface: 'native' | 'terminal') => {
-    // 同步地址栏以支持历史导航，再激活对应工作台。
+    /**
+     * 同步地址栏以支持历史导航，再激活对应工作台。
+     * EN: Synchronize address bar for history navigation before activating the target workspace.
+     */
     history.replaceState(null, '', surfaceLocation(surface));
     setVisited((old) => new Set([...old, surface]));
     setCurrent(surface);
@@ -5600,6 +5941,10 @@ function SurfaceWorkspaces() {
     [changeSurface],
   );
   useEffect(() => {
+    /**
+     * 从地址栏恢复原生或终端界面选择，用于浏览器历史变化后的入口一致性。
+     * EN: Restore native or terminal surface selection from the URL to keep the entry view consistent with browser history.
+     */
     const restore = () =>
       changeSurface(
         new URLSearchParams(location.search).get('surface') === 'terminal' ? 'terminal' : 'native',

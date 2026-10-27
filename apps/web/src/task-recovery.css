@@ -1,4 +1,7 @@
-/* 定义 task-recovery 对应界面的样式与布局。 */
+/*
+ * 任务局部恢复：排列阻塞来源、失败分支、恢复状态及动作。失败与取消使用不同状态样式，长错误正文有界滚动，方便定位真正需要处理的任务。
+ * EN: Task recovery: arranges blockers, failed branches, recovery state, and actions. Distinct failure/cancellation styling plus bounded error reading helps identify the task needing intervention.
+ */
 .task-recovery {
   min-width: 0;
   margin-block: var(--space-4);
@@ -38,7 +41,10 @@
   background: var(--warning-bg);
   font-size: var(--font-sm);
 }
-/* 失败状态使用危险色，便于识别需要恢复的任务。 */
+/*
+ * 失败状态使用危险色，便于识别需要恢复的任务。
+ * EN: Uses the danger color for failed tasks to make recovery needs easier to identify.
+ */
 .task-recovery-state[data-status='FAILED'] {
   color: var(--danger);
   border-color: var(--danger-border);
@@ -49,7 +55,10 @@
   border-color: var(--border);
   background: var(--surface);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .task-recovery-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;

@@ -1,5 +1,11 @@
-/* 定义 project-usage 对应界面的样式与布局。 */
-/* 列数随容器宽度变化；每列以 220px 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 项目用量概览：以自适应卡片展示聚合指标，再组织细分用量和状态说明。每列保留目标最小宽度但不超过容器，长单位或说明允许换行，适合嵌入项目面板。
+ * EN: Project usage summary: presents aggregate metrics in adaptive cards followed by breakdowns/state. Columns target a minimum width without exceeding the container; long units/descriptions wrap for project-panel embedding.
+ */
+/*
+ * 列数随容器宽度变化；每列以 220px 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 220px minimum per column without exceeding a narrower container.
+ */
 .project-usage-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
@@ -16,7 +22,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .project-usage-totals dd {
   margin: var(--space-2) 0 0;
   font-size: var(--font-xl);

@@ -1,12 +1,23 @@
-/* 展示项目请求和用量信息。 */
+/**
+ * 展示项目请求和用量信息。
+ * 按同一快照版本浏览请求明细和聚合用量，费用按币种分组并保留未知状态；不把浏览器汇总当作计费结算写入。
+ * EN: Displays project request and usage accounting. Browses request detail and usage aggregates under one snapshot version, separating currencies and unknown costs without writing browser summaries as billing settlements.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectUsageSummary, ProjectUsageTotals } from '../../../packages/contracts/src/project-usage';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-usage.css';
 import './project-usage-details.css';
 
+/**
+ * 按币种分别展示已知费用，并显示未知或未结算计数，避免把不同币种相加或把未知视作零。
+ * EN: Shows known costs separately by currency and retains unknown/unsettled counts rather than summing currencies or treating unknown cost as zero.
+ */
 function Costs({ value }: { value: ProjectUsageTotals }) {
-  // 分币种展示已知费用，同时保留费用未知或未结算的计数。
+  /**
+   * 分币种展示已知费用，同时保留费用未知或未结算的计数。
+   * EN: Separate known cost by currency and retain unknown/unsettled counts.
+   */
   return (
     <>
       {value.costs.length ? (
@@ -24,6 +35,10 @@ function Costs({ value }: { value: ProjectUsageTotals }) {
     </>
   );
 }
+/**
+ * 展示请求状态、token和费用汇总；compact仅调整布局，费用仍由Costs保留币种与未知状态。
+ * EN: Displays request-state, token, and cost totals; compact changes layout only, while Costs preserves currency and unknown-cost distinctions.
+ */
 function Totals({ value, compact = false }: { value: ProjectUsageTotals; compact?: boolean }) {
   return (
     <dl className={'project-usage-totals' + (compact ? ' project-usage-breakdown' : '')}>
@@ -66,11 +81,16 @@ function Totals({ value, compact = false }: { value: ProjectUsageTotals; compact
 /**
  * 按项目汇总请求、Token 和分币种已知费用。分页带 expectedVersion，使不同统计快照
  * 不能混在同一翻页过程；失败或取消保留上一成功页及其游标，刷新从新快照首页开始。
+ * EN: Page usage with expectedVersion so statistics snapshots cannot mix. Failure/cancel retains last successful page/cursor; refresh starts a new snapshot from page one.
  */
 export function ProjectUsage({ projectId, openRun }: { projectId: string; openRun: (id: string) => void }) {
   const { api } = useSurfaceClient();
   const identity = useId();
   type Position = { before: string; version: string; trail: string[] };
+  /**
+   * 创建不带游标和快照版本的首页位置，首次读取后再建立统一分页基线。
+   * EN: Creates a first-page position without a cursor or snapshot version, allowing the first read to establish pagination baseline.
+   */
   const firstPage = (): Position => ({ before: '', version: '', trail: [] });
   const [display, setDisplay] = useState<{ value: ProjectUsageSummary; position: Position }>();
   const [intent, setIntent] = useState<{ projectId: string; position: Position; attempt: number }>();
@@ -88,6 +108,10 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
     const controller = new AbortController();
     currentRead.current = controller;
     const target = intent?.projectId === projectId ? intent.position : firstPage();
+    /**
+     * 核对用量请求仍是当前控制器且未中断，阻止旧页回执改变当前账目。
+     * EN: Checks that the usage request is current and un-aborted, preventing obsolete page responses from changing the displayed accounting data.
+     */
     const active = () => currentRead.current === controller && !controller.signal.aborted;
     setRead({ status: 'loading', error: '' });
     const query = target.before
@@ -106,7 +130,10 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
         if (!active()) return;
         if (result.projectId !== projectId || (result.page.before ?? '') !== target.before)
           throw Error('返回的统计不属于当前项目或页面，请刷新。');
-        // Only a successful response advances the displayed page and its navigation history.
+        /**
+         * 仅成功响应推进显示页与导航轨迹。
+         * EN: Only a successful response advances the displayed page and its navigation history.
+         */
         setDisplay({ value: result, position: { ...target, version: result.version } });
         setRead({ status: 'ready', error: '' });
       })
@@ -122,14 +149,25 @@ export function ProjectUsage({ projectId, openRun }: { projectId: string; openRu
       if (currentRead.current === controller) currentRead.current = undefined;
     };
   }, [api, projectId, intent]);
+  /**
+   * 取消旧读取并发布新分页意图，递增尝试号支持同一页显式重试。
+   * EN: Cancels the previous read and publishes a new page intent, incrementing its attempt to support explicit retries of the same page.
+   */
   const request = (target: Position) => {
     currentRead.current?.abort();
     setIntent((previous) => ({ projectId, position: target, attempt: (previous?.attempt ?? 0) + 1 }));
   };
+  /**
+   * 停止当前用量读取并标记取消；保留原意图和已读页，避免修改依赖立即重新发起请求。
+   * EN: Stops the active usage read and marks it cancelled, preserving intent and the loaded page so dependency changes do not immediately restart it.
+   */
   const cancel = () => {
     currentRead.current?.abort();
     currentRead.current = undefined;
-    // Keep the intent for an explicit retry; changing it here would restart the cancelled read.
+    /**
+     * 保留意图供显式重试，此处修改会重启取消的读取。
+     * EN: Keep the intent for an explicit retry; changing it here would restart the cancelled read.
+     */
     setRead({ status: 'cancelled', error: '' });
   };
   return (

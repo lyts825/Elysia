@@ -1,4 +1,10 @@
-/* 管理工作区及其选择。 */
+/**
+ * 管理工作区及其选择。
+ * EN: Manages spaces, projects, runs, and selection.
+ *
+ * 管理空间、项目及会话的改名、归属、归档和删除，使用已读修订提交。输入保留在本地，服务端冲突触发重新核对；永久删除项目还包含保存包集合确认。
+ * EN: Manage names, ownership, archives, and deletion using loaded revisions. Keep input locally and require renewed review on conflicts; project deletion also verifies the saved-package set.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Project, ProjectSpace, RunListItem, RecordPage } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';
@@ -8,8 +14,15 @@ import { Icon } from './Icon';
 import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
 import './workspace-manager.css';
 
+/**
+ * 绘制管理操作的完整归属和已读修订信息，供确认前核对实体身份。
+ * EN: Render complete ownership and loaded revision details so users can verify entity identity before management actions.
+ */
 function ManagementOrigin({ label, values }: { label: string; values: [string, string | number][] }) {
-  // 管理操作前展示实体归属和版本，便于用户确认操作目标。
+  /**
+   * 管理操作前展示实体归属和版本，便于用户确认操作目标。
+   * EN: Show entity ownership/revision before actions for target confirmation.
+   */
   return (
     <details className="workspace-manager-origin">
       <summary>完整归属与版本</summary>
@@ -29,6 +42,7 @@ function ManagementOrigin({ label, values }: { label: string; values: [string, s
  * 管理平级空间、项目、运行及归档记录。可编辑名称和移动目标仅是本地草稿，动作提交
  * 携带列表中已读修订；项目永久删除还需核对保存包集合，避免删除确认漏掉新保存内容。
  * 列表可由外层服务端分页搜索驱动，未提供该能力时才在当前已读记录上本地过滤。
+ * EN: Names/move targets are local drafts; send loaded revisions for management actions. Permanent project deletion verifies saved-package set to catch later archives. Use server paged search when provided; only otherwise filter currently loaded records locally.
  */
 export function WorkspaceManager({
   spaces,
@@ -102,10 +116,15 @@ export function WorkspaceManager({
     changeListArchive?.(tab === 'archive');
   }, [tab, changeListArchive]);
   const searchValue = changeListQuery ? listQuery || '' : search;
+  /**
+   * 读取项目会话数；尚未提供计数时保持 undefined，让界面区分未知与确认为零。
+   * EN: Read the project run count, preserving undefined when counts are unavailable so the UI distinguishes unknown from zero.
+   */
   const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : undefined);
   /**
    * 串行执行管理动作，成功关闭确认区；版本冲突刷新列表但不自动重试。
    * 原生项目删除的保存包确认保留在当前流程内，要求用户重新核对集合后再提交。
+   * EN: Serialize actions and close confirmation on success. Version conflicts refresh without auto-retry. Keep archive-set deletion confirmation in this flow for renewed review.
    */
   const perform = async (action: () => Promise<void>) => {
     if (actionPending.current) return;
@@ -137,13 +156,19 @@ export function WorkspaceManager({
       setBusy(false);
     }
   };
-  /** 按当前项目版本更新，父组件负责重新协调列表与选中项。 */
+  /**
+   * 按当前项目版本更新，父组件负责重新协调列表与选中项。
+   * EN: Update using current project revision; parent reconciles list/selection.
+   */
   const updateProject = (p: Project, changes: Record<string, unknown>) =>
     perform(async () => {
       await mutation('/projects/' + p.id, { expectedRevision: p.revision, ...changes }, 'PATCH');
       await updated();
     });
-  /** 运行修改使用同一版本检查；服务端拒绝后保留输入供核对。 */
+  /**
+   * 运行修改使用同一版本检查；服务端拒绝后保留输入供核对。
+   * EN: Run edits use the same revision checks; preserve input after server rejection.
+   */
   const updateRun = (r: RunListItem, changes: Record<string, unknown>) =>
     perform(async () => {
       await mutation('/runs/' + r.id, { expectedRevision: r.revision, ...changes }, 'PATCH');
@@ -158,6 +183,10 @@ export function WorkspaceManager({
       r.matchesQuery !== false &&
       (!!changeListQuery || `${r.title} ${r.objective}`.toLowerCase().includes(searchValue.toLowerCase())),
   );
+  /**
+   * 绘制项目资料目录、归属、改名和空间选择，并提供归档/删除入口。删除动作携带已读版本及保存包核对信息。
+   * EN: Render project directory, ownership, rename and space controls, plus archive/delete actions carrying loaded revision and archive-set verification.
+   */
   const projectRow = (p: Project) => (
     <div className="management-row" key={p.id}>
       <div className="management-info">
@@ -232,6 +261,10 @@ export function WorkspaceManager({
               title: `删除项目「${p.name}」？`,
               description: `将永久删除此项目及其${projectCount(p.id) == null ? '关联对话' : ` ${projectCount(p.id)} 个对话`}、执行和产物登记数据，无法恢复。${surface === 'native' ? '项目交付计划、冻结清单和已保存文件包也会删除，请先导出需要保留的内容。' : ''}原始资料目录 ${p.workspaceRoot} 保留。`,
               projectId: surface === 'native' ? p.id : undefined,
+              /**
+               * 删除已确认项目时要求原生界面的保存包集合摘要，再携带项目修订提交；成功后把已删除会话标识交给父组件清理导航。
+               * EN: Require an archive-set digest for native project deletion, submit the loaded revision, and return deleted run IDs for parent navigation cleanup.
+               */
               action: async (expectedArchiveSetHash) => {
                 if (surface === 'native' && !expectedArchiveSetHash)
                   throw Error('请先读取已保存文件包，并明确确认需要保留或放弃的内容。');
@@ -253,6 +286,10 @@ export function WorkspaceManager({
       </div>
     </div>
   );
+  /**
+   * 绘制会话完整目标、归属和时间，提供改名、打开、归档及永久删除入口。管理操作使用列表中的已读修订。
+   * EN: Render run objective, ownership, and time with rename, open, archive, and delete controls using the loaded list revision.
+   */
   const runRow = (r: RunListItem) => (
     <div className="management-row" key={r.id}>
       <div className="management-info">
@@ -322,6 +359,10 @@ export function WorkspaceManager({
               title: `删除对话「${r.title || r.objective}」？`,
               description:
                 '将永久删除这段对话及其任务、消息、调用和产物登记数据，无法恢复。项目的原始资料目录保留。',
+              /**
+               * 以当前已读修订删除会话，成功后通知父组件协调已删除会话的选中状态和缓存。
+               * EN: Delete a run using its loaded revision and notify the parent to reconcile selection and cache after success.
+               */
               action: async () => {
                 await mutation('/runs/' + r.id, { expectedRevision: r.revision }, 'DELETE');
                 await updated({ kind: 'run', id: r.id });
@@ -602,6 +643,10 @@ export function WorkspaceManager({
                                 title: `合并「${s.name}」到「${target?.name}」？`,
                                 description:
                                   '项目与对话都会保留，移入目标空间；来源空间将删除，无法恢复原空间划分。',
+                                /**
+                                 * 将来源空间按已读修订合并到选定目标；成功后通知父组件处理来源空间消失后的导航。
+                                 * EN: Merge a source space into the chosen destination with revision checking, then reconcile navigation for the removed source space.
+                                 */
                                 action: async () => {
                                   await mutation('/spaces/' + s.id + '/merge', {
                                     expectedRevision: s.revision,
@@ -622,6 +667,10 @@ export function WorkspaceManager({
                                 title: `删除空间「${s.name}」？`,
                                 description:
                                   '其中项目将移到初始空间，项目和对话数据保留。此空间划分将永久删除。',
+                                /**
+                                 * 按已读修订删除空间，由服务端迁移其项目；成功后通知父组件刷新空间选择与相关列表。
+                                 * EN: Delete a space with its loaded revision, let the server relocate its projects, and refresh space selection and related lists on success.
+                                 */
                                 action: async () => {
                                   await mutation(
                                     '/spaces/' + s.id,

@@ -1,5 +1,11 @@
-/* 定义 project-files 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 项目文件浏览：组织路径、导航工具栏、文件列表、选中状态与读取反馈。路径和长文件名可断行或局部滚动，窄屏缩小留白并调整列表高度，保持导航入口可达。
+ * EN: Project files: arranges paths, navigation controls, file lists, selection, and read feedback. Paths/long names wrap or scroll locally; narrow screens reduce spacing and adjust list height to preserve navigation.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-files {
   flex: 1;
   min-height: 0;
@@ -28,7 +34,10 @@
   flex: 1;
   min-width: 0;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .project-files-location code {
   display: block;
   font: var(--font-sm) / var(--leading-body) var(--font-mono);
@@ -186,7 +195,10 @@
 .project-file-empty p {
   margin: 0;
 }
-/* 窄屏缩小文件区域的内边距并调整文件列表高度。 */
+/*
+ * 窄屏缩小文件区域的内边距并调整文件列表高度。
+ * EN: Reduces file-section padding and changes file-list height on narrow screens.
+ */
 @media (max-width: 560px) {
   .project-files {
     padding: var(--space-3);

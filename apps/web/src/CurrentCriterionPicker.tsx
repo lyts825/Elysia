@@ -1,4 +1,8 @@
-/* 选择当前交付验收标准。 */
+/**
+ * 选择当前交付验收标准。
+ * 从同一交付快照分页选择验收标准，展示完整原文与版本依据；仅返回选择，不修改验收标准本身。
+ * EN: Selects the current delivery acceptance criterion. Selects criteria through pages of one delivery snapshot with full text and version evidence; it returns a choice without editing the criteria.
+ */
 import { useEffect, useId, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -8,6 +12,7 @@ import './current-criterion-picker.css';
 /**
  * 在固定交付快照中分页选择当前验收项，可选 null 表示整体备注。
  * 翻页同时核对运行、根修订、指纹及偏移；版本变化后保留原选择，但禁止用旧候选页继续选择。
+ * EN: Page through criteria within one frozen delivery snapshot; null may represent a general note. Validate run, root revision, fingerprint, and offset on each page. After a version change keep the previous choice but prohibit further choices from an obsolete page.
  */
 export function CurrentCriterionPicker({
   initial,
@@ -30,7 +35,10 @@ export function CurrentCriterionPicker({
     [error, setError] = useState(''),
     [retry, setRetry] = useState(0);
   useEffect(() => {
-    // 首屏复用传入快照；翻页按根版本读取，并核对指纹后才更新选择列表。
+    /**
+     * 首屏复用传入快照；翻页按根版本读取，并核对指纹后才更新选择列表。
+     * EN: Reuse the supplied first-page snapshot. Later pages read by root revision and update candidates only after fingerprint validation.
+     */
     const controller = new AbortController();
     if (offset === initial.criteriaPage.offset && !retry) {
       setPage(initial);

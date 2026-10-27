@@ -1,4 +1,7 @@
-/* 定义 surface-switcher 对应界面的样式与布局。 */
+/*
+ * 执行入口切换器：组织当前入口触发按钮、品牌、箭头及定位菜单。展开样式读取 aria-expanded，菜单内容有界滚动，入口说明及可用状态保持明确的视觉层级。
+ * EN: Execution-surface switcher: arranges the trigger, brand, chevron, and positioned menu. Open styling follows aria-expanded; bounded menu scrolling preserves hierarchy for surface descriptions/availability.
+ */
 .surface-trigger {
   display: inline-flex;
   align-items: center;
@@ -16,7 +19,10 @@
   text-align: left;
   line-height: var(--leading-heading);
 }
-/* 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。 */
+/*
+ * 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。
+ * EN: Shares the hover/open background; aria-expanded supplies the open state.
+ */
 .surface-trigger:hover,
 .surface-trigger[aria-expanded='true'] {
   background: var(--surface-hover);
@@ -36,7 +42,10 @@
   width: 25px;
   height: 25px;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .surface-menu {
   position: fixed;
   z-index: 220;

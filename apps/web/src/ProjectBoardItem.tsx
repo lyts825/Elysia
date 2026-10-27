@@ -1,4 +1,8 @@
-/* 展示项目看板中的交付项及准备状态。 */
+/**
+ * 展示项目看板中的交付项及准备状态。
+ * 围绕单个交付项展示状态、准备阻碍和可用动作，向父组件报告选择与启动意图；不自行计算运行的权威结论。
+ * EN: Displays a project delivery item and readiness. Shows state, readiness blockers, and actions for one deliverable and reports selection/launch intent; authoritative run conclusions are supplied externally.
+ */
 import { useEffect, useId, useState } from 'react';
 import type {
   ProjectDeliveryBoard,
@@ -9,7 +13,10 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectRunList, reviewLabels, executionLabel } from './ProjectRunList';
 import './project-board-item.css';
-// 就绪状态映射为可核对的原因；状态值本身仍由服务端提供。
+/**
+ * 就绪状态映射为可核对的原因；状态值本身仍由服务端提供。
+ * EN: Map server readiness to reviewable reasons without inventing status.
+ */
 export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
   unlinked: '尚未关联执行',
   unconfirmed: '待确认符合项目标准',
@@ -24,6 +31,7 @@ export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
 /**
  * 展示一个交付项的标准、当前候选和全部关联尝试。尝试页必须匹配项目、项 ID 和看板修订，
  * 计划变化后旧页不能继续作为确认依据；关联、确认和重开动作由外层统一版本门禁执行。
+ * EN: Show criteria, candidate, and linked attempts. Pages must match project/item/board revision. Plan changes invalidate old confirmation evidence. Parent version gates handle linking, confirmation, and reopening.
  */
 export function ProjectBoardItem({
   board,

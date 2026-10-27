@@ -1,4 +1,8 @@
-/* 收集用户对交付内容的复核意见。 */
+/**
+ * 收集用户对交付内容的复核意见。
+ * 保存用户逐项备注与交付复核结论，关联标准原文和交付指纹；交付变化时保留输入并要求重新核对。
+ * EN: Collects human feedback on a delivery. Stores per-criterion notes and user review conclusions bound to criterion text and delivery fingerprint, retaining input and requiring reinspection after delivery changes.
+ */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryCriterion,
@@ -18,6 +22,7 @@ import './delivery-user-review.css';
 /**
  * 将人工复核草稿与已读交付指纹绑定。编辑保存在上层草稿，保存通过运行/根修订与指纹做并发校验。
  * 旧备注和无法重新关联的标准保留为 unlinked，不因重新读取或保存新结论而丢弃。
+ * EN: Bind the human-review draft to the loaded delivery fingerprint. The parent stores edits; saving uses run/root revisions and fingerprint for concurrency checks. Preserve older notes and criteria that cannot be relinked as unlinked, rather than discarding them during rereads or new decisions.
  */
 export function DeliveryUserReview({
   value,
@@ -45,7 +50,10 @@ export function DeliveryUserReview({
   const { api, mutation } = useSurfaceClient();
   const descriptionId = useId();
   const draft = useMemo(() => readReviewDraft(rawDraft, value), [rawDraft, value]);
-  // 本地草稿优先恢复，保存与旧备注重新关联分别跟踪进行状态。
+  /**
+   * 本地草稿优先恢复，保存与旧备注重新关联分别跟踪进行状态。
+   * EN: Restore the local draft first. Track saving and relinking old notes as separate activities.
+   */
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [busy, setBusy] = useState(false),
@@ -54,6 +62,10 @@ export function DeliveryUserReview({
     [notice, setNotice] = useState(''),
     [conflict, setConflict] = useState(false);
   const reconcileRequest = useRef<AbortController | null>(null);
+  /**
+   * 交付身份或读取代次变化时重置核对中的标志；清理取消旧核对请求并解除引用，不让旧基线继续核验当前草稿。
+   * EN: Resets reconciliation-in-progress state when delivery identity or read generation changes; cleanup aborts and detaches the old reconciliation request so its baseline cannot verify the current draft.
+   */
   useEffect(() => {
     setReconciling(false);
     return () => {
@@ -61,12 +73,19 @@ export function DeliveryUserReview({
       reconcileRequest.current = null;
     };
   }, [value.runId, value.runRevision, value.rootRevision, value.fingerprint, readVersion]);
+  /**
+   * 重新读取的代次变化时清除旧提交错误，使新的核对流程显示自己的反馈。
+   * EN: Clears prior submission errors on a new read generation so the new review flow owns its feedback.
+   */
   useEffect(() => {
     setConflict(false);
     setError('');
   }, [readVersion]);
   const changed = draft.fingerprint !== value.fingerprint;
-  // 使用最新 ref 合并一次局部编辑；达到本机容量时拒绝本次写入，不能静默截断已有文字。
+  /**
+   * 使用最新 ref 合并一次局部编辑；达到本机容量时拒绝本次写入，不能静默截断已有文字。
+   * EN: Merge a local edit into the latest ref. At the local capacity limit reject the write instead of silently truncating existing text.
+   */
   const patch = (next: Partial<ReviewDraft>) => {
     setNotice('');
     const updated = { ...draftRef.current, ...next };
@@ -80,7 +99,10 @@ export function DeliveryUserReview({
     return true;
   };
   const readonly = disabled || reading || busy || reconciling;
-  /** 重读备注涉及的验收项，只保留原标准仍逐字相同的关联，其余转为未关联并清除旧结论。 */
+  /**
+   * 重读备注涉及的验收项，只保留原标准仍逐字相同的关联，其余转为未关联并清除旧结论。
+   * EN: Reread referenced criteria and retain links only when the original wording still matches exactly. Move the rest to unlinked and clear the old decision.
+   */
   async function reconcile() {
     if (readonly || conflict || reconcileRequest.current) return;
     const controller = new AbortController();
@@ -92,7 +114,10 @@ export function DeliveryUserReview({
     try {
       const criteria = await readReviewCriteria(api, value, before.criteriaNotes, controller.signal);
       if (controller.signal.aborted) return;
-      // 校验读取期间草稿未被其他输入改变，不能用旧快照覆盖更新后的编辑。
+      /**
+       * 校验读取期间草稿未被其他输入改变，不能用旧快照覆盖更新后的编辑。
+       * EN: Check that no other input changed the draft while reading; an older snapshot must not replace later edits.
+       */
       if (JSON.stringify(draftRef.current) !== token) {
         setError('复核草稿已变化，请核对最新输入后重试。');
         return;
@@ -122,6 +147,10 @@ export function DeliveryUserReview({
       }
     }
   }
+  /**
+   * 为指定验收项生成受控复核备注编辑器；交付已变更时停止编辑，旧备注缺少原标准时给出核对提示。
+   * EN: Builds a controlled review-note editor for one criterion. Editing is withheld after delivery changes, and legacy notes missing their original standard prompt verification.
+   */
   const noteEditor = (criterion: DeliveryCriterion) => {
     if (changed) return null;
     const current = draft.criteriaNotes.find((item) => item.index === criterion.index);
@@ -166,7 +195,10 @@ export function DeliveryUserReview({
       </label>
     );
   };
-  /** 保存明确结论和当前已关联备注；失败保留草稿，409 后需重读，不自动重发旧版本意见。 */
+  /**
+   * 保存明确结论和当前已关联备注；失败保留草稿，409 后需重读，不自动重发旧版本意见。
+   * EN: Save the explicit decision and currently linked notes. Keep the draft on failure; a 409 requires rereading instead of automatically resubmitting feedback against an old version.
+   */
   async function save() {
     if (readonly || changed || conflict || !draft.decision) return;
     setBusy(true);

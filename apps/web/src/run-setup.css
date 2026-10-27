@@ -1,4 +1,7 @@
-/* 定义 run-setup 对应界面的样式与布局。 */
+/*
+ * 运行启动配置：组织目标、工作流要求和提交前确认网格。字段自适应分列，短窗口使用弹窗整体滚动和固定标题，避免确认材料受独立表单滚动约束。
+ * EN: Run setup: arranges target, workflow requirements, and pre-submission confirmation grids. Fields auto-fit; short windows use whole-modal scrolling/sticky headings so confirmation material is not trapped in a form scroller.
+ */
 .run-setup-modal .form-body {
   scroll-padding-block: var(--space-4);
 }
@@ -14,7 +17,10 @@
   font-size: var(--font-lg);
   line-height: var(--leading-heading);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .run-setup-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;
@@ -23,7 +29,10 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
-/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ */
 .run-confirmation-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -53,7 +62,10 @@
   font-size: var(--font-sm);
   line-height: var(--leading-body);
 }
-/* 短窗口让设置弹窗整体滚动并固定标题，表单不再作为独立滚动区。 */
+/*
+ * 短窗口让设置弹窗整体滚动并固定标题，表单不再作为独立滚动区。
+ * EN: Scrolls the setup modal with a sticky heading in short windows; the form stops being a separate scroll region.
+ */
 @media (max-height: 600px) {
   .run-setup-modal {
     overflow-y: auto;

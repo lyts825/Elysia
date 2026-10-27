@@ -1,4 +1,7 @@
-/* 定义 plan-alignment 对应界面的样式与布局。 */
+/*
+ * 计划合同与任务证据：用可展开标题组织目标、交付物和约束，默认两列并排便于对照。minmax(0, 1fr) 允许长文本收缩换行，窄屏改为单列保留阅读宽度。
+ * EN: Plan contracts/task evidence: uses expandable headings for objectives, deliverables, and constraints, with two comparison columns by default. minmax(0, 1fr) lets long text shrink/wrap; narrow screens switch to one readable column.
+ */
 .plan-contract {
   margin: var(--space-3) var(--space-4) var(--space-4);
   padding: var(--space-3) var(--space-4);
@@ -23,7 +26,10 @@
   font-size: var(--font-md);
   line-height: var(--leading-body);
 }
-/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+ */
 .plan-contract-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -51,7 +57,10 @@
 .plan-task-evidence p {
   margin: var(--space-2) 0;
 }
-/* 窄屏缩小合同外边距，并将合同网格改为单列。 */
+/*
+ * 窄屏缩小合同外边距，并将合同网格改为单列。
+ * EN: Reduces contract margins and switches its grid to one column on narrow screens.
+ */
 @media (max-width: 600px) {
   .plan-contract {
     margin-inline: var(--space-3);

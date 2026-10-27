@@ -1,4 +1,11 @@
-/* 展示终端连接检查及结果。 */
+/**
+ * 展示终端连接检查及结果。
+ *
+ * EN: Displays terminal connection checks and their results.
+ *
+ * 本模块读取选定连接版本的验证状态与模型目录，提供显式检查和模型选择入口；异步结果绑定连接 ID 与 revision，候选模型不会自动覆盖用户配置。
+ * EN: Reads validation and model catalogs for a selected connection revision and offers explicit checks/model selection. Responses bind to connection ID/revision; catalog candidates do not automatically overwrite configuration.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   TerminalConnectionProbeResult,
@@ -11,6 +18,8 @@ import './terminal-connection-checks.css';
 /**
  * 展示所选连接的验证状态与模型目录。enabled 为假时保留不可操作状态，
  * chooseModel 只接收用户明确选中的模型 ID。
+ *
+ * EN: Shows selected connection health/catalog; disabled state blocks actions, and chooseModel receives only an explicit user selection.
  */
 export function TerminalConnectionChecks({
   connection,
@@ -39,7 +48,11 @@ export function TerminalConnectionChecks({
     }
   }, [error, errorRequest]);
   useEffect(() => {
-    // 连接或版本切换时取消旧请求，清空目录并读取当前版本的检查状态。
+    /**
+     * 连接或版本切换时取消旧请求，清空目录并读取当前版本的检查状态。
+     *
+     * EN: Connection/version switches cancel old reads, clear catalogs, and load health for the current revision.
+     */
     controller.current?.abort();
     setHealth(connection.health);
     setCatalog(null);
@@ -75,6 +88,8 @@ export function TerminalConnectionChecks({
   /**
    * 取消前次检查并提交当前连接 revision，只有 ID 与 revision 都匹配的响应才更新界面。
    * check 与 models 分别保留健康摘要；模型目录只更新候选列表，不自动替用户选择模型。
+   *
+   * EN: Cancels the previous probe and submits the current revision; only matching ID/revision updates the UI. check/models retain separate summaries, and catalog reads never auto-select a model.
    */
   async function probe(kind: 'check' | 'models') {
     if (!enabled || busy) return;
@@ -97,7 +112,11 @@ export function TerminalConnectionChecks({
         value.revision === connection.revision
       ) {
         const { models, resolvedModel: _ignored, ...summary } = value;
-        // 不把服务端推断的 resolvedModel 当作用户确认；选择必须通过 chooseModel 显式发生。
+        /**
+         * 不把服务端推断的 resolvedModel 当作用户确认；选择必须通过 chooseModel 显式发生。
+         *
+         * EN: A server-resolved model is not user confirmation; chooseModel is invoked only by explicit selection.
+         */
         setHealth((previous) => ({
           connectionId: connection.id,
           revision: connection.revision,

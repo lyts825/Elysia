@@ -1,4 +1,8 @@
-/* 展示并选择需要修订的产物变更。 */
+/**
+ * 展示并选择需要修订的产物变更。
+ * 将冻结差异与当前指纹绑定，管理加入、移除和逐项修改要求；过期来源保留供核对，不能冒充当前版本。
+ * EN: Displays and selects artifact changes that need revision. Binds frozen differences to the current fingerprint and manages selection and per-item requirements; stale sources remain inspectable without being presented as current.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChange,
@@ -15,8 +19,15 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import './handoff-selection.css';
 import './artifact-revision-selection.css';
 
+/**
+ * 显示某一侧冻结产物的名称、版本、哈希与核验状态；空版本明确显示缺失，不从其他版本推断。
+ * EN: Displays a frozen artifact side including name, version, hash, and verification state. A missing side stays absent rather than being inferred from another revision.
+ */
 function RevisionMetadata({ label, value }: { label: string; value: DeliveryArtifactChange['before'] }) {
-  // 展示修改前后的完整元数据；缺失版本保持空值，不推断文件内容。
+  /**
+   * 展示修改前后的完整元数据；缺失版本保持空值，不推断文件内容。
+   * EN: Show complete before-and-after metadata. Keep a missing version empty instead of inferring file content.
+   */
   return (
     <section className="revision-selection-metadata">
       <h5>{label}</h5>
@@ -58,7 +69,10 @@ function RevisionMetadata({ label, value }: { label: string; value: DeliveryArti
   );
 }
 
-/** 只展示差异元数据和要求，可嵌入其他面板；不将 removed 项解释成仍可读取的旧文件。 */
+/**
+ * 只展示差异元数据和要求，可嵌入其他面板；不将 removed 项解释成仍可读取的旧文件。
+ * EN: Display difference metadata and requirements, optionally embedded in another panel. A removed entry does not imply that its old file remains readable.
+ */
 export function ArtifactRevisionSummary({
   items,
   embedded = false,
@@ -144,6 +158,7 @@ export function ArtifactRevisionSummary({
 /**
  * 管理续接草稿中的差异清单；每项保留选取时的交付指纹。
  * 当前指纹变化后可单项重读最新比较结果，已输入的修改要求仍由草稿保存。
+ * EN: Manage differences inside a continuation draft, retaining the delivery fingerprint captured when each was selected. After it changes, reread each current comparison separately while keeping the typed requirement.
  */
 export function ArtifactRevisionSelection({
   runId,
@@ -173,6 +188,10 @@ export function ArtifactRevisionSelection({
     change: DeliveryArtifactChange | null;
   }>();
   const request = useRef<AbortController | null>(null);
+  /**
+   * 运行或交付指纹变化时废弃当前差异页，并在切换或卸载时取消旧读取，避免旧版本选择污染新列表。
+   * EN: Drops the current difference page on run/fingerprint changes and aborts old reads on change or teardown so an old selection cannot contaminate the new list.
+   */
   useEffect(() => {
     setCurrent(undefined);
     setBusy(false);
@@ -181,7 +200,10 @@ export function ArtifactRevisionSelection({
       request.current = null;
     };
   }, [runId, fingerprint]);
-  /** 按旧复核和产物 ID 查询当前差异，响应必须匹配当前运行、复核和指纹才能供用户重新确认。 */
+  /**
+   * 按旧复核和产物 ID 查询当前差异，响应必须匹配当前运行、复核和指纹才能供用户重新确认。
+   * EN: Query the current difference by the prior review and artifact ID. Accept a response for renewed confirmation only if its run, review, and fingerprint match the current context.
+   */
   async function reread(entry: ArtifactRevisionEntry) {
     if (!fingerprint || busy || disabled) return;
     const controller = new AbortController();
@@ -256,7 +278,11 @@ export function ArtifactRevisionSelection({
       {entries.map((entry, index) => {
         const key = artifactRevisionKey(entry),
           stale = entry.fingerprint !== fingerprint;
-        const patch = (next: Partial<ArtifactRevisionEntry>) =>
+        /**
+         * 将局部字段合并到当前身份对应的条目；读取最新列表引用，避免闭包中的旧列表覆盖其他编辑。
+         * EN: Merges partial fields into the entry with this identity, using the latest list ref so a stale render cannot overwrite other edits.
+         */
+                const patch = (next: Partial<ArtifactRevisionEntry>) =>
           change((ref.current || []).map((e) => (artifactRevisionKey(e) === key ? { ...e, ...next } : e)));
         const issue = artifactRevisionIssue([
           ...entries.filter((e) => artifactRevisionKey(e) !== key),

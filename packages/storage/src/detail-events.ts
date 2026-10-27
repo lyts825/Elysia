@@ -1,4 +1,10 @@
-// 分页读取详情事件，并限制单次读取的规模。
+/**
+ * 分页读取详情事件，并限制单次读取的规模。
+ * EN: Read bounded batches of detail-event previews.
+ *
+ * 事件正文通过投影按需展开，并对读取预算作显式约束；分页调用应使用返回的进度，而非一次载入全部执行历史。
+ * EN: Expand event payload projections on demand within read budgets; callers follow returned progress instead of loading all execution history at once.
+ */
 import { gunzipSync } from 'node:zlib';
 import type { Event } from '../../contracts/src/index.js';
 import type { EventPreviewCoverage } from '../../contracts/src/run-reads.js';
@@ -14,6 +20,9 @@ export const DETAIL_EVENT_LIMITS = {
 /**
  * 读取最近的事件预览。单条正文和总解压量分别受限；损坏或超限时保留事件元数据，
  * 并在 coverage 中标记正文不可用。此预览不替代完整事件或 SSE 读取。
+ * EN: Read recent event previews with separate per-body and total decompression limits. Keep event
+ * metadata when a body is corrupt or oversized, mark it unavailable in coverage, and leave complete
+ * event and SSE readers separate.
  */
 export function readDetailEvents(
   store: Store,
@@ -69,7 +78,8 @@ export function readDetailEvents(
           remaining -= bytes.length;
           text = bytes.toString('utf8');
         } catch (error) {
-          // A decoder can reject a CRC after expanding the body; charge its full allowance.
+          // 解码器可能在正文已展开后才发现CRC错误，因此按本次全部许可额度扣减预算。
+          // EN: A decoder may reject a CRC after expanding the body; charge the full attempted allowance.
           remaining -= budget;
           if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
             limited = true;
@@ -91,6 +101,8 @@ export function readDetailEvents(
         throw new Error('External legacy event body');
     } catch {
       // 单条事件不可读不阻止其他预览；调用方可从覆盖状态辨别不完整结果。
+      // EN: An unreadable event does not block other previews. Callers can identify incomplete results
+      // through coverage.
       coverage.unavailable++;
       coverage.limited ||= limited;
       payload = { detailsOmitted: true, readUnavailable: true };
@@ -102,6 +114,8 @@ export function readDetailEvents(
       typeof (payload as { reasoningContent?: unknown }).reasoningContent === 'string'
     )
       // 推理正文只返回预览，不将完整内容混入详情事件列表。
+      // EN: Return only a reasoning preview rather than embedding complete reasoning in the detail-event
+      // list.
       payload = reasoningMessagePreview(payload as { reasoningContent: string });
     return {
       runId,

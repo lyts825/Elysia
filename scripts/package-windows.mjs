@@ -1,4 +1,10 @@
-// 收集运行时和应用文件，组装 Windows 发行包。
+/**
+ * 收集运行时和应用文件，组装 Windows 发行包。
+ * EN: Collect runtimes and application files into a Windows distribution.
+ *
+ * 收集运行时、生产依赖和预构建资源，生成清单与完整性摘要；打包结果属于本地发行产物，不自动推送或发布。
+ * EN: Collect runtimes, production dependencies, and built assets with manifests and integrity digests; packaging creates a local distribution without publishing it.
+ */
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -20,9 +26,15 @@ import { fileURLToPath } from 'node:url';
 import { buildLaunch } from './launch-build.mjs';
 
 // 离线打包只使用当前 Windows x64 环境、锁定依赖及精确 Node 版本的许可证。
+// EN: Offline packaging uses the current Windows x64 environment, locked dependencies, and licenses
+// for the exact Node version.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(import.meta.url);
 const { sha256File } = require('../apps/desktop/file-hash.cjs');
+/**
+ * 读取本地JSON清单，解析错误立即中止打包而不猜测默认值。
+ * EN: Read a local JSON manifest and abort packaging on parse failure instead of guessing defaults.
+ */
 const json = (filename) => JSON.parse(readFileSync(filename, 'utf8'));
 const args = process.argv.slice(2);
 let output = path.join(root, '.elysia-runtime/releases'),
@@ -65,15 +77,27 @@ if (
 )
   throw new Error('本地依赖与锁文件不一致；打包器不下载或安装依赖');
 
-/** 同步运行构建/校验工具并继承输出；任何非零退出或启动错误立即中止发布流程。 */
+/**
+ * 同步运行构建/校验工具并继承输出；任何非零退出或启动错误立即中止发布流程。
+ * EN: Run build or validation tools synchronously with inherited output. Any startup error or
+ * nonzero exit stops publication.
+ */
 function command(filename, parameters, cwd = root) {
   const result = spawnSync(filename, parameters, { cwd, windowsHide: true, stdio: 'inherit' });
   if (result.error || result.status !== 0) throw result.error || new Error('构建命令失败：' + filename);
 }
 const build = buildLaunch(root, () => {}, {
+  /**
+   * 打包命令禁止自动安装依赖，缺少依赖时直接报错。
+   * EN: Forbid automatic dependency installation during packaging and fail explicitly if required.
+   */
   pnpm() {
     throw new Error('离线打包禁止安装依赖');
   },
+  /**
+   * 从锁定本地包解析构建工具入口，再使用当前Node执行。
+   * EN: Resolve a build binary from the installed local package and execute it with the current Node runtime.
+   */
   packageCommand(directory, packageName, binary, parameters) {
     const manifestPath = require.resolve(packageName + '/package.json');
     const manifest = json(manifestPath);
@@ -87,7 +111,11 @@ for (const [filename, bytes] of runtimeInputs)
   if (!readFileSync(path.join(root, filename)).equals(bytes))
     throw new Error('构建期间桌面运行文件发生变化，请重试打包：' + filename);
 const externals = new Set();
-/** 稳定顺序遍历普通文件；链接和特殊文件拒绝进入发行包。 */
+/**
+ * 稳定顺序遍历普通文件；链接和特殊文件拒绝进入发行包。
+ * EN: Walk ordinary input files in stable order and reject links or special entries from the
+ * distribution.
+ */
 function walk(directory, visit) {
   for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
     a.name.localeCompare(b.name, 'en'),
@@ -119,10 +147,16 @@ walk(serverDirectory, (filename) => {
 for (const name of externals)
   if (!appPackage.dependencies[name]) throw new Error('未声明的服务端生产依赖：' + name);
 
-// Resolve the installed dependency graph first; do not flatten distinct versions or copy development dependencies.
+// 先解析实际安装的生产依赖图，保留不同版本，不复制开发依赖。
+// EN: Resolve the installed production dependency graph first, preserving distinct versions and
+// excluding development dependencies.
 const graph = new Map(),
   defaults = new Map();
-/** 按依赖所属目录的解析顺序定位安装包，可选依赖缺失时返回 null。 */
+/**
+ * 按依赖所属目录的解析顺序定位安装包，可选依赖缺失时返回 null。
+ * EN: Resolve a package using its owning directory search order; return null for absent optional
+ * dependencies.
+ */
 function resolvePackage(name, from, optional = false) {
   const resolver = createRequire(path.join(from, 'package.json'));
   for (const directory of resolver.resolve.paths(name) || []) {
@@ -132,7 +166,11 @@ function resolvePackage(name, from, optional = false) {
   if (optional) return null;
   throw new Error('缺少生产依赖：' + name);
 }
-/** 构建实际生产依赖图，按目录缓存节点以保留同名不同版本。 */
+/**
+ * 构建实际生产依赖图，按目录缓存节点以保留同名不同版本。
+ * EN: Build the actual production dependency graph, caching nodes by directory to preserve different
+ * versions with the same package name.
+ */
 function collect(directory) {
   if (graph.has(directory)) return graph.get(directory);
   const manifest = json(path.join(directory, 'package.json'));
@@ -162,9 +200,14 @@ const destination = path.join(output, name),
   zip = destination + '.zip';
 if (existsSync(destination) || existsSync(zip)) throw new Error('分发目标已存在，拒绝覆盖：' + destination);
 // 发行目标已存在时拒绝覆盖；本次所有复制和验证先放在唯一临时目录。
+// EN: Refuse to overwrite existing release targets; stage all copying and validation in a unique
+// temporary directory.
 const stage = path.join(output, '.building-' + randomUUID());
 mkdirSync(stage);
-/** 复制普通目录和文件，遇到链接或特殊文件时中止打包。 */
+/**
+ * 复制普通目录和文件，遇到链接或特殊文件时中止打包。
+ * EN: Copy ordinary files and directories, aborting on symbolic links or special entries.
+ */
 function copyTree(source, target, include = () => true) {
   mkdirSync(target, { recursive: true });
   for (const entry of readdirSync(source, { withFileTypes: true })) {
@@ -177,6 +220,10 @@ function copyTree(source, target, include = () => true) {
     else throw new Error('复制源含特殊文件：' + from);
   }
 }
+/**
+ * 生成相对于本次发行stage的规范斜杠路径，用于清单键。
+ * EN: Generate normalized slash-separated paths relative to this release stage for manifest keys.
+ */
 const relative = (filename) => path.relative(stage, filename).replaceAll('\\', '/');
 try {
   copyTree(electronDirectory, stage, (filename) => filename !== 'default_app.asar');
@@ -210,7 +257,11 @@ try {
   copyFileSync(nodeLicense, path.join(app, 'runtime/LICENSE-Node.txt'));
   const copied = [],
     rootModules = path.join(app, 'node_modules');
-  /** 将依赖图物化为可解析的目录树，校验许可证并拒绝无法物化的循环。 */
+  /**
+   * 将依赖图物化为可解析的目录树，校验许可证并拒绝无法物化的循环。
+   * EN: Materialize the dependency graph as a resolvable directory tree, verify licenses, and reject
+   * cycles that cannot be materialized.
+   */
   function materialize(entry, target, inherited, ancestors = new Set()) {
     if (ancestors.has(entry.directory)) throw new Error('生产依赖存在无法物化的循环：' + entry.manifest.name);
     const nextAncestors = new Set(ancestors).add(entry.directory);
@@ -309,6 +360,8 @@ try {
     files,
   };
   // 完整清单生成后使用包内校验入口复核，再发布目录；校验失败不会产生正式发行目标。
+  // EN: After writing the full manifest, run the bundled validation entry before publishing the
+  // directory. Failed validation must not create the final release target.
   writeFileSync(path.join(app, 'distribution.json'), JSON.stringify(manifest, null, 2));
   command(process.execPath, [path.join(app, 'apps/desktop/packaged.cjs')], stage);
   renameSync(stage, destination);

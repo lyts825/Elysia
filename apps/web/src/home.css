@@ -1,5 +1,11 @@
-/* 定义 home 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 首页输入区：将欢迎标题、说明和任务输入框居中排布，并为聚焦输入提供边框反馈。窄屏与短窗口分别压缩非关键提示和留白，同时维持主要发送动作的触控高度。
+ * EN: Home composer: centers welcome text and task input with focus-within feedback. Narrow/short layouts compact secondary hints and whitespace while preserving primary-action touch height.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .welcome {
   flex: 1;
   min-height: 0;
@@ -23,7 +29,10 @@
   line-height: 1.35;
   letter-spacing: -0.025em;
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .home-heading p {
   margin-top: var(--space-2);
   color: var(--muted);
@@ -137,7 +146,10 @@
 .home-terminal-template:focus-visible {
   outline-offset: -2px;
 }
-/* 窄屏收紧输入区间距，隐藏快捷键与模型提示，并扩大主要操作的触控高度。 */
+/*
+ * 窄屏收紧输入区间距，隐藏快捷键与模型提示，并扩大主要操作的触控高度。
+ * EN: Tightens composer spacing, hides shortcut/model hints, and increases primary-action touch height on narrow screens.
+ */
 @media (max-width: 760px) {
   .welcome-content {
     padding: var(--space-6) var(--space-4) var(--space-8);
@@ -162,7 +174,10 @@
     min-height: var(--control-lg);
   }
 }
-/* 短窗口减少欢迎区留白并压缩输入框高度。 */
+/*
+ * 短窗口减少欢迎区留白并压缩输入框高度。
+ * EN: Reduces welcome-section whitespace and composer height in short windows.
+ */
 @media (max-height: 480px) {
   .welcome-content {
     padding-block: var(--space-5);
@@ -174,7 +189,10 @@
     min-height: 64px;
   }
 }
-/* 极窄屏收紧模型选项间距，让模型控件使用可用宽度。 */
+/*
+ * 极窄屏收紧模型选项间距，让模型控件使用可用宽度。
+ * EN: Tightens model-option spacing so model controls can use the available width on very narrow screens.
+ */
 @media (max-width: 420px) {
   .composer-bottom {
     align-items: flex-end;

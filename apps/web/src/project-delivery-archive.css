@@ -1,4 +1,7 @@
-/* 定义 project-delivery-archive 对应界面的样式与布局。 */
+/*
+ * 项目交付归档：布局归档列表、保存表单、归档事实与确认提示。摘要数量按容器自动分列，长归档依据独立滚动，确认区域与普通记录保持视觉区分。
+ * EN: Project-delivery archive: arranges archive lists, save forms, facts, and confirmations. Summary metrics auto-fit while long archive evidence scrolls locally; confirmations remain visually distinct from ordinary records.
+ */
 .project-delivery-archives,
 .project-archive-save {
   margin: var(--space-5) 0;
@@ -23,7 +26,10 @@
   border-color: var(--danger-border);
   background: var(--danger-bg);
 }
-/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 10rem minimum per column without exceeding a narrower container.
+ */
 .archive-list-summary,
 .archive-facts {
   display: grid;
@@ -65,7 +71,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .archive-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;

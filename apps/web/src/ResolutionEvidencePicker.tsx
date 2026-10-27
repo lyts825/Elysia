@@ -1,4 +1,8 @@
-/* 选择用于处理问题的交付证据。 */
+/**
+ * 选择用于处理问题的交付证据。
+ * 从当前交付快照选择复验证据并展示完整来源，按交付指纹和条目身份校验；只返回选择，不替用户判断证据是否充分。
+ * EN: Selects delivery evidence for resolving source feedback. Selects retest evidence from the current delivery snapshot with full provenance and fingerprint/item checks, returning choices without deciding evidence sufficiency for the user.
+ */
 import { useEffect, useId, useState } from 'react';
 import type {
   DeliveryEvidence,
@@ -11,6 +15,7 @@ export type ChosenEvidence = DeliveryEvidence & { index: number };
 /**
  * 分页手选当前验收项的登记证据，索引按整个证据集合编号，跨页最多选择 10 条。
  * 每页必须与 delivery 的运行/根修订匹配，最终保存仍由服务端重新核验并冻结引用。
+ * EN: Manually page registered evidence for the current criterion. Index globally and select at most ten across pages. Validate run/root revision; server rechecks and freezes references at save.
  */
 export function ResolutionEvidencePicker({
   delivery,
@@ -33,7 +38,10 @@ export function ResolutionEvidencePicker({
   const [busy, setBusy] = useState(true),
     [error, setError] = useState('');
   useEffect(() => {
-    // 根据当前交付和标准分页读取证据，依赖变化时取消旧请求。
+    /**
+     * 根据当前交付和标准分页读取证据，依赖变化时取消旧请求。
+     * EN: Page by current delivery/criterion, cancelling on dependency changes.
+     */
     const controller = new AbortController();
     setBusy(true);
     setError('');
@@ -72,7 +80,10 @@ export function ResolutionEvidencePicker({
       {!!page?.evidence.length && (
         <div className="resolution-evidence-list" role="region" aria-label="本页登记证据" tabIndex={0}>
           {page.evidence.map((item, i) => {
-            // 页内位置加 offset 才是提交所需证据索引，避免翻页后将第一个条目误当成同一证据。
+            /**
+             * 页内位置加 offset 才是提交所需证据索引，避免翻页后将第一个条目误当成同一证据。
+             * EN: Add page offset to local position for submitted index, preventing page-first entries from becoming the same evidence.
+             */
             const index = page.page.offset + i,
               checked = selected.some((e) => e.index === index);
             return (

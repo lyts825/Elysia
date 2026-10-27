@@ -1,4 +1,7 @@
-/* 定义 composer-model-control 对应界面的样式与布局。 */
+/*
+ * 输入区模型控制：将模型、推理强度和上下文容量浓缩为芯片，并用定位弹层展示上下文详情。容器和视口规则压缩窄区域留白；展开、焦点、减少动态及高对比度状态共用明确的视觉依据。
+ * EN: Composer model controls: compact model, effort, and context capacity into chips with a positioned context-detail popover. Container/viewport rules tighten constrained layouts; open, focus, reduced-motion, and high-contrast states retain explicit visual cues.
+ */
 .composer-model-control {
   display: inline-flex;
   align-items: center;
@@ -27,7 +30,10 @@
   max-width: min(280px, 100%);
   flex: 0 1 auto;
 }
-/* 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。 */
+/*
+ * 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。
+ * EN: Shares the hover/open background; aria-expanded supplies the open state.
+ */
 .composer-model-chip:hover:not(:disabled),
 .composer-context-chip:hover:not(:disabled),
 .composer-context-chip[aria-expanded='true'] {
@@ -82,7 +88,10 @@
 .composer-context-chip[data-pressure='high'] .composer-context-ring {
   background: conic-gradient(var(--danger) var(--composer-context-fill), var(--border) 0);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .composer-context-popover {
   position: fixed;
   z-index: 45;
@@ -253,7 +262,10 @@
     transform: translateY(0);
   }
 }
-/* 缩短模型控件的间距和内边距，限制模型标签的最大宽度。 */
+/*
+ * 缩短模型控件的间距和内边距，限制模型标签的最大宽度。
+ * EN: Tightens model-control spacing/padding and limits model-label width.
+ */
 @media (max-width: 480px) {
   .composer-model-control {
     gap: var(--space-1);
@@ -278,7 +290,10 @@
     display: none;
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   .composer-context-popover {
     animation: none;
@@ -287,7 +302,10 @@
     transition: none;
   }
 }
-/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
+/*
+ * 遵循更高对比度偏好，调整此处颜色、边框或透明度。
+ * EN: Respects higher-contrast preferences by adjusting colors, borders, or opacity here.
+ */
 @media (prefers-contrast: more) {
   .composer-context-popover {
     border-color: var(--secondary);

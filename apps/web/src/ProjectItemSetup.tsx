@@ -1,4 +1,8 @@
-/* 配置项目交付项。 */
+/**
+ * 配置项目交付项。
+ * 将交付项目标和运行设置组合为启动草稿，复用验证和缓存写入；不直接创建或更换该交付项的当前运行。
+ * EN: Edits task creation derived from a delivery item. Combines a deliverable objective and run settings into a launch draft with shared validation/cache writes, without directly creating or replacing its current run.
+ */
 import { useId, useRef, useState } from 'react';
 import type { ContextPolicy } from '../../../packages/contracts/src/index';
 import { RunModal } from './RunSetupModal';
@@ -18,6 +22,7 @@ import './project-item-setup.css';
  * 编辑从交付项派生的创建草稿，初始目标与标准固定于打开时读取的 launch。
  * 每次回写核对缓存中的 launch 仍等于本组件上次保存结果；其他页面修改或移除来源时
  * 保留当前表单并阻止提交。实际创建交给父级，提交体与保存后的 launch 一起传递。
+ * EN: Initial objective/criteria come from opening-time launch. Every write compares cached launch to the last persisted value; changes/removal elsewhere preserve current form and block submit. Parent creates from payload and persisted launch together.
  */
 export function ProjectItemSetup({
   projectId,
@@ -59,17 +64,27 @@ export function ProjectItemSetup({
   const [objective, setObjective] = useState(first.current.launch?.objective || '');
   const launch = first.current.launch;
   const lastSaved = useRef(launch);
-  /** 用最新缓存执行比较再写入，规范化读回值作为下一次比较基线。 */
+  /**
+   * 用最新缓存执行比较再写入，规范化读回值作为下一次比较基线。
+   * EN: Compare/write newest cache, using normalized read-back as next baseline.
+   */
   const saveLaunch = (patch: Partial<NonNullable<ProjectBoardDraft['launch']>>) => {
     const current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
     if (!launch || !current || JSON.stringify(current) !== JSON.stringify(lastSaved.current))
       throw Error('创建来源草稿已变化或移除，请返回项目工作台核对。当前表单仍保留。');
     const next = { ...current, ...patch };
     writeProjectBoardDraft(cache, projectId, (value) => ({ ...value, launch: next }));
-    // Compare normalized persisted shapes: adding setupRaw can change object key order.
+    /**
+     * 比较规范化持久形状，setupRaw 可改变键顺序。
+     * EN: Compare normalized persisted shapes: adding setupRaw can change object key order.
+     */
     lastSaved.current = readProjectBoardDraft(cache.get(projectBoardKey(projectId))).launch;
     return lastSaved.current;
   };
+  /**
+   * 序列化运行设置后保存交付项启动草稿；成功返回更新值，验证或持久化失败时发布错误并返回undefined。
+   * EN: Serializes run setup and saves the deliverable launch draft, returning the updated value on success or exposing validation/persistence errors and returning undefined.
+   */
   const save = (setup: RunSetupDraft): NonNullable<ProjectBoardDraft['launch']> | undefined => {
     try {
       const raw = writeRunSetupDraft(setup);

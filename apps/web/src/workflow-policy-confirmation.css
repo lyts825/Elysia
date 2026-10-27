@@ -1,4 +1,7 @@
-/* 定义 workflow-policy-confirmation 对应界面的样式与布局。 */
+/*
+ * 复核策略确认：布局当前策略、待确认修改、模型选择和确认依据。长策略说明允许断行，短窗口改为整个确认弹窗滚动并固定标题，保持确认入口和依据可达。
+ * EN: Review-policy confirmation: arranges current policy, pending changes, model choices, and evidence. Long guidance wraps; short windows scroll the whole confirmation modal with a sticky heading to preserve access to evidence/actions.
+ */
 .review-model-policy,
 .review-policy-confirmation {
   display: grid;
@@ -6,7 +9,10 @@
   min-width: 0;
 }
 
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .review-model-policy .field-help,
 .review-policy-confirmation p {
   margin: 0;
@@ -77,9 +83,15 @@
   font-size: var(--font-lg);
   font-weight: 600;
 }
-/* 短窗口让复核策略确认弹窗整体滚动，并固定标题。 */
+/*
+ * 短窗口让复核策略确认弹窗整体滚动，并固定标题。
+ * EN: Scrolls the whole review-policy confirmation modal with a sticky heading in short windows.
+ */
 @media (max-height: 560px) {
-  /* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+  /*
+   * 内容溢出时允许在此区域滚动，便于查看超出部分。
+   * EN: Allows this region to scroll when content exceeds its bounds.
+   */
   .review-policy-confirm-modal {
     overflow: auto;
     scroll-padding-block: var(--space-4);

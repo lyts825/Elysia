@@ -1,4 +1,8 @@
-/* 展示交付状态及相关信息。 */
+/**
+ * 展示交付状态及相关信息。
+ * 轮询轻量交付摘要并展示状态与入口，重读绑定当前运行版本；完整证据和复核操作在详情面板中处理。
+ * EN: Displays delivery status and related review information. Polls lightweight delivery summaries and displays state/entry points scoped to the current run revision; detail panels handle full evidence and review actions.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { DeliveryReviewSummary } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -11,6 +15,7 @@ import './delivery-status-card.css';
 /**
  * 定期读取轻量人工复核摘要，按传入版本隔离结果并防止同轮读取重入。
  * 显式重试可请求服务端重新核验失败摘要；读取问题与未复核状态分别显示。
+ * EN: Periodically read a lightweight human-review summary, isolate results by the supplied version, and prevent overlapping reads. Explicit retry can ask the server to recheck failed summaries. A read issue and an unreviewed state remain distinct.
  */
 export function DeliveryStatusCard({
   runId,
@@ -27,12 +32,23 @@ export function DeliveryStatusCard({
     [retry, setRetry] = useState(0);
   const retrySummary = useRef(false);
   const value = snapshot?.version === version ? snapshot.value : undefined;
-  // 只显示当前版本对应的摘要；切换运行或版本会取消旧读取。
+  /**
+   * 只显示当前版本对应的摘要；切换运行或版本会取消旧读取。
+   * EN: Display only the summary for the current version; switching runs or versions cancels the old read.
+   */
   const readIssue = value?.reviewIssue?.message || error;
+  /**
+   * 按运行版本建立独立摘要轮询，立即读取并每五秒尝试一次；pending防重叠，清理同时取消请求和定时器。
+   * EN: Creates summary polling per run revision, reading immediately and every five seconds; pending prevents overlap and cleanup aborts the request and clears the interval.
+   */
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
     setError('');
+    /**
+     * 串行读取当前运行的交付摘要；消费一次重试标志并只回写未取消的版本，避免轮询重叠和旧结果覆盖。
+     * EN: Reads the run delivery summary serially, consumes the one-shot retry flag, and publishes only while not aborted, avoiding overlapping polls and stale updates.
+     */
     const read = async () => {
       if (pending || controller.signal.aborted) return;
       pending = true;

@@ -1,4 +1,10 @@
-// 定义 SQLite 存储入口、事务及业务对象持久化操作。
+/**
+ * 定义 SQLite 存储入口、事务及业务对象持久化操作。
+ * EN: Provide the SQLite storage entry point, transactions, and business-entity persistence.
+ *
+ * 按业务实体封装 SQL、事务、对象存储和投影入口，向内核及服务端提供持久化接口；调用方仍负责授权和业务编排。
+ * EN: Encapsulate SQL, transactions, object storage, and projections by entity for kernel/server persistence; callers retain authorization and orchestration responsibility.
+ */
 import { DatabaseSync } from 'node:sqlite';
 import { id, now, hash, stable } from '../../contracts/src/identity.js';
 export { id, now, hash, stable } from '../../contracts/src/identity.js';
@@ -51,7 +57,11 @@ export type ConversationMessageLinks = {
   callId?: string;
   calls?: { id: string }[];
 };
-/** 抽取会话配对所需的标识，不将工具参数和完整回复复制到查询投影。 */
+/**
+ * 抽取会话配对所需的标识，不将工具参数和完整回复复制到查询投影。
+ * EN: Extract conversation-pairing identifiers without copying tool arguments or full replies into
+ * query projections.
+ */
 function conversationLinks(message: ConversationMessageLinks): ConversationMessageLinks {
   return {
     ...(message.requestId ? { requestId: message.requestId } : {}),
@@ -66,6 +76,9 @@ export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 /**
  * 从权威请求记录生成轻量账本。预算、账号调度和用量统计只需这些字段，
  * 因此查询时无需解压模型输入清单或流式正文；缺少用量时明确保存 null。
+ * EN: Build a lightweight ledger from the authoritative request. Budget, account scheduling, and
+ * usage reads use these fields without expanding input manifests or stream text. Store null
+ * explicitly when usage is unavailable.
  */
 function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
   return {
@@ -98,7 +111,11 @@ function ledgerProjection(entity: RequestRecord): RequestLedgerRow {
       : null,
   };
 }
-/** 优先采用 ELYSIA_DATA_DIR，否则按平台用户数据目录返回绝对路径；此函数不创建目录。 */
+/**
+ * 优先采用 ELYSIA_DATA_DIR，否则按平台用户数据目录返回绝对路径；此函数不创建目录。
+ * EN: Prefer ELYSIA_DATA_DIR; otherwise return an absolute platform-user data path. This function
+ * does not create directories.
+ */
 export function dataDirectory() {
   return path.resolve(
     process.env.ELYSIA_DATA_DIR ||
@@ -110,9 +127,20 @@ export { tables, type Table } from '../../contracts/src/persistence.js';
 const unscopedTables = new Set<Table>(['project_spaces', 'projects', 'providers', 'runs']);
 const legacyObjectPattern = /^objects[\\/][a-f0-9]{2}[\\/][a-f0-9]{64}$/;
 const sqliteObjectPattern = /^sqlite:[a-f0-9]{64}$/;
+/**
+ * 按稳定JSON序列化后gzip压缩，保持对象摘要与读取格式一致。
+ * EN: Gzip stable JSON serialization to keep persisted bodies consistent with their digest/read format.
+ */
 const compress = (value: unknown) => gzipSync(Buffer.from(stable(value)), { level: 6 });
+/**
+ * 将压缩正文还原为JSON值，格式错误直接向读取方传播。
+ * EN: Expand a compressed body into a JSON value, propagating malformed-data errors.
+ */
 const expand = (value: Uint8Array) => JSON.parse(gunzipSync(value).toString('utf8'));
-/** 兼容旧任务 result.resumeAt；显式存在新版 rateLimit 字段时不再读取旧字段。 */
+/**
+ * 兼容旧任务 result.resumeAt；显式存在新版 rateLimit 字段时不再读取旧字段。
+ * EN: Support legacy result.resumeAt only when the newer rateLimit field is absent.
+ */
 function rateResumeAt(task: Task) {
   const value =
     task.rateLimit === undefined
@@ -124,6 +152,9 @@ function rateResumeAt(task: Task) {
  * 为实体生成可用 SQLite JSON 索引读取的投影，完整实体仍以压缩正文为准。
  * 各类版本标记供读取器识别缺失投影；交付语义哈希只覆盖影响交付判断的字段，
  * 使无关字段变化不必重建整个交付视图。
+ * EN: Generate SQLite JSON-indexable entity projections while retaining the compressed body as
+ * authoritative. Version markers reveal missing projections. Delivery semantic hashes cover only
+ * fields affecting delivery decisions, avoiding full view rebuilds for unrelated changes.
  */
 function projection(table: Table, entity: any) {
   const readModel =
@@ -233,7 +264,11 @@ function projection(table: Table, entity: any) {
     ...(readModel ? { readModelVersion: 1, readModel } : {}),
   });
 }
-/** 递归收集以 Ref 结尾字段中的合法存储引用，避免把正文中的相似字符串当成对象根。 */
+/**
+ * 递归收集以 Ref 结尾字段中的合法存储引用，避免把正文中的相似字符串当成对象根。
+ * EN: Recursively collect valid storage references only from fields ending in Ref, rather than
+ * treating similar text in arbitrary bodies as reference roots.
+ */
 function objectRefs(value: unknown, refs = new Set<string>(), field = ''): Set<string> {
   if (
     typeof value === 'string' &&
@@ -246,7 +281,11 @@ function objectRefs(value: unknown, refs = new Set<string>(), field = ''): Set<s
     for (const [key, item] of Object.entries(value)) objectRefs(item, refs, key);
   return refs;
 }
-/** 递归检查值中是否包含目标实体标识，供删除时核实命令关联；匹配完整字符串。 */
+/**
+ * 递归检查值中是否包含目标实体标识，供删除时核实命令关联；匹配完整字符串。
+ * EN: Recursively check for exact identifier strings to confirm command associations during
+ * deletion.
+ */
 function references(value: unknown, identifiers: Set<string>): boolean {
   if (typeof value === 'string') return identifiers.has(value);
   if (Array.isArray(value)) return value.some((item) => references(item, identifiers));
@@ -257,6 +296,9 @@ function references(value: unknown, identifiers: Set<string>): boolean {
 /**
  * SQLite 与对象文件的统一持久化入口。业务实体保存权威压缩正文和可重建查询投影；
  * 状态写入、事件追加由同步事务协调，外部进程和异步文件工作由上层安排。
+ * EN: Unify SQLite and file-object persistence. Entities have authoritative compressed bodies and
+ * rebuildable query projections. Synchronous transactions coordinate state and events; callers
+ * schedule external processes and asynchronous file work outside them.
  */
 export class Store {
   readonly recovery: ExecutionRecovery;
@@ -273,7 +315,12 @@ export class Store {
   private closed = false;
   /**
    * 创建数据子目录并打开数据库，启用外键和 WAL 后执行迁移与派生索引初始化。
-   * 任一初始化步骤失败都会关闭数据库句柄，避免留下半初始化的 Store 实例。
+   * 外键及 WAL 配置之后的迁移或派生索引初始化失败时，catch 关闭数据库句柄并上抛；
+   * 前面的目录创建、打开数据库及 PRAGMA 配置不在该 catch 范围内。
+   * EN: Create data subdirectories, open SQLite, enable foreign keys and WAL, then migrate and
+   * initialize derived indexes. The catch closes the handle and rethrows failures from migration
+   * or derived initialization; preceding directory creation, database opening, and PRAGMA setup
+   * are outside that catch.
    */
   constructor(directory = dataDirectory()) {
     mkdirSync(directory, { recursive: true });
@@ -295,7 +342,9 @@ export class Store {
       this.requestStreams = new RequestStreams(this.db);
       this.reasoningStreams = new ReasoningStreams(this.db);
       this.objectReferences = new ObjectReferenceProjection(this.db, tables, expand, objectRefs);
-      // Raw repairs invalidate the derived log pointer without rewriting request/usage projections.
+      // 直接修复正文会使派生日志指针失效，但不重写请求与用量投影。
+      // EN: Raw-body repair invalidates the derived log pointer without rewriting request or usage
+      // projections.
       this.db.exec(`CREATE TABLE IF NOT EXISTS request_log_pointer_dirty_v1(
         record_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE);
         CREATE TRIGGER IF NOT EXISTS request_log_pointer_insert AFTER INSERT ON requests
@@ -328,6 +377,11 @@ export class Store {
    * 按旧 user_version 顺序迁移到当前格式。每个阶段独立提交，新格式数据库直接拒绝打开。
    * 压缩正文迁移先保留清理标记，提交并核验后才清理旧文件；中断后可继续完成清理。
    * 调用方在打开业务读写之前执行本方法，版本提升同时防止旧客户端绕过新增执行约束。
+   * EN: Migrate sequentially from the previous user_version, committing each stage independently and
+   * rejecting databases newer than this reader. Preserve cleanup markers before compressed-body
+   * migration; remove legacy files only after commit and verification, allowing interrupted cleanup to
+   * resume. Run before business reads and writes; schema bumps also prevent older clients from
+   * bypassing new execution constraints.
    */
   migrate() {
     const version = Number((this.db.prepare('PRAGMA user_version').get() as any).user_version);
@@ -354,6 +408,10 @@ export class Store {
             this.db.exec(`ALTER TABLE ${table} ADD COLUMN content BLOB;`);
           const imported = new Set<string>();
           const migratedStreams = new Set<string>();
+          /**
+           * 迁移时递归导入旧文件对象引用，按集合去重并继续追踪JSON对象中的引用。
+           * EN: Recursively import legacy file-object references during migration, deduplicating and traversing references inside JSON objects.
+           */
           const importRefs = (value: unknown) => {
             for (const ref of objectRefs(value)) {
               if (!legacyObjectPattern.test(ref) || imported.has(ref)) continue;
@@ -408,7 +466,8 @@ export class Store {
                       if (typeof item.text === 'string' && item.completed === false)
                         fragments.push(item.text);
                     } catch {
-                      /* Preserve an interrupted last fragment verbatim below. */
+                      // 在后续迁移对象中完整保留被中断的最后片段原文。
+                      // EN: Preserve the interrupted final fragment verbatim in the migrated representation below.
                     }
                   }
                   entity.manifest ??= {};
@@ -452,8 +511,9 @@ export class Store {
       });
     if (version < 4)
       this.tx(() => {
-        // These chunks are authoritative content. Version 4 prevents pre-chunk readers
-        // from silently treating the empty compatibility field as a complete response.
+        // 这些分块属于权威正文；格式版本4阻止旧读取器把空兼容字段误认为完整响应。
+        // EN: These chunks are authoritative content. Schema version 4 prevents older readers from treating
+        // an empty compatibility field as the complete response.
         new RequestStreams(this.db);
         for (const table of ['requests', 'runs'] as const) {
           const update = this.db.prepare(`UPDATE ${table} SET data=? WHERE id=?`);
@@ -492,17 +552,22 @@ export class Store {
           CREATE INDEX project_delivery_archives_project ON project_delivery_archives_v1(project_id);
           PRAGMA user_version=6;`);
       });
-    // v7 makes project capability restrictions and approved context checkpoints mandatory.
-    // Older clients must not open this store and silently ignore these execution boundaries.
+    // 版本7强制项目能力约束与已批准上下文检查点，不能让忽略这些边界的旧客户端打开新库。
+    // EN: Version 7 makes project capability restrictions and approved context checkpoints mandatory,
+    // preventing older clients from opening the store while ignoring these execution boundaries.
     if (version < 7) this.tx(() => this.db.exec('PRAGMA user_version=7;'));
-    // Scheduled execution must not be reopened by clients that ignore its frozen configuration.
+    // 不能让忽略冻结配置的旧客户端重新打开定时执行数据。
+    // EN: Scheduled execution must not be reopened by clients that ignore its frozen configuration.
     if (version < 8) this.tx(() => this.db.exec('PRAGMA user_version=8;'));
-    // Peer-review completion gates must not be bypassed by older clients that ignore the frozen policy.
+    // 旧客户端不能因忽略冻结策略而绕过独立评审完成门禁。
+    // EN: Older clients must not bypass peer-review completion gates by ignoring the frozen policy.
     if (version < 9) this.tx(() => this.db.exec('PRAGMA user_version=9;'));
-    // Old clients must not bypass tool review or silently run container commands on the host.
+    // 旧客户端不能绕过工具审核，或把容器命令静默改成本机执行。
+    // EN: Older clients must not bypass tool review or silently run container commands on the host.
     if (version < 10) this.tx(() => this.db.exec('PRAGMA user_version=10;'));
-    // Reclaim old plaintext pages after the atomic schema/content migration. A pending marker
-    // lets reopening finish cleanup safely if the process was interrupted after COMMIT.
+    // 原子迁移提交后再回收旧明文页。待清理标记使COMMIT后中断的清理能够在重开时继续。
+    // EN: Reclaim old plaintext pages only after the atomic schema/content migration commits. A pending
+    // marker lets reopening finish cleanup after an interruption following COMMIT.
     const pending = this.db
       .prepare("SELECT value FROM storage_meta WHERE key='migration_cleanup'")
       .get() as any;
@@ -534,6 +599,10 @@ export class Store {
    * 执行同步工作单元并返回 fn 的结果；最外层使用 BEGIN IMMEDIATE 取得写锁。
    * 嵌套调用复用外层事务，不创建保存点；异常未被工作函数捕获并传播至最外层时才回滚。
    * 异步工作不应放入 fn，若需单条失败独立回滚则由调用方显式使用保存点。
+   * EN: Execute a synchronous unit of work and return fn result; the outermost call obtains the write
+   * lock with BEGIN IMMEDIATE. Nested calls reuse that transaction without savepoints, and rollback
+   * occurs only if an uncaught error reaches the outermost call. Keep asynchronous work outside fn and
+   * use explicit savepoints when individual operations need independent rollback.
    */
   tx<T>(fn: () => T): T {
     if (this.depth) return fn();
@@ -550,35 +619,59 @@ export class Store {
       this.depth--;
     }
   }
-  /** 读取宿主元数据原文；键不存在时返回 undefined，由对应业务模块自行解析。 */
+  /**
+   * 读取宿主元数据原文；键不存在时返回 undefined，由对应业务模块自行解析。
+   * EN: Read raw host metadata, returning undefined for missing keys. The owning business module
+   * parses its value.
+   */
   metadata(key: string): string | undefined {
     return (
       this.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as { value: string } | undefined
     )?.value;
   }
-  /** 原样替换单个元数据值；需要与业务状态共同提交时，由调用方包在 tx 中。 */
+  /**
+   * 原样替换单个元数据值；需要与业务状态共同提交时，由调用方包在 tx 中。
+   * EN: Replace one metadata value verbatim. The caller wraps it in tx when it must commit with
+   * business state.
+   */
   setMetadata(key: string, value: string) {
     this.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(key, value);
   }
-  /** 只读取显式依赖边的目标 ID，不包含父子任务关系或递归的间接依赖。 */
+  /**
+   * 只读取显式依赖边的目标 ID，不包含父子任务关系或递归的间接依赖。
+   * EN: Read only the IDs of explicitly declared dependency edges, excluding parent/child
+   * relationships and transitive dependencies.
+   */
   taskDependencies(taskId: string): string[] {
     return this.db
       .prepare('SELECT dependency_id id FROM task_edges WHERE task_id=?')
       .all(taskId)
       .map((row) => String(row.id));
   }
-  /** 保存一条依赖边；重复边和不存在的实体由数据库约束拒绝，业务环检查由内核负责。 */
+  /**
+   * 保存一条依赖边；重复边和不存在的实体由数据库约束拒绝，业务环检查由内核负责。
+   * EN: Save one dependency edge. Database constraints reject duplicates or missing entities; the
+   * kernel owns business-cycle validation.
+   */
   addTaskDependency(taskId: string, dependencyId: string) {
     this.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dependencyId);
   }
-  /** 先用元数据索引定位最新事件序号，再读取该事件正文；没有匹配项时返回 undefined。 */
+  /**
+   * 先用元数据索引定位最新事件序号，再读取该事件正文；没有匹配项时返回 undefined。
+   * EN: Locate the newest event sequence through indexed metadata, then read its body. Return
+   * undefined when no event matches.
+   */
   latestEvent(runId: string, taskId: string, type: string): Event | undefined {
     const row = this.db
       .prepare('SELECT seq FROM events WHERE run_id=? AND task_id=? AND type=? ORDER BY seq DESC LIMIT 1')
       .get(runId, taskId, type) as { seq: number } | undefined;
     return row ? this.events(runId, row.seq - 1, { limit: 1 })[0] : undefined;
   }
-  /** 通过轻量状态投影判断任务是否仍有待核验的工具操作，不读取操作结果正文。 */
+  /**
+   * 通过轻量状态投影判断任务是否仍有待核验的工具操作，不读取操作结果正文。
+   * EN: Use lightweight state projections to detect unresolved tool operations without reading their
+   * result bodies.
+   */
   hasUncertainOperation(runId: string, taskId: string): boolean {
     return !!this.db
       .prepare(
@@ -588,22 +681,38 @@ export class Store {
       )
       .get(runId, taskId);
   }
-  /** 按主键读取并还原完整实体；不存在返回 undefined，损坏或旧对象读取失败则向上抛错。 */
+  /**
+   * 按主键读取并还原完整实体；不存在返回 undefined，损坏或旧对象读取失败则向上抛错。
+   * EN: Read and hydrate one complete entity by primary key. Return undefined if absent and propagate
+   * corrupt-body or legacy-object failures.
+   */
   get<T>(table: Table, key: string): T | undefined {
     const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
     return row && this.decodeRow(table, row);
   }
-  /** 返回跨重启保留的运行暂停原因；与实体当前 status 分开保存。 */
+  /**
+   * 返回跨重启保留的运行暂停原因；与实体当前 status 分开保存。
+   * EN: Return the durable run hold retained across restarts, stored separately from the business
+   * entity status.
+   */
   getExecutionHold(runId: string) {
     return this.recovery.get(runId);
   }
-  /** get 的必需记录版本：缺失时统一抛出 404，供业务入口避免继续使用空实体。 */
+  /**
+   * get 的必需记录版本：缺失时统一抛出 404，供业务入口避免继续使用空实体。
+   * EN: Require an entity through get and raise a uniform 404 when absent, preventing business callers
+   * from continuing with an empty value.
+   */
   require<T>(table: Table, key: string): T {
     const value = this.get<T>(table, key);
     if (!value) throw new AppError('NOT_FOUND', `${table} 记录不存在`, false, null, 404);
     return value;
   }
-  /** 按插入顺序还原整批实体；runId 为空时读取全表，因此大列表应优先使用专用分页投影。 */
+  /**
+   * 按插入顺序还原整批实体；runId 为空时读取全表，因此大列表应优先使用专用分页投影。
+   * EN: Hydrate entities in insertion order. Omitting runId reads the whole table, so large lists
+   * should prefer dedicated paginated projections.
+   */
   all<T>(table: Table, runId?: string): T[] {
     return (
       runId
@@ -611,17 +720,28 @@ export class Store {
         : this.db.prepare(`SELECT data,content FROM ${table} ORDER BY rowid`).all()
     ).map((r: any) => this.decodeRow(table, r));
   }
-  /** Full delivery identity needs all metadata, never all compressed artifact bodies. */
+  /**
+   * 完整交付身份需要全部元数据，而不是解压全部产物正文。
+   * EN: Complete delivery identity requires all metadata, not expansion of all compressed artifact
+   * bodies.
+   */
   artifactDeliveryMetadata(runId: string) {
     return this.tx(() => this.artifactDeliveryReads.read(runId));
   }
-  /** 在短事务内修复一批交付产物元数据，返回扫描、补齐及剩余数量。 */
+  /**
+   * 在短事务内修复一批交付产物元数据，返回扫描、补齐及剩余数量。
+   * EN: Repair one batch of delivery-artifact metadata in a short transaction and return scanned,
+   * backfilled, and remaining counts.
+   */
   artifactDeliveryWarmBatch(runId: string, limit = 32) {
     return this.tx(() => this.artifactDeliveryReads.warmBatch(runId, limit));
   }
   /**
    * 按提供的过滤项取交集读取请求账本，since 为严格晚于的开始时间。
    * 直接使用轻量投影并覆盖数据库当前 revision，不解压输入清单和流式文本。
+   * EN: Read the request ledger using the intersection of supplied filters; since is an exclusive
+   * start-time boundary. Use lightweight projections with the current SQL revision, without expanding
+   * input manifests or stream text.
    */
   requestLedger(
     filters: {
@@ -653,7 +773,11 @@ export class Store {
         .all(...values) as { data: string; revision: number }[]
     ).map((row) => ({ ...JSON.parse(row.data).requestLedger, revision: row.revision }));
   }
-  /** 返回任务最近一条非工具审核请求的完整记录；独立审核不应覆盖普通模型请求的显示。 */
+  /**
+   * 返回任务最近一条非工具审核请求的完整记录；独立审核不应覆盖普通模型请求的显示。
+   * EN: Return the latest full non-tool-review request for a task so independent review does not
+   * replace the ordinary model request in the UI.
+   */
   latestTaskRequest(runId: string, taskId: string): RequestRecord | undefined {
     const row = this.db
       .prepare(
@@ -662,7 +786,11 @@ export class Store {
       .get(runId, taskId) as any;
     return row ? this.decodeRow('requests', row) : undefined;
   }
-  /** 限定运行和会话读取完整历史；保留数据库行顺序，由需要严格 ordinal 的调用方排序。 */
+  /**
+   * 限定运行和会话读取完整历史；保留数据库行顺序，由需要严格 ordinal 的调用方排序。
+   * EN: Read complete history for one run and session in database row order; callers requiring strict
+   * ordinal order sort it themselves.
+   */
   sessionMessages(runId: string, sessionId: string): Message[] {
     return (
       this.db
@@ -672,7 +800,11 @@ export class Store {
         .all(runId, sessionId) as any[]
     ).map((row) => this.decodeRow('messages', row));
   }
-  /** 只统计指定会话的消息数量，用于分页或状态判断，不解压消息。 */
+  /**
+   * 只统计指定会话的消息数量，用于分页或状态判断，不解压消息。
+   * EN: Count messages in a session for pagination or state checks without decompressing message
+   * bodies.
+   */
   sessionMessageCount(runId: string, sessionId: string): number {
     return Number(
       this.db
@@ -683,6 +815,9 @@ export class Store {
   /**
    * 按插入顺序倒序分页读取来源运行的修订，before 必须是同一来源下仍存在的运行 ID。
    * 多取一条判断 hasMore；无效游标返回冲突错误，要求调用方从新列表重新读取。
+   * EN: Page revisions of a source run in reverse insertion order. before must identify an existing
+   * revision of that same source. Fetch one extra row for hasMore and reject invalid cursors with a
+   * conflict so callers restart from a current list.
    */
   runRevisions(sourceRunId: string, limit = 20, before?: string) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 40)
@@ -717,13 +852,20 @@ export class Store {
       },
     };
   }
-  /** Read one request without expanding its in-flight stream. */
+  /**
+   * 读取单条请求元数据，不展开其在途流正文。
+   * EN: Read one request without expanding its in-flight stream body.
+   */
   requestMetadata(key: string): RequestRecord {
     const row = this.db.prepare('SELECT data,content FROM requests WHERE id=?').get(key) as any;
     if (!row) throw new AppError('NOT_FOUND', 'requests 记录不存在', false, null, 404);
     return this.decodeRow('requests', row, false);
   }
-  /** 为 RESERVED 请求创建权威分块流，并在同一事务中将请求清单切换到新版存储标记。 */
+  /**
+   * 为 RESERVED 请求创建权威分块流，并在同一事务中将请求清单切换到新版存储标记。
+   * EN: Create an authoritative chunk stream for a RESERVED request and switch its manifest storage
+   * marker in the same transaction.
+   */
   startRequestStream(key: string) {
     this.tx(() => {
       const request = this.require<RequestRecord>('requests', key);
@@ -740,23 +882,43 @@ export class Store {
       });
     });
   }
-  /** 事务提交正文增量；expectedOffset 不匹配时拒绝追加，避免重复或遗漏文本。 */
+  /**
+   * 事务提交正文增量；expectedOffset 不匹配时拒绝追加，避免重复或遗漏文本。
+   * EN: Commit a text increment transactionally. Reject a mismatched expectedOffset to avoid duplicate
+   * or missing content.
+   */
   appendRequestText(key: string, text: string, expectedOffset: number) {
     this.tx(() => this.requestStreams.append(key, text, expectedOffset));
   }
-  /** 提交推理展示增量，返回实际保留的片段与显示偏移，接收偏移由缓存层独立校验。 */
+  /**
+   * 提交推理展示增量，返回实际保留的片段与显示偏移，接收偏移由缓存层独立校验。
+   * EN: Commit a reasoning-display increment and return the retained fragment and display offset; the
+   * cache separately validates the received offset.
+   */
   appendRequestReasoning(key: string, text: string, offset: number, kind: ReasoningKind) {
     return this.tx(() => this.reasoningStreams.append(key, text, offset, kind));
   }
-  /** 用最终公开推理文本替换增量展示缓存；不修改原始供应商消息。 */
+  /**
+   * 用最终公开推理文本替换增量展示缓存；不修改原始供应商消息。
+   * EN: Replace the incremental display cache with final public reasoning text without changing the
+   * original provider message.
+   */
   completeRequestReasoning(key: string, text: string) {
     this.tx(() => this.reasoningStreams.complete(key, text));
   }
-  /** 只读取推理展示的长度、类别和完整状态，供界面决定是否分页加载。 */
+  /**
+   * 只读取推理展示的长度、类别和完整状态，供界面决定是否分页加载。
+   * EN: Read only reasoning display length, kind, and completion state so the UI can decide whether to
+   * load pages.
+   */
   requestReasoningMetadata(key: string) {
     return this.reasoningStreams.metadata(key);
   }
-  /** 先核对请求归属，再按 UTF-16 偏移读取展示页；返回值中的 nextOffset 用于下一次读取。 */
+  /**
+   * 先核对请求归属，再按 UTF-16 偏移读取展示页；返回值中的 nextOffset 用于下一次读取。
+   * EN: Check request ownership before reading a display page at UTF-16 offsets. Use the returned
+   * nextOffset for subsequent reads.
+   */
   requestReasoningPage(runId: string, requestId: string, offset: number, limit: number): ReasoningPage {
     if (!this.db.prepare('SELECT 1 FROM requests WHERE id=? AND run_id=?').get(requestId, runId))
       throw new AppError('NOT_FOUND', '模型请求不存在', false, null, 404);
@@ -765,6 +927,9 @@ export class Store {
   /**
    * 优先读取与消息关联的完整推理缓存，旧消息则有界读取公开正文后分页。
    * 不展开供应商私有原文；核对运行归属、长度和字符边界，防止跨运行读取或拆开代理对。
+   * EN: Prefer a complete reasoning cache linked to the message. For legacy messages, read only
+   * bounded public body content before paging. Do not expand provider-private originals; check run
+   * ownership, length, and character boundaries to prevent cross-run reads or split surrogate pairs.
    */
   messageReasoningPage(runId: string, messageId: string, offset: number, limit: number): ReasoningPage {
     if (
@@ -791,7 +956,8 @@ export class Store {
       this.db.prepare('SELECT 1 FROM reasoning_streams_v1 WHERE request_id=? AND complete=1').get(requestId)
     )
       return { ...this.requestReasoningPage(runId, requestId, offset, limit), messageId };
-    // Legacy messages have no display cache. Read only their public body, never providerNativeRef.
+    // 旧消息没有展示缓存，只读取公开正文，不读取providerNativeRef。
+    // EN: Legacy messages have no display cache. Read only their public body, never providerNativeRef.
     const body = this.db
       .prepare(
         'SELECT CASE WHEN length(content)<=33554432 THEN content END content,length(content)>33554432 oversized FROM messages WHERE id=? AND run_id=?',
@@ -838,6 +1004,9 @@ export class Store {
   /**
    * 建立可重建的文本索引、待更新队列和范围版本号。触发器只登记变化，
    * 不在业务写入中解压正文；范围版本用于发现搜索扫描过程中发生的并发更新。
+   * EN: Create rebuildable text indexes, update queues, and scope revisions. Triggers only register
+   * changes instead of expanding bodies during business writes. Scope revisions detect concurrent
+   * changes during search scans.
    */
   private historySearchSchema() {
     this.db.exec(`
@@ -893,6 +1062,9 @@ export class Store {
   /**
    * 为仍保持相同 revision 的实体写入小写搜索文本；旧快照不能覆盖新版索引。
    * 成功写入后才移除待处理队列项，让竞争更新仍有机会触发下一轮索引。
+   * EN: Index lowercase text only if the entity still has the same revision, preventing stale
+   * snapshots from overwriting newer indexes. Remove its queued entry only after a successful write so
+   * concurrent updates can trigger another indexing pass.
    */
   private historySearchProjection(table: 'runs' | 'messages', entity: Run | Message) {
     const isRun = table === 'runs';
@@ -923,6 +1095,9 @@ export class Store {
   /**
    * 显式搜索时才补齐旧数据索引，每批 32 条并让出事件循环；相同范围共享在途工作。
    * 初次扫描持久保存 rowid 进度，取消后可续扫；随后清空变化队列，返回稳定时的范围版本。
+   * EN: Populate legacy indexes only for explicit searches, in yielding batches of 32; share in-flight
+   * work for the same scope. Persist initial rowid progress so cancelled scans can resume, then drain
+   * updates and return a stable scope revision.
    */
   async ensureHistorySearch(kind: 'run' | 'message', runId?: string, signal?: AbortSignal): Promise<number> {
     const table = kind === 'run' ? 'runs' : 'messages';
@@ -976,6 +1151,8 @@ export class Store {
           });
         }
         // 初次扫描结束后继续消化触发器登记的更新，避免把旧索引误报为就绪。
+        // EN: After bootstrap scanning, consume trigger-enqueued updates instead of declaring an outdated
+        // index ready.
         for (;;) {
           searchCancelled(workSignal);
           const pending = this.db
@@ -1010,7 +1187,11 @@ export class Store {
       signal,
     );
   }
-  /** 读取运行列表或单个会话的搜索版本；尚无变更记录的范围使用 0。 */
+  /**
+   * 读取运行列表或单个会话的搜索版本；尚无变更记录的范围使用 0。
+   * EN: Read the search revision for the run list or one conversation; a scope without recorded
+   * changes starts at zero.
+   */
   private historySearchEpoch(kind: 'run' | 'message', runId?: string) {
     return Number(
       (
@@ -1024,6 +1205,10 @@ export class Store {
    * 对已规范化的查询执行字面子串搜索，倒序扫描并只保留一页 ID 和用户指定的匹配 ID。
    * before 是同一范围中的真实记录标识；扫描前后核对范围版本，变化时最多重试三轮。
    * total 独立统计全部匹配项，不以当前页长度代替；持续变化则明确返回可重试冲突。
+   * EN: Perform literal substring search on normalized text in reverse order, retaining only one page
+   * of IDs plus requested included matches. before must be a real ID in the same scope. Check the
+   * scope revision around scans and retry at most three times. Count total matches independently of
+   * page size, and report a retryable conflict if changes persist.
    */
   async historySearch(
     kind: 'run' | 'message',
@@ -1111,14 +1296,22 @@ export class Store {
   /**
    * 用已读取实体刷新冗余查询投影，不改变权威正文和业务 revision。
    * UPDATE 同时匹配 ID 与 revision，防止旧实体覆盖并发更新；产物投影与元数据同事务刷新。
+   * EN: Refresh redundant query metadata from an already-read entity without changing its
+   * authoritative body or business revision. Match both ID and revision to avoid stale overwrites;
+   * artifact metadata and its projection refresh in one transaction.
    */
   refreshReadProjection(
     table: 'runs' | 'tasks' | 'artifacts' | 'requests' | 'tool_operations' | 'messages' | 'inbox',
     entity: Entity,
   ) {
+    /**
+     * 按当前revision守卫刷新查询投影，产物成功更新时同步其交付元数据。
+     * EN: Refresh query metadata under a revision guard and synchronize delivery metadata after successful artifact updates.
+     */
     const refresh = () => {
-      // Full server schemas make compiling this guarded request update expensive per legacy row.
-      // SQLite still reevaluates bindings and recompiles the statement after schema changes.
+      // 完整服务端schema使每条旧请求重复编译守卫更新语句代价较高，因此缓存语句；SQLite仍会重求绑定并在schema变化后重新编译。
+      // EN: The full server schema makes recompiling this guarded update expensive per legacy request, so
+      // cache the statement. SQLite still reevaluates bindings and recompiles after schema changes.
       const update =
         table === 'requests'
           ? (this.requestReadProjectionUpdate ??= this.db.prepare(
@@ -1135,6 +1328,10 @@ export class Store {
    * 先用投影过滤状态、等待原因、恢复时间和暂停范围，再解压候选正文核对真实状态。
    * 缺少旧投影的行仍纳入候选并顺便刷新，避免因投影不全漏掉可执行任务。
    * 返回值只是候选，不授予调度租约；调用方仍须在执行边界重新核验和预约。
+   * EN: Filter projected status, wait reason, resume time, and hold scope before expanding candidates
+   * and checking authoritative state. Include missing legacy projections and refresh them to avoid
+   * missing executable work. These are only candidates: callers must still recheck and reserve
+   * resources at the execution boundary.
    */
   stateCandidates<T extends Entity>(
     table: 'runs' | 'tasks' | 'requests' | 'tool_operations' | 'inbox',
@@ -1207,7 +1404,11 @@ export class Store {
         : [];
     });
   }
-  /** 取得未归档且未终结的运行以及 READY 任务；后续准入还需检查依赖、预算和持久暂停。 */
+  /**
+   * 取得未归档且未终结的运行以及 READY 任务；后续准入还需检查依赖、预算和持久暂停。
+   * EN: Return unarchived, nonterminal runs and READY tasks. Admission still needs dependency, budget,
+   * and durable-hold checks.
+   */
   schedulerCandidates(): { runs: Run[]; tasks: Task[] } {
     return {
       runs: this.stateCandidates<Run>('runs', ['DONE', 'CANCELLED'], { exclude: true, unarchived: true }),
@@ -1218,14 +1419,26 @@ export class Store {
    * 找出需要调度维护的运行：包括活动任务、待处理收件箱、已结束子任务和到期限流等。
    * 先排除持久暂停、归档和调用方已处理的运行，再还原正文；SQL 只筛选候选，
    * 不在这里改变任务状态或启动执行，以免扫描闲置历史产生副作用。
+   * EN: Select runs requiring scheduler maintenance, including active tasks, pending inbox items,
+   * finished children, or expired rate waits. Exclude durable holds, archives, and caller-excluded
+   * runs before expanding bodies. SQL only selects candidates; this scan neither changes task status
+   * nor starts execution.
    */
   schedulerRunCandidates(at = Date.now(), excludeRunIds: readonly string[] = []): Run[] {
+    /**
+     * 为固定查询别名生成兼容新旧投影的状态SQL表达式。
+     * EN: Build a state SQL expression supporting old and current projections for a fixed query alias.
+     */
     const status = (alias: string) =>
       `COALESCE(json_extract(${alias}.data,'$.status'),json_extract(${alias}.data,'$.readModel.status'))`;
     const reason =
       "COALESCE(json_extract(t.data,'$.readModel.waitReason'),json_extract(t.data,'$.waitReason'))";
     const waitingFor =
       "COALESCE(json_extract(t.data,'$.readModel.waitingFor'),json_extract(t.data,'$.waitingFor'))";
+    /**
+     * 识别失败、取消或需人工决定的等待状态，供调度维护挑选阻塞来源。
+     * EN: Identify failed, cancelled, or decision-requiring waits when selecting blocked scheduler work.
+     */
     const needsDecision = (alias: string) =>
       `(${status(alias)} IN ('FAILED','CANCELLED') OR (${status(alias)}='WAITING' AND
         (COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))='no_progress' OR
@@ -1273,7 +1486,11 @@ export class Store {
       return !run.archived && !['DONE', 'CANCELLED'].includes(run.status) ? [run] : [];
     });
   }
-  /** 旧投影缺少 status 时也视作待检查；由后续收件箱处理核实实际状态。 */
+  /**
+   * 旧投影缺少 status 时也视作待检查；由后续收件箱处理核实实际状态。
+   * EN: Treat a missing legacy status as requiring inspection, then let inbox processing verify its
+   * actual state.
+   */
   hasPendingInbox(runId: string) {
     return Boolean(
       this.db
@@ -1286,6 +1503,9 @@ export class Store {
   /**
    * 批量读取当前运行内实际消息的请求/调用配对信息，上限为 240 个 ID。
    * 投影缺失时读取该条正文并补齐；找不到或属于其他运行的 ID 不会返回占位关联。
+   * EN: Read actual request/call links for up to 240 message IDs within this run. Rebuild missing
+   * projections from the corresponding body; do not return placeholder links for missing or
+   * foreign-run IDs.
    */
   messageConversationLinks(runId: string, identifiers: string[]): ConversationMessageLinks[] {
     if (identifiers.length > 240) throw new AppError('MESSAGE_LINK_LIMIT', '消息关联读取数量无效');
@@ -1305,6 +1525,9 @@ export class Store {
   /**
    * 以 before 消息为排他边界向旧历史取一页，返回的消息重新排为时间正序以便显示。
    * 额外读取一条确定 hasMore；游标归属错误或已删除时抛冲突，防止悄悄跳到其他位置。
+   * EN: Read older messages before an exclusive cursor, then reverse the selected rows into display
+   * order. Fetch one extra row for hasMore. Reject deleted or foreign cursors rather than silently
+   * jumping elsewhere.
    */
   messagePage<T>(runId: string, limit: number, before?: string) {
     let boundary: number | undefined;
@@ -1340,6 +1563,9 @@ export class Store {
   /**
    * 将锚点放在窗口中部附近，复用 messagePage 读取；尾部不足时自然回到最新页。
    * hasNewer 告诉界面当前窗口是否还存在更新消息，锚点必须属于当前运行。
+   * EN: Place an anchor near the middle of a window by reusing messagePage, naturally falling back to
+   * the latest page near the end. hasNewer identifies newer content, and the anchor must belong to
+   * this run.
    */
   messageAroundPage<T>(runId: string, limit: number, anchor: string) {
     const target = this.db
@@ -1359,6 +1585,8 @@ export class Store {
   /**
    * 为请求、工具操作、产物或运行提供倒序分页，limit 限为 1 至 160。
    * total 是整个过滤范围的数量；before 只限定当前页，不影响总数计算。
+   * EN: Page requests, operations, artifacts, or runs in reverse order with limits from 1 to 160.
+   * total covers the full filtered scope; before restricts the current page only.
    */
   entityPage<T>(
     table: 'requests' | 'tool_operations' | 'artifacts' | 'runs',
@@ -1406,20 +1634,31 @@ export class Store {
       },
     };
   }
-  /** 先还原权威正文，再以 SQL 投影的当前 revision 覆盖正文内旧版本，最后补齐兼容字段。 */
+  /**
+   * 先还原权威正文，再以 SQL 投影的当前 revision 覆盖正文内旧版本，最后补齐兼容字段。
+   * EN: Expand the authoritative body, replace its possibly stale revision with the current SQL
+   * metadata revision, and hydrate compatibility fields.
+   */
   private decodeRow(table: Table, row: { data: string; content?: Uint8Array }, includeStream = true) {
     const metadata = JSON.parse(row.data);
     const entity = row.content ? expand(row.content) : metadata;
-    // Stream appends update only the SQL metadata revision; it remains authoritative on every read path.
+    // 流追加只更新SQL元数据版本；所有读取路径都以该版本为准。
+    // EN: Stream appends update only the SQL metadata revision, which remains authoritative on every
+    // read path.
     entity.revision = metadata.revision;
     return this.hydrate(table, entity, includeStream);
   }
   /**
    * 将旧版实体适配为当前内存模型，并按需拼接消息对象或在途流内容。
    * 这里的默认值只作用于本次读取，不自动迁移原始正文；includeStream=false 用于元数据读取。
+   * EN: Adapt legacy entities to the current in-memory shape and optionally expand message objects or
+   * in-flight streams. Defaults affect this read only and do not migrate the stored body. Use
+   * includeStream=false for metadata-only reads.
    */
   private hydrate(table: Table, entity: any, includeStream = true) {
-    // Legacy classification is ignored; execution directory and baseline references are retained.
+    // 忽略旧分类字段，但保留执行目录与基线引用。
+    // EN: Ignore legacy classification fields while retaining execution directory and baseline
+    // references.
     if (table === 'projects') {
       delete entity.mode;
       entity.spaceId ??= 'default';
@@ -1447,6 +1686,10 @@ export class Store {
    * 新增或替换完整实体并递增数据库当前 revision，返回实际保存的版本。
    * expectedRevision 用于可选乐观锁；正文、查询投影、对象引用和搜索索引同事务更新。
    * 新版请求正文保留在分块表，只有 partialText=null 才清除流；消息则消除旧对象间接引用。
+   * EN: Insert or replace a complete entity, incrementing the current database revision and returning
+   * the saved version. expectedRevision provides optional optimistic concurrency control. Commit body,
+   * projections, object roots, and search indexes together. Chunked request text stays separate unless
+   * partialText=null clears it; messages remove old indirect body references.
    */
   put<T extends Entity>(table: Table, entity: T, expectedRevision?: number): T {
     const previous =
@@ -1468,6 +1711,8 @@ export class Store {
     let clearStream = false;
     if (table === 'requests' && stored.manifest?.partialTextStorage === REQUEST_STREAM_FORMAT) {
       // 避免把读取时拼接出的完整流再次压入每个请求版本，降低逐片段更新的写入量。
+      // EN: Do not compress a fully hydrated stream into every request version; preserve chunk storage to
+      // limit per-increment write amplification.
       stored.manifest = { ...stored.manifest };
       if (stored.manifest.partialText === null) {
         clearStream = true;
@@ -1481,6 +1726,10 @@ export class Store {
       delete (next as any).contentRef;
       delete (next as any).providerNativeRef;
     }
+    /**
+     * 在同一事务保存实体正文、投影与派生索引，最后返回递增后的实际版本。
+     * EN: Persist entity body, projection, and derived indexes in one transaction and return the incremented version.
+     */
     const save = () => {
       this.db
         .prepare(
@@ -1501,6 +1750,9 @@ export class Store {
   /**
    * 为运行分配递增 seq 并保存事件的完整压缩正文，同时更新对象引用根。
    * context.updated 额外保留有界轻量预览；需要与业务变化原子提交时在外层 tx 中调用。
+   * EN: Allocate an increasing run sequence and save the complete compressed event body with its
+   * object-reference roots. context.updated also has a bounded lightweight preview. Call inside an
+   * outer tx when the event must commit atomically with business state.
    */
   event(
     runId: string,
@@ -1535,7 +1787,11 @@ export class Store {
     });
     return e;
   }
-  /** 顺序读取 seq 严格大于 after 的完整事件；可按任务和类型过滤，单次最多 1000 条。 */
+  /**
+   * 顺序读取 seq 严格大于 after 的完整事件；可按任务和类型过滤，单次最多 1000 条。
+   * EN: Read complete events with sequence strictly greater than after, in order, optionally filtered
+   * by task or type, with a maximum batch of 1000.
+   */
   events(runId: string, after = 0, filter: { taskId?: string; type?: string; limit?: number } = {}): Event[] {
     const conditions = ['run_id=?', 'seq>?'];
     const bindings: (string | number)[] = [runId, after];
@@ -1568,6 +1824,10 @@ export class Store {
    * 为 SSE 返回最多 32 条有界通知，单条解压上限为 48 KiB，推理正文仅返回预览。
    * 已知的正文损坏或超限改为 run.updated 失效通知，让客户端补读投影；
    * 其他数据库或程序错误继续暴露，不能被当作正常事件吞掉。
+   * EN: Return up to 32 bounded SSE notifications, limiting each decompression to 48 KiB and exposing
+   * reasoning previews only. Known body corruption or overflow becomes a run.updated invalidation
+   * notice so clients reread projections. Propagate unrelated database or programming errors instead
+   * of disguising them as normal events.
    */
   eventNotifications(runId: string, after: number): Event[] {
     const rows = this.db
@@ -1587,8 +1847,9 @@ export class Store {
         if (payload && typeof payload === 'object' && 'externalPayloadRef' in payload)
           throw Object.assign(new Error('Legacy external notification'), { code: 'EVENT_EXTERNAL_BODY' });
       } catch (error) {
-        // A corrupt notification asks clients to reread projections. Its body must not
-        // terminate its timer; database, argument and unrelated programming errors still surface.
+        // 损坏通知要求客户端重读投影，不能让坏正文终止轮询计时器；数据库、参数及无关程序错误仍向外抛出。
+        // EN: A corrupt notification asks clients to reread projections instead of letting bad body data
+        // terminate the polling timer. Database, argument, and unrelated programming errors still propagate.
         if (
           !(error instanceof SyntaxError) &&
           ![
@@ -1622,7 +1883,11 @@ export class Store {
       };
     });
   }
-  /** 兼容早期仅保存 externalPayloadRef 的事件；只有单字段引用对象才展开外部正文。 */
+  /**
+   * 兼容早期仅保存 externalPayloadRef 的事件；只有单字段引用对象才展开外部正文。
+   * EN: Support legacy events whose sole field is externalPayloadRef; expand only that unambiguous
+   * external-body representation.
+   */
   private eventPayload(value: string) {
     const payload = JSON.parse(value);
     return payload && Object.keys(payload).length === 1 && typeof payload.externalPayloadRef === 'string'
@@ -1632,6 +1897,9 @@ export class Store {
   /**
    * 在同步事务内执行幂等命令：同 ID、同参数直接重放已保存结果，不再调用 fn。
    * 同 ID 被用于不同 payload 时抛 409；首次结果与运行引用一并保存，异常时整体回滚。
+   * EN: Execute a synchronous idempotent command in a transaction. The same ID and payload replay the
+   * stored result without running fn. Reusing the ID with a different payload raises 409. Commit the
+   * first result and run references together, rolling back uncaught failures.
    */
   command<T>(commandId: string, payload: unknown, fn: () => T): T {
     const fingerprint = hash(stable(payload));
@@ -1650,9 +1918,17 @@ export class Store {
       return result;
     });
   }
-  /** 从命令参数和结果递归提取运行标识，兼容实体和 API 路由形式，用于删除运行时清理回执。 */
+  /**
+   * 从命令参数和结果递归提取运行标识，兼容实体和 API 路由形式，用于删除运行时清理回执。
+   * EN: Recursively collect run IDs from command input and output, supporting entities and API routes
+   * so run deletion can remove associated receipts.
+   */
   private commandRunRefs(payload: unknown, result: unknown) {
     const refs = new Set<string>();
+    /**
+     * 递归收集命令参数或结果中的运行ID及路由关联，帮助删除时清理回执。
+     * EN: Recursively collect run IDs and route associations in command inputs/results for receipt cleanup.
+     */
     const visit = (value: any) => {
       if (!value || typeof value !== 'object') return;
       if (typeof value.runId === 'string') refs.add(value.runId);
@@ -1670,6 +1946,9 @@ export class Store {
   /**
    * 删除单个非运行实体，并清理其命令回执与无引用压缩对象。
    * 默认/受保护空间、非空空间和仍有对话的项目拒绝删除；运行必须走专用级联流程。
+   * EN: Delete one non-run entity with its command receipts and unreferenced compressed objects.
+   * Reject protected/default spaces, nonempty spaces, and projects with conversations. Runs use the
+   * dedicated cascading deletion path.
    */
   delete(table: Table, key: string) {
     if (table === 'runs') throw new AppError('DELETE_RUN_REQUIRED', '请使用 deleteRun 删除对话及其关联记录');
@@ -1707,6 +1986,9 @@ export class Store {
   /**
    * 删除指定运行及其任务、事件、关联命令和本地草稿索引。数据库内清理在事务中完成；
    * 旧版流文件在提交后按受限路径删除，其他运行仍引用的对象由引用投影保留。
+   * EN: Delete a run, its tasks, events, associated commands, and local draft indexes transactionally.
+   * Remove bounded legacy stream files after commit, retaining objects still referenced by other runs
+   * through the reference projection.
    */
   deleteRun(runId: string) {
     const run = this.get<any>('runs', runId);
@@ -1714,7 +1996,8 @@ export class Store {
     const identifiers = new Set<string>([runId]);
     const streams: string[] = [];
     this.tx(() => {
-      // Only selected legacy/invalidated pointers need their authoritative body expanded.
+      // 只有选中的旧格式或已失效指针需要展开其权威正文。
+      // EN: Only selected legacy or invalidated pointers require expansion of their authoritative body.
       for (const row of this.db
         .prepare(
           `SELECT content FROM requests WHERE run_id=? AND (json_type(data,'$.partialStreamRef') IS NULL OR
@@ -1791,7 +2074,11 @@ export class Store {
         rmSync(file);
     }
   }
-  /** 投影仅用于缩小候选范围，删除前仍检查命令正文或运行引用。 */
+  /**
+   * 投影仅用于缩小候选范围，删除前仍检查命令正文或运行引用。
+   * EN: Use projections only to narrow candidates; inspect command bodies or run references again
+   * before deletion.
+   */
   private deleteCommands(identifiers: Set<string>, runId?: string) {
     const candidates = this.objectReferences?.commandCandidates(identifiers, runId);
     const rows = candidates
@@ -1805,7 +2092,11 @@ export class Store {
         this.db.prepare('DELETE FROM commands WHERE id=?').run(row.id);
     }
   }
-  /** 从所有存活引用计算保留集合后回收无引用对象；投影无法核验时由底层检查阻止回收。 */
+  /**
+   * 从所有存活引用计算保留集合后回收无引用对象；投影无法核验时由底层检查阻止回收。
+   * EN: Compute the retained set from live references before collecting unreferenced objects.
+   * Lower-level verification stops collection when a projection cannot be trusted.
+   */
   private collectObjects() {
     const retained = this.objectReferences?.roots() ?? new Set<string>();
     const library = this.db.prepare("SELECT value FROM storage_meta WHERE key='local-agents:v1'").get() as
@@ -1827,6 +2118,8 @@ export class Store {
       objectRefs(row.object_ref, retained, 'objectRef');
     const queue = [...retained];
     // 对象本身也可能引用其他对象，必须展开引用闭包后才能判定哪些压缩对象可删除。
+    // EN: Objects can reference other objects. Expand the complete reference closure before deciding
+    // which compressed objects are unreferenced.
     for (let i = 0; i < queue.length; i++) {
       const row = this.db
         .prepare('SELECT hash,raw_size,content FROM compressed_objects WHERE ref=?')
@@ -1867,6 +2160,9 @@ export class Store {
   /**
    * 按内容摘要保存不可变对象并返回引用；字符串压缩进 SQLite，Buffer 保存在 objects 文件树。
    * 重复内容复用同一引用。来源是外部大文件且需并发完整性检查时应使用 publishFileObject。
+   * EN: Save immutable content-addressed objects and return their references: strings are compressed
+   * in SQLite, Buffers use the objects file tree. Reuse references for identical bytes. Use
+   * publishFileObject for external large files needing concurrency-aware integrity checks.
    */
   object(content: string | Buffer): { hash: string; objectRef: string } {
     if (typeof content === 'string') {
@@ -1889,7 +2185,11 @@ export class Store {
     }
     return { hash: digest, objectRef: ref };
   }
-  /** 以调用方给出的摘要和大小发布来源文件，流式核验和原子发布由文件对象模块执行。 */
+  /**
+   * 以调用方给出的摘要和大小发布来源文件，流式核验和原子发布由文件对象模块执行。
+   * EN: Publish a source file using the caller expected digest and size; the file-object module
+   * performs streaming verification and atomic publication.
+   */
   publishFileObject(source: string, expected: { hash: string; size: number }, signal?: AbortSignal) {
     return publishFileObject(this.directory, source, expected, signal);
   }
@@ -1897,6 +2197,10 @@ export class Store {
    * 读取合法内容寻址引用，兼容 SQLite 压缩对象和历史文件对象，返回原始字节。
    * maxBytes 同时约束压缩内容与解压输出；读取后核对大小/摘要，文件引用还须检查真实路径。
    * 缺失、越界或损坏均抛错，不能将不完整内容交给调用方继续使用。
+   * EN: Read validated content-addressed references as raw bytes, supporting SQLite-compressed and
+   * legacy file objects. maxBytes bounds stored compressed content and decompressed output. Verify
+   * length/digest and real file containment; reject missing, escaped, or corrupt objects instead of
+   * returning partial data.
    */
   readObject(ref: string, maxBytes?: number): Buffer {
     if (!legacyObjectPattern.test(ref) && !sqliteObjectPattern.test(ref))
@@ -1928,7 +2232,11 @@ export class Store {
     if (hash(data) !== path.basename(ref)) throw new AppError('OBJECT_CORRUPT', '对象哈希不匹配');
     return data;
   }
-  /** 注册同步释放回调并返回取消注册函数；Store 已关闭时立即调用该回调。 */
+  /**
+   * 注册同步释放回调并返回取消注册函数；Store 已关闭时立即调用该回调。
+   * EN: Register a synchronous close hook and return an unregister function. Invoke it immediately
+   * when the Store is already closed.
+   */
   onClose(hook: () => void) {
     if (this.closed) {
       hook();
@@ -1940,8 +2248,10 @@ export class Store {
     };
   }
   /**
-   * 幂等关闭：逐一执行释放回调，即使部分失败仍取消搜索并关闭数据库。
-   * 所有清理结束后再抛出首个回调错误，避免失败回调阻断其余资源释放。
+   * 幂等关闭：逐个尝试释放回调，即使回调失败仍取消搜索并关闭数据库。其余关闭步骤成功后再抛首个回调错误，避免回调失败阻断其他资源释放。
+   * EN: Close idempotently: attempt every hook, then cancel searches and close SQLite even if a hook
+   * failed. If subsequent close steps succeed, rethrow the first hook error so one failing hook does
+   * not block other releases.
    */
   close() {
     if (this.closed) return;
@@ -1967,6 +2277,9 @@ export class Store {
 /**
  * 用独占锁文件保护一个数据目录。只在旧 PID 明确不存在时移除旧锁，读取损坏或权限不明时保留。
  * 返回释放函数只删除本次 token 对应的锁，避免误删后来进程建立的锁。
+ * EN: Protect a data directory with an exclusively created lock file. Remove an old lock only when
+ * its PID is definitely absent, retaining damaged or uncertain locks. The release function removes
+ * only its own token so it cannot delete a replacement lock.
  */
 export function acquireLock(directory: string) {
   mkdirSync(directory, { recursive: true });

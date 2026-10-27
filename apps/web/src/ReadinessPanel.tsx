@@ -1,4 +1,8 @@
-/* 展示应用准备状态及引导操作。 */
+/**
+ * 展示应用准备状态及引导操作。
+ * 读取当前入口和项目的已保存配置与检查记录，按问题提供修复导航；刷新需通过Schema和归属检查，不直接执行新的模型探测。
+ * EN: Displays application readiness and guided actions. Reads saved configuration/check records for a surface/project and offers repair navigation; refreshed data must pass schema/ownership checks without directly launching a model probe.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
   ReadinessSnapshot,
@@ -30,14 +34,22 @@ export interface ReadinessPanelProps {
   close: () => void;
   repair: (action: ReadinessAction) => void;
 }
+/**
+ * 按入口和项目身份重建准备状态内容，隔离不同作用域的配置快照和读取错误。
+ * EN: Keys readiness content by surface and project to isolate configuration snapshots and read errors across scopes.
+ */
 export function ReadinessPanel(props: ReadinessPanelProps) {
   const { surface } = useSurfaceClient();
-  // 入口或项目改变时重置内部快照，避免沿用另一范围的准备状态。
+  /**
+   * 入口或项目改变时重置内部快照，避免沿用另一范围的准备状态。
+   * EN: Reset snapshot after surface/project changes so readiness is never reused across scopes.
+   */
   return <ReadinessContent key={`${surface}:${props.projectId ?? ''}`} {...props} />;
 }
 /**
  * 只整理当前入口/项目已保存的配置和检查记录，不执行模型探测。
  * 刷新先把旧快照标为 stale，成功通过 Schema 和所属验证后才视为当前记录；取消保留旧结果。
+ * EN: Present saved configuration/check records only, without model probing. Refresh marks prior data stale; accept current data only after schema/ownership validation. Cancellation retains prior results.
  */
 function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
   const { api, surface } = useSurfaceClient();
@@ -55,7 +67,10 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
     errorRef.current?.focus({ preventScroll: true });
     errorRef.current?.scrollIntoView({ block: 'nearest' });
   }, [errorFocus]);
-  /** 取消旧请求并核对返回的入口及项目；显式重试失败时将焦点移到完整错误说明。 */
+  /**
+   * 取消旧请求并核对返回的入口及项目；显式重试失败时将焦点移到完整错误说明。
+   * EN: Cancel old reads and validate surface/project; explicit retry failures focus the full error.
+   */
   const load = async (focusFailure = false) => {
     controller.current?.abort();
     const request = new AbortController();
@@ -96,6 +111,10 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
       controller.current?.abort();
     };
   }, [api, projectId, surface]);
+  /**
+   * 中断准备记录读取并将旧结果标为过期，保留已显示记录并推动错误提示获得可访问反馈。
+   * EN: Aborts readiness loading, marks retained results stale, and advances the error-feedback focus request while preserving displayed records.
+   */
   const cancel = () => {
     controller.current?.abort();
     setLoading(false);
@@ -103,6 +122,10 @@ function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {
     setError('读取已取消。已显示的检查记录保留，可重新读取。');
     setErrorFocus((value) => value + 1);
   };
+  /**
+   * 执行准备检查给出的修复导航动作；捕获无法打开设置的异常并把焦点反馈引向错误说明。
+   * EN: Runs a readiness repair-navigation action, catching failures to open settings and directing accessible feedback to the error message.
+   */
   const follow = (action: ReadinessAction) => {
     try {
       repair(action);

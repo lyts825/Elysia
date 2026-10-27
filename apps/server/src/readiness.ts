@@ -1,4 +1,8 @@
-/** 汇总运行环境就绪状态并提供查询接口。 */
+/**
+ * 汇总运行环境就绪状态并提供查询接口。
+ * 只读整理已保存配置为缺失、记录、需复核或未知提示；不发网络/启动进程，历史核验不证明此刻仍可用。
+ * EN: Aggregates environment readiness and exposes read endpoints. Read-only summaries classify saved configuration as missing/recorded/review/unknown without network/process probes or claims of present availability.
+ */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -17,9 +21,17 @@ import type { Store } from '../../../packages/storage/src/index.js';
 import { terminalControlApps, terminalSettings } from './terminal-settings.js';
 import { terminalProtocols } from './terminal-catalog.js';
 
+/**
+ * 限制公开诊断标签长度，超限加省略号，不修改已保存配置。
+ * EN: Bounds public diagnostic labels with ellipsis without changing saved configuration.
+ */
 const label = (value: string, length = 220) =>
   value.length <= length ? value : value.slice(0, length - 1) + '…';
 
+/**
+ * 读取并按指定 schema 校验一条配置元数据；缺失返回 undefined，损坏让外层明确标为需核对。
+ * EN: Reads one metadata entry through its schema; absent returns undefined and damage propagates for explicit review status.
+ */
 function metadata<T>(store: Store, key: string, schema: z.ZodType<T>): T | undefined {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
     | { value: string }
@@ -27,6 +39,10 @@ function metadata<T>(store: Store, key: string, schema: z.ZodType<T>): T | undef
   return row ? schema.parse(JSON.parse(row.value)) : undefined;
 }
 
+/**
+ * 将未归档原生模型配置转换为有界就绪项目，区分缺失、历史验证和需复核，并明确静态记录无法证明当前凭据可用。
+ * EN: Maps nonarchived native configurations to bounded readiness checks, distinguishing missing/historically verified/review states without claiming current credential availability.
+ */
 function nativeChecks(store: Store): ReadinessCheck[] {
   const providers = store.all<ProviderConfig>('providers').filter((provider) => !provider.archived);
   if (!providers.length)
@@ -72,8 +88,15 @@ function nativeChecks(store: Store): ReadinessCheck[] {
   return checks;
 }
 
+/**
+ * 组合模板、应用、项目偏好和保存连接的静态诊断；只做兼容读取，不调用 Docker、读取凭据或发送模型请求。
+ * EN: Combines template/app/project/saved-connection static diagnostics using compatibility reads only, without Docker, secret lookup or model requests.
+ */
 function terminalChecks(store: Store, project?: Project): ReadinessCheck[] {
-  // These compatibility readers compute saved configuration only; they never write or probe.
+  /**
+   * 这些兼容读取器仅计算已保存配置，不写入或探测外部环境。
+   * EN: These compatibility readers compute saved configuration only; they never write or probe.
+   */
   const settings = terminalSettings(store),
     apps = terminalControlApps(store);
   const preferences = project
@@ -109,6 +132,10 @@ function terminalChecks(store: Store, project?: Project): ReadinessCheck[] {
       detail: `${profile.label} · ${profile.agent}。${preferred ? '采用项目默认。' : '采用全局默认。'}这里只确认模板配置记录，尚未检查镜像和 CLI。`,
       action: { kind: 'terminal-templates', targetId: profile.id },
     });
+    /**
+     * 按模板代理支持的协议判断连接能否供该模板选择，不以显示标签猜测。
+     * EN: Checks connection protocol against the template adapter's supported protocols rather than display labels.
+     */
     const compatible = (connection: TerminalConnectionBinding) =>
       terminalProtocols[profile.agent].includes(connection.protocol);
     const projectConnection = connections.find((connection) => connection.id === preferences?.connectionId);
@@ -193,8 +220,8 @@ function terminalChecks(store: Store, project?: Project): ReadinessCheck[] {
 }
 
 /**
- * 只读汇总本机已登记配置，区分缺失、需复核和未知状态；不启动进程或发外部认证请求。
- * 无法解析部分配置时增加明确的 review 项，不能用静态记录声称 Docker/API 已真实可用。
+ * 只读汇总本机已登记配置，区分缺失、需复核和未知状态；不启动进程或发外部认证请求。 无法解析部分配置时增加明确的 review 项，不能用静态记录声称 Docker/API 已真实可用。
+ * EN: Summarizes registered local configuration as missing, needing review or unknown without spawning processes or external authentication calls. Unreadable configuration adds review items; static records cannot prove Docker or APIs are operational.
  */
 export function readinessSnapshot(
   store: Store,
@@ -262,7 +289,10 @@ export function readinessSnapshot(
   });
 }
 
-/** 注册就绪查询路由；可选项目 ID 必须通过格式校验。 */
+/**
+ * 注册就绪查询路由；可选项目 ID 必须通过格式校验。
+ * EN: Registers readiness reads and validates any optional project ID.
+ */
 export function registerReadiness(app: FastifyInstance, store: Store, surface: WorkspaceSurface) {
   app.get('/api/readiness', (request) => {
     const query = z.object({ projectId: z.string().uuid().optional() }).strict().parse(request.query);

@@ -1,4 +1,8 @@
-/* 管理本地代理的相关设置。 */
+/**
+ * 管理本地代理的相关设置。
+ * 读取本地代理目录、预览和导入状态，并管理选择、更新和卸载入口；实际文件扫描和代理安装由宿主服务执行。
+ * EN: Manages local agent resources and settings. Reads local-agent catalogs, previews, and import state and manages selection/update/removal controls; host services perform file scans and installation.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { Modal } from './Modal';
@@ -37,14 +41,21 @@ const tabs: [Kind, string, string][] = [
  * 扫描、导入和管理本机技能、记忆及 MCP 连接。扫描候选与已导入目录分开保存，
  * 用户选择后才提交导入；内容预览与 MCP 工具预览互斥，并保留触发按钮供关闭时恢复焦点。
  * 所有动作共享可取消请求，卸载后通过 alive 与序号阻止迟到响应继续更新状态。
+ * EN: Scan/import local skills, memories, and MCP connections. Keep candidates separate from imported resources and submit explicit selections only. Content and MCP previews are exclusive and retain opener focus. Cancellable requests, mounted state, and sequence checks reject late results.
  */
 export function LocalAgentSettings({ close }: { close: () => void }) {
   const { api } = useSurfaceClient();
   const identity = useId();
-  /** 修改目录使用命令身份和读取时修订；扫描本身仍是单独的只读候选过程。 */
+  /**
+   * 修改目录使用命令身份和读取时修订；扫描本身仍是单独的只读候选过程。
+   * EN: Catalog mutations carry command identity and the loaded revision; scanning remains a separate read-only process.
+   */
   const mutate = <T,>(path: string, body: Record<string, unknown>, signal: AbortSignal) =>
     api<T>(path, { commandId: crypto.randomUUID(), ...body }, 'POST', signal);
-  // 扫描来源、候选选择、详情读取和配置编辑各自维护状态。
+  /**
+   * 扫描来源、候选选择、详情读取和配置编辑各自维护状态。
+   * EN: Track scan sources, candidate choices, detail reads, and configuration edits separately.
+   */
   const [overview, setOverview] = useState<Overview>();
   const [tab, setTab] = useState<Kind>('skill');
   const [kind, setKind] = useState<SourceKind>('codex');
@@ -69,11 +80,18 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   const searchInput = useRef<HTMLInputElement | null>(null);
   const contentTriggers = useRef(new Map<string, HTMLButtonElement>());
   const toolTriggers = useRef(new Map<string, HTMLButtonElement>());
+  /**
+   * 预览关闭后优先归还仍可用的触发按钮；按钮已移除或禁用时改聚焦搜索框。
+   * EN: Returns focus to an available preview trigger; if it was removed or disabled, focuses the search field instead.
+   */
   const restorePreviewFocus = (trigger?: HTMLButtonElement) => {
     if (trigger?.isConnected && !trigger.disabled) trigger.focus();
     else searchInput.current?.focus();
   };
-  /** 读取权威能力目录；调用方可以复用返回值，但只有仍挂载且未取消时才发布到界面。 */
+  /**
+   * 读取权威能力目录；调用方可以复用返回值，但只有仍挂载且未取消时才发布到界面。
+   * EN: Read the authoritative catalog; publish only while mounted and not cancelled, even if callers reuse its value.
+   */
   const reload = async (signal?: AbortSignal) => {
     const value = await api<Overview>('/local-agents', undefined, undefined, signal);
     if (alive.current && !signal?.aborted) setOverview(value);
@@ -108,6 +126,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   /**
    * 串行执行读取或修改动作，并取消前一请求。失败后尽力重读目录以反映已发生的结果，
    * 但保留原错误与选择，避免把刷新成功误报为原操作成功。
+   * EN: Serialize reads/mutations and cancel the prior request. After failure, reread possible committed changes while retaining the original error and selection; refresh success does not imply action success.
    */
   const act = async (label: string, operation: (signal: AbortSignal) => Promise<void>) => {
     if (pending.current) return;
@@ -127,7 +146,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
         try {
           await reload(controller.signal);
         } catch {
-          /* Preserve the original error and current selection. */
+          /**
+           * 保留原错误和当前选择。
+           * EN: Preserve the original error and current selection.
+           */
         }
       }
     } finally {
@@ -135,7 +157,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       if (alive.current) setBusy('');
     }
   };
-  /** 分页读取导入项正文，最多保留最近 64000 字符；只接受当前预览序号的结果。 */
+  /**
+   * 分页读取导入项正文，最多保留最近 64000 字符；只接受当前预览序号的结果。
+   * EN: Page imported text, retaining at most 64000 characters and accepting only the current preview sequence.
+   */
   const inspect = (item: Entry, append = false) =>
     void act('读取内容', async (signal) => {
       const sequence = ++viewSequence.current;
@@ -154,7 +179,10 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
       });
       setTools(undefined);
     });
-  // 搜索只过滤已导入项；扫描候选选择仍单独保持，筛选不改变导入授权或启用状态。
+  /**
+   * 搜索只过滤已导入项；扫描候选选择仍单独保持，筛选不改变导入授权或启用状态。
+   * EN: Search filters imported resources only; scan choices and import/enable authorization remain independent.
+   */
   const rows = (overview?.items || []).filter(
     (item) =>
       item.kind === tab &&

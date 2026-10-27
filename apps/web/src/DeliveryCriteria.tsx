@@ -1,4 +1,8 @@
-/* 展示和处理交付验收标准。 */
+/**
+ * 展示和处理交付验收标准。
+ * 逐页展示验收项及其证据，把所有读取绑定到运行与根修订基线；版本变化保留已读内容并请求重新核对。
+ * EN: Displays delivery acceptance criteria and their evidence. Paginates criteria and evidence against a shared run/root-revision baseline, retaining loaded content and requesting review when revisions change.
+ */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryCriterion,
@@ -11,20 +15,38 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import './delivery-criteria.css';
 
 type Snapshot = Pick<DeliveryReview, 'runId' | 'runRevision' | 'rootRevision'>;
+/**
+ * 比较运行ID、运行修订和根修订；分页必须与首屏基线完全一致才能合入。
+ * EN: Compares run ID, run revision, and root revision; a page must match the initial baseline before it can be applied.
+ */
 const matches = (expected: Snapshot, actual: Snapshot) =>
   expected.runId === actual.runId &&
   expected.runRevision === actual.runRevision &&
   expected.rootRevision === actual.rootRevision;
 const changed = '交付记录已变化。已读内容保留，请重新读取后继续核对。';
 
-/** 单实例串行分页读取器：取消卸载请求，并在运行/根修订不匹配时通知父面板建立新基线。 */
+/**
+ * 单实例串行分页读取器：取消卸载请求，并在运行/根修订不匹配时通知父面板建立新基线。
+ * EN: Use a serial page reader per instance, cancel unmounted reads, and ask the parent for a new baseline when run or root revision mismatches.
+ */
 function usePageRead(snapshot: Snapshot, stale: () => void) {
-  // 分页读取与首屏绑定同一运行和根版本；不一致时保留已读页并提示刷新。
+  /**
+   * 分页读取与首屏绑定同一运行和根版本；不一致时保留已读页并提示刷新。
+   * EN: Bind pagination to the same run and root revision as the first page; on mismatch retain loaded pages and request a refresh.
+   */
   const { api } = useSurfaceClient();
   const request = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * 读取器卸载时取消当前分页请求；空依赖让此清理只对应本实例生命周期。
+   * EN: Aborts the current page request when this reader unmounts; empty dependencies bind cleanup to the instance lifecycle.
+   */
   useEffect(() => () => request.current?.abort(), []);
+  /**
+   * 串行读取一个分页地址，使用AbortController取消并核对快照；版本变化交由stale处理，失败保留已读内容并显示错误。
+   * EN: Reads one page serially with cancellation and snapshot checks. Revision changes invoke stale; failures retain loaded content and expose an error.
+   */
   async function read<T extends Snapshot>(path: string, apply: (value: T) => void) {
     if (request.current) return;
     const controller = new AbortController();
@@ -53,7 +75,10 @@ function usePageRead(snapshot: Snapshot, stale: () => void) {
   return { read, busy, error };
 }
 
-/** 以首屏交付为固定快照分页标准；旧页在错误时保留，但 stale 会禁止继续使用旧版本翻页。 */
+/**
+ * 以首屏交付为固定快照分页标准；旧页在错误时保留，但 stale 会禁止继续使用旧版本翻页。
+ * EN: Page criteria against the fixed initial delivery snapshot. Retain old pages after read errors, but stale prevents further paging against that obsolete version.
+ */
 export function DeliveryCriteria({
   initial,
   evidence,
@@ -69,6 +94,10 @@ export function DeliveryCriteria({
   const [stale, setStale] = useState(false);
   const reader = usePageRead(initial, () => setStale(true));
   const page = value.criteriaPage;
+  /**
+   * 按验收项偏移读取同一根修订的交付页，成功后替换当前页；并发与错误由共用读取器管理。
+   * EN: Loads a delivery criteria page at the supplied offset against the same root revision; the shared reader handles concurrency and errors before replacing the page.
+   */
   const load = (offset: number) =>
     reader.read<DeliveryReview>(
       `/runs/${initial.runId}/delivery?criteriaOffset=${offset}&expectedRootRevision=${initial.rootRevision}`,
@@ -142,7 +171,10 @@ export function DeliveryCriteria({
   );
 }
 
-/** 单项证据独立分页，读取结果除快照修订外还必须匹配当前 criterion 索引。 */
+/**
+ * 单项证据独立分页，读取结果除快照修订外还必须匹配当前 criterion 索引。
+ * EN: Page evidence independently per criterion. Beyond snapshot revision, a response must match the current criterion index.
+ */
 function CriterionEvidence({
   criterion,
   snapshot,
@@ -162,6 +194,10 @@ function CriterionEvidence({
   const [expanded, setExpanded] = useState(false);
   const reader = usePageRead(snapshot, stale);
   const page = value.page;
+  /**
+   * 分页读取指定验收项证据并校验返回的验收项身份；匹配后展开证据，身份变化则要求重读。
+   * EN: Loads evidence for the specified criterion and checks its returned identity; matching evidence expands the section, while a mismatch requests a refresh.
+   */
   const load = (offset: number) =>
     reader.read<DeliveryEvidencePage>(
       `/runs/${snapshot.runId}/delivery/criteria/${criterion.index}/evidence?offset=${offset}&expectedRootRevision=${snapshot.rootRevision}`,

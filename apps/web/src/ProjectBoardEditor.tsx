@@ -1,4 +1,8 @@
-/* 编辑项目看板并生成保存载荷。 */
+/**
+ * 编辑项目看板并生成保存载荷。
+ * 把多行表单映射成看板输入并定位Schema问题，保留交付项身份；提交回调负责版本控制和实际持久化。
+ * EN: Edits project plans and produces versioned save payloads. Maps multiline forms to board input and locates schema issues while retaining item identity; submission callbacks own revision control and persistence.
+ */
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   ProjectDeliveryBoardInput,
@@ -12,7 +16,10 @@ import { ProjectPlanTransfer, type PlanImportLifecycle } from './ProjectPlanTran
 import type { ProjectPlanTransfer as PlanFile, ProjectPlanImportPreflight } from './project-plan-transfer';
 import './project-board-editor.css';
 
-/** 将多行文本转换为条目数组，并携带基线版本供服务端检测并发编辑。 */
+/**
+ * 将多行文本转换为条目数组，并携带基线版本供服务端检测并发编辑。
+ * EN: Convert multiline text into arrays and carry baseline revision for concurrent-edit detection.
+ */
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
     expectedRevision: edit.basedOn,
@@ -30,6 +37,7 @@ export function boardEditPayload(edit: ProjectBoardEdit) {
  * 编辑项目计划并对照服务端最新快照。草稿基线过期时先完成字段级合并选择，
  * Schema 错误映射到具体字段；保存按钮只在当前负载有效且版本对齐时开放。
  * 新增/删除交付项后通过 ID 恢复焦点，计划导入的临时预览生命周期交给外层导航保护。
+ * EN: Compare edits to the latest server snapshot. Resolve stale-baseline field merges before saving; map schema errors to fields. Enable save only for valid aligned payloads. Restore focus by item ID after add/delete; outer navigation owns import-preview lifetime.
  */
 export function ProjectBoardEditor({
   edit,
@@ -88,6 +96,10 @@ export function ProjectBoardEditor({
     ...boardEditPayload(edit),
   });
   const issues = valid.success ? [] : valid.error.issues;
+  /**
+   * 按字段路径前缀查找校验问题；父字段可覆盖其嵌套错误，用于一致地标记输入无效。
+   * EN: Finds validation issues by field-path prefix so a parent field includes nested errors when marking inputs invalid.
+   */
   const invalidField = (...path: (string | number)[]) =>
     issues.some((issue) => path.every((part, index) => issue.path[index] === part));
   const fieldLabels: Record<string, string> = {

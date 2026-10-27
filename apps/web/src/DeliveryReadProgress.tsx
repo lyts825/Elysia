@@ -1,4 +1,8 @@
-/* 展示交付内容读取进度。 */
+/**
+ * 展示交付内容读取进度。
+ * 为单个读取者创建产物预热订阅，轮询阶段和取消精确jobId；不取消其他窗口的工作，也不替代正式交付读取。
+ * EN: Displays delivery read-preparation progress. Creates a reader-owned artifact warm-up subscription, polls stages, and cancels the exact jobId without selecting another window job or replacing the final delivery read.
+ */
 import { useId } from 'react';
 import { ApiError, type SurfaceClient } from './api';
 import './delivery-read-progress.css';
@@ -17,15 +21,23 @@ export type DeliveryWarmProgress = {
   error?: { code: string; message: string };
 };
 type Target = { kind: 'run' | 'project'; id: string };
+/**
+ * 按运行或项目目标生成产物预热API路径；后续创建、轮询、取消共用同一资源根。
+ * EN: Builds the artifact warm-up API base for a run or project so creation, polling, and cancellation share the same resource scope.
+ */
 const baseFor = (target: Target) =>
   target.kind === 'run'
     ? `/runs/${target.id}/delivery/artifact-warm`
     : `/projects/${target.id}/delivery/artifact-warm`;
 
-/** A reader owns one subscription; cancelling it never selects another window's latest job. */
+/**
+ * 每个读取者持有自己的订阅；取消不会选中其他窗口最新的任务。
+ * EN: A reader owns one subscription; cancelling it never selects another window's latest job.
+ */
 /**
  * 为本读取者创建独立预热订阅，并轮询到完成后才允许正式交付读取。
  * 取消时精确删除自己的 jobId；即使 POST 尚未结束也先等待创建收束，防止误取消其他窗口的工作。
+ * EN: Create a separate warm-up subscription for this reader and poll until completion before reading the delivery. Cancel by this exact jobId. Even if POST is still pending, wait for creation to settle so another window's work cannot be cancelled accidentally.
  */
 export async function prepareDeliveryRead(
   api: SurfaceClient['api'],
@@ -33,14 +45,24 @@ export async function prepareDeliveryRead(
   signal: AbortSignal,
   update: (progress: DeliveryWarmProgress) => void,
 ) {
-  // 每个读取者使用独立 jobId；创建请求尚未结束时取消会等待创建收束再删除该任务。
+  /**
+   * 每个读取者使用独立 jobId；创建请求尚未结束时取消会等待创建收束再删除该任务。
+   * EN: Each reader has its own jobId. If creation is still pending, wait for it to settle before deleting that job.
+   */
   signal.throwIfAborted();
   const base = baseFor(target),
     jobId = crypto.randomUUID();
   let completed = false,
     cancellation: Promise<unknown> | undefined;
-  // Let creation settle before DELETE, including when the reader closes during POST.
+  /**
+   * 即使在 POST 期间关闭读取者，也须等待创建结束后再 DELETE。
+   * EN: Let creation settle before DELETE, including when the reader closes during POST.
+   */
   const creation = api<DeliveryWarmProgress>(base, { jobId }, 'POST', AbortSignal.timeout(15_000));
+  /**
+   * 把取消请求合并为一个Promise；先等待本次创建收束再删除确定的jobId，清理失败不覆盖原读取结果。
+   * EN: Coalesces cancellation into one promise, waiting for this creation to settle before deleting its exact jobId; cleanup failures do not replace the original read outcome.
+   */
   const cancel = () => {
     cancellation ??= creation
       .catch(() => undefined)
@@ -69,6 +91,10 @@ export async function prepareDeliveryRead(
           progress.error?.code,
         );
       await new Promise<void>((resolve, reject) => {
+        /**
+         * 中断轮询间隔等待：清除计时器并以原信号原因拒绝，使取消不必等待下一次轮询。
+         * EN: Interrupts the polling delay by clearing its timer and rejecting with the abort reason, avoiding a wait until the next poll.
+         */
         const stop = () => {
           clearTimeout(timer);
           reject(signal.reason);
@@ -88,7 +114,10 @@ export async function prepareDeliveryRead(
   }
 }
 
-/** 展示已处理记录与任务数，取消只影响本次读取准备，不撤销已回填数据或代表交付已验收。 */
+/**
+ * 展示已处理记录与任务数，取消只影响本次读取准备，不撤销已回填数据或代表交付已验收。
+ * EN: Display processed records and tasks. Cancellation stops only this read preparation; it neither rolls back backfilled data nor accepts the delivery.
+ */
 export function DeliveryReadProgress({
   progress,
   cancel,

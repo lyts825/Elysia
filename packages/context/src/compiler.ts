@@ -1,4 +1,10 @@
-// 将任务快照、历史和工具编译为模型上下文。
+/**
+ * 将任务快照、历史和工具编译为模型上下文。
+ * 编译只读已采集快照并返回待保存对象，确定性与授权检查不依赖编译期间的新I/O。
+ *
+ * EN: Compiles a task snapshot, history, and tools into model context.
+ * Compilation reads captured snapshots and returns objects to persist; determinism/authorization do not depend on fresh I/O.
+ */
 import { contextWindowBudget } from '../../contracts/src/context-window.js';
 import {
   type ContextRuntimeMetrics,
@@ -18,7 +24,11 @@ type LocalCatalogueEntry = {
   source?: string;
   sourceKind?: string;
 };
-/** 按 UTF-8 字节限制目录字段，逐码点遍历以免把多字节字符截成无效文本。 */
+/**
+ * 按 UTF-8 字节限制目录字段，逐码点遍历以免把多字节字符截成无效文本。
+ *
+ * EN: Bounds catalog fields by UTF-8 bytes, iterating code points so multibyte characters remain valid.
+ */
 function clipCatalogueText(value: string, limit: number) {
   let result = '',
     bytes = 0;
@@ -33,6 +43,8 @@ function clipCatalogueText(value: string, limit: number) {
 /**
  * 三类目录轮流取同一位置的条目，共享一个序列化字节预算，避免某类独占窗口。
  * 放不下的条目仅省略内联展示，完整目录仍由后续分页工具访问。
+ *
+ * EN: Interleaves the three catalogs at each entry index under one serialized-byte budget so none monopolizes the window. Omitted inline entries remain discoverable through paged tools.
  */
 function boundedLocalCatalogue(
   entries: Record<'skills' | 'memories' | 'mcp', LocalCatalogueEntry[]>,
@@ -40,7 +52,11 @@ function boundedLocalCatalogue(
 ) {
   const result: typeof entries = { skills: [], memories: [], mcp: [] };
   const kinds = ['skills', 'memories', 'mcp'] as const;
-  // Share one UTF-8 budget fairly; a truncated catalogue is discoverable through paging tools.
+  /**
+   * 公平共享同一 UTF-8 预算，截断目录仍可通过分页工具发现。
+   *
+   * EN: Share one UTF-8 budget fairly; a truncated catalogue is discoverable through paging tools.
+   */
   const longest = Math.max(...kinds.map((kind) => entries[kind].length));
   for (let index = 0; index < longest; index++) {
     for (const kind of kinds) {
@@ -53,8 +69,13 @@ function boundedLocalCatalogue(
   return result;
 }
 export type ContextCompilation = { context: CompiledContext; objects: string[]; blocked: boolean };
-/** Deterministic projection. Persist returned objects before using context or reporting a limit. */
-// 只消费已采集快照；返回编译结果、待持久化对象和是否超出窗口的标记。
+/**
+ * 确定性投影；使用上下文或报告限制之前，调用方须先持久保存返回的对象。
+ * 只消费已采集快照；返回编译结果、待持久化对象和是否超出窗口的标记。
+ *
+ * EN: Deterministic projection. Persist returned objects before using context or reporting a limit.
+ * Consumes only the captured snapshot and returns compiled context, objects to persist, and an over-window flag.
+ */
 export function compileContextSnapshot(snapshot: ContextSourceSnapshot): ContextCompilation {
   const {
     run,
@@ -75,6 +96,10 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
   const provider = agent.providerBinding;
   const policy = agent.contextPolicy ?? { mode: 'managed' as const };
   const { windowTokens, factor, runtimeReserveTokens, inputBudgetTokens } = contextWindowBudget(agent);
+  /**
+   * 从同一采集快照读取已冻结的角色提示，不在纯编译期间回读磁盘。
+   * EN: Reads captured role prompts from the same snapshot without filesystem I/O during pure compilation.
+   */
   const prompt = (name: string) => snapshot.prompts[name];
   const tools = [...definitions].sort((a, b) => a.name.localeCompare(b.name, 'en'));
   const harness = nativeHarnessPolicy(
@@ -83,7 +108,11 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     tools.map((tool) => tool.name),
     snapshot.environment,
   );
-  // 目录占用输入预算的一小部分，余量留给任务、历史及运行时内容。
+  /**
+   * 目录占用输入预算的一小部分，余量留给任务、历史及运行时内容。
+   *
+   * EN: The catalog gets a small part of the input budget, leaving room for task, history, and runtime content.
+   */
   const catalogueBudgetTokens = Math.floor(
     Math.min(2048, Math.max(0, inputBudgetTokens - runtimeReserveTokens) * 0.08),
   );
@@ -105,7 +134,11 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     },
     Math.floor(catalogueBudgetTokens / factor),
   );
-  // P0 为平台规则，P1 为角色与已加载技能，P2 为合同边界及来源快照；资料始终按数据标记。
+  /**
+   * P0 为平台规则，P1 为角色与已加载技能，P2 为合同边界及来源快照；资料始终按数据标记。
+   *
+   * EN: P0 is platform policy, P1 role and loaded skills, and P2 contract boundaries/source snapshots; source material remains explicitly marked as data.
+   */
   const p0 = prompt('platform'),
     p1 =
       (run.kind === 'chat'
@@ -134,7 +167,11 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
       permissions: run.contract.permissionProfile,
       snapshots: snapshot.snapshotContents,
     });
-  // 将当前身份和本任务义务明确写入上下文，防止子代理误把全局合同当成自己的全部工作。
+  /**
+   * 将当前身份和本任务义务明确写入上下文，防止子代理误把全局合同当成自己的全部工作。
+   *
+   * EN: States the current identity and task obligations explicitly so a child does not mistake the whole project contract for its own assignment.
+   */
   const currentTask = {
     taskId: task.id,
     key: task.spec.key,
@@ -269,16 +306,28 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     accessibleArtifacts: snapshot.accessibleArtifacts,
     children: snapshot.children,
   });
-  // 配对检查在压缩前后都执行；原始历史哈希用于审计，实际发送历史可包含可回查摘要。
+  /**
+   * 配对检查在压缩前后都执行；原始历史哈希用于审计，实际发送历史可包含可回查摘要。
+   *
+   * EN: Validates pairing before and after compaction; the original history hash is for audit while transmitted history may include retrievable summaries.
+   */
   let history = snapshot.history;
   validatePairs(history);
   const originalHash = hash(stable(history));
   const fixedTokens = Buffer.byteLength(system + taskText + stable(tools), 'utf8') * factor;
-  // Conservative byte-based estimate: never label it as a provider tokenizer measurement.
+  /**
+   * 按字节保守估算，不能称为供应商 tokenizer 的测量结果。
+   *
+   * EN: Conservative byte-based estimate: never label it as a provider tokenizer measurement.
+   */
   const estimate = (items: Message[]) =>
     runtimeReserveTokens + fixedTokens + Buffer.byteLength(stable(items), 'utf8') * factor;
   const effective = inputBudgetTokens;
-  // 原文对象引用由内容摘要确定。纯编译只返回待写对象，由调用方先持久化再使用引用。
+  /**
+   * 原文对象引用由内容摘要确定。纯编译只返回待写对象，由调用方先持久化再使用引用。
+   *
+   * EN: Original-object references are content-addressed. Pure compilation returns objects to write; callers persist them before using references.
+   */
   const source = stable({
     algorithm: COMPACTION_ALGORITHM,
     runId: run.id,
@@ -312,7 +361,11 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
   }
   history = compressed.history;
   const estimatedTokens = compressed.afterTokens;
-  // 压缩无法突破不可裁剪内容的最低体积；blocked 交给外层报告限制，不偷偷丢弃最新要求。
+  /**
+   * 压缩无法突破不可裁剪内容的最低体积；blocked 交给外层报告限制，不偷偷丢弃最新要求。
+   *
+   * EN: Compaction cannot shrink unprunable content below its minimum; blocked lets the outer layer report the limit without silently discarding recent requirements.
+   */
   const blocked = estimatedTokens > effective;
   const metrics: ContextRuntimeMetrics = {
     agentId: agent.id,
@@ -349,7 +402,11 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     updatedAt: snapshot.capturedAt,
     phase: blocked ? 'blocked' : 'compiled',
   };
-  // 累积段哈希可定位固定前缀变化，但不能据此断言供应商缓存命中或失效。
+  /**
+   * 累积段哈希可定位固定前缀变化，但不能据此断言供应商缓存命中或失效。
+   *
+   * EN: Cumulative segment hashes locate fixed-prefix changes but cannot prove provider cache hits or misses.
+   */
   const segmentHashes = {
     P0: hash(p0 + stable(tools)),
     P1: hash(p0 + stable(tools) + p1),

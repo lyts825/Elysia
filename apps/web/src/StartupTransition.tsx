@@ -1,4 +1,8 @@
-/* 展示应用启动过渡及视觉效果。 */
+/**
+ * 展示应用启动过渡及视觉效果。
+ * 根据偏好、就绪阶段和减少动态效果设置选择启动视觉与退出节奏，记录媒体就绪并保留跳过能力；不阻止主应用继续加载。
+ * EN: Displays startup transitions and visuals. Chooses startup visuals/exit timing from preferences, readiness, and reduced-motion settings, records media readiness, and supports skipping while the main app continues loading.
+ */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   readStartupMedia,
@@ -9,11 +13,22 @@ import {
 import { markStartupStage } from './StartupDiagnostics';
 import './Startup.css';
 
+/**
+ * 读取并持续订阅系统减少动态效果偏好，返回当前布尔值；卸载时解除media-query监听。
+ * EN: Reads and subscribes to system reduced-motion preference, returns the current boolean, and removes the media-query listener on unmount.
+ */
 function useReducedMotion() {
-  // 持续监听系统减少动态效果设置，卸载时移除监听。
+  /**
+   * 持续监听系统减少动态效果设置，卸载时移除监听。
+   * EN: Observe system reduced motion continuously and remove listeners on unmount.
+   */
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    /**
+     * 把当前媒体查询匹配状态同步到React，使系统偏好变更立即影响启动动画。
+     * EN: Synchronizes the media-query match into React so system preference changes immediately affect startup animation.
+     */
     const update = () => setReduced(query.matches);
     query.addEventListener('change', update);
     return () => query.removeEventListener('change', update);
@@ -21,9 +36,15 @@ function useReducedMotion() {
   return reduced;
 }
 
-/** 将六位背景色转为线性亮度后选择黑/白前景，生成独立于全局主题的启动页颜色变量。 */
+/**
+ * 将六位背景色转为线性亮度后选择黑/白前景，生成独立于全局主题的启动页颜色变量。
+ * EN: Convert six-digit background color to linear luminance, choose black/white foreground, and emit theme-independent startup CSS variables.
+ */
 export function startupColors(config: StartupPreferences): CSSProperties {
-  // 根据背景亮度选择适合的前景颜色，并以 CSS 变量传给启动视觉。
+  /**
+   * 根据背景亮度选择适合的前景颜色，并以 CSS 变量传给启动视觉。
+   * EN: Choose foreground by background brightness and pass CSS variables to visuals.
+   */
   const rgb = [1, 3, 5].map((offset) => parseInt(config.background.slice(offset, offset + 2), 16) / 255);
   const luminance = rgb.reduce(
     (sum, value, index) =>
@@ -41,6 +62,7 @@ export function startupColors(config: StartupPreferences): CSSProperties {
 /**
  * 显示配置动画或本地导入预览；禁用、跳过或系统减少动态效果时使用静态标记。
  * 媒体读取和视频生命周期独立清理，失败回退内置视觉并可报告诊断，不能阻塞工作台连接。
+ * EN: Show configured animation/local preview, falling back to static mark when disabled/skipped/reduced motion. Clean media reads/video lifecycle independently; failure uses built-in visuals and optional diagnostics without blocking workbench connection.
  */
 export function StartupVisual({
   config,
@@ -103,11 +125,19 @@ export function StartupVisual({
       element?.load();
     };
   }, [source]);
+  /**
+   * 标记媒体视觉加载失败并通知上层；需要诊断时记录media-ready失败阶段，供启动记录核对。
+   * EN: Marks visual media loading failed and informs the parent, recording a media-ready error stage when diagnostics are enabled.
+   */
   const failure = () => {
     setFailed(true);
     errorHandler.current?.('动画无法解码，请换用其他 GIF、MP4 或 WebM 文件。');
     if (recordReady) markStartupStage('media-ready', { status: 'error' });
   };
+  /**
+   * 在启用就绪记录时标记媒体已解码，用于区分资源读取与实际视觉就绪。
+   * EN: Marks media decoding ready when diagnostic recording is enabled, distinguishing resource retrieval from visual readiness.
+   */
   const decoded = () => {
     if (recordReady) markStartupStage('media-ready');
   };
@@ -148,7 +178,10 @@ export function StartupVisual({
   );
 }
 
-/** 启动等待界面复用共享偏好；桌面已展示过开屏动画时跳过重复播放，但保留连接状态与操作。 */
+/**
+ * 启动等待界面复用共享偏好；桌面已展示过开屏动画时跳过重复播放，但保留连接状态与操作。
+ * EN: Waiting screen shares preferences. Skip duplicate animation if desktop already showed it, retaining connection state/actions.
+ */
 export function StartupTransition({
   children,
   className = '',

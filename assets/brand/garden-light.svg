@@ -1,8 +1,16 @@
+<!--
+  花园日光横幅：在 720×260 画布叠加日光光晕、叶影、花朵及半透明丝带。局部渐变遮罩使花枝沿画布方向淡出，bloom 路径通过平移、旋转与缩放复用，便于保持花形一致。
+  EN: Garden-light banner: layers sunlight, foliage, blooms, and translucent ribbon in a 720×260 viewBox. A gradient mask fades the branches; translated/rotated/scaled bloom instances preserve a consistent flower shape.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="260" viewBox="0 0 720 260" fill="none">
   <title>白花、叶影与午后日光</title>
   <defs>
     <radialGradient id="sun"><stop stop-color="#fff2c5" stop-opacity=".72"/><stop offset="1" stop-color="#fff7df" stop-opacity="0"/></radialGradient>
     <linearGradient id="fade" x1="510" y1="0" x2="465" y2="260" gradientUnits="userSpaceOnUse"><stop stop-color="white" stop-opacity=".9"/><stop offset="1" stop-color="white" stop-opacity="0"/></linearGradient>
+<!--
+  白到透明的遮罩控制花枝显隐，保持花叶路径本身完整，并使其融入背景而非硬裁切。
+  EN: A white-to-transparent mask fades complete foliage paths into the background instead of hard clipping them.
+-->
     <mask id="soften"><rect width="720" height="260" fill="url(#fade)"/></mask>
     <path id="bloom" d="M0-18C-11-27-24-16-17-5C-31 0-24 17-11 15C-7 30 11 27 13 15C27 18 32 1 18-6C25-20 10-28 0-18Z" fill="#fffdf5" stroke="#e1d8bc" stroke-width="1.1"/>
   </defs>

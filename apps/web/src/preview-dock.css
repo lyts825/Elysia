@@ -1,4 +1,7 @@
-/* 定义 preview-dock 对应界面的样式与布局。 */
+/*
+ * 预览停靠区域：控制展开/退出状态下预览与会话的空间关系，组织标题、标签与活动内容。高度不足时调整滚动归属，容器较窄时压缩控制区，避免嵌入工作区出现相互竞争的滚动。
+ * EN: Preview dock: controls preview/conversation space during expanded/leaving states and arranges headers, tabs, and activity. Short/narrow layouts adjust scroll ownership and compact controls to limit competing scrollers in embedded workspaces.
+ */
 .preview-dock {
   display: flex;
   flex-direction: column;
@@ -9,6 +12,10 @@
   background: var(--surface);
   container-type: inline-size;
 }
+/*
+ * 展开或退出中的停靠面板脱离普通流并覆盖右侧区域，保持动画期间的空间关系；正常布局仍由父级宽度分配控制。
+ * EN: Expanded/leaving docks use an overlay to preserve spatial relationships during transitions; normal width allocation remains with the parent.
+ */
 .preview-dock.preview-expanded,
 .preview-dock[data-leaving] {
   position: absolute;
@@ -44,6 +51,10 @@
   font-size: var(--font-md);
   font-weight: 600;
 }
+/*
+ * 分隔条禁用浏览器触摸手势，使拖动宽度时不会同时触发页面滚动；键盘焦点仍由轮廓呈现。
+ * EN: The divider disables browser touch gestures so width dragging does not also scroll the page; focus outlines still support keyboard interaction.
+ */
 .preview-divider {
   position: relative;
   width: 8px;
@@ -73,6 +84,10 @@
   user-select: none;
   cursor: col-resize;
 }
+/*
+ * 拖动期间让 iframe 不接收指针，避免指针经过嵌入页面时被其截走；此状态由外层交互代码控制。
+ * EN: Disables iframe pointer handling while resizing so an embedded page cannot capture the drag; outer interaction code owns this state.
+ */
 [data-preview-resizing] iframe {
   pointer-events: none;
 }
@@ -121,7 +136,10 @@
   flex: 1;
   border: 0;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .preview-dock-artifacts {
   overflow: auto;
 }
@@ -170,7 +188,10 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--font-sm);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .preview-dock .preview-dock-selection-scope {
   flex: none;
   margin: 0;
@@ -224,7 +245,10 @@
 .preview-dock-read-error:focus-visible {
   outline-offset: -2px;
 }
-/* 短窗口让预览容器滚动，并调整嵌入工作区的高度和溢出行为。 */
+/*
+ * 短窗口让预览容器滚动，并调整嵌入工作区的高度和溢出行为。
+ * EN: Enables preview scrolling in short windows and adjusts embedded-workbench height/overflow behavior.
+ */
 @media (max-height: 560px) {
   .preview-dock {
     overflow-y: auto;

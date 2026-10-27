@@ -1,4 +1,8 @@
-/* 展示详情读取状态及提示。 */
+/**
+ * 展示详情读取状态及提示。
+ * 把详情覆盖不足或读取失败转为统一可访问提示，消费已有读取状态；不自行发起补读或改变任务状态。
+ * EN: Displays detail-reading status and notices. Turns incomplete detail coverage or read failure into consistent accessible feedback from supplied state, without fetching missing detail or changing task state.
+ */
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 import { useId, useState } from 'react';
 import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';
@@ -7,6 +11,7 @@ import './detail-read-notice.css';
 /**
  * 分别显示事件预览缺口、业务记录不可读和持久调度暂停。重新读取不等于恢复执行；
  * 停止或清除已结束任务的暂停标记是用户明确触发的独立动作，并单独展示确认结果与错误。
+ * EN: Show event-preview gaps, unreadable business records, and durable execution holds separately. Rereading is not resuming execution. Stopping scheduling or clearing a completed task's hold is an explicit independent action with its own confirmation and error feedback.
  */
 export function DetailReadNotice({
   detail,
@@ -31,7 +36,10 @@ export function DetailReadNotice({
   const [clearing, setClearing] = useState(false);
   const explanationId = useId();
   const reason = detailReadReason(detail);
-  // 事件预览缺失和执行记录不可读分别提示，不把局部缺失当作运行结束。
+  /**
+   * 事件预览缺失和执行记录不可读分别提示，不把局部缺失当作运行结束。
+   * EN: Distinguish a missing event preview from unreadable execution records, and never treat a partial gap as run completion.
+   */
   const preview = detail.eventPreviewCoverage;
   const executionNotice = !!reason || detail.localExecutionStopped;
   const executionTitle = reason

@@ -1,4 +1,8 @@
-/** 构建和校验项目交付包。 */
+/**
+ * 构建和校验项目交付包。
+ * 核验冻结产物并生成有界 ZIP 或读取保存包，统一管理会话作业、临时文件、取消与配额；超限或变化拒绝整个包。
+ * EN: Builds and validates project-delivery bundles. Verifies frozen artifacts for bounded ZIP generation/saved archives with session jobs, temporary storage, cancellation and quotas; limits/changes reject the whole bundle.
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
@@ -22,6 +26,10 @@ const maxFiles = 800;
 type PlanFile = ProjectDeliveryBundlePlan['files'][number];
 type Selection = { file: PlanFile; frozen: SourceArtifact };
 type Document = { path: string; bytes: Buffer };
+/**
+ * 创建完整 ZIP 包超过 64MiB 的 413 错误，要求重新选择产物而非输出截断包。
+ * EN: Creates a 413 error for bundles over 64MiB, requiring new selection rather than emitting truncated ZIPs.
+ */
 const tooLarge = () =>
   new AppError(
     'PROJECT_BUNDLE_TOO_LARGE',
@@ -31,8 +39,10 @@ const tooLarge = () =>
     413,
   );
 
-// Paths are generated, never taken from objectRef, source or user-supplied directories.
-/** 只取显示名称的最后一段并处理 Windows 保留名；不使用来源路径决定 ZIP 写入位置。 */
+/**
+ * 路径由服务生成，不取自objectRef、source或用户目录。 只取显示名称的最后一段并处理 Windows 保留名；不使用来源路径决定 ZIP 写入位置。
+ * EN: Paths are generated, never taken from objectRef, source or user-supplied directories. Uses the final display-name segment and handles Windows reserved names; source paths never choose ZIP destinations.
+ */
 function safeName(name: string) {
   let base = (name.split(/[\\/]/).at(-1) ?? '').replace(/[<>:"|?*\x00-\x1f\x7f]/g, '_');
   base = [...base]
@@ -42,7 +52,10 @@ function safeName(name: string) {
   if (!base || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(base)) base = '_' + base;
   return base;
 }
-/** 按冻结清单顺序生成确定的安全相对路径，并在读取正文前限制交付项/产物总量。 */
+/**
+ * 按冻结清单顺序生成确定的安全相对路径，并在读取正文前限制交付项/产物总量。
+ * EN: Creates deterministic safe relative paths in frozen-manifest order and limits delivery/artifact counts before reading bodies.
+ */
 function selections(manifest: ProjectDeliveryManifest): Selection[] {
   if (manifest.version !== 1 || !Array.isArray(manifest.items) || manifest.items.length > 40)
     throw new AppError('PROJECT_BUNDLE_MANIFEST', '冻结清单格式不可导出', false, null, 422);
@@ -71,7 +84,10 @@ function selections(manifest: ProjectDeliveryManifest): Selection[] {
   if (result.length > maxFiles) throw tooLarge();
   return result;
 }
-/** 当前来源必须仍与冻结元数据逐字段一致；绝不把更新后的产物冒充冻结版本打包。 */
+/**
+ * 当前来源必须仍与冻结元数据逐字段一致；绝不把更新后的产物冒充冻结版本打包。
+ * EN: Current sources must still match frozen metadata field by field; newer artifacts cannot masquerade as pinned versions.
+ */
 function source(store: Store, projectId: string, selected: Selection) {
   const run = store.get<Run>('runs', selected.file.runId);
   if (!run) throw new AppError('PROJECT_BUNDLE_MISSING', '原任务已删除', false, null, 404);
@@ -92,7 +108,10 @@ function source(store: Store, projectId: string, selected: Selection) {
       );
   return current;
 }
-/** 将单文件读取错误映射为用户可辨别的状态，保留缺失、变化、超限和无法核验的区别。 */
+/**
+ * 将单文件读取错误映射为用户可辨别的状态，保留缺失、变化、超限和无法核验的区别。
+ * EN: Maps per-file failures into distinguishable missing, changed, oversized, or unverifiable states.
+ */
 function failure(error: unknown): { state: PlanFile['state']; reason: string } {
   const code = (error as { code?: string })?.code;
   if (['ENOENT', 'OBJECT_NOT_FOUND', 'PROJECT_BUNDLE_MISSING'].includes(code ?? ''))
@@ -103,7 +122,10 @@ function failure(error: unknown): { state: PlanFile['state']; reason: string } {
     return { state: 'too_large', reason: '产物或完整文件包超过 64 MiB 上限' };
   return { state: 'unavailable', reason: '来源归属、对象引用或正文完整性核验失败' };
 }
-/** 生成冻结元数据、文件索引和校验清单；SHA256SUMS 不对自身求哈希，避免循环定义。 */
+/**
+ * 生成冻结元数据、文件索引和校验清单；SHA256SUMS 不对自身求哈希，避免循环定义。
+ * EN: Creates frozen metadata, file indexes, and checksums; SHA256SUMS excludes its own hash to avoid circular definition.
+ */
 function documents(manifest: ProjectDeliveryManifest, files: PlanFile[]): Document[] {
   const docs = [
     { path: 'manifest.json', bytes: Buffer.from(JSON.stringify(manifest, null, 2) + '\n') },
@@ -158,8 +180,15 @@ function documents(manifest: ProjectDeliveryManifest, files: PlanFile[]): Docume
   docs.push({ path: 'SHA256SUMS.txt', bytes: Buffer.from(sums) });
   return docs;
 }
+/**
+ * 按 UTF-8 文件名字节估算本写入器的本地头、描述符及中央目录固定开销，用于提前容量检查。
+ * EN: Estimates this writer's local-header, descriptor and central-directory overhead from UTF-8 names for early size checks.
+ */
 const zipOverhead = (name: string) => 30 + 16 + 46 + 2 * Buffer.byteLength(name);
-/** ZIP STORE 不压缩正文，最终大小可由文件字节和固定目录/描述符开销精确计算。 */
+/**
+ * ZIP STORE 不压缩正文，最终大小可由文件字节和固定目录/描述符开销精确计算。
+ * EN: ZIP STORE leaves bodies uncompressed, allowing exact final-size calculation from bytes and bounded descriptor/directory overhead.
+ */
 function archiveSize(files: PlanFile[], docs: Document[]) {
   return (
     22 +
@@ -168,8 +197,10 @@ function archiveSize(files: PlanFile[], docs: Document[]) {
   );
 }
 
-// Standard ZIP STORE with data descriptors. Only 64 KiB stream chunks and a
-// bounded central directory are held in memory; no external archiver is needed.
+/**
+ * 使用带数据描述符的标准ZIP STORE，内存仅保留64 KiB块， 及有界中央目录，不依赖外部归档器。
+ * EN: Standard ZIP STORE with data descriptors. Only 64 KiB stream chunks and a bounded central directory are held in memory; no external archiver is needed.
+ */
 const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
   return value >>> 0;
@@ -177,11 +208,19 @@ const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
 class ZipWriter {
   offset = 0;
   private entries: Buffer[] = [];
+  /**
+   * 绑定已打开输出句柄、取消信号及字节进度回调，写入器从偏移零开始管理 ZIP。
+   * EN: Binds the opened output handle, cancellation signal and byte progress callback for ZIP offsets starting at zero.
+   */
   constructor(
     private handle: FileHandle,
     private signal: AbortSignal,
     private progress?: (bytes: number) => void,
   ) {}
+  /**
+   * 循环处理可能的短写并推进唯一输出偏移，每轮检查取消与总包上限；零进展立即失败以避免死循环。
+   * EN: Handles short writes while advancing one output offset, checking cancellation/size limits each round; zero progress fails instead of looping.
+   */
   private async write(bytes: Buffer) {
     if (this.offset + bytes.length > PROJECT_DELIVERY_BUNDLE_MAX_BYTES) throw tooLarge();
     let at = 0;
@@ -195,8 +234,8 @@ class ZipWriter {
     }
   }
   /**
-   * 流式写入一个条目并同步计算 CRC32 与冻结 SHA-256。大小或摘要不匹配时立即失败，
-   * 该临时 ZIP 不会被宣布就绪；中央目录只保存有界条目元数据，不缓存全部正文。
+   * 流式写入一个条目并同步计算 CRC32 与冻结 SHA-256。大小或摘要不匹配时立即失败， 该临时 ZIP 不会被宣布就绪；中央目录只保存有界条目元数据，不缓存全部正文。
+   * EN: Streams entries while calculating CRC32 and frozen SHA-256. Size/digest mismatch fails immediately, preventing the temporary ZIP from becoming ready. The central directory stores bounded metadata, never every body.
    */
   async add(name: string, stream: AsyncIterable<Buffer>, expectedSize: number, expectedHash: string) {
     const filename = Buffer.from(name),
@@ -243,7 +282,10 @@ class ZipWriter {
     filename.copy(central, 46);
     this.entries.push(central);
   }
-  /** 写入中央目录和结束标记后 fsync，确保后续只读流看到完整 ZIP。 */
+  /**
+   * 写入中央目录和结束标记后 fsync，确保后续只读流看到完整 ZIP。
+   * EN: Writes the central directory and end marker, then fsyncs so later read-only streams observe a complete ZIP.
+   */
   async finish() {
     const start = this.offset;
     for (const entry of this.entries) await this.write(entry);
@@ -258,7 +300,10 @@ class ZipWriter {
   }
 }
 
-/** 协调交付包检查、下载和保存任务，关闭时取消并释放临时资源。 */
+/**
+ * 协调交付包检查、下载和保存任务，关闭时取消并释放临时资源。
+ * EN: Coordinates checks, downloads, and save jobs, aborting and releasing temporary resources on shutdown.
+ */
 export class ProjectDeliveryBundleService {
   private previews: ArtifactPreviewService;
   private lifetime = new AbortController();
@@ -278,6 +323,10 @@ export class ProjectDeliveryBundleService {
     }
   >();
   private work = new Set<Promise<void>>();
+  /**
+   * 为存储创建独立产物预览器和临时包目录管理器，可选复用保存归档服务。
+   * EN: Creates artifact previews and temporary bundle storage for a Store, optionally using saved archives.
+   */
   constructor(
     private store: Store,
     private archives?: ProjectDeliveryArchiveService,
@@ -285,7 +334,10 @@ export class ProjectDeliveryBundleService {
     this.previews = new ArtifactPreviewService(store);
     this.temporary = new BundleJobStorage(store.directory);
   }
-  /** 检查/生成/发送共用两个容量槽；release 幂等，关闭服务可等待所有持有者退出。 */
+  /**
+   * 检查/生成/发送共用两个容量槽；release 幂等，关闭服务可等待所有持有者退出。
+   * EN: Checks, generation, and sending share two slots. release is idempotent and shutdown can await all holders.
+   */
   private acquire(signal?: AbortSignal) {
     this.lifetime.signal.throwIfAborted();
     if (this.active >= 2)
@@ -299,6 +351,10 @@ export class ProjectDeliveryBundleService {
     this.jobs.add(done);
     return {
       signal: AbortSignal.any([this.lifetime.signal, ...(signal ? [signal] : [])]),
+      /**
+       * 幂等释放并发配额及作业登记，结算关闭时等待的完成承诺。
+       * EN: Idempotently releases concurrency/job tracking and resolves the completion promise awaited at shutdown.
+       */
       release: () => {
         if (!released) {
           released = true;
@@ -310,8 +366,8 @@ export class ProjectDeliveryBundleService {
     };
   }
   /**
-   * 以剩余预算读取冻结正文。无 ZIP 时只核验摘要；有 ZIP 时边核验边写入。
-   * 读取结束后再次核对数据库元数据，并在所有退出路径销毁流以释放文件句柄。
+   * 以剩余预算读取冻结正文。无 ZIP 时只核验摘要；有 ZIP 时边核验边写入。 读取结束后再次核对数据库元数据，并在所有退出路径销毁流以释放文件句柄。
+   * EN: Reads frozen sources within the remaining budget, verifying hashes alone or while writing ZIP. Rechecks database metadata afterward and destroys streams on every exit to release handles.
    */
   private async consume(
     selected: Selection,
@@ -325,7 +381,10 @@ export class ProjectDeliveryBundleService {
       signal,
       maxBytes: remaining,
     });
-    // ZIP header writes can yield before iteration attaches its error listener.
+    /**
+     * ZIP头写入可能在迭代安装错误监听前让出事件循环。
+     * EN: ZIP header writes can yield before iteration attaches its error listener.
+     */
     const closed = finished(resource.stream).catch(() => {});
     selected.file.size = resource.size;
     try {
@@ -353,8 +412,8 @@ export class ProjectDeliveryBundleService {
     }
   }
   /**
-   * 完整读取每个冻结来源，分别报告可用性并计算归档大小。某个文件失败不会遮蔽其他
-   * 文件状态，但只要有一个不完整，就禁止生成声称完整的文件包。
+   * 完整读取每个冻结来源，分别报告可用性并计算归档大小。某个文件失败不会遮蔽其他 文件状态，但只要有一个不完整，就禁止生成声称完整的文件包。
+   * EN: Reads every frozen source, reports each availability state, and calculates archive size. A file failure does not hide others, but any incomplete file prevents a bundle claiming completeness.
    */
   async plan(
     manifest: ProjectDeliveryManifest,
@@ -435,8 +494,8 @@ export class ProjectDeliveryBundleService {
     }
   }
   /**
-   * 重新核验来源并生成独占临时 ZIP；预览通过不代替这里的实际字节核验。
-   * 返回只读流及幂等 dispose，容量槽持续占用至流关闭或显式释放，取消也触发同一清理。
+   * 重新核验来源并生成独占临时 ZIP；预览通过不代替这里的实际字节核验。 返回只读流及幂等 dispose，容量槽持续占用至流关闭或显式释放，取消也触发同一清理。
+   * EN: Revalidates sources and creates an exclusive temporary ZIP; successful preview does not replace byte verification. Returns a read-only stream and idempotent dispose; its slot remains held until stream closure or explicit release, including cancellation.
    */
   async bundle(
     manifest: ProjectDeliveryManifest,
@@ -452,6 +511,10 @@ export class ProjectDeliveryBundleService {
       handle: FileHandle | undefined,
       stream: Readable | undefined;
     let disposing: Promise<void> | undefined;
+    /**
+     * 合并并发释放请求，先停输出流、关句柄，再清理本次临时目录，finally 释放作业配额；失败仍可由调用方观察。
+     * EN: Coalesces concurrent disposal, stops stream/closes handle/removes owned temporary storage and finally releases quota, preserving observable failures.
+     */
     const dispose = () =>
       (disposing ??= (async () => {
         if (stream) {
@@ -503,7 +566,10 @@ export class ProjectDeliveryBundleService {
       job.signal.throwIfAborted();
       await handle.close();
       handle = undefined;
-      // Open failures must reject preparation, before announcing a ready job.
+      /**
+       * 打开失败必须在作业宣布ready前拒绝准备。
+       * EN: Open failures must reject preparation, before announcing a ready job.
+       */
       handle = await fs.open(filename, 'r');
       stream = handle.createReadStream({ highWaterMark: 64 * 1024 });
       handle = undefined;
@@ -514,6 +580,10 @@ export class ProjectDeliveryBundleService {
           error: { code: 'PROJECT_BUNDLE_SEND_FAILED', message: '文件包无法发送，请重新检查后重试' },
         }),
       );
+      /**
+       * 取消时启动同一幂等释放流程，吞掉监听器无法处理的清理拒绝，主请求仍保留自身错误。
+       * EN: Starts idempotent disposal on cancellation and handles listener-side cleanup rejection while the main request retains its error.
+       */
       const abort = () => {
         void dispose().catch(() => {});
       };
@@ -532,6 +602,10 @@ export class ProjectDeliveryBundleService {
       throw error;
     }
   }
+  /**
+   * 取消生命周期及所有跟踪包，等待生成和下载登记收束，再释放临时初始化与预览器资源。
+   * EN: Aborts lifetime/tracked bundles, awaits generation/download jobs and releases temporary initialization and preview resources.
+   */
   async close() {
     this.lifetime.abort();
     for (const tracked of this.tracked.values()) {
@@ -544,19 +618,30 @@ export class ProjectDeliveryBundleService {
     await this.temporary.ready.catch(() => {});
     await this.previews.close();
   }
-  /** Retained ZIP reads share the same bounded slots and shutdown cancellation. */
+  /**
+   * 保留ZIP读取共享相同有界槽位及关闭取消链。
+   * EN: Retained ZIP reads share the same bounded slots and shutdown cancellation.
+   */
   async body(
     load: (signal: AbortSignal) => Promise<{ stream: Readable; size: number; dispose: () => Promise<void> }>,
     signal?: AbortSignal,
   ) {
     const job = this.acquire(signal);
     let resource: Awaited<ReturnType<typeof load>> | undefined, disposing: Promise<void> | undefined;
+    /**
+     * 对已有归档下载合并资源释放，并在 finally 归还并发配额。
+     * EN: Coalesces saved-archive resource disposal and returns concurrency quota in finally.
+     */
     const dispose = () =>
       (disposing ??= (async () => {
         await resource?.dispose();
       })().finally(job.release));
     try {
       resource = await load(job.signal);
+      /**
+       * 将归档下载取消交给幂等释放流程，监听器不产生未处理拒绝。
+       * EN: Routes saved-archive download cancellation through idempotent disposal without unhandled listener rejection.
+       */
       const abort = () => {
         void dispose().catch(() => {});
       };
@@ -576,7 +661,10 @@ export class ProjectDeliveryBundleService {
     }
   }
 
-  /** 作业身份绑定清单哈希、服务会话及页面客户端，知道 jobId 不能跨会话领取文件。 */
+  /**
+   * 作业身份绑定清单哈希、服务会话及页面客户端，知道 jobId 不能跨会话领取文件。
+   * EN: Job identity binds manifest hash, service session, and page client; knowing jobId cannot claim another session's file.
+   */
   private bound(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
     const job = this.tracked.get(jobId);
     if (
@@ -596,7 +684,10 @@ export class ProjectDeliveryBundleService {
       );
     return job;
   }
-  /** 活跃作业超时先取消并清理资源；终态视图短暂保留供页面读到最终结果后再回收。 */
+  /**
+   * 活跃作业超时先取消并清理资源；终态视图短暂保留供页面读到最终结果后再回收。
+   * EN: Expired active jobs cancel and clean first; terminal views remain briefly for clients to observe before collection.
+   */
   private expiry(job: ReturnType<ProjectDeliveryBundleService['bound']>, milliseconds: number) {
     clearTimeout(job.timer);
     job.view.expiresAt = new Date(Date.now() + milliseconds).toISOString();
@@ -613,6 +704,10 @@ export class ProjectDeliveryBundleService {
     }, milliseconds);
     job.timer.unref();
   }
+  /**
+   * 在项目、清单和会话边界核对后返回作业深拷贝，调用方不能修改服务内部状态。
+   * EN: Checks manifest/project/session boundaries and returns a deep copy so callers cannot mutate job state.
+   */
   job(
     manifest: ProjectDeliveryManifest,
     jobId: string,
@@ -622,8 +717,8 @@ export class ProjectDeliveryBundleService {
     return structuredClone(this.bound(manifest, jobId, sessionHash, clientId).view);
   }
   /**
-   * 建立可轮询的检查、下载或保存作业。同 ID 必须绑定同 kind 和清单；同一客户端的
-   * 新作业会等待旧作业释放资源后再继续。保存记录已提交时，其完成回执优先于迟到取消。
+   * 建立可轮询的检查、下载或保存作业。同 ID 必须绑定同 kind 和清单；同一客户端的 新作业会等待旧作业释放资源后再继续。保存记录已提交时，其完成回执优先于迟到取消。
+   * EN: Creates pollable check/download/save jobs. The same ID must bind the same kind and manifest. New work from a client waits for predecessor resource release; a committed save receipt outranks late cancellation.
    */
   async start(
     manifest: ProjectDeliveryManifest,
@@ -671,8 +766,10 @@ export class ProjectDeliveryBundleService {
     } as ReturnType<ProjectDeliveryBundleService['bound']>;
     this.tracked.set(input.jobId, job);
     this.expiry(job, 300_000);
-    // A fresh operation on the same frozen manifest supersedes abandoned work
-    // from a reload. Reserving its identity first also serializes concurrent retries.
+    /**
+     * 同一冻结清单上的新操作取代刷新遗留工作， 预先预留其身份也会串行化并发重试。
+     * EN: A fresh operation on the same frozen manifest supersedes abandoned work from a reload. Reserving its identity first also serializes concurrent retries.
+     */
     for (const previous of this.tracked.values()) {
       if (job.controller.signal.aborted) return structuredClone(job.view);
       if (
@@ -686,7 +783,10 @@ export class ProjectDeliveryBundleService {
       ) {
         if (!['completed', 'failed', 'cancelled'].includes(previous.view.stage))
           await this.cancel(manifest, previous.view.id, sessionHash, input.clientId);
-        // A cancelled predecessor can still be closing its ZIP and holding a slot.
+        /**
+         * 已取消前驱仍可能正在关闭ZIP并持有容量槽。
+         * EN: A cancelled predecessor can still be closing its ZIP and holding a slot.
+         */
         await previous.disposing;
         await previous.work;
         if (job.controller.signal.aborted) return structuredClone(job.view);
@@ -700,6 +800,10 @@ export class ProjectDeliveryBundleService {
       throw new AppError('PROJECT_BUNDLE_BUSY', job.view.error.message, true, null, 429);
     }
     const signal = AbortSignal.any([job.controller.signal, this.lifetime.signal]);
+    /**
+     * 仅更新未取消且未结束的作业进度；失败阶段立即启动包释放并缩短保留时间，迟到进度忽略。
+     * EN: Updates only live uncancelled jobs; failure starts disposal and shortens retention, while late progress is ignored.
+     */
     const update = (change: Partial<ProjectDeliveryBundleJob>) => {
       if (!signal.aborted && !['cancelled', 'failed', 'completed'].includes(job.view.stage)) {
         Object.assign(job.view, change);
@@ -761,7 +865,10 @@ export class ProjectDeliveryBundleService {
             bundle,
             signal,
             (archive) => {
-              // The record commit is synchronous. Its receipt wins over later cancellation.
+              /**
+               * 记录提交是同步的，其回执优先于后来的取消。
+               * EN: The record commit is synchronous. Its receipt wins over later cancellation.
+               */
               Object.assign(job.view, {
                 stage: 'completed',
                 archive,
@@ -800,7 +907,10 @@ export class ProjectDeliveryBundleService {
     void work.finally(() => this.work.delete(work));
     return structuredClone(job.view);
   }
-  /** 只取消尚未终结的作业并等待已建立资源释放，不撤销已经提交的保存包记录。 */
+  /**
+   * 只取消尚未终结的作业并等待已建立资源释放，不撤销已经提交的保存包记录。
+   * EN: Cancels only nonterminal jobs and awaits acquired resources; it does not undo saved archive records already committed.
+   */
   async cancel(manifest: ProjectDeliveryManifest, jobId: string, sessionHash: string, clientId?: string) {
     const job = this.bound(manifest, jobId, sessionHash, clientId);
     if (!['completed', 'failed', 'cancelled'].includes(job.view.stage)) {
@@ -813,8 +923,8 @@ export class ProjectDeliveryBundleService {
     return structuredClone(job.view);
   }
   /**
-   * 将 ready 下载原子切换为 sending，防止同一临时流被重复领取。
-   * 响应读完才标 completed；断开或流错误标 failed，并通过同一 dispose 释放 ZIP。
+   * 将 ready 下载原子切换为 sending，防止同一临时流被重复领取。 响应读完才标 completed；断开或流错误标 failed，并通过同一 dispose 释放 ZIP。
+   * EN: Atomically claims a ready download as sending, preventing duplicate use of one temporary stream. Completion follows full response consumption; disconnect/errors fail the job and dispose the same ZIP.
    */
   send(
     manifest: ProjectDeliveryManifest,
@@ -837,11 +947,19 @@ export class ProjectDeliveryBundleService {
     job.view.bytesDone = 0;
     this.expiry(job, 300_000);
     const meter = new Transform({
+      /**
+       * 下载 sending 阶段按实际通过的块累计字节，再原样转发，保持背压和内容不变。
+       * EN: Counts actual chunks during sending and forwards them unchanged, preserving backpressure/content.
+       */
       transform(chunk, _encoding, callback) {
         if (job.view.stage === 'sending') job.view.bytesDone += chunk.length;
         callback(null, chunk);
       },
     });
+    /**
+     * 取消会话所属下载作业并销毁计量流，停止后续发送。
+     * EN: Cancels the session-owned download job and destroys its metering stream.
+     */
     const abort = () => {
       void this.cancel(manifest, jobId, sessionHash, clientId).catch(() => {});
       meter.destroy();
@@ -873,8 +991,10 @@ export class ProjectDeliveryBundleService {
   }
 }
 
-/** The caller binds the export to the exact manifest they reviewed. */
-/** 核对冻结清单正文哈希及调用方预期哈希，不一致时要求重新读取。 */
+/**
+ * 调用方把导出绑定到其确实检查过的清单。 核对冻结清单正文哈希及调用方预期哈希，不一致时要求重新读取。
+ * EN: The caller binds the export to the exact manifest they reviewed. Checks frozen manifest-body and expected hashes; mismatch requires rereading.
+ */
 export function assertBundleManifest(manifest: ProjectDeliveryManifest, expectedHash: string) {
   const { hash: actual, ...body } = manifest;
   if (actual !== expectedHash || hash(stable(body)) !== actual)

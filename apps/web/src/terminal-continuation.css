@@ -1,4 +1,7 @@
-/* 定义 terminal-continuation 对应界面的样式与布局。 */
+/*
+ * 终端续接：组织会话能力状态、续接模式、正文及待处理消息选择。选中项由组件状态着色，长消息可聚焦滚动，使保留的草稿与待重新核对的能力状态分别可见。
+ * EN: Terminal continuation: arranges session capability state, mode, body, and pending-message choices. Selection follows component state; focusable message scrolling keeps retained drafts distinct from capabilities needing recheck.
+ */
 .terminal-continuation {
   min-width: 0;
   margin-top: var(--space-3);
@@ -15,7 +18,10 @@
   line-height: var(--leading-body);
   cursor: pointer;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .terminal-continuation-status {
   margin: var(--space-3) 0;
   padding: var(--space-3);
@@ -102,7 +108,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 选中项使用强调边框和背景，与组件提供的选中状态一致。 */
+/*
+ * 选中项使用强调边框和背景，与组件提供的选中状态一致。
+ * EN: Highlights selected items with an accent border/background matching component selection state.
+ */
 .terminal-pending-item[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);

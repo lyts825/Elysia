@@ -1,5 +1,12 @@
-// 实现原生模型协议请求、响应和流事件转换。
-// Native protocol implementation; adapter selection belongs to the provider plugin registry.
+/**
+ * 实现原生模型协议请求、响应和流事件转换。
+ * 原生协议实现；适配器选择属于供应商插件注册表。
+ * 共享上下文先纯编译为协议负载，再进行有界流读取、明确完成检测和保守用量结算。
+ *
+ * EN: Implements native protocol requests, responses, and stream-event conversion.
+ * Native protocol implementation; adapter selection belongs to the provider plugin registry.
+ * Purely compiles context first, then performs bounded stream reads, explicit completion detection, and conservative usage accounting.
+ */
 import {
   UsageSchema,
   type Message,
@@ -12,14 +19,21 @@ import { officialDeepSeek, retiredDeepSeekModelIssue } from './deepseek.js';
 export { officialDeepSeek, deepSeekModelReplacement, retiredDeepSeekModelIssue } from './deepseek.js';
 import { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
 export { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../contracts/src/model.js';
-/** 非有限数值不参与费用与用量运算，统一保留为未知。 */
+/**
+ * 非有限数值不参与费用与用量运算，统一保留为未知。
+ *
+ * EN: Nonfinite values remain unknown and do not participate in usage or cost arithmetic.
+ */
 function numeric(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
-// 将供应商用量字段统一为共享格式；输入或价格不足时保留未知费用。
 /**
+ * 将供应商用量字段统一为共享格式；输入或价格不足时保留未知费用。
  * 将两种协议的 token 分类归一化并按冻结价格计算费用；所有未知分类保持 null。
  * 仅在普通输入、缓存读取、输出及所需缓存写入信息完整时计算 cost，单价单位为每百万 token。
+ *
+ * EN: Normalizes provider usage fields; missing input or prices leave cost unknown.
+ * Normalizes token categories for both protocols and prices them using frozen rates, retaining null for unknown categories. Computes cost only when ordinary input, cache reads, output, and necessary cache-write information are complete; rates are per million tokens.
  */
 export function normalizeUsage(
   kind: string,
@@ -42,12 +56,20 @@ export function normalizeUsage(
   const reasoning = numeric(
     raw.output_tokens_details?.reasoning_tokens ?? raw.completion_tokens_details?.reasoning_tokens,
   );
-  // 不同服务可能将缓存写入包含在输入总量内或单独统计；只有可识别字段才判断包含关系。
+  /**
+   * 不同服务可能将缓存写入包含在输入总量内或单独统计；只有可识别字段才判断包含关系。
+   *
+   * EN: Services may include cache writes in total input or report them separately; inclusion is inferred only from recognized fields.
+   */
   const writeIncluded =
     cacheWrite === null ? null : numeric(raw.input_tokens_details?.cache_write_tokens) !== null;
   let cost: number | null = null;
   const prices = config.prices;
-  // 费用只在所需令牌分类和价格均可用时计算，避免将未知用量当作零。
+  /**
+   * 费用只在所需令牌分类和价格均可用时计算，避免将未知用量当作零。
+   *
+   * EN: Computes cost only when required token categories and rates are known, never treating unknown usage as zero.
+   */
   if (
     prices &&
     uncachedInput !== null &&
@@ -76,10 +98,17 @@ export function normalizeUsage(
     cacheWriteIncludedInInput: writeIncluded,
   });
 }
-// 逐块解码 UTF-8 并按空行切分 SSE；取消、大小限制和最终读取器释放均在此处理。
+/**
+ * 逐块解码 UTF-8 并按空行切分 SSE；取消、大小限制和最终读取器释放均在此处理。
+ *
+ * EN: Decodes UTF-8 chunks and splits SSE at blank lines, handling cancellation, size limits, and final reader release.
+ */
 export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncGenerator<any> {
   const reader = body.getReader(),
     decoder = new TextDecoder();
+  /** 中止底层流读取并观察取消 Promise 的拒绝，最终 finally 仍负责释放 reader 锁。
+   * EN: Cancels the underlying read and observes cancellation rejection; finally still releases the reader lock.
+   */
   const cancel = () => {
     void reader.cancel(signal.reason).catch(() => {});
   };
@@ -125,7 +154,11 @@ export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSi
     reader.releaseLock();
   }
 }
-/** SSE data 必须为 JSON 对象；无效内容不能作为可自动重试的正常协议事件吞掉。 */
+/**
+ * SSE data 必须为 JSON 对象；无效内容不能作为可自动重试的正常协议事件吞掉。
+ *
+ * EN: SSE data must be a JSON object; invalid contents cannot be swallowed as normal automatically retryable protocol events.
+ */
 function parseSseData(data: string): any {
   try {
     const event = JSON.parse(data);
@@ -135,7 +168,11 @@ function parseSseData(data: string): any {
   error.retryable = false;
   throw error;
 }
-/** 官方路由使用 thinking 开关及受支持强度；兼容端点保留通用 reasoning_effort。 */
+/**
+ * 官方路由使用 thinking 开关及受支持强度；兼容端点保留通用 reasoning_effort。
+ *
+ * EN: Official routes use the thinking switch and supported effort; compatible endpoints retain generic reasoning_effort.
+ */
 function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
   const effort = provider.reasoningEffort;
   if (!effort) return {};
@@ -151,7 +188,11 @@ function deepseekThinking(provider: ProviderConfig): Record<string, unknown> {
           : 'high',
   };
 }
-/** 失败路径只携带输入、输出均完整的可核验用量，解析异常或部分用量返回 null。 */
+/**
+ * 失败路径只携带输入、输出均完整的可核验用量，解析异常或部分用量返回 null。
+ *
+ * EN: Failure paths expose usage only when both input/output are complete and verifiable; parse failures or partial usage yield null.
+ */
 function failureUsage(kind: string, raw: unknown, config: ProviderConfig, ttft: number | null): Usage | null {
   try {
     const usage = normalizeUsage(kind, raw, config, ttft);
@@ -160,7 +201,11 @@ function failureUsage(kind: string, raw: unknown, config: ProviderConfig, ttft: 
     return null;
   }
 }
-// 移除已包含的协议端点后缀，便于后续统一拼接请求路径。
+/**
+ * 移除已包含的协议端点后缀，便于后续统一拼接请求路径。
+ *
+ * EN: Removes an existing protocol endpoint suffix before composing a new request path.
+ */
 export function providerBaseUrl(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): string {
   const url = new URL(provider.baseUrl);
   url.pathname = url.pathname
@@ -168,7 +213,11 @@ export function providerBaseUrl(provider: Pick<ProviderConfig, 'kind' | 'baseUrl
     .replace(provider.kind === 'deepseek' ? /\/chat\/completions$/ : /\/responses$/, '');
   return url.toString().replace(/\/$/, '');
 }
-// 优先重放供应商原生助手条目；其他消息按文本、工具调用和结果映射为协议项。
+/**
+ * 优先重放供应商原生助手条目；其他消息按文本、工具调用和结果映射为协议项。
+ *
+ * EN: Prefers native assistant replay items; maps other messages into protocol text, calls, and results.
+ */
 function openaiInput(m: Message): unknown[] {
   if (m.role === 'tool') return [{ type: 'function_call_output', call_id: m.callId, output: m.text }];
   if (m.role === 'assistant' && m.providerKind === 'openai' && m.native?.length) return m.native;
@@ -177,9 +226,16 @@ function openaiInput(m: Message): unknown[] {
     items.push({ type: 'function_call', call_id: c.id, name: c.name, arguments: c.arguments });
   return items;
 }
-// 根据冻结配置编译请求，并将供应商流转换为共享的文本、工具与用量事件。
+/**
+ * 根据冻结配置编译请求，并将供应商流转换为共享的文本、工具与用量事件。
+ *
+ * EN: Compiles from the frozen binding and converts provider streams into shared text, tool, and usage events.
+ */
 export class NativeProvider implements ProviderAdapter {
   capabilities = { streaming: true, tools: true, nativeReplay: true };
+  /** 保存本次模型绑定和可选凭据读取器；构造不解析密钥，也不建立网络连接。
+   * EN: Stores this model binding and an optional credential resolver without resolving secrets or opening a connection.
+   */
   constructor(
     public config: ProviderConfig,
     private credential?: () => Promise<{ token: string; signal: AbortSignal; onUsageLimit?: () => void }>,
@@ -188,6 +244,8 @@ export class NativeProvider implements ProviderAdapter {
    * 将共享上下文映射成协议请求，不读取凭据、不发网络请求。
    * OpenAI 复用同供应商原生条目；DeepSeek 保留工具批次需要的 reasoning_content。
    * 订阅和 API 的工具命名空间、缓存参数及输出限制按各自协议生成。
+   *
+   * EN: Maps shared context without credentials or network I/O. OpenAI replays same-provider native items; DeepSeek retains reasoning_content needed by tool batches. Subscription/API namespaces, cache fields, and output limits follow each protocol.
    */
   compile(ctx: CompiledContext) {
     const p = this.config;
@@ -200,7 +258,11 @@ export class NativeProvider implements ProviderAdapter {
       const allowed = subscription
         ? ['prompt_cache_key']
         : ['prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options'];
-      // 只传协议明确允许的缓存键，避免通用设置注入未知的供应商参数。
+      /**
+       * 只传协议明确允许的缓存键，避免通用设置注入未知的供应商参数。
+       *
+       * EN: Passes only explicitly supported cache keys, preventing generic settings from injecting unknown provider parameters.
+       */
       const cache = Object.fromEntries(
         Object.entries(p.cache.parameters).filter(([k]) => allowed.includes(k)),
       );
@@ -229,7 +291,11 @@ export class NativeProvider implements ProviderAdapter {
         ...cache,
       };
     }
-    // 官方 DeepSeek 工具历史要求 reasoning_content；空串也明确表达当前记录无正文。
+    /**
+     * 官方 DeepSeek 工具历史要求 reasoning_content；空串也明确表达当前记录无正文。
+     *
+     * EN: Official DeepSeek tool history requires reasoning_content; an empty string explicitly records absence of text.
+     */
     const requiredReasoningReplay = !!ctx.tools.length && officialDeepSeek(p);
     return {
       model: p.model,
@@ -271,6 +337,8 @@ export class NativeProvider implements ProviderAdapter {
    * 调用方取消、凭据失效和协议超时共享取消链；读取成功 HTTP 响应的流期间，
    * 非调用方主动取消的异常保守标记为已开始，供上层保留计费和中断核验。
    * 成功响应无 body 的早期拒绝与调用方取消直接重抛，不经过这条异常标记路径。
+   *
+   * EN: Executes one HTTP stream, yields text/reasoning deltas, then returns complete calls/native items/usage. Caller cancellation, credential invalidation, and protocol timeout share cancellation. Non-caller-cancel errors while reading a successful HTTP body are conservatively marked started for accounting/reconciliation. Early successful responses without a body and caller cancellations bypass that marking path.
    */
   async *stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent> {
     const p = this.config;
@@ -318,7 +386,11 @@ export class NativeProvider implements ProviderAdapter {
       throw new ProviderError('PROVIDER_NETWORK', '模型网络请求失败或超时', 0);
     }
     if (!response.ok) {
-      // Retry-After 同时支持秒数和 HTTP 日期；响应正文只保留有界诊断，不直接回显任意远端文本。
+      /**
+       * Retry-After 同时支持秒数和 HTTP 日期；响应正文只保留有界诊断，不直接回显任意远端文本。
+       *
+       * EN: Retry-After accepts seconds or an HTTP date; response bodies provide bounded diagnostics rather than arbitrary remote text in the UI.
+       */
       const retry = response.headers.get('retry-after');
       const parsedRetry = retry
         ? /^\d+(\.\d+)?$/.test(retry)
@@ -350,7 +422,11 @@ export class NativeProvider implements ProviderAdapter {
       rawUsage: any = null,
       native: any[] = [],
       completed = false;
-    // DeepSeek 按流片段 index 累积参数；OpenAI 在完成事件中取得最终原生调用。
+    /**
+     * DeepSeek 按流片段 index 累积参数；OpenAI 在完成事件中取得最终原生调用。
+     *
+     * EN: DeepSeek accumulates arguments by stream index; OpenAI obtains final native calls from completion events.
+     */
     const calls = new Map<number, any>();
     try {
       for await (const event of sseData(response.body, signal)) {
@@ -417,7 +493,11 @@ export class NativeProvider implements ProviderAdapter {
             if (c.function?.arguments) old.arguments += c.function.arguments;
             calls.set(c.index, old);
           }
-          // 只有明确正常结束的原因可进入 completed，长度截断、过滤或未知原因不能伪装完成。
+          /**
+           * 只有明确正常结束的原因可进入 completed，长度截断、过滤或未知原因不能伪装完成。
+           *
+           * EN: Only explicit normal finish reasons may produce completed; length limits, filtering, and unknown reasons cannot masquerade as completion.
+           */
           if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter')
             throw new ProviderError('PROVIDER_INCOMPLETE', '模型输出被截断或过滤', 400);
           if (choice.finish_reason === 'insufficient_system_resource' || choice.finish_reason === 'aborted')
@@ -437,12 +517,20 @@ export class NativeProvider implements ProviderAdapter {
         cause instanceof ProviderError
           ? cause
           : new ProviderError('PROVIDER_NETWORK', '模型流读取失败或超时，保留中断记录', 0);
-      // A successful HTTP stream may already be billed, even if no visible text arrived.
+      /**
+       * 即使尚未收到可见文字，成功的 HTTP 流也可能已计费。
+       *
+       * EN: A successful HTTP stream may already be billed, even if no visible text arrived.
+       */
       error.responseStarted = true;
       error.usage = failureUsage(p.kind, rawUsage, p, ttft);
       throw error;
     }
-    // 工具参数暂保留原始字符串；这里只核验调用身份和字段类型，JSON schema 由工具网关检查。
+    /**
+     * 工具参数暂保留原始字符串；这里只核验调用身份和字段类型，JSON schema 由工具网关检查。
+     *
+     * EN: Tool arguments remain raw strings; this layer checks call identity/field types while the gateway validates JSON schemas.
+     */
     const toolCalls: ToolCall[] =
       p.kind === 'openai'
         ? native
@@ -469,8 +557,13 @@ export class NativeProvider implements ProviderAdapter {
       error.usage = failureUsage(p.kind, rawUsage, p, ttft);
       throw error;
     }
-    // A complete call with a valid identity can repair its argument syntax through
-    // the gateway's TOOL_ARGUMENTS result, before any tool operation is recorded.
+    /**
+     * 身份有效的完整调用可通过网关的 TOOL_ARGUMENTS 结果
+     * 修复参数语法，且此时尚未记录任何工具操作。
+     *
+     * EN: A complete call with a valid identity can repair its argument syntax through
+     * the gateway's TOOL_ARGUMENTS result, before any tool operation is recorded.
+     */
     yield {
       type: 'completed',
       text,
@@ -484,6 +577,8 @@ export class NativeProvider implements ProviderAdapter {
 /**
  * 将 HTTP/流错误转换为稳定错误码及有界诊断，并附供应商请求 ID 便于追查。
  * 明确的订阅资格或额度错误停止自动重试；额度错误同时通知凭据服务更新账号状态。
+ *
+ * EN: Maps HTTP/stream failures to stable codes and bounded diagnostics, retaining provider request IDs for tracing. Explicit subscription eligibility/quota failures stop auto-retry, and quota errors also notify credential state.
  */
 function providerFailure(
   code: unknown,

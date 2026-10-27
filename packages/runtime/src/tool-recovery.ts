@@ -1,4 +1,8 @@
-/** 按工具错误代码提供恢复信息。 */
+/**
+ * 按工具错误代码提供恢复信息。
+ * 把已知错误映射为可操作建议和状态分类；建议不自动重试、不改变权限，也不把未知故障声称为已恢复。
+ * EN: Provides recovery advice keyed by tool error codes. Maps known errors to actionable advice/state categories without automatic retries, permission changes or claims of unknown-fault recovery.
+ */
 export interface ToolRecovery {
   kind:
     | 'arguments'
@@ -14,13 +18,16 @@ export interface ToolRecovery {
   availableTools: string[];
 }
 
-/** Advice for the next model step, never permission changes or automatic retries. */
 /**
- * 将错误语义映射为下一模型步骤可读的纠正建议，并附当前真实可用工具列表。
- * 返回值不修改权限、不替用户解除停止，也不自动重试；未知副作用始终要求先核验原操作。
+ * 这些建议用于模型下一步，不代表权限变更或自动重试。 将错误语义映射为下一模型步骤可读的纠正建议，并附当前真实可用工具列表。 返回值不修改权限、不替用户解除停止，也不自动重试；未知副作用始终要求先核验原操作。
+ * EN: Advice for the next model step, never permission changes or automatic retries. Maps error semantics to corrective guidance for the next model step and includes the actual available tool list. It neither changes permissions, clears a user stop, nor retries automatically; unknown side effects always require verification first.
  */
 export function toolRecovery(code: string, tool: string, toolNames: string[]): ToolRecovery {
   const availableTools = [...new Set(toolNames)].sort();
+  /**
+   * 把错误类别、下一步建议和去重后的当前工具目录组合为模型可读恢复结构。
+   * EN: Combines error category, next-action guidance, and the deduplicated current tool list into model-readable recovery data.
+   */
   const advice = (kind: ToolRecovery['kind'], nextAction: string): ToolRecovery => ({
     kind,
     nextAction,

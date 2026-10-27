@@ -1,4 +1,8 @@
-/* 在弹窗中展示任务契约。 */
+/**
+ * 在弹窗中展示任务契约。
+ * 将已读取的任务契约作为只读详情展开，复用通用弹窗的焦点与关闭行为；不重写或重新协商任务契约。
+ * EN: Displays and edits a task contract in a dialog. Displays an already-read task contract as read-only detail using shared modal focus and dismissal behavior; it does not renegotiate or rewrite the contract.
+ */
 import { useId, useState } from 'react';
 import type { Contract } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
@@ -9,6 +13,7 @@ import './contract-modal.css';
  * 编辑当前已读合同的本地副本，保留原版本作为服务端并发检查依据。
  * 父级合同更新不会覆盖正在输入的 value；界面明确提示版本差异。同模型复核例外要求
  * 本次单独确认，权限、累计预算与冻结审核配置不由本表单扩展。
+ * EN: Edit a local copy of the loaded contract, retaining its original version for server-side concurrency checks. Parent updates do not replace the current input; the UI exposes the version difference. Any same-model review exception requires fresh explicit confirmation. This form cannot expand permissions, cumulative budgets, or frozen review configuration.
  */
 export function ContractModal({
   contract,
@@ -27,7 +32,10 @@ export function ContractModal({
 }) {
   const id = useId();
   const [value, setValue] = useState(contract);
-  // 本地副本用于编辑；同模型评审例外须记录单独确认后再提交。
+  /**
+   * 本地副本用于编辑；同模型评审例外须记录单独确认后再提交。
+   * EN: The local copy is editable. A same-model review exception must record a separate confirmation before submission.
+   */
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [sameModelReviewConfirmed, setSameModelReviewConfirmed] = useState(false);
   const edited = JSON.stringify(value) !== JSON.stringify(contract);

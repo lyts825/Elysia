@@ -1,4 +1,11 @@
-/* 展示任务恢复相关操作。 */
+/**
+ * 展示任务恢复相关操作。
+ *
+ * EN: Displays task recovery actions.
+ *
+ * 本模块为原生模型任务计算局部恢复入口和禁用原因，必要时定位依赖失败来源；实际恢复命令交给父层，预算、授权和任务生命周期由后端核验。
+ * EN: Computes local recovery actions/disabled reasons for native model tasks and locates failed dependencies when needed. The parent issues recovery commands; the backend validates budgets, authorization, and lifecycle.
+ */
 import { useId } from 'react';
 import type { Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 import { modelTaskCanContinue, taskResumeReason } from './ModelSwitchGuards';
@@ -9,6 +16,8 @@ import './task-recovery.css';
  * 为单个模型任务提供局部恢复入口，按运行归档、未知请求/操作与授权规则决定禁用原因。
  * 依赖阻塞仅定位真正失败的来源分支，等待依赖恢复的父任务不会被重复恢复；
  * 本组件只传任务 ID 给外层命令，累计预算和其他分支状态由内核保持。
+ *
+ * EN: Offers local model-task recovery subject to archive, unknown-request/operation, and authorization checks. Dependency blocks locate the actual source rather than repeatedly resuming the waiting parent. The component passes IDs only; the kernel preserves budgets and other branches.
  */
 export function TaskRecovery({
   task,
@@ -26,7 +35,11 @@ export function TaskRecovery({
   resume: (id: string) => void;
 }) {
   const reasonId = useId();
-  // 依赖失败先定位阻塞来源；其他可继续状态再根据读取和授权边界决定恢复入口。
+  /**
+   * 依赖失败先定位阻塞来源；其他可继续状态再根据读取和授权边界决定恢复入口。
+   *
+   * EN: Dependency failure first locates its source; other restartable states use read/authorization guards for the resume action.
+   */
   const canContinue = modelTaskCanContinue(task);
   const reason =
     taskResumeReason(detail, archived, task.id) ||

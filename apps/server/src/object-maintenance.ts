@@ -1,4 +1,8 @@
-/** 规划并执行对象存储的完整性检查和清理。 */
+/**
+ * 规划并执行对象存储的完整性检查和清理。
+ * 完整扫描保留引用后才计划并核验删除孤立对象；数据库或对象完整性未知即停止，删除不回滚，部分结果和审计供重试核对。
+ * EN: Plans and executes object-store integrity inspection and cleanup. Plans/verifies orphan deletion only after complete retained-reference scans; unknown integrity stops work and irreversible deletion preserves partial results/audits for retries.
+ */
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
@@ -87,7 +91,10 @@ export type ObjectMaintenanceOptions = {
   cancelled?: () => boolean;
   onProgress?: (progress: ObjectMaintenanceProgress) => void;
   onAudit?: (event: ObjectMaintenanceAudit) => void;
-  // The worker atomically closes its read-only termination gate before any cleanup preflight.
+  /**
+   * worker在任何清理预检之前原子关闭只读终止门。
+   * EN: The worker atomically closes its read-only termination gate before any cleanup preflight.
+   */
   beforePreflight?: () => void;
 };
 export type ObjectMaintenanceResult = ObjectMaintenanceProgress & {
@@ -109,11 +116,19 @@ export type ObjectMaintenanceResult = ObjectMaintenanceProgress & {
     | 'object_delete_failed';
 };
 class MaintenanceProblem extends Error {
+  /**
+   * 保留可公开分类的维护失败原因，供上层统一构造结构化结果。
+   * EN: Retains the public maintenance failure category for structured result construction.
+   */
   constructor(public reason: ObjectMaintenanceResult['failureReason']) {
     super('对象维护已停止');
   }
 }
 export class ObjectMaintenanceFailure extends Error {
+  /**
+   * 将错误说明与已完成部分的维护结果绑定，允许失败后仍报告不可回滚的删除计数。
+   * EN: Binds an error message to partial maintenance results, preserving nonrollbackable deletion counts on failure.
+   */
   constructor(
     message: string,
     public result: ObjectMaintenanceResult,
@@ -136,13 +151,25 @@ class Scan {
     elapsedMs: 0,
   };
   readonly surfaces = new Set<Surface>();
+  /**
+   * 保存取消、进度和审计能力；扫描计数从本实例的初始状态开始。
+   * EN: Stores cancellation/progress/audit capabilities with counters initialized for this scan instance.
+   */
   constructor(private options: ObjectMaintenanceOptions) {}
+  /**
+   * 切换扫描阶段与入口，登记覆盖入口、持久审计并立即检查取消/推送进度。
+   * EN: Changes phase/surface, records coverage and audit, then immediately checks cancellation/emits progress.
+   */
   phase(phase: ObjectMaintenancePhase, surface: Surface, table?: string) {
     Object.assign(this.state, { phase, surface, table });
     this.surfaces.add(surface);
     this.audit({ type: 'phase', phase, surface, ...(table ? { table } : {}) });
     this.check(true);
   }
+  /**
+   * 检查协作取消并以最多约每 250ms 的频率推送计数；强制模式立即推送，取消携带当前部分结果。
+   * EN: Checks cooperative cancellation and emits progress roughly every 250ms unless forced; cancellation carries current partial results.
+   */
   check(force = false) {
     if (this.options.cancelled?.())
       throw new ObjectMaintenanceFailure(
@@ -156,6 +183,10 @@ class Scan {
       this.options.onProgress?.({ ...this.state });
     }
   }
+  /**
+   * 调用审计持久化能力；任何审计写失败转换为明确维护失败，避免无记录继续删除。
+   * EN: Invokes audit persistence and converts recording failures into explicit maintenance failure to prevent unrecorded deletion.
+   */
   audit(event: ObjectMaintenanceAudit) {
     try {
       this.options.onAudit?.(event);
@@ -163,6 +194,10 @@ class Scan {
       throw new MaintenanceProblem('audit_write_failed');
     }
   }
+  /**
+   * 克隆当前计数并计算剩余候选及耗时，按状态附错误码；不修改扫描进度。
+   * EN: Clones counters with remaining candidates/elapsed time and state-specific error code without mutating scan progress.
+   */
   result(status: ObjectMaintenanceResult['status']): ObjectMaintenanceResult {
     return {
       ...this.state,
@@ -180,6 +215,10 @@ class Scan {
           }),
     };
   }
+  /**
+   * 根据已知错误、schema 校验及当前阶段选择安全失败分类，并保留部分结果；已有维护失败原样传播。
+   * EN: Classifies known errors, schema failures and phase-specific faults while preserving partial results; existing maintenance failures propagate unchanged.
+   */
   failed(error: unknown): never {
     if (error instanceof ObjectMaintenanceFailure) throw error;
     const message = error instanceof Error ? error.message : '';
@@ -217,9 +256,16 @@ class Scan {
     });
   }
 }
-// Fail closed for unusually large/corrupt records; never skip a reference-bearing value.
+/**
+ * 异常巨大或损坏记录须保守失败，不能跳过可能携带引用的值。
+ * EN: Fail closed for unusually large/corrupt records; never skip a reference-bearing value.
+ */
 const MAX_RECORD_BYTES = 64 * 1024 * 1024;
 const MAX_REFERENCES = 1_000_000;
+/**
+ * 在压缩输入和输出上限内解压记录，前后检查取消；超限不跳过引用而使整个维护失败。
+ * EN: Decompresses within compressed/output bounds with cancellation checks; excess fails maintenance rather than skipping possible references.
+ */
 function decompress(content: Uint8Array, scan: Scan) {
   scan.check();
   if (content.byteLength > MAX_RECORD_BYTES) throw new Error('维护记录超过 64 MiB，已停止且未跳过引用');
@@ -228,6 +274,10 @@ function decompress(content: Uint8Array, scan: Scan) {
   return bytes;
 }
 
+/**
+ * 拒绝链接、硬链接和特殊文件并生成身份摘要；数据库身份只绑定设备/inode，普通对象另绑定大小和纳秒修改时间。
+ * EN: Rejects links, hard links and special files and hashes identity: device/inode for databases, additionally size/nanosecond mtime for objects.
+ */
 function identity(file: string, database = false) {
   const stat = lstatSync(file, { bigint: true });
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n)
@@ -235,14 +285,23 @@ function identity(file: string, database = false) {
   return hash(database ? `${stat.dev}:${stat.ino}` : `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`);
 }
 
-// Retain every object-looking string, including objects referenced by retained historical
-// snapshots and compressed text. This deliberately errs on the side of keeping extra files.
+/**
+ * 保留每个像对象引用的字符串，包括保留历史快照， 及压缩文本中的引用，刻意偏向多保留文件。
+ * EN: Retain every object-looking string, including objects referenced by retained historical snapshots and compressed text. This deliberately errs on the side of keeping extra files.
+ */
 function references(value: unknown, retained: Set<string>, scan: Scan) {
   let visited = 0;
+  /**
+   * 遍历 JSON 自有值收集规范对象引用，周期检查取消并限制引用总数；字符串先按固定长度筛选以免重复扫描大正文。
+   * EN: Traverses own JSON values for canonical refs with periodic cancellation/count limits, filtering strings by fixed length to avoid rescanning large bodies.
+   */
   const visit = (item: unknown) => {
     if ((visited++ & 255) === 0) scan.check();
     if (typeof item === 'string') {
-      // A normalized object ref always has this exact length; avoid scanning large text twice.
+      /**
+       * 规范对象引用长度固定，避免重复扫描大型文本。
+       * EN: A normalized object ref always has this exact length; avoid scanning large text twice.
+       */
       if (item.length !== 75) return;
       const ref = item.replaceAll('\\', '/');
       if (objectPattern.test(ref)) {
@@ -252,7 +311,10 @@ function references(value: unknown, retained: Set<string>, scan: Scan) {
     } else if (Array.isArray(item)) {
       for (const child of item) visit(child);
     } else if (item && typeof item === 'object') {
-      // JSON values only have own enumerable properties. Do not allocate every value up front.
+      /**
+       * JSON值只有自有可枚举属性，无需预先分配所有值。
+       * EN: JSON values only have own enumerable properties. Do not allocate every value up front.
+       */
       for (const key in item) if (Object.hasOwn(item, key)) visit((item as Record<string, unknown>)[key]);
     }
   };
@@ -260,6 +322,10 @@ function references(value: unknown, retained: Set<string>, scan: Scan) {
   scan.check();
 }
 
+/**
+ * 以只读连接检查当前 schema 与数据库完整性，逐类有界解压所有可能引用对象的保存资料，收集保留集合并核对数据库身份；任何不可读来源使扫描失败，不能猜为无引用。
+ * EN: Opens read-only storage, verifies current schema/integrity and boundedly decodes all retained object-reference sources, collecting refs and rechecking database identity. Unreadable sources fail scanning rather than imply no references.
+ */
 function readReferences(directory: string, scan: Scan, surface: Surface) {
   const filename = path.join(directory, 'state.db');
   const databaseIdentity = identity(filename, true);
@@ -408,6 +474,10 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
   }
 }
 
+/**
+ * 核对规范哈希路径、真实父目录和普通单链接文件，分块计算摘要并比较读取前后身份；缺失返回 undefined，损坏或变化明确失败。
+ * EN: Validates canonical hash path, real parents and regular single-link file, hashes chunks and compares before/after identity. Missing returns undefined; corruption/change fails explicitly.
+ */
 function checkedObject(directory: string, ref: string, scan: Scan): Candidate | undefined {
   scan.check();
   if (!objectPattern.test(ref)) throw new Error('无效对象路径');
@@ -442,11 +512,9 @@ function checkedObject(directory: string, ref: string, scan: Scan): Candidate | 
   return { ref, bytes: stat.size, identity: before };
 }
 
-// Call only while holding both service locks. The CLI acquires them before reaching here.
 /**
- * 在双方入口锁下读取完整存活引用，再枚举规范内容寻址对象作为候选。
- * 仅无引用且身份/内容可核验的普通文件入选；未知条目跳过，每入口最多列出 1000 项，
- * truncated 明确表示还有未列出的候选，不能把计划当成已扫描到的全部可删文件。
+ * 仅在持有两个服务锁时调用，CLI会先取得锁。 在双方入口锁下读取完整存活引用，再枚举规范内容寻址对象作为候选。 仅无引用且身份/内容可核验的普通文件入选；未知条目跳过，每入口最多列出 1000 项， truncated 明确表示还有未列出的候选，不能把计划当成已扫描到的全部可删文件。
+ * EN: Call only while holding both service locks. The CLI acquires them before reaching here. Reads the complete live reference set under both locks, then enumerates canonical content-addressed objects. Only unreferenced, verifiable regular files are candidates; unknown entries are skipped. Each surface lists at most 1000 entries; truncated means more candidates exist, not a complete deletion inventory.
  */
 export function createObjectCleanupPlan(
   directory: string,
@@ -536,12 +604,9 @@ export function createObjectCleanupPlan(
   }
 }
 
-// A plan is an explicit selection, not authority to delete arbitrary paths. Recheck all
-// selected objects and the complete live reference set before the first unlink.
 /**
- * 将计划当作显式选择而非删除权限：先重新读取全部引用、数据库身份和所有候选文件，
- * 任何冲突都在第一次 unlink 前阻止执行；实际删除每一项前再核对身份/摘要。
- * 删除前后分别写审计记录，取消不回滚已删除项，返回已完成的数量与剩余范围供恢复。
+ * 计划是显式选择，不是任意路径删除授权；首次unlink前， 重新核对所有选定对象和完整存活引用集合。 将计划当作显式选择而非删除权限：先重新读取全部引用、数据库身份和所有候选文件， 任何冲突都在第一次 unlink 前阻止执行；实际删除每一项前再核对身份/摘要。 删除前后分别写审计记录，取消不回滚已删除项，返回已完成的数量与剩余范围供恢复。
+ * EN: A plan is an explicit selection, not authority to delete arbitrary paths. Recheck all selected objects and the complete live reference set before the first unlink. Treats plans as selection, not authority: rereads all references, database identity, and every candidate before unlink, rejecting conflicts first. Each deletion rechecks identity/digest and writes before/after audit records. Abort cannot undo deleted entries; results report completed counts and remaining scope.
  */
 export function executeObjectCleanup(
   directory: string,
@@ -590,13 +655,19 @@ export function executeObjectCleanup(
       }
     }
     let priorSurface: Surface | undefined;
-    // 所有入口预检完成才进入删除阶段，避免第二个入口有冲突时第一个入口已经部分删除。
+    /**
+     * 所有入口预检完成才进入删除阶段，避免第二个入口有冲突时第一个入口已经部分删除。
+     * EN: Completes preflight for all surfaces before deletion, preventing partial cleanup of the first when the second conflicts.
+     */
     for (const { surface, target, candidate } of selected) {
       if (surface !== priorSurface) {
         scan.phase('delete', surface);
         priorSurface = surface;
       }
-      // Revalidate identity/content immediately before deleting this exact regular file.
+      /**
+       * 删除此精确普通文件前立即重查身份与内容。
+       * EN: Revalidate identity/content immediately before deleting this exact regular file.
+       */
       const current = checkedObject(target, candidate.ref, scan);
       if (!current || current.identity !== candidate.identity)
         throw new Error('对象在清理期间发生变化，停止处理');

@@ -1,4 +1,8 @@
-/** 读取交付状态、运行谱系和修订历史并注册接口。 */
+/**
+ * 读取交付状态、运行谱系和修订历史并注册接口。
+ * 用版本和幂等命令保存人工复核及当时基线；验收独立于执行完成，旧结论不能自动证明变化后的交付通过。
+ * EN: Reads delivery state, run lineage, and revision history and registers their routes. Persists revisioned idempotent manual reviews and baselines independently of execution completion; old decisions cannot establish acceptance of changed delivery.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
@@ -27,14 +31,24 @@ import {
 } from './delivery-review-history.js';
 export { deliveryFingerprint } from './delivery-fingerprint.js';
 
+/**
+ * 判断是否为原生运行；兼容缺少 execution 字段的旧记录。
+ * EN: Recognizes native runs, including legacy rows without execution metadata.
+ */
 const isNative = (run: Run) => (run.execution?.kind ?? 'native') === 'native';
-/** 复核和修订只在原生入口处理；历史记录也不得借此跨入终端执行数据。 */
+/**
+ * 复核和修订只在原生入口处理；历史记录也不得借此跨入终端执行数据。
+ * EN: Reviews and revisions belong to the native surface; historical records cannot cross into terminal execution data through these reads.
+ */
 function nativeRun(store: Store, runId: string) {
   const run = store.require<Run>('runs', runId);
   invariant(isNative(run), 'DELIVERY_SURFACE', '交付复核和修订查询仅支持原生任务');
   return run;
 }
-/** 保存前比较客户端看到的修订，并把当前修订附在409诊断中供重新核对。 */
+/**
+ * 保存前比较客户端看到的修订，并把当前修订附在409诊断中供重新核对。
+ * EN: Checks the revision the client observed before saving and includes the current revision in 409 diagnostics for revalidation.
+ */
 function revision(expected: number, actual: number) {
   if (expected !== actual)
     throw new AppError(
@@ -46,7 +60,10 @@ function revision(expected: number, actual: number) {
     );
 }
 
-/** 根据当前交付指纹判断用户复核是否过期，并返回变更摘要。 */
+/**
+ * 根据当前交付指纹判断用户复核是否过期，并返回变更摘要。
+ * EN: Compares the current delivery fingerprint to identify stale user review and returns a change summary.
+ */
 export function deliveryUserState(
   store: Store,
   run: Run,
@@ -66,7 +83,10 @@ export function deliveryUserState(
     changeSummary: reviewId ? deliveryChanges(store, run.id, reviewId, baseline) : null,
   };
 }
-/** 沿来源链读取原生运行祖先，限制深度并检测循环。 */
+/**
+ * 沿来源链读取原生运行祖先，限制深度并检测循环。
+ * EN: Reads native-run ancestors along source links with a depth bound and cycle detection.
+ */
 export function runLineage(store: Store, runId: string): RunLineage {
   let current: Run | undefined = nativeRun(store, runId);
   const ancestors: RunLineage['ancestors'] = [];
@@ -80,7 +100,10 @@ export function runLineage(store: Store, runId: string): RunLineage {
     }
     seen.add(source.runId);
     const candidate: Run | undefined = store.get<Run>('runs', source.runId);
-    // Never cross a surface boundary, even for malformed historical source metadata.
+    /**
+     * 即使历史来源元数据损坏，也不能跨入口边界读取。
+     * EN: Never cross a surface boundary, even for malformed historical source metadata.
+     */
     const parent: Run | undefined = candidate && isNative(candidate) ? candidate : undefined;
     ancestors.push({
       runId: source.runId,
@@ -96,7 +119,10 @@ export function runLineage(store: Store, runId: string): RunLineage {
   }
   return { runId, ancestors, hasMore: !!current?.source && ancestors.length === 20, cycleDetected };
 }
-/** 分页读取从指定原生运行派生的修订任务。 */
+/**
+ * 分页读取从指定原生运行派生的修订任务。
+ * EN: Paginates revision tasks derived from the selected native run.
+ */
 export function runRevisions(store: Store, runId: string, before?: string): RunRevisions {
   nativeRun(store, runId);
   const page = store.runRevisions(runId, 20, before);
@@ -118,8 +144,8 @@ export function runRevisions(store: Store, runId: string, before?: string): RunR
   };
 }
 /**
- * 装配复核历史、交付摘要、差异和谱系路由。只读大元数据先预热；保存结论通过幂等命令
- * 核对运行/根版本、交付指纹和验收项索引，再在同次提交中保留历史并更新当前结论。
+ * 装配复核历史、交付摘要、差异和谱系路由。只读大元数据先预热；保存结论通过幂等命令 核对运行/根版本、交付指纹和验收项索引，再在同次提交中保留历史并更新当前结论。
+ * EN: Registers review-history, delivery-summary, difference, and lineage routes. Large metadata reads warm first; idempotent review saves check run/root revisions, fingerprint, and criterion indexes, preserving history and updating the current decision atomically.
  */
 export function registerDeliveryLifecycle(
   app: FastifyInstance,
@@ -215,7 +241,10 @@ export function registerDeliveryLifecycle(
           'CRITERION_SCOPE',
           '逐项备注必须对应现有验收项，且不能重复',
         );
-        // 先保存尚未迁移的旧结论，再追加本次带完整基线的新结论，避免覆盖唯一旧记录。
+        /**
+         * 先保存尚未迁移的旧结论，再追加本次带完整基线的新结论，避免覆盖唯一旧记录。
+         * EN: Preserves the surviving legacy decision before appending a new full-baseline review, avoiding loss of the only old record.
+         */
         ensureCurrentReviewSnapshot(store, run);
         const review: DeliveryUserReview = {
           reviewId: id(),

@@ -1,4 +1,8 @@
-/** 检查项目目录并读取项目文件资源。 */
+/**
+ * 检查项目目录并读取项目文件资源。
+ * 限定注册目录内的列表、文本和资源读取，词法/真实路径及每段链接共同检查；Git 探测不扩大文件访问权限。
+ * EN: Validates project directories and reads project file resources. Bounds listing/text/resource reads to registered roots using lexical/realpath/component link checks; Git inspection never widens access.
+ */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError, invariant, type Project } from '../../../packages/contracts/src/index.js';
@@ -13,17 +17,32 @@ import type { Store } from '../../../packages/storage/src/index.js';
 import type { Processes } from '../../../packages/tools/src/index.js';
 import { fileVersion, readTextPage, streamFile } from './file-reader.js';
 
+/**
+ * 识别项目内部、依赖、验证材料、环境及私钥路径段，供目录列举和读取共同排除。
+ * EN: Identifies internal, dependency, QA, environment and private-key path segments excluded from listing/reads.
+ */
 const excluded = (name: string) =>
   ['.git', 'node_modules', '.elysia-runtime', '.local-tests', '.local-qa'].includes(name.toLowerCase()) ||
   /^\.env(?:\.|$)/i.test(name) ||
   /\.(?:pem|key|p12|pfx)$/i.test(name);
+/**
+ * 按平台比较已规范目录，Windows 忽略大小写，用于 realpath 一致性验证。
+ * EN: Compares normalized directories with Windows case-insensitivity for realpath validation.
+ */
 export const sameDirectory = (a: string, b: string) =>
   process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-/** 解析绝对路径并检查目录，通过 Git 探测仓库根目录和当前提交。 */
+/**
+ * 解析绝对路径并检查目录，通过 Git 探测仓库根目录和当前提交。
+ * EN: Resolves an absolute directory and probes its Git root and current commit.
+ */
 export async function inspectFolder(input: string, processes: Processes) {
   invariant(path.isAbsolute(input), 'PROJECT_PATH', '请选择文件夹或填写绝对路径');
   const root = await fs.realpath(input);
   invariant((await fs.stat(root)).isDirectory(), 'PROJECT_PATH', '项目路径必须是文件夹');
+  /**
+   * 以有界 Git 子进程探测注册目录；进程启动异常转换为失败结果，让目录检查可给出统一说明。
+   * EN: Probes registration directories with bounded Git processes, mapping spawn failures to failed results for consistent directory diagnostics.
+   */
   const probe = async (args: string[]) => {
     try {
       return await processes.run('registration', 'git', ['-C', root, ...args], root, 10000, 3000);
@@ -49,8 +68,8 @@ export async function inspectFolder(input: string, processes: Processes) {
 }
 export const projectTextEncodings = textFileEncodings;
 /**
- * 将项目相对路径解析为真实文件。词法路径和真实路径都排除敏感/依赖目录，
- * 每个现有路径段拒绝 symlink/junction，不能借项目内部链接读取授权目录之外的资料。
+ * 将项目相对路径解析为真实文件。词法路径和真实路径都排除敏感/依赖目录， 每个现有路径段拒绝 symlink/junction，不能借项目内部链接读取授权目录之外的资料。
+ * EN: Resolves a project-relative file with both lexical and real-path exclusions. Rejects symlinks/junctions in existing path segments so project links cannot escape the authorized directory.
  */
 async function projectFilename(store: Store, id: string, input: string) {
   const project = store.require<Project>('projects', id);
@@ -61,6 +80,10 @@ async function projectFilename(store: Store, id: string, input: string) {
   );
   const root = await fs.realpath(project.workspaceRoot);
   const lexical = path.resolve(root, input);
+  /**
+   * 核对解析目标的词法包含关系及每段排除规则，返回相对路径；链接另由主读取流程检查。
+   * EN: Checks lexical containment and excluded segments, returning the relative path; the main reader separately validates links.
+   */
   const check = (target: string) => {
     const relative = path.relative(root, target);
     invariant(
@@ -87,9 +110,16 @@ async function projectFilename(store: Store, id: string, input: string) {
   check(target);
   return { target, relative };
 }
+/**
+ * 为项目和可选目录生成逐段编码的资源路由基址，保持路径分隔语义且不执行文件读取。
+ * EN: Builds segment-encoded project resource base URLs while preserving separators and performing no file reads.
+ */
 const projectResourceBase = (id: string, directory = '', prefix = '') =>
   `${prefix}/api/projects/${encodeURIComponent(id)}/resources/${directory ? directory.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') + '/' : ''}`;
-/** 在项目范围内打开资源流，并在打开后再次核对路径。 */
+/**
+ * 在项目范围内打开资源流，并在打开后再次核对路径。
+ * EN: Opens a resource stream inside the project and rechecks its path after opening.
+ */
 export async function projectResource(
   store: Store,
   id: string,
@@ -111,8 +141,8 @@ export async function projectResource(
   return resource;
 }
 /**
- * 目录返回排序后的有界元数据，超出 300 条显式标记截断；文本以版本化字节分页读取。
- * 图片/PDF/二进制只返回资源 URL，文本解码完成后再次核验路径，防止读取期间被重定向。
+ * 目录返回排序后的有界元数据，超出 300 条显式标记截断；文本以版本化字节分页读取。 图片/PDF/二进制只返回资源 URL，文本解码完成后再次核验路径，防止读取期间被重定向。
+ * EN: Returns sorted directory metadata with an explicit 300-entry truncation marker; text uses revisioned byte paging. Images, PDFs and binary files expose resource URLs, and decoded text is path-checked again against redirects during the read.
  */
 export async function projectFiles(
   store: Store,
@@ -176,7 +206,10 @@ export async function projectFiles(
       'PROJECT_PATH',
       '文件路径在读取时改变',
     );
-    // UTF-16 text contains zero bytes on disk; only decoded NUL characters are binary here.
+    /**
+     * UTF-16 文件在磁盘上含零字节；这里只将解码后的 NUL 字符判为二进制。
+     * EN: UTF-16 text contains zero bytes on disk; only decoded NUL characters are binary here.
+     */
     invariant(
       !isBinaryFile(target, Buffer.from(decoded.text, 'utf8')),
       'PROJECT_FILE_TYPE',

@@ -1,4 +1,8 @@
-/* 展示和处理计划对齐信息。 */
+/**
+ * 展示和处理计划对齐信息。
+ * 把计划任务建议、父级配置和本次模型选择合成为确认分配，校验后提交；加载器与服务端负责模块身份和最终计划应用。
+ * EN: Displays accepted plans and prepares plan-alignment choices. Combines proposed tasks, inherited settings, and current model choices into confirmed assignments for validated submission; the loader/server own module identity and final plan application.
+ */
 import { Icon } from '../../Icon';
 import { ModelPicker } from '../../ModelPicker';
 import {
@@ -12,7 +16,10 @@ import { contextPolicyLabel } from '../../ContextWindow';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './types';
 import { reviewModelConflict } from '../../../../../packages/contracts/src/review-policy';
 
-// 宿主加载器用此身份与接口版本确认动态模块兼容性。
+/**
+ * 宿主加载器用此身份与接口版本确认动态模块兼容性。
+ * EN: Host loader checks this identity/interface version for compatibility.
+ */
 export const manifest = {
   id: 'plan-alignment',
   apiVersion: PLAN_ALIGNMENT_API_VERSION,
@@ -24,6 +31,7 @@ export const manifest = {
  * 只读展示已接受分工，或为待接受计划选择一级子代理模型和窗口。
  * 待定选择优先采用本次 assignments，其次采用计划建议；缺省窗口继承父级并受目标模型上限限制。
  * 接受前同时检查各选择就绪、上下文有效和执行/复核型号隔离，实际准入仍交由内核确认。
+ * EN: Read accepted assignments or select first-level agent models/windows for a pending plan. Prefer current assignments over plan suggestions. Missing windows inherit parent within target-model cap. Acceptance requires ready selections, valid context, and executor/reviewer separation; kernel makes final admission.
  */
 export function PlanAlignmentPanel({
   detail,
@@ -40,14 +48,24 @@ export function PlanAlignmentPanel({
 }: PlanAlignmentProps) {
   const { run } = detail;
   const plan = run.plan;
-  // 聊天和无计划的运行不显示分工；仅待接受的计划允许确认。
+  /**
+   * 聊天和无计划的运行不显示分工；仅待接受的计划允许确认。
+   * EN: Chat/planless runs show no assignments; confirmation is for pending plans only.
+   */
   if (!plan || run.kind === 'chat') return null;
   const ended = ['DONE', 'CANCELLED'].includes(run.status);
   const pending = run.reason === 'plan' && !ended && run.acceptedPlanVersion !== plan.version;
   const parent = detail.agents.find((agent) => agent.taskId === run.rootTaskId);
+  /**
+   * 优先取本次窗口对任务键的显式分配，未覆盖时沿用计划建议连接，保持编辑与提交使用相同选择。
+   * EN: Prefers an explicit assignment for this task in the current window and otherwise uses the proposed connection so editing and submission share the same choice.
+   */
   const pendingChoice = (task: TaskSpec) =>
     Object.hasOwn(assignments, task.key) ? assignments[task.key] : proposedChoice(task);
-  /** 本次窗口优先，其次计划建议；两者均未指定时继承父级与模型上限中的较小值。 */
+  /**
+   * 本次窗口优先，其次计划建议；两者均未指定时继承父级与模型上限中的较小值。
+   * EN: Prefer current window, then plan suggestion, otherwise inherit the smaller parent/model ceiling.
+   */
   const pendingPolicy = (task: TaskSpec): ContextPolicy => {
     const choice = pendingChoice(task);
     if (choice.contextPolicy) return choice.contextPolicy;

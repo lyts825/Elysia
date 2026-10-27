@@ -1,4 +1,10 @@
-// 终端任务间通信草稿及消息操作的契约。
+/**
+ * 终端任务间通信草稿及消息操作的契约。
+ * 草稿恢复只保留用户输入及待核对命令，真正发送与处置仍需服务端授权和版本检查。
+ *
+ * EN: Defines terminal-to-terminal communication drafts and message operations.
+ * Draft recovery retains input/pending command identity only; actual sends/resolutions still require server authorization and revision checks.
+ */
 import { z } from 'zod';
 import type { TerminalInboxResolution } from './terminal-inbox.js';
 
@@ -15,7 +21,11 @@ export type TerminalCommunicationDraft = {
   expectedRevision?: number;
 };
 
-// 通信记录保留方向、对端和处理状态；未知或不可用的结果不得视为已送达。
+/**
+ * 通信记录保留方向、对端和处理状态；未知或不可用的结果不得视为已送达。
+ *
+ * EN: Communication records retain direction, peer, and handling state; unknown or unavailable results cannot be treated as delivered.
+ */
 export type TerminalCommunicationItem = {
   id: string;
   revision: number;
@@ -28,7 +38,11 @@ export type TerminalCommunicationItem = {
   resolution?: Omit<TerminalInboxResolution, 'by'> & { by?: TerminalInboxResolution['by'] };
 };
 
-/** Keep the original item snapshot until an unknown command outcome has been reconciled. */
+/**
+ * 在未知命令结果完成核对之前，保留原始条目快照。
+ *
+ * EN: Keep the original item snapshot until an unknown command outcome has been reconciled.
+ */
 export type TerminalResolutionDraft = {
   item: TerminalCommunicationItem;
   note: string;
@@ -67,7 +81,11 @@ const resolutionDraft = z
   })
   .strict();
 
-/** 恢复本地核验草稿的完整原条目快照；格式或身份字段损坏时返回 null，不发起处理操作。 */
+/**
+ * 恢复本地核验草稿的完整原条目快照；格式或身份字段损坏时返回 null，不发起处理操作。
+ *
+ * EN: Restores the complete original item snapshot in a local reconciliation draft; corrupt format/identity returns null without performing an operation.
+ */
 export function readTerminalResolutionDraft(
   value: string | boolean | undefined,
 ): TerminalResolutionDraft | null {
@@ -93,6 +111,8 @@ export type TerminalPeerPage = {
 /**
  * 从不可信浏览器缓存恢复待发送正文与目标，限制文本长度并保留有效的命令身份。
  * 解析失败回到空草稿；返回值仍须用户提交并由服务端验证，读取缓存不会发送消息。
+ *
+ * EN: Restores pending text and target from untrusted browser cache with bounded text and valid command identity. Parsing failure returns an empty draft; only explicit submission and server validation can send it.
  */
 export function readTerminalCommunicationDraft(
   value: string | boolean | undefined,
@@ -109,7 +129,11 @@ export function readTerminalCommunicationDraft(
           : {}),
       };
   } catch {
-    // Corrupt cache values never become a send request.
+    /**
+     * 损坏缓存不会被转化为发送请求。
+     *
+     * EN: Corrupt cache values never become a send request.
+     */
   }
   return { targetRunId: '', text: '' };
 }

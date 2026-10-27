@@ -1,4 +1,10 @@
-// 注册 MCP 工具发现与调用入口。
+/**
+ * 注册 MCP 工具发现与调用入口。
+ * EN: Register MCP tool discovery and invocation entries.
+ *
+ * 将外部工具目录和调用封装为宿主工具，连接会话及权限由注入的 MCP 服务处理。
+ * EN: Wrap external tool discovery and invocation as host tools, with injected MCP services owning sessions and permission checks.
+ */
 import { z } from 'zod';
 import { type Run } from '../../../contracts/src/index.js';
 
@@ -29,6 +35,9 @@ const schemas = {
 /**
  * 注册 MCP 服务目录、工具目录和工具调用。列出服务不连接进程；读取工具或调用时才
  * 根据当前运行读取配置，并向客户端传递任务权限与取消信号。
+ * EN: Register server metadata, tool discovery, and invocation. Listing servers does not connect;
+ * resolve run-scoped configuration and pass current permissions/cancellation only during discovery
+ * or calls.
  */
 export function mcpTools(
   context: Pick<ToolServices, 'catalogueBudget' | 'mcp'> & {
@@ -37,7 +46,11 @@ export function mcpTools(
     library: Pick<ToolServices['library'], 'scopedLocalItems' | 'readLocalMcpConfig'>;
   },
 ): PluginContributions<ToolContribution> {
-  /** 只列出当前运行可见且启用的服务元数据，不启动进程或发网络请求。 */
+  /**
+   * 只列出当前运行可见且启用的服务元数据，不启动进程或发网络请求。
+   * EN: List enabled server metadata visible to this run without starting a process or making a
+   * network request.
+   */
   function execute_list_mcp_servers(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.list_mcp_servers>,
@@ -50,7 +63,11 @@ export function mcpTools(
       context.catalogueBudget(task),
     );
   }
-  /** 显式连接后校验工具目录，再按任务预算分页；连接权限由当前任务实时计算。 */
+  /**
+   * 显式连接后校验工具目录，再按任务预算分页；连接权限由当前任务实时计算。
+   * EN: Connect explicitly and validate the tool catalogue before task-budget paging, using current
+   * task permissions for the connection.
+   */
   async function execute_mcp_list_tools(
     { task, signal }: ToolInvocation,
     args: z.output<typeof schemas.mcp_list_tools>,
@@ -68,7 +85,11 @@ export function mcpTools(
     );
     return result;
   }
-  /** 在本次运行资源范围内解析连接，向客户端传递完整权限与取消信号，不复用未经核验的调用。 */
+  /**
+   * 在本次运行资源范围内解析连接，向客户端传递完整权限与取消信号，不复用未经核验的调用。
+   * EN: Resolve the connection within this run resource scope and pass complete permission and
+   * cancellation data, without replaying an unverified invocation.
+   */
   async function execute_mcp_call({ task, signal }: ToolInvocation, args: z.output<typeof schemas.mcp_call>) {
     let result: unknown;
     const scope = context.store.require<Run>('runs', task.runId);

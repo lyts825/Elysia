@@ -1,4 +1,8 @@
-/* 管理模型供应商连接与配置。 */
+/**
+ * 管理模型供应商连接与配置。
+ * 管理模型连接的编辑、目录探测和配置版本，保留未保存输入并区分读取与验证结果；密钥存储和真实供应商请求由服务端执行。
+ * EN: Manages model-provider connections and configuration. Manages connection edits, catalog probes, and configuration revision while preserving unsaved input and distinguishing reads from verification; the server stores secrets and contacts providers.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -18,7 +22,10 @@ import {
 } from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
-// 有持久凭据或尚未配置密钥时显示存储凭据模式；否则说明使用环境变量。
+/**
+ * 有持久凭据或尚未配置密钥时显示存储凭据模式；否则说明使用环境变量。
+ * EN: Show stored-credential mode when stored credentials exist or no key is configured; otherwise indicate environment credentials.
+ */
 const credentialMode = (provider?: Provider) =>
   provider?.credentialId || !provider?.keyConfigured ? 'stored' : 'env';
 const presets = [
@@ -27,7 +34,10 @@ const presets = [
   ['deepseek', 'DeepSeek', 'Chat Completions'],
   ['custom', '自定义服务', '兼容 API 端点'],
 ];
-/** 创建尚未保存的连接草稿；预设只提供协议默认值，不代表密钥已配置或实际调用已验证。 */
+/**
+ * 创建尚未保存的连接草稿；预设只提供协议默认值，不代表密钥已配置或实际调用已验证。
+ * EN: Create an unsaved connection draft; presets supply protocol defaults, not configured credentials or verified real calls.
+ */
 function preset(name: string): Provider {
   return {
     id: crypto.randomUUID(),
@@ -56,7 +66,10 @@ function preset(name: string): Provider {
     keyConfigured: false,
   };
 }
-/** 排除服务端校验状态并稳定排序嵌套对象，用于判断当前表单是否有需要保存的修改。 */
+/**
+ * 排除服务端校验状态并稳定排序嵌套对象，用于判断当前表单是否有需要保存的修改。
+ * EN: Exclude server check state and stably sort nested values for dirty comparison.
+ */
 const editable = (p?: Provider) =>
   p &&
   JSON.stringify(
@@ -74,6 +87,7 @@ const editable = (p?: Provider) =>
  * 管理供应商连接草稿、凭据来源、目录和实际调用验证。config 与父级 providers 分开，
  * 用户编辑不会立即覆盖已保存配置；切换或关闭脏表单需要明确选择舍弃。
  * 保存和检查均携带当前修订，串行操作结束后让父级重新读取权威列表。
+ * EN: Keep provider drafts, credential source, catalog, and real-call checks distinct from saved parent data. Dirty switch/close requires explicit discard. Save/check with current revision and reread authoritative providers after serial actions.
  */
 export function ProviderSettings({
   providers,
@@ -134,6 +148,10 @@ export function ProviderSettings({
   useEffect(() => {
     const list = providerListRef.current;
     if (!list) return;
+    /**
+     * 测量已选连接卡片与列表边界，仅在卡片不可完整见到时调整列表滚动，避免每次布局变化都跳动。
+     * EN: Measures the selected connection card against its list and scrolls only when it is not fully visible, avoiding jumps on every layout change.
+     */
     const revealSelection = () => {
       const selected = list.querySelector<HTMLElement>('.provider-card.selected');
       if (!selected) return;
@@ -164,7 +182,10 @@ export function ProviderSettings({
   useEffect(() => {
     if (!dirty) setConfirmClose(false);
   }, [dirty]);
-  // 已保存密钥必须与当前选择的凭据来源一致；有环境密钥不等于本机存储密钥已就绪。
+  /**
+   * 已保存密钥必须与当前选择的凭据来源一致；有环境密钥不等于本机存储密钥已就绪。
+   * EN: Saved credentials must match the chosen source; an environment key does not establish vault readiness.
+   */
   const credentialReady =
     !!saved?.keyConfigured && (keyMode === 'stored' ? !!saved.credentialId : !saved.credentialId);
   const credentialHelp =
@@ -192,7 +213,10 @@ export function ProviderSettings({
   ) || ['low', 'high', 'max'];
   const unsupportedApiModel =
     !subscription && !!catalog.find((model) => model.id === config?.model && !supportsText(model));
-  /** 仅修改本地草稿，并取消外部初始定位意图，避免后续列表刷新切回旧选择。 */
+  /**
+   * 仅修改本地草稿，并取消外部初始定位意图，避免后续列表刷新切回旧选择。
+   * EN: Edit local draft only and clear external initial-location intent so later refresh cannot jump back.
+   */
   const change = (patch: Partial<Provider>) => {
     setRequestedProviderId(undefined);
     setConfig((p) => p && { ...p, ...patch });
@@ -200,6 +224,7 @@ export function ProviderSettings({
   /**
    * 切换编辑目标，同时清除只属于旧连接的密钥输入、目录和订阅就绪状态。
    * 脏表单先存 pendingChoice；completedAction 仅供已完成的串行操作内部切换。
+   * EN: Switch target while clearing old key input/catalog/subscription readiness. Dirty state stores pendingChoice; completedAction is for switching inside completed serial actions only.
    */
   const choose = (next: Provider, force = false, completedAction = false) => {
     if (actionPending.current && !completedAction) return;
@@ -229,7 +254,10 @@ export function ProviderSettings({
     if (config?.id === target.id) setRequestedProviderId(undefined);
     else choose(target);
   }, [requestedProviderId, providers, busy]);
-  /** 同一时刻只允许一个保存/验证/删除动作，集中维护忙碌状态并保留表单供失败后修改。 */
+  /**
+   * 同一时刻只允许一个保存/验证/删除动作，集中维护忙碌状态并保留表单供失败后修改。
+   * EN: Permit one save/check/delete action at a time, sharing busy state and preserving the form on failure.
+   */
   const perform = async (fn: () => Promise<void>) => {
     if (actionPending.current) return;
     actionPending.current = true;
@@ -245,7 +273,10 @@ export function ProviderSettings({
       setBusy(false);
     }
   };
-  /** 校验型号和凭据来源后提交配置；原始密钥仅随本次保存发送，成功后从输入状态清除。 */
+  /**
+   * 校验型号和凭据来源后提交配置；原始密钥仅随本次保存发送，成功后从输入状态清除。
+   * EN: Validate model/credential source before save; send raw key only for this save and clear it after success.
+   */
   const save = () =>
     perform(async () => {
       if (!config) return;
@@ -269,7 +300,10 @@ export function ProviderSettings({
       await updated();
       setNotice('配置已保存，下一步验证实际调用。');
     });
-  /** 仅验证已保存且凭据就绪的配置，检查结果的修订身份由服务端维护。 */
+  /**
+   * 仅验证已保存且凭据就绪的配置，检查结果的修订身份由服务端维护。
+   * EN: Check saved credential-ready configuration only; server owns the result revision identity.
+   */
   const verify = () =>
     perform(async () => {
       if (!config) return;

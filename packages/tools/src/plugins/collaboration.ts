@@ -1,4 +1,10 @@
-// 注册代理协作相关工具，并通过提供的服务执行操作。
+/**
+ * 注册代理协作相关工具，并通过提供的服务执行操作。
+ * EN: Register agent-collaboration tools and execute through injected services.
+ *
+ * 工具定义声明输入及策略，执行委托给协作服务，任务身份、状态转换和授权由相应服务与内核核对。
+ * EN: Declare tool inputs and policies and delegate execution to collaboration services, which coordinate task identity, state transitions, and authorization with the kernel.
+ */
 import { z } from 'zod';
 import {
   TaskSpec,
@@ -33,6 +39,8 @@ const schemas = {
 /**
  * 注册澄清、子任务、上下文分配和结果提交工具。子任务等待只接受不重复的直属子任务；
  * 状态变更和范围约束继续由内核校验。
+ * EN: Register clarification, child tasks, context allocation, and result submission. Waiting
+ * accepts only unique direct children; the kernel retains state-transition and scope validation.
  */
 export function collaborationTools(
   context: Pick<ToolServices, 'submit'> & {
@@ -40,7 +48,10 @@ export function collaborationTools(
     kernel: Pick<ToolServices['kernel'], 'wait' | 'event' | 'spawn' | 'allocateContext' | 'submitPeerReview'>;
   },
 ): PluginContributions<ToolContribution> {
-  /** 将任务置为等待用户，并记录待回答的问题事件。 */
+  /**
+   * 将任务置为等待用户，并记录待回答的问题事件。
+   * EN: Put the task into a user wait and record the unanswered question event.
+   */
   function execute_clarify({ task }: ToolInvocation, args: z.output<typeof schemas.clarify>) {
     let result: unknown;
 
@@ -54,18 +65,29 @@ export function collaborationTools(
 
     return result;
   }
-  /** 将已经过 TaskSpec 校验的子任务意图交给内核，代理名额、依赖和授权仍由内核判断。 */
+  /**
+   * 将已经过 TaskSpec 校验的子任务意图交给内核，代理名额、依赖和授权仍由内核判断。
+   * EN: Submit a TaskSpec-validated child-task intent to the kernel, which checks agent capacity,
+   * dependencies, and permissions.
+   */
   function execute_spawn_task({ task }: ToolInvocation, args: z.output<typeof schemas.spawn_task>) {
     return context.kernel.spawn(task, args);
   }
-  /** 带目标任务当前 revision 调整其上下文窗口，防止基于旧状态覆盖后来配置。 */
+  /**
+   * 带目标任务当前 revision 调整其上下文窗口，防止基于旧状态覆盖后来配置。
+   * EN: Adjust a task context window with its expected current revision, preventing stale
+   * configuration overwrites.
+   */
   function execute_allocate_context(
     { task }: ToolInvocation,
     args: z.output<typeof schemas.allocate_context>,
   ) {
     return context.kernel.allocateContext(task, args.taskId, args.expectedRevision, args.windowTokens);
   }
-  /** 子任务均已结束时返回结果，否则将当前任务置为等待子任务状态。 */
+  /**
+   * 子任务均已结束时返回结果，否则将当前任务置为等待子任务状态。
+   * EN: Return child results when all have ended; otherwise put the caller into a children wait.
+   */
   function execute_join_tasks({ task }: ToolInvocation, args: z.output<typeof schemas.join_tasks>) {
     let result: unknown;
 
@@ -82,7 +104,11 @@ export function collaborationTools(
 
     return result;
   }
-  /** 委托网关核验每个验收项证据，再推进任务与运行终态；提交摘要本身不等于完成。 */
+  /**
+   * 委托网关核验每个验收项证据，再推进任务与运行终态；提交摘要本身不等于完成。
+   * EN: Delegate evidence verification to the gateway before completing task/run state; submitting a
+   * summary alone is not completion.
+   */
   async function execute_submit_result(
     { task, signal }: ToolInvocation,
     args: z.output<typeof schemas.submit_result>,

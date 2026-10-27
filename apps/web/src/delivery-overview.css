@@ -1,4 +1,7 @@
-/* 定义 delivery-overview 对应界面的样式与布局。 */
+/*
+ * 交付总览：区分结论、状态说明、元数据和可执行操作，并为较长结论提供焦点阅读区域。布局允许标题和操作换行，状态视觉仅反映组件提供的结论。
+ * EN: Delivery overview: separates conclusions, state text, metadata, and actions with focusable reading for long conclusions. Headings/actions can wrap; state styling reflects component-supplied conclusions only.
+ */
 .delivery-overview,
 .delivery-status-content {
   min-width: 0;
@@ -51,7 +54,10 @@
   min-width: 0;
 }
 
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .delivery-overview-reading {
   min-width: 0;
   max-width: 100%;
@@ -63,7 +69,10 @@
   scrollbar-gutter: stable;
 }
 
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .delivery-overview-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

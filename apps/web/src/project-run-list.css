@@ -1,4 +1,7 @@
-/* 定义 project-run-list 对应界面的样式与布局。 */
+/*
+ * 项目运行列表：排列运行标题、说明、状态、分页及单行操作。内容列可收缩，动作按内容取宽；窄视口或容器把行纵向排列，保留完整标题和可点击操作。
+ * EN: Project run list: arranges titles, descriptions, states, paging, and row actions. Content shrinks while actions size to content; narrow viewport/container layouts stack rows to retain titles/actions.
+ */
 .project-run-pagination {
   display: grid;
   gap: var(--space-2);
@@ -34,7 +37,10 @@
   min-width: 0;
   container-type: inline-size;
 }
-/* 内容列占用剩余空间，操作列按自身内容确定宽度。 */
+/*
+ * 内容列占用剩余空间，操作列按自身内容确定宽度。
+ * EN: Lets the content column consume remaining space while sizing the action column to its content.
+ */
 .project-run-list .project-run-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -51,7 +57,10 @@
   font-size: var(--font-xs);
   color: var(--muted);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .project-run-reading {
   min-width: 0;
   max-height: min(12rem, 38dvh);
@@ -90,7 +99,10 @@
   gap: var(--space-2);
   min-width: 0;
 }
-/* 窄屏将运行记录的内容和操作纵向排列。 */
+/*
+ * 窄屏将运行记录的内容和操作纵向排列。
+ * EN: Stacks run-record content and actions on narrow screens.
+ */
 @media (max-width: 760px) {
   .project-run-row {
     flex-direction: column;

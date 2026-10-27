@@ -1,4 +1,8 @@
-/* 展示交付产物的变更及相关操作。 */
+/**
+ * 展示交付产物的变更及相关操作。
+ * 以运行、复核和交付指纹隔离差异分页，串联元数据、文件预览及修订入口；实际交付记录和读取权限由服务端提供。
+ * EN: Displays changes to delivered artifacts and the related actions. Scopes difference pagination by run, review, and delivery fingerprint and connects metadata, file preview, and revision controls; the server supplies delivery records and read authority.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChangePage,
@@ -23,11 +27,21 @@ type Props = {
   reload: () => void;
   reading?: boolean;
 };
+/**
+ * 按运行、复核与交付指纹创建独立差异分页实例；任一身份变化会卸载旧状态，避免把上一版比较带入当前交付。
+ * EN: Creates an isolated paginated comparison for the run, review, and delivery fingerprint; changing any identity remounts it so the previous comparison state cannot carry over.
+ */
 export function ArtifactChanges(props: Props) {
-  // 运行、复核或交付指纹变化时重建分页状态，避免显示上一版差异。
+  /**
+   * 运行、复核或交付指纹变化时重建分页状态，避免显示上一版差异。
+   * EN: Rebuild pagination when the run, review, or delivery fingerprint changes so an older comparison is never shown as current.
+   */
   return <ArtifactChangePages key={`${props.runId}:${props.reviewId}:${props.fingerprint}`} {...props} />;
 }
-/** 展示冻结元数据；null 表示该侧无产物，不尝试从名称或其他版本推断内容。 */
+/**
+ * 展示冻结元数据；null 表示该侧无产物，不尝试从名称或其他版本推断内容。
+ * EN: Displays frozen metadata. A null side means no artifact exists there; content is not inferred from a name or another version.
+ */
 function Metadata({ label, value }: { label: string; value: DeliveryArtifactMetadata | null }) {
   return (
     <section className="artifact-version" aria-label={`${label}产物元数据`}>
@@ -87,6 +101,7 @@ function Metadata({ label, value }: { label: string; value: DeliveryArtifactMeta
 /**
  * 展开后才准备并读取差异页，分页绑定同一复核和当前交付指纹。
  * 409 或不可读冲突会保留已读页并锁定动作，要求重新读取整体交付以建立新的比较基线。
+ * EN: Prepare and read difference pages only after expansion, binding pagination to one review and the current delivery fingerprint. On a 409 or unreadable conflict, retain loaded pages and lock actions until the whole delivery is reread to establish a new baseline.
  */
 function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = false }: Props) {
   const { api } = useSurfaceClient();
@@ -101,6 +116,10 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
   const previewTrigger = useRef<HTMLButtonElement | null>(null);
   const [progress, setProgress] = useState<DeliveryWarmProgress>();
   const readRequest = useRef<AbortController | null>(null);
+  /**
+   * 展开、指纹、分页或重试变化时先预热再读取冻结差异；响应校验运行/复核/页边界，清理取消整条读取链，旧请求不回写。
+   * EN: On expansion, fingerprint, page, or retry changes, warm artifacts before reading frozen differences. Validate run/review/page bounds; cleanup aborts the read chain and blocks obsolete updates.
+   */
   useEffect(() => {
     if (!open || !fingerprint || reading) {
       setLoading(false);
@@ -125,7 +144,10 @@ function ArtifactChangePages({ runId, reviewId, fingerprint, reload, reading = f
       )
       .then((next) => {
         if (controller.signal.aborted) return;
-        // 即使 HTTP 成功也验证页身份与边界，防止服务端版本变化后拼接不同快照。
+        /**
+         * 即使 HTTP 成功也验证页身份与边界，防止服务端版本变化后拼接不同快照。
+         * EN: Validate page identity and bounds even after HTTP success so pages from different snapshots cannot be concatenated.
+         */
         if (
           next.runId !== runId ||
           next.reviewId !== reviewId ||

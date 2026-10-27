@@ -1,4 +1,7 @@
-/* 定义 project-schedule-history 对应界面的样式与布局。 */
+/*
+ * 定时任务运行历史：展示历史记录、触发/运行状态、来源页及分页控件。长证据局部滚动，窄屏把分页改成网格，避免旧页来源和失败反馈被分页动作挤压。
+ * EN: Schedule history: presents records, trigger/run states, page provenance, and pagination. Long evidence scrolls locally; narrow pagination grids preserve room for retained-page provenance/failure feedback.
+ */
 .schedule-history {
   margin-top: var(--space-4);
   border-top: 1px solid var(--border);
@@ -19,7 +22,10 @@
 .schedule-history h3 {
   margin: 0 0 var(--space-2);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .schedule-history p,
 .schedule-history strong {
   overflow-wrap: anywhere;
@@ -38,7 +44,10 @@
   min-width: 0;
   background: var(--surface);
 }
-/* 三列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 三列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between three columns; zero minimums let columns shrink when space is limited.
+ */
 .schedule-history-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -153,7 +162,10 @@
   max-width: 100%;
   white-space: normal;
 }
-/* 窄屏将历史分页操作改为网格并调整按钮宽度。 */
+/*
+ * 窄屏将历史分页操作改为网格并调整按钮宽度。
+ * EN: Turns history pagination into a grid and adjusts button widths on narrow screens.
+ */
 @media (max-width: 480px) {
   .schedule-history-page-actions {
     display: grid;

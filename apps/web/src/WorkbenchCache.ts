@@ -1,4 +1,10 @@
-/* 管理工作台草稿缓存、服务端同步与本地恢复。 */
+/**
+ * 管理工作台草稿缓存、服务端同步与本地恢复。
+ * EN: Synchronizes workbench drafts, server baselines, and local recovery.
+ *
+ * 采用内存编辑值、浏览器待保存副本和服务端修订基线三层状态。冲突不自动覆盖；人工核对令牌绑定具体快照，删除、重建、编辑与切换工作区都会使旧结果失效。
+ * EN: Maintain memory edits, browser unsaved copies, and server revision baselines. Conflicts require review tokens bound to snapshots; deletion, recreation, editing, and scope switches invalidate stale results.
+ */
 import { ApiError, defaultSurfaceClient, type SurfaceClient } from './api';
 
 export type CacheEntry = { value: string | boolean; revision: number };
@@ -23,6 +29,10 @@ export type WorkbenchSnapshot = {
   issues: WorkbenchIssue[];
   recovery: WorkbenchRecoveryState;
 };
+/**
+ * 创建独立的初始同步快照；初始状态为读取中，条目、问题和待保存集合均为空。
+ * EN: Create an independent initial synchronization snapshot with loading status and empty entries, issues, and pending keys.
+ */
 export const createWorkbenchSnapshot = (): WorkbenchSnapshot => ({
   entries: {},
   status: 'loading',
@@ -47,7 +57,10 @@ const preferenceKeys = new Set([
   'collapsed:pinned',
   'settings:selected-terminal-profile',
 ]);
-// 白名单限定可缓存的偏好和草稿键，避免将任意服务数据混入恢复存储。
+/**
+ * 白名单限定可缓存的偏好和草稿键，避免将任意服务数据混入恢复存储。
+ * EN: Whitelist preference/draft keys so arbitrary server content cannot enter recovery storage.
+ */
 const validKey = (key: string) =>
   key.length <= 240 &&
   (preferenceKeys.has(key) ||
@@ -64,6 +77,10 @@ const validKey = (key: string) =>
     /^draft:terminal-(continuation|recovery|communication|send|resolution):[^:\s/\\]+(?::[a-f0-9-]{36})?$/.test(
       key,
     ));
+/**
+ * 校验缓存条目的非负修订及值类型，字符串最多 200000 字符；拒绝无法安全参与版本比较的数据。
+ * EN: Validate nonnegative revisions and boolean or bounded string values, rejecting entries unsuitable for safe revision comparison.
+ */
 const validEntry = (entry: unknown): entry is CacheEntry => {
   if (!entry || typeof entry !== 'object') return false;
   const value = entry as CacheEntry;
@@ -77,17 +94,29 @@ const validEntry = (entry: unknown): entry is CacheEntry => {
 /**
  * 工作台草稿同步器：内存持有当前编辑值，浏览器只备份尚未保存的内容，服务端保存版本基线。
  * generation 隔离认证工作区，owner 隔离删除后重新建立的同名键，change 隔离用户后续编辑；
- * 每次异步读写和冲突决策都核对这些身份，不能将迟到结果恢复为当前内容。
+ * 普通读写核对 generation/owner 并保留当前脏值；人工核对令牌另绑定 change 和值/修订快照，
+ * 防止旧响应及旧确认覆盖后续编辑。
+ * EN: Keep current edits in memory, browser copies for unsaved values only, and server revision baselines.
+ * generation isolates auth scope and owner identifies recreated keys. Ordinary reads/writes check
+ * those identities and preserve current dirty values; review tokens also bind change and value/revision
+ * snapshots so stale responses or confirmations cannot overwrite later edits.
  */
 export class WorkbenchCache {
   private scope = '';
   private recoverySlot: string;
   private windowSlotStable = false;
+  /**
+   * 建立按界面隔离的窗口恢复槽，并读回核验 sessionStorage。存储失败时仍生成内存标识，由恢复状态明确反映持久化限制。
+   * EN: Create a surface-specific recovery slot and verify sessionStorage by reading it back; on failure retain an in-memory identity and expose the persistence limitation.
+   */
   constructor(
     private changed: (snapshot: WorkbenchSnapshot) => void,
     private client: SurfaceClient = defaultSurfaceClient,
   ) {
-    // 恢复副本按浏览器窗口隔离；无法稳定保存窗口标识时仍允许内存工作。
+    /**
+     * 恢复副本按浏览器窗口隔离；无法稳定保存窗口标识时仍允许内存工作。
+     * EN: Isolate recovery by browser window; memory remains usable if window identity cannot be saved reliably.
+     */
     this.recoverySlot = (() => {
       try {
         const saved = sessionStorage.getItem(client.surfaceStorageKey('elysia.workbench.window'));
@@ -133,15 +162,26 @@ export class WorkbenchCache {
   private keyRequests = new Map<string, Promise<void>>();
   private readers = new Set<AbortController>();
 
+  /**
+   * 判断写入是否属于当前工作区代次；旧工作区的在途请求不会占用新工作区的运行标记。
+   * EN: Report whether a write belongs to the current generation so stale in-flight work cannot mark a new workspace as running.
+   */
   private get running() {
     return this.runningGeneration === this.generation;
   }
-  /** 内容或结果发生变化时失效该键已有的人工核对令牌。 */
+  /**
+   * 内容或结果发生变化时失效该键已有的人工核对令牌。
+   * EN: Invalidate a key's human-review token when its content or outcome changes.
+   */
   private touch(key: string) {
     this.changes.set(key, (this.changes.get(key) || 0) + 1);
     this.inspections.delete(key);
     this.inspectionRequests.set(key, (this.inspectionRequests.get(key) || 0) + 1);
   }
+  /**
+   * 生成条目、问题和恢复状态的浅拷贝并发布快照；读取失败和保存问题优先于保存中状态，避免界面误示成功。
+   * EN: Publish copied entries, issues, and recovery state; read failures and save issues take precedence over saving indicators to avoid false success.
+   */
   private publish() {
     const issues = [...this.issues.values()].map((issue) => ({ ...issue }));
     this.changed({
@@ -164,6 +204,7 @@ export class WorkbenchCache {
   /**
    * 仅备份 dirty 项并读回核验。恢复副本同时绑定认证范围和窗口槽位；存储不可用时
    * 明确降级为 memory-only，不能因 localStorage 写入抛错就丢掉内存原稿。
+   * EN: Back up dirty entries only and read back for validation, bound to auth scope/window slot. Downgrade explicitly to memory-only if storage fails; never lose in-memory originals because localStorage throws.
    */
   private backup() {
     let failure = '';
@@ -203,6 +244,10 @@ export class WorkbenchCache {
       pendingCount: this.dirty.size,
     };
   }
+  /**
+   * 读取当前认证范围和窗口槽的本地恢复包，限制体积并校验顶层结构。解析失败保留内存原稿，并降级显示恢复副本不可用。
+   * EN: Load the recovery package for the current scope and window, bounding size and validating its shape; failures retain memory originals and report unavailable recovery.
+   */
   private recovery() {
     try {
       const raw = localStorage.getItem(`elysia.workbench.v1:${this.scope}:${this.recoverySlot}`) || '{}';
@@ -228,6 +273,7 @@ export class WorkbenchCache {
   /**
    * 认证完成后绑定工作区。范围改变先备份旧范围，取消全部读取并递增 generation，
    * 再恢复新范围中结构有效的待保存项；已保存浏览器副本不会覆盖服务端版本。
+   * EN: Bind workspace after authentication. On scope change back up old scope, cancel reads, increment generation, then restore structurally valid unsaved entries. Saved browser copies cannot overwrite server versions.
    */
   bindScope(scope: string | undefined) {
     if (!scope || !/^[a-f0-9]{64}$/.test(scope) || this.scope === scope) return;
@@ -267,7 +313,10 @@ export class WorkbenchCache {
     if (this.dirty.size) this.backup();
     this.publish();
   }
-  /** 首先只读取偏好；并发 load 共享同一请求，完成后才允许后台写入草稿。 */
+  /**
+   * 首先只读取偏好；并发 load 共享同一请求，完成后才允许后台写入草稿。
+   * EN: Load preferences first, sharing concurrent load. Allow background draft writes only after completion.
+   */
   async load(overwrite = false) {
     if (this.preferenceRequest) return this.preferenceRequest;
     if (this.preferenceLoaded && !overwrite) return;
@@ -285,18 +334,28 @@ export class WorkbenchCache {
       if (this.preferenceRequest === request) this.preferenceRequest = undefined;
     }
   }
-  /** 声明当前活动草稿键并按需补读；批次最多 64 项，同一键的读取共享在途请求。 */
+  /**
+   * 声明当前活动草稿键并按需补读；批次最多 64 项，同一键的读取共享在途请求。
+   * EN: Declare active draft keys and lazily read at most 64 per batch; share same-key reads.
+   */
   async ensureKeys(keys: string[], overwrite = false) {
     const wanted = [...new Set(keys.filter((key) => typeof key === 'string' && validKey(key)))];
     this.activeKeys = new Set(wanted);
     await this.readKeys(wanted, overwrite);
   }
-  /** 单项读取用于即将编辑或发送的草稿；reload 强制重新确认服务端基线。 */
+  /**
+   * 单项读取用于即将编辑或发送的草稿；reload 强制重新确认服务端基线。
+   * EN: Ensure one draft before editing/sending; reload forces server-baseline reconfirmation.
+   */
   async ensureKey(key: string, reload = false) {
     this.activeKeys.add(key);
     if (reload) this.loadedKeys.delete(key);
     await this.readKeys([key]);
   }
+  /**
+   * 去重有效键并按 64 项分批读取，复用同键在途请求。结束时仅删除仍属于该请求的登记，避免旧请求清理后来重试的状态。
+   * EN: Deduplicate valid keys, read batches of 64, and share in-flight requests; remove registrations only when they still refer to the finishing request.
+   */
   private async readKeys(keys: string[], overwrite = false) {
     const wanted = [...new Set(keys.filter((key) => typeof key === 'string' && validKey(key)))];
     const newKeys = wanted.filter(
@@ -319,10 +378,15 @@ export class WorkbenchCache {
   /**
    * 将局部服务端读取与本地 dirty 值合并。读取开始记录 owner，期间删除的键不复活；
    * 同值可确认保存，不同值且版本变化则标为冲突。失败记录到具体键，阻止未经核对的写入。
+   * EN: Merge partial server reads with dirty local values. Capture owner so deleted keys cannot revive. Equal values confirm saves; changed values with advanced revision become conflicts. Key-specific failures block unreviewed writes.
    */
   private async read(path: string, keys: string[] | undefined) {
     const generation = this.generation;
     const owners = new Map(this.owners);
+    /**
+     * 核对读取开始时记录的键 owner，删除后重建的同名键不能接收旧请求返回值。
+     * EN: Compare a key owner with the identity captured before reading so deleted and recreated keys cannot receive stale results.
+     */
     const sameOwner = (key: string) => (owners.get(key) || 0) === (this.owners.get(key) || 0);
     const controller = new AbortController();
     this.readers.add(controller);
@@ -408,10 +472,17 @@ export class WorkbenchCache {
       }
     }
   }
+  /**
+   * 读取内存中的偏好或草稿值；未知键返回 undefined，由调用方决定默认值。
+   * EN: Read an in-memory preference or draft value, returning undefined for unknown keys so callers choose defaults.
+   */
   get(key: string) {
     return this.entries[key]?.value;
   }
-  /** 立即更新内存和浏览器恢复副本；未读过的草稿先补读版本，再延迟尝试服务端保存。 */
+  /**
+   * 立即更新内存和浏览器恢复副本；未读过的草稿先补读版本，再延迟尝试服务端保存。
+   * EN: Update memory/browser recovery immediately. Unread drafts first load revision, then delay server-save attempt.
+   */
   set(key: string, value: string | boolean) {
     if (this.entries[key]?.value === value) return;
     this.entries[key] = { value, revision: this.entries[key]?.revision || 0 };
@@ -424,7 +495,10 @@ export class WorkbenchCache {
       void this.readKeys([key]).catch(() => {});
     this.schedule();
   }
-  /** 从本地生命周期移除键并递增 owner，让先前的读写结果不能恢复已删内容。 */
+  /**
+   * 从本地生命周期移除键并递增 owner，让先前的读写结果不能恢复已删内容。
+   * EN: Remove key from lifecycle and increment owner so earlier async results cannot resurrect it.
+   */
   remove(keys: string[]) {
     for (const key of keys) {
       delete this.entries[key];
@@ -442,7 +516,10 @@ export class WorkbenchCache {
     this.backup();
     this.publish();
   }
-  /** 仅在拥有完整实体集合时清理已删除实体草稿；分页运行列表必须传 runsComplete=false。 */
+  /**
+   * 仅在拥有完整实体集合时清理已删除实体草稿；分页运行列表必须传 runsComplete=false。
+   * EN: Prune deleted-entity drafts only with complete entity sets; paged runs must pass runsComplete=false.
+   */
   prune(projectIds: Set<string>, runIds: Set<string>, runsComplete = true) {
     const obsolete = Object.keys(this.entries).filter((key) => {
       const selection = /^settings:selected-terminal-profile:(.+)$/.exec(key);
@@ -471,6 +548,10 @@ export class WorkbenchCache {
     });
     if (obsolete.length) this.remove(obsolete);
   }
+  /**
+   * 以 250 毫秒防抖合并编辑后的保存请求；停止后的缓存不再创建写入定时器。
+   * EN: Debounce saves by 250 ms to combine edits and avoid scheduling writes after the cache has stopped.
+   */
   private schedule() {
     clearTimeout(this.timer);
     if (this.stopped) return;
@@ -479,6 +560,7 @@ export class WorkbenchCache {
   /**
    * 串行保存可处理的 dirty 项。读取失败、范围未确认或已有写入时暂停；冲突项只等待人工核对。
    * 每个成功响应必须匹配发送值且修订递增，新输入仅更新版本基线，不能被发送时的旧值覆盖。
+   * EN: Serialize eligible dirty writes. Stop on failed reads/unconfirmed scope/in-flight writes and await human conflict review. Validate response value and advanced revision; new typing updates baseline only, not old-value restoration.
    */
   async flush() {
     clearTimeout(this.timer);
@@ -514,7 +596,10 @@ export class WorkbenchCache {
         try {
           const saved = await this.writeEntry(key, sent.value, sent.revision);
           if (generation !== this.generation || this.stopped) return;
-          // Deletion or new typing during an in-flight save must never restore an old value.
+          /**
+           * 保存期间删除或新输入不能恢复旧值。
+           * EN: Deletion or new typing during an in-flight save must never restore an old value.
+           */
           if (!this.entries[key] || owner !== (this.owners.get(key) || 0)) continue;
           if (!validEntry(saved) || saved.value !== sent.value || saved.revision <= sent.revision)
             throw new ApiError('保存结果无法核验，请重新读取此项。', 'protocol');
@@ -539,7 +624,10 @@ export class WorkbenchCache {
       if (generation !== this.generation && this.dirty.size) this.schedule();
     }
   }
-  /** 重试网络等可恢复问题前先重读服务端；冲突不在自动重试范围内。 */
+  /**
+   * 重试网络等可恢复问题前先重读服务端；冲突不在自动重试范围内。
+   * EN: Reread server before retrying recoverable network issues; conflicts are not auto-retried.
+   */
   async retry(key?: string) {
     if (this.retrying || this.running || this.loading) return;
     this.retrying = true;
@@ -558,11 +646,18 @@ export class WorkbenchCache {
       }
       await this.flush();
     } catch {
-      // The failed read or write retains its own actionable issue.
+      /**
+       * 失败读写保留自身可操作的问题。
+       * EN: The failed read or write retains its own actionable issue.
+       */
     } finally {
       this.retrying = false;
     }
   }
+  /**
+   * 先重试偏好基线，再补读失败或未确认版本的脏键；每次异步阶段后核对代次，避免跨工作区继续恢复。
+   * EN: Retry preference baselines first, then failed or unconfirmed dirty keys, checking generation between asynchronous stages to retain workspace isolation.
+   */
   async retryReads() {
     if (this.stopped) return;
     const generation = this.generation;
@@ -573,6 +668,10 @@ export class WorkbenchCache {
     ];
     if (keys.length) await this.readKeys(keys, true);
   }
+  /**
+   * 尝试恢复窗口槽登记，然后重新写入并读回核验浏览器副本，最后发布新的恢复保护状态。
+   * EN: Attempt to restore the window-slot registration, verify the browser backup again, and publish the resulting recovery protection state.
+   */
   retryRecovery() {
     try {
       const key = this.client.surfaceStorageKey('elysia.workbench.window');
@@ -583,7 +682,10 @@ export class WorkbenchCache {
     this.backup();
     this.publish();
   }
-  /** 生成包含当前范围和待保存原文的导出对象，不清除或改变保存状态。 */
+  /**
+   * 生成包含当前范围和待保存原文的导出对象，不清除或改变保存状态。
+   * EN: Export current scope and full unsaved originals without clearing/changing save state.
+   */
   exportPending() {
     return {
       format: 'elysia-workbench-unsaved' as const,
@@ -594,6 +696,10 @@ export class WorkbenchCache {
       pending: [...this.dirty],
     };
   }
+  /**
+   * 把键标记为需要人工核对的版本冲突，取消自动重试和旧核对令牌，保留本地原稿。
+   * EN: Mark a key as a revision conflict, removing automatic retry and stale inspection tokens while retaining local originals.
+   */
   private conflict(key: string) {
     this.issues.set(key, {
       key,
@@ -604,6 +710,10 @@ export class WorkbenchCache {
     this.retryKeys.delete(key);
     this.inspections.delete(key);
   }
+  /**
+   * 根据 HTTP 状态、超时和协议错误归类保存失败；只有明确可恢复的问题允许重试，冲突、权限和体积限制要求单独处理。
+   * EN: Classify save failures by HTTP status, timeout, and protocol; only recoverable issues are retryable, while conflicts, permissions, and size limits require explicit handling.
+   */
   private classify(key: string, error: unknown): WorkbenchIssue {
     const message = error instanceof Error ? error.message : '无法保存此项';
     if (error instanceof ApiError) {
@@ -620,6 +730,10 @@ export class WorkbenchCache {
     }
     return { key, kind: 'network', message, retryable: true };
   }
+  /**
+   * 携带 expectedRevision 写入单项，并以 15 秒超时和 AbortController 约束等待。超时表示结果未确认，后续必须重读基线，不能直接当作写入未发生。
+   * EN: Write one entry with expectedRevision and a 15-second timeout using AbortController; a timeout leaves the outcome uncertain, requiring baseline rereading before retry.
+   */
   private async writeEntry(key: string, value: string | boolean, expectedRevision: number) {
     const controller = new AbortController();
     this.readers.add(controller);
@@ -652,6 +766,10 @@ export class WorkbenchCache {
       this.readers.delete(controller);
     }
   }
+  /**
+   * 为人工核对单独读取远端条目，核验工作区范围和条目结构；不合并到编辑缓存，避免核对动作悄悄覆盖原稿。
+   * EN: Read a remote entry for human inspection, validating scope and shape without merging it into the editing cache or overwriting local originals.
+   */
   private async readInspection(key: string, generation: number) {
     const controller = new AbortController();
     this.readers.add(controller);
@@ -678,6 +796,7 @@ export class WorkbenchCache {
   /**
    * 读取冲突远端值，固定本地内容身份并签发一次核对 token。
    * 读取期间编辑、删除、切范围或发起更新核对都会使本次结果失效。
+   * EN: Inspect remote conflict and freeze local identity in a one-use token. Typing/deletion/scope changes/new inspection invalidate the result.
    */
   async inspectIssue(key: string): Promise<WorkbenchInspection> {
     const local = this.entries[key];
@@ -710,6 +829,10 @@ export class WorkbenchCache {
     this.inspections.set(key, inspection);
     return { key, token: inspection.token, local: { ...local }, remote: remote ? { ...remote } : null };
   }
+  /**
+   * 复核令牌、代次、修改计数、owner 和本地值/修订仍对应同一核对快照。任何变化都要求重新核对，防止旧确认覆盖新输入。
+   * EN: Validate token, generation, change count, owner, value, and revision against one inspection snapshot; any change requires renewed review before applying a choice.
+   */
   private requireInspection(key: string, token: string) {
     const inspection = this.inspections.get(key);
     const local = this.entries[key];
@@ -728,7 +851,10 @@ export class WorkbenchCache {
       throw Error('核对后的本地内容或所属工作区已变化，请重新核对此项。');
     return inspection;
   }
-  /** 使用仍有效的核对 token 选择本地或远端；应用前再次核验远端，避免覆盖核对后的变化。 */
+  /**
+   * 使用仍有效的核对 token 选择本地或远端；应用前再次核验远端，避免覆盖核对后的变化。
+   * EN: Use a still-valid token to choose local/remote, rechecking remote before application to avoid overwriting post-review changes.
+   */
   async resolveIssue(key: string, token: string, choice: 'local' | 'remote') {
     const inspection = this.requireInspection(key, token);
     if (this.resolving.has(key) || this.running) throw Error('正在保存草稿，请稍后重新核对此项。');
@@ -794,7 +920,10 @@ export class WorkbenchCache {
       if (this.dirty.size) this.schedule();
     }
   }
-  /** 最终卸载时取消请求与定时器，并保留未保存内容的恢复副本。 */
+  /**
+   * 最终卸载时取消请求与定时器，并保留未保存内容的恢复副本。
+   * EN: On final unmount cancel reads/timers and retain recovery copies of unsaved content.
+   */
   stop() {
     this.stopped = true;
     clearTimeout(this.timer);
@@ -804,6 +933,14 @@ export class WorkbenchCache {
   }
 }
 
+/**
+ * 按项目标识生成输入草稿键，未选择项目时使用独立对话的键，使各项目输入互不覆盖。
+ * EN: Generate the project input-draft key, using the standalone-chat key when no project is selected.
+ */
 export const newDraftKey = (projectId: string) => (projectId ? `draft:project:${projectId}` : 'draft:chat');
+/**
+ * 按项目标识生成任务创建配置键，与正文草稿分开保存，并为独立对话使用专用键。
+ * EN: Generate a project setup-draft key separate from objective text, with a dedicated key for standalone chat.
+ */
 export const runSetupDraftKey = (projectId: string) =>
   projectId ? `draft:setup:project:${projectId}` : 'draft:setup:chat';

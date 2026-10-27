@@ -1,4 +1,8 @@
-/* 编辑原生项目的默认运行配置。 */
+/**
+ * 编辑原生项目的默认运行配置。
+ * 读取和编辑后续原生任务使用的项目默认值，按基线复核保存；不会追溯修改已创建运行的冻结配置。
+ * EN: Edits native-project default run configuration. Reads/edits project defaults for future native tasks and reconciles saves against a baseline without retroactively changing frozen settings of existing runs.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   NativeProjectDefaults,
@@ -7,8 +11,15 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import './native-project-defaults.css';
 
+/**
+ * 逐项展示项目原生默认模型、上下文与预算配置，供保存或应用前核对；缺省字段保留明确占位。
+ * EN: Displays native project defaults for model, context, and budget before saving or applying, preserving explicit placeholders for unset fields.
+ */
 function DefaultsSummary({ value }: { value: NativeProjectDefaults }) {
-  // 逐项显示模型、上下文和预算，供保存前核对实际默认值。
+  /**
+   * 逐项显示模型、上下文和预算，供保存前核对实际默认值。
+   * EN: Show model, context, and budget individually for review before saving.
+   */
   return (
     <dl className="native-defaults-facts">
       <div>
@@ -51,6 +62,7 @@ function DefaultsSummary({ value }: { value: NativeProjectDefaults }) {
 /**
  * 在任务创建表单中读取或保存项目默认。首次读取且表单从未编辑时可自动载入；重试或
  * 用户已有输入时只提示可手动载入。保存使用已读默认修订，且不创建任务或授予执行权限。
+ * EN: Read/save defaults within creation. Auto-apply only on the first read of an untouched form; retries/edited forms require manual application. Save with the loaded revision, without creating a task or granting permissions.
  */
 export function NativeProjectDefaultsPanel({
   projectId,
@@ -76,6 +88,10 @@ export function NativeProjectDefaultsPanel({
   const [retry, setRetry] = useState(0);
   const current = useRef({ edited, apply, activity });
   current.current = { edited, apply, activity };
+  /**
+   * 项目或重试变化时读取默认配置；仅首次且表单未编辑时自动载入，否则保留当前输入；切换或卸载中断读取。
+   * EN: Reads defaults on project/retry changes, auto-applying only on the first untouched form and otherwise retaining current input; changes or teardown abort the read.
+   */
   useEffect(() => {
     const controller = new AbortController();
     setRecord(undefined);
@@ -100,7 +116,10 @@ export function NativeProjectDefaultsPanel({
       });
     return () => controller.abort();
   }, [api, projectId, retry]);
-  /** 将当前有效表单作为下次创建的默认配置保存，向外层报告忙碌以阻止同时创建任务。 */
+  /**
+   * 将当前有效表单作为下次创建的默认配置保存，向外层报告忙碌以阻止同时创建任务。
+   * EN: Save the valid form for future creation and report busy state to block simultaneous creation.
+   */
   async function save() {
     if (!record || busy || !canSave) return;
     setBusy(true);

@@ -1,4 +1,7 @@
-/* 定义 project-board-item 对应界面的样式与布局。 */
+/*
+ * 项目交付项详情：突出当前项标题，组织要求、数量、状态和只读依据。自适应要求网格与有界阅读区控制长内容，容器及视口断点分别调整状态列和留白。
+ * EN: Project board-item detail: emphasizes the current title and arranges requirements, counts, state, and evidence. Adaptive requirement grids/bounded reading contain long content; container/viewport breakpoints adjust status columns and spacing.
+ */
 .project-board-item.project-item-detail {
   margin-top: 0;
 }
@@ -12,7 +15,10 @@
   overflow-wrap: anywhere;
   line-height: var(--leading-body);
 }
-/* 列数随容器宽度变化；每列以 16rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 16rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 16rem minimum per column without exceeding a narrower container.
+ */
 .project-board-item .project-item-requirements {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: var(--space-4);
@@ -32,7 +38,10 @@
   font-weight: 400;
   color: var(--muted);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .project-board-item .project-item-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;
@@ -67,7 +76,10 @@
     grid-template-columns: 1fr;
   }
 }
-/* 窄屏调整交付项状态网格的列数。 */
+/*
+ * 窄屏调整交付项状态网格的列数。
+ * EN: Changes delivery-item status-grid column count on narrow screens.
+ */
 @media (max-width: 480px) {
   .project-board-item .project-status-grid {
     grid-template-columns: 1fr;

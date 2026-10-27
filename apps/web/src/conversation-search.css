@@ -1,9 +1,15 @@
-/* 定义 conversation-search 对应界面的样式与布局。 */
+/*
+ * 会话搜索：为独立及嵌入模式分别约束结果面板、搜索输入和命中摘要。结果区域承担滚动，命中文本允许断行，以便长会话搜索仍保持输入和导航操作可见。
+ * EN: Conversation search: constrains result panels, input, and match summaries for standalone/embedded modes. Results own scrolling and match text wraps so long searches retain accessible input/navigation controls.
+ */
 .conversation-search {
   position: relative;
   flex: 0 0 auto;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .conversation-search-panel {
   position: absolute;
   z-index: 12;
@@ -77,7 +83,10 @@
   border-color: var(--accent);
   background: var(--surface-selected);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .conversation-search-results span {
   line-height: var(--leading-ui);
   overflow-wrap: anywhere;

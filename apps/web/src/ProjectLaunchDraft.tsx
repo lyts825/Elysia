@@ -1,4 +1,8 @@
-/* 编辑项目交付项启动草稿。 */
+/**
+ * 编辑项目交付项启动草稿。
+ * 维护交付项启动内容及其与当前看板的同步、比较和恢复，运行设置中的实际要求优先；启动请求由工作台提交。
+ * EN: Edits launch drafts for project delivery items. Maintains deliverable launch content with board synchronization, comparison, and recovery, preferring effective requirements in run setup; the workbench submits launch requests.
+ */
 import { useId, useState } from 'react';
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import { itemLaunchContent, type ProjectBoardDraft, type ProjectLaunchContent } from './ProjectBoardDraft';
@@ -8,8 +12,15 @@ import { ProjectDraftComparison } from './ProjectDraftComparison';
 import './project-launch-draft.css';
 
 type Launch = NonNullable<ProjectBoardDraft['launch']>;
+/**
+ * 计算实际启动要求：有效运行设置中的交付和验收文本优先，其余字段沿用启动草稿，以便比较和保存使用同一内容。
+ * EN: Computes effective launch requirements, preferring deliverables and acceptance text from valid run setup and retaining remaining launch fields so comparison and saving use identical content.
+ */
 export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
-  // 运行设置中已有交付与验收输入时优先使用，其他字段沿用启动草稿。
+  /**
+   * 运行设置中已有交付与验收输入时优先使用，其他字段沿用启动草稿。
+   * EN: Prefer requirements already in run setup, retaining other launch-draft fields.
+   */
   const setup = readRunSetupDraft(launch.setupRaw);
   return {
     title: launch.title,
@@ -22,6 +33,7 @@ export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
  * 对照交付项创建草稿与当前计划，版本前进后要求按字段核对，保留本次自定义要求和配置。
  * 对照身份包含当前看板、来源项和完整草稿，任一变化都不沿用旧选择；无法解析的 setupRaw
  * 只显示原稿问题，不能用项目标准静默覆盖实际创建表单中的需求。
+ * EN: Compare launch to current plan; revision changes require field review while preserving custom requirements/config. Identity includes board/source item/whole draft. Invalid setupRaw reports original issues instead of silently replacing actual creation requirements.
  */
 export function ProjectLaunchDraft({
   board,

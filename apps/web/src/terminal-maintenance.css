@@ -1,4 +1,7 @@
-/* 定义 terminal-maintenance 对应界面的样式与布局。 */
+/*
+ * 终端数据维护：组织占用分组、引用、扫描进度、备份历史、恢复资格和计划确认。长依据有界滚动并保留焦点轮廓，窄屏重排维护及备份网格以保持计划依据可读。
+ * EN: Terminal maintenance: arranges usage groups, references, scan progress, backup history, eligibility, and plan confirmation. Focusable bounded evidence and narrow maintenance/backup grids keep plan basis readable.
+ */
 .terminal-data-maintenance {
   min-width: 0;
   color: var(--secondary);
@@ -36,7 +39,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .terminal-maintenance-reading,
 .terminal-maintenance-error {
   min-width: 0;
@@ -48,7 +54,10 @@
 .terminal-data-groups .terminal-maintenance-reading {
   max-height: 10rem;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .terminal-maintenance-reading:focus-visible,
 .terminal-maintenance-error:focus-visible,
 .terminal-maintenance-plan h4:focus-visible {
@@ -255,7 +264,10 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
-/* 窄屏调整维护项与备份信息的网格列数和间距。 */
+/*
+ * 窄屏调整维护项与备份信息的网格列数和间距。
+ * EN: Changes maintenance-item/backup-info grid columns and spacing on narrow screens.
+ */
 @media (max-width: 480px) {
   .terminal-maintenance-items p,
   .terminal-backup-selection dl > div {

@@ -1,4 +1,10 @@
-// 协调工具调用、权限检查、执行和结果处理。
+/**
+ * 协调工具调用、权限检查、执行和结果处理。
+ * EN: Coordinate tool calls, permission checks, execution, and result persistence.
+ *
+ * 解析工具输入后按策略核对权限，调用插件并登记结果；命令、文件、网络与 MCP 能力共享调用入口，各自仍保留独立限制。
+ * EN: Parse inputs, check policy and permissions, invoke plugins, and record results through a shared entry while preserving capability-specific restrictions.
+ */
 import { pluginServices } from './plugin-services.js';
 import { reviewToolRules, type ReviewModel } from './tool-review.js';
 import type { ToolReviewReceipt } from '../../contracts/src/execution-policy.js';
@@ -42,6 +48,9 @@ export { cleanEnv, Processes } from './processes.js';
 /**
  * 模型工具调用的统一宿主：按角色计算工具清单，核验调用身份和参数，管理审核与操作账本。
  * 插件只提供具体动作；授权、重放、事务和不确定副作用始终由网关控制。
+ * EN: Host model tool calls by computing role-specific catalogues, validating call identity and
+ * arguments, and managing reviews and the operation ledger. Plugins supply actions; authorization,
+ * replay, transactions, and uncertain side effects remain gateway responsibilities.
  */
 export class ToolGateway {
   processes = new Processes();
@@ -51,7 +60,11 @@ export class ToolGateway {
   private readonly tools: ReturnType<typeof builtinTools>;
   private closing?: Promise<void>;
   private closed = false;
-  /** 装配命令后端、计划模块与固定工具贡献；可注入审核模型和命令实现供宿主替换基础设施。 */
+  /**
+   * 装配命令后端、计划模块与固定工具贡献；可注入审核模型和命令实现供宿主替换基础设施。
+   * EN: Compose the command backend, plan module, and fixed contributions. The host may inject command
+   * infrastructure and a review-model implementation.
+   */
   constructor(
     public kernel: Kernel<Store>,
     private readonly options: {
@@ -71,6 +84,9 @@ export class ToolGateway {
   /**
    * 同时停止本机子进程和命令后端；未传 taskIds 时处理所有任务，空集合不匹配任务。
    * 等待两种清理全部收束并汇总失败，不因一个后端报错而跳过另一个。
+   * EN: Stop both local processes and the command backend. Omitted taskIds means all tasks; an empty
+   * set matches none. Await both cleanup paths and aggregate failures instead of skipping one after
+   * the other fails.
    */
   async cancelCommands(taskIds?: Set<string>) {
     const results = await Promise.allSettled([
@@ -88,6 +104,10 @@ export class ToolGateway {
    * 执行模型声明的命令，后端取运行创建时冻结的合同配置。
    * 再次解析工作目录并限定在任务目录；仅整目录写入授权能转为容器可写挂载。
    * 后端和容器名称先写入操作证据，供中断后恢复核验；本机模式不提供操作系统隔离。
+   * EN: Execute the model command with the backend frozen at run creation. Resolve cwd again and
+   * restrict it to the task workspace; only whole-directory write grants allow a writable container
+   * mount. Persist backend/container evidence before execution for recovery. Local mode is not OS
+   * isolation.
    */
   async runCommand(
     task: Task,
@@ -99,7 +119,8 @@ export class ToolGateway {
       permission = this.kernel.permissions(task),
       backend = run.contract.commandBackend ?? { kind: 'local' as const };
     invariant(permission.exec, 'EXEC_DENIED', '命令未授权');
-    // Revalidate the resolved cwd at the execution boundary.
+    // 在实际执行边界重新核验解析后的工作目录。
+    // EN: Revalidate the resolved working directory at the execution boundary.
     const cwd = await this.path(task, args.cwd);
     invariant(
       task.workspace && contained(await fs.realpath(task.workspace), cwd),
@@ -110,7 +131,8 @@ export class ToolGateway {
     const allowedWrites = permission.write
       ? await Promise.all(permission.writePaths.map((p) => resolved(path.resolve(workspace, p))))
       : [];
-    // Partial file-write grants must never become a writable mount of the entire workspace.
+    // 部分文件写入授权不能变成整个工作区的可写挂载。
+    // EN: Partial file-write grants must never become a writable mount of the entire workspace.
     const writable = permission.write && allowedWrites.some((root) => root === workspace);
     const current = this.store.require<Operation>('tool_operations', operation.id);
     this.store.put('tool_operations', {
@@ -138,17 +160,28 @@ export class ToolGateway {
       signal,
     );
   }
-  /** 返回固定注册的工具插件清单，供宿主检查身份和版本；不代表当前任务获得了其权限。 */
+  /**
+   * 返回固定注册的工具插件清单，供宿主检查身份和版本；不代表当前任务获得了其权限。
+   * EN: Return fixed plugin identities and versions for host inspection; registration does not grant
+   * those tools to a task.
+   */
   pluginManifests() {
     return this.tools.describe();
   }
-  /** 查询工具的串行、事务、副作用和进展属性；未知工具返回 undefined 供运行时保守处理。 */
+  /**
+   * 查询工具的串行、事务、副作用和进展属性；未知工具返回 undefined 供运行时保守处理。
+   * EN: Return transaction, serial, mutation, and progress properties. Unknown tools return undefined
+   * for conservative runtime handling.
+   */
   toolPolicy(name: string) {
     return this.tools.get(name)?.policy;
   }
   /**
    * 规划阶段按需加载计划模块后返回可用定义；加载发生在事务外。
    * 异步加载前后检查取消，之后重读任务，避免用旧状态生成权限清单。
+   * EN: Load the plan module on demand during planning, outside SQLite transactions. Check
+   * cancellation before and after loading, then reread the task before building its
+   * permission-dependent catalogue.
    */
   async prepareDefinitions(task: Task, signal?: AbortSignal): Promise<ToolDefinition[]> {
     invariant(!this.closed, 'MODULE_DISPOSED', '工具插件已释放');
@@ -164,7 +197,11 @@ export class ToolGateway {
     signal?.throwIfAborted();
     return this.definitions(this.store.require<Task>('tasks', task.id));
   }
-  /** 禁止新调用并共享一次释放 Promise；命令、MCP 和计划模块均尝试关闭，最终汇总错误。 */
+  /**
+   * 禁止新调用并共享一次释放 Promise；命令、MCP 和计划模块均尝试关闭，最终汇总错误。
+   * EN: Reject new calls and share one disposal promise. Attempt command, MCP, and plan-module
+   * cleanup, then aggregate failures.
+   */
   dispose(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
@@ -183,22 +220,34 @@ export class ToolGateway {
     })();
     return this.closing;
   }
-  /** 按代理上下文窗口给目录分配有限预算；Codex 传输额外折半，保留固定指导和近期历史空间。 */
+  /**
+   * 按代理上下文窗口给目录分配有限预算；Codex 传输额外折半，保留固定指导和近期历史空间。
+   * EN: Allocate bounded catalogue space from the agent context window, halving it again for Codex
+   * transport and reserving room for fixed guidance and recent history.
+   */
   private catalogueBudget(task: Task) {
     const agent = this.store.require<Agent>('agents', task.agentId),
       factor = agent.providerBinding.authMode === 'codex' ? 2 : 1;
-    // Leave most of the instance window for fixed prompts and recent complete tool groups.
+    // 大部分实例窗口留给固定提示与近期完整工具组。
+    // EN: Leave most of the instance window for fixed prompts and recent complete tool groups.
     return Math.max(
       1024,
       Math.min(MCP_CATALOGUE_BYTES, Math.floor(effectiveContextWindowTokens(agent) / 32 / factor)),
     );
   }
+  /**
+   * 通过内核取得当前Store，插件不会因这个内部访问器直接获得完整网关。
+   * EN: Access the Store through the kernel; this internal getter does not expose the whole gateway to plugins.
+   */
   get store() {
     return this.kernel.store;
   }
   /**
    * 核验中断后结果不明的操作：容器清理只记录停止结果；文件写入只有实际哈希等于
    * 写入前或写入后证据时才判定结果，其他情况继续等待用户核验。
+   * EN: Verify interrupted operations with unknown outcomes. Container cleanup records stopping only;
+   * resolve file writes only when current hashes match before/after evidence. Otherwise keep the user
+   * verification path.
    */
   async recoverOperations() {
     const containers: Operation[] = [];
@@ -229,7 +278,8 @@ export class ToolGateway {
             current.taskId,
           );
         });
-      // Stopping a container never proves its side effects were undone. Keep UNCERTAIN.
+      // 停止容器不能证明副作用已撤销，仍保留UNCERTAIN。
+      // EN: Stopping a container does not prove its side effects were undone; retain UNCERTAIN.
     }
     for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN'])) {
       let operation: Operation | undefined, task: Task | undefined;
@@ -288,13 +338,17 @@ export class ToolGateway {
             this.kernel.updateTask(task, 'WAITING', { waitReason: 'interrupted' });
         });
       } catch {
-        /* 无法证明结果，保留用户核验入口。 */
+        // 无法证明结果，保留用户核验入口。
+        // EN: The result cannot be proved, so keep the user verification path available.
       }
     }
   }
   /**
    * 同步计算当前角色、阶段、运行类型与授权允许的工具。调用方先 prepareDefinitions，
    * 保证惰性模块已就绪；聊天、独立评审、规划和执行分别获得与其职责相符的贡献。
+   * EN: Synchronously compute tools allowed by current role, phase, run kind, and permissions. Call
+   * prepareDefinitions first to activate lazy contributions. Chat, peer-review, planning, and
+   * execution receive their appropriate tools.
    */
   definitions(task: Task): ToolDefinition[] {
     invariant(!this.closed, 'MODULE_DISPOSED', '工具插件已释放');
@@ -361,6 +415,9 @@ export class ToolGateway {
   /**
    * 将任务输入解析为实际路径并检查权限。读取可访问授权的项目源目录；写入必须同时
    * 位于任务工作区和允许写入的路径内，原始路径与解析路径均禁止访问 .git。
+   * EN: Resolve a task input to its real path and check permissions. Reads may access the authorized
+   * project source; writes must stay inside both the task workspace and allowed write roots. Reject
+   * .git in original and resolved paths.
    */
   async path(task: Task, input: string, write = false) {
     const permission = this.kernel.permissions(task),
@@ -404,7 +461,11 @@ export class ToolGateway {
     }
     return real;
   }
-  /** 为项目任务准备工作区；已有基线时创建分离的 Git worktree，再保存任务状态。 */
+  /**
+   * 为项目任务准备工作区；已有基线时创建分离的 Git worktree，再保存任务状态。
+   * EN: Prepare a project-task workspace, using a detached Git worktree when a baseline exists, then
+   * persist the task workspace state.
+   */
   async prepare(task: Task, signal: AbortSignal) {
     if (this.store.require<Run>('runs', task.runId).kind === 'chat') return task;
     if (task.workspace) {
@@ -444,12 +505,20 @@ export class ToolGateway {
       return next;
     });
   }
-  /** 身份或副作用无法唯一核实时先持久进入 verification 等待，再抛错阻止自动重放。 */
+  /**
+   * 身份或副作用无法唯一核实时先持久进入 verification 等待，再抛错阻止自动重放。
+   * EN: Persist a verification wait before raising an identity or uncertain-side-effect error,
+   * preventing automatic replay.
+   */
   private uncertainCall(task: Task, message: string): never {
     this.kernel.wait(this.store.require<Task>('tasks', task.id), 'verification');
     throw new AppError('OPERATION_UNCERTAIN', message);
   }
-  /** 将工具调用绑定到唯一的已记录模型消息，防止同一调用 ID 被更换参数重用。 */
+  /**
+   * 将工具调用绑定到唯一的已记录模型消息，防止同一调用 ID 被更换参数重用。
+   * EN: Bind the tool call to one recorded model message so a reused call ID cannot change its name or
+   * arguments.
+   */
   private callSource(task: Task, call: ToolCall, assistantMessageId?: string) {
     const sequence = inspectToolCalls(this.kernel.history(task));
     if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
@@ -470,7 +539,11 @@ export class ToolGateway {
     );
     return source.message.id;
   }
-  /** 查找同一消息的既有操作；旧记录缺少消息 ID 时，必须依靠回执或请求证据唯一配对。 */
+  /**
+   * 查找同一消息的既有操作；旧记录缺少消息 ID 时，必须依靠回执或请求证据唯一配对。
+   * EN: Find an operation for the same message. Legacy operations without message identity require a
+   * unique receipt or original-request/attempt proof.
+   */
   private previousCall(task: Task, call: ToolCall, assistantMessageId: string) {
     const operations = this.store
       .all<Operation>('tool_operations', task.runId)
@@ -478,8 +551,9 @@ export class ToolGateway {
     const current = operations.filter((operation) => operation.assistantMessageId === assistantMessageId);
     const legacy = operations.filter((operation) => !operation.assistantMessageId);
     if (legacy.length) {
-      // Legacy operations have no response identity. A paired operation receipt or a
-      // unique original request/attempt proves ownership; raw provider IDs alone do not.
+      // 旧操作没有回复身份，必须用配对回执或唯一原请求/尝试证明归属，供应商调用ID本身不足以证明。
+      // EN: Legacy operations lack response identity. A paired receipt or unique original request/attempt
+      // proves ownership; raw provider call IDs alone do not.
       const sessionId = this.store.require<Agent>('agents', task.agentId).sessionId;
       const requests = new Map(
         this.store
@@ -528,6 +602,9 @@ export class ToolGateway {
   /**
    * 校验授权、参数和调用来源后执行工具。已完成的同一调用复用结果，未确认的副作用
    * 转入核验，避免因重试重复执行。具体事务、串行和审核策略由工具贡献声明。
+   * EN: Validate authorization, arguments, and source identity before executing. Replay completed
+   * calls and send unconfirmed side effects to verification rather than executing twice. Contributions
+   * declare transaction, serial, and review properties.
    */
   async call(
     task: Task,
@@ -538,7 +615,8 @@ export class ToolGateway {
   ): Promise<unknown> {
     task = this.store.require<Task>('tasks', task.id);
     const name = call.name;
-    // Load outside SQLite transactions; re-read state after the asynchronous boundary.
+    // 模块加载发生在SQLite事务外，跨过异步边界后重新读取状态。
+    // EN: Load outside SQLite transactions and reread state after the asynchronous boundary.
     if (name === 'propose_plan') {
       await this.prepareDefinitions(task, signal);
       task = this.store.require<Task>('tasks', task.id);
@@ -565,6 +643,8 @@ export class ToolGateway {
     let previous = this.previousCall(task, call, assistantMessageId);
     if (previous) {
       // 先处理旧操作，再申请新审核；重放不得再次执行动作或再次向审核模型计费。
+      // EN: Resolve an existing operation before requesting a new review; replay must neither execute the
+      // action again nor charge another review-model request.
       if (!['DONE', 'FAILED'].includes(previous.status))
         this.uncertainCall(task, '副作用结果待核验，请在决定面板处理');
       invariant(
@@ -585,8 +665,14 @@ export class ToolGateway {
       }
     }
     signal.throwIfAborted();
+    /**
+     * 重新读取所有影响授权的上下文并构造审核指纹输入，检测异步审核期间的变化。
+     * EN: Reread authorization-relevant state and build review-fingerprint input to detect changes during asynchronous review.
+     */
     const scope = () => {
       // 摘要绑定调用原文及所有影响授权的上下文，异步审核完成后可用同一规则检查变化。
+      // EN: Bind the fingerprint to the recorded call and all authorization-relevant context so the same
+      // rules can detect changes after asynchronous review.
       const current = this.store.require<Task>('tasks', task.id),
         run = this.store.require<Run>('runs', task.runId);
       return {
@@ -625,6 +711,8 @@ export class ToolGateway {
       }
       signal.throwIfAborted();
       // 新收件箱要求即使尚未并入任务正文，也会使本次审核失效。
+      // EN: Pending inbox requirements invalidate this review even before they are merged into the task
+      // body.
       invariant(
         review.fingerprint === fingerprint &&
           hash(stable(scope())) === fingerprint &&
@@ -641,6 +729,8 @@ export class ToolGateway {
       );
       if (review.decision !== 'allow') {
         // 拒绝同样登记为终结操作，使相同调用重放时返回原拒绝，而非重复审核。
+        // EN: Persist denied decisions as terminal operations, so replay returns the original denial instead
+        // of starting another review.
         this.store.put<Operation>('tool_operations', {
           id: id(),
           revision: 0,
@@ -661,6 +751,8 @@ export class ToolGateway {
     task = this.store.require<Task>('tasks', task.id);
     const currentRun = this.store.require<Run>('runs', task.runId);
     // 审核可能跨越用户停止或归档操作，真正产生 INTENT 之前重新验证执行资格。
+    // EN: Review can overlap stopping or archiving. Recheck execution eligibility before writing a new
+    // INTENT.
     invariant(
       !currentRun.archived &&
         ['READY', 'RUNNING'].includes(currentRun.status) &&
@@ -688,8 +780,14 @@ export class ToolGateway {
       status: 'INTENT',
       ...(review ? { review } : {}),
     };
+    /**
+     * 持久登记INTENT并发出开始事件，必须先于事务外副作用执行。
+     * EN: Persist INTENT and its started event before any out-of-transaction side effect.
+     */
     const begin = () => {
       // 在外部动作开始前记录意图，崩溃恢复才能区分从未执行与结果待核验。
+      // EN: Record intent before external work starts so crash recovery can distinguish unstarted work
+      // from an unconfirmed result.
       this.store.put('tool_operations', operation);
       this.kernel.event(
         task.runId,
@@ -699,8 +797,14 @@ export class ToolGateway {
         attempt.id,
       );
     };
+    /**
+     * 读取操作最新证据后保存DONE及结果，完成事件与终态同事务提交。
+     * EN: Read the latest operation evidence and persist DONE/result together with the completion event.
+     */
     const finish = (result: unknown) => {
       // 操作终态和完成事件同事务提交，界面不会先收到无法回查的完成通知。
+      // EN: Commit operation terminal state and its completion event together, preventing completion
+      // notifications without a persisted receipt.
       const op = this.store.require<Operation>('tool_operations', operation.id);
       this.store.put('tool_operations', { ...op, status: 'DONE', result });
       this.kernel.event(
@@ -713,6 +817,8 @@ export class ToolGateway {
       return { operationId: operation.id, result };
     };
     // 插件只提供动作；网关仍将内核动作与操作结果放在同一事务。
+    // EN: Plugins supply actions only; the gateway keeps kernel changes and operation results in the
+    // same transaction.
     const invocation = { task, attempt, operation, signal };
     if (contribution.policy.transaction)
       return this.store.tx(() => {
@@ -728,6 +834,8 @@ export class ToolGateway {
     this.store.tx(begin);
     try {
       // 文件、网络和进程动作在事务外运行，避免等待 I/O 时占住 SQLite 写锁。
+      // EN: Run file, network, and process actions outside SQLite transactions to avoid holding the write
+      // lock while awaiting I/O.
       signal.throwIfAborted();
       const pending = contribution.execute(invocation, args);
       const result = pending instanceof Promise ? await pending : pending;
@@ -742,6 +850,8 @@ export class ToolGateway {
             (name !== 'mcp_call' && signal.aborted) ||
             (e instanceof AppError && ['INTEGRATION_CONFLICT', 'COMMAND_CLEANUP'].includes(e.code)));
         // 取消或清理失败不等于副作用未发生；UNCERTAIN 必须保留给核验流程处理。
+        // EN: Cancellation or failed cleanup does not prove that no side effect occurred. Keep UNCERTAIN for
+        // the verification flow.
         this.store.put('tool_operations', {
           ...op,
           status: uncertainty ? 'UNCERTAIN' : 'FAILED',
@@ -766,6 +876,9 @@ export class ToolGateway {
   /**
    * 保存一次资料来源快照并标记为不可信。相同任务、来源和内容摘要复用旧快照；
    * 新内容按该运行下同一来源的已有快照数递增版本，原文对象按内容摘要去重。
+   * EN: Save an untrusted source snapshot. Reuse identical task/source/digest snapshots; new content
+   * increments the version across this run source history, while content-addressed objects deduplicate
+   * bytes.
    */
   snapshot(task: Task, source: string, content: Buffer) {
     const object = this.store.object(content),
@@ -784,7 +897,11 @@ export class ToolGateway {
       version: previous.length + 1,
     });
   }
-  /** 创建任务产物和可回查对象，同名产物递增版本；初始 verified=false，验收后才标为已核验。 */
+  /**
+   * 创建任务产物和可回查对象，同名产物递增版本；初始 verified=false，验收后才标为已核验。
+   * EN: Create a task artifact with a retrievable object and increment same-name versions. Start with
+   * verified=false and mark it verified only after acceptance.
+   */
   artifact(task: Task, name: string, content: Buffer | string, source: string) {
     const object = this.store.object(content);
     return this.store.tx(() => {
@@ -810,6 +927,9 @@ export class ToolGateway {
   /**
    * 将任务工作区全部变更暂存，再与冻结基线生成含二进制补丁的 changes.diff 产物。
    * 禁用外部 diff/textconv；命令失败或输出截断时拒绝发布不完整补丁。
+   * EN: Stage all task-workspace changes and generate a binary-capable changes.diff against the frozen
+   * baseline. Disable external diff and textconv; reject failed or truncated output instead of
+   * publishing an incomplete patch.
    */
   async diff(task: Task, signal: AbortSignal) {
     invariant(task.baseline, 'GIT_REQUIRED', '当前任务没有 Git 基线，无法生成差异');
@@ -840,6 +960,11 @@ export class ToolGateway {
    * 文件重新校验哈希；命令要求本任务成功且未超时；产物只能来自当前任务，
    * 或当前合同版本下已完成且标记 required 的直属子任务。
    * 若需要独立评分则先走评审门禁，否则同事务完成任务、产物验证标记、执行尝试及根运行。
+   * EN: Verify result claims: required children completed, every acceptance criterion has evidence,
+   * and files/artifacts/commands are retrievable. Rehash files; require successful, non-timeout
+   * commands from this task. Accept artifacts only from this task or completed required direct
+   * children in the current contract version. Apply the peer-review gate when required, otherwise
+   * finish task, artifact verification, attempt, and root run together.
    */
   async submit(
     task: Task,
@@ -904,6 +1029,8 @@ export class ToolGateway {
       task = this.store.require<Task>('tasks', task.id);
       invariant(task.status === 'RUNNING', 'STOPPED', '任务已停止');
       // 证据读取包含异步边界，最终状态提交前重新检查任务；评分未通过时不会执行后续完成流程。
+      // EN: Evidence reads cross asynchronous boundaries. Recheck task status before terminal persistence;
+      // pending peer review prevents the completion path.
       const review = gatePeerReview(this.kernel, task, args);
       if (review) return review;
       this.kernel.updateTask(task, 'VERIFYING');
@@ -937,6 +1064,10 @@ export class ToolGateway {
    * 获取精确授权的 HTTP(S) 地址，最多跟随三次同样获得授权的跳转，并保存不可信资料快照。
    * 每跳重新检查协议、端口和全部 DNS 地址，再把连接固定到已检查的地址以减少重绑定风险。
    * 响应原文有 2 MiB 上限，返回给模型的文本预览最多 30000 个 UTF-16 单元。
+   * EN: Fetch an exactly authorized HTTP(S) URL, following at most three separately authorized
+   * redirects and saving an untrusted source snapshot. Recheck protocol, port, and every DNS result
+   * per hop, then pin the connection to a verified address to reduce rebinding risk. Bound raw
+   * response bytes to 2 MiB and model-visible text to 30000 UTF-16 units.
    */
   async fetch(task: Task, input: string, signal: AbortSignal) {
     const allowed = this.kernel.permissions(task).urls.map((u) => new URL(u).href);
@@ -956,9 +1087,11 @@ export class ToolGateway {
         addresses.length && addresses.every(({ address }) => isPublicAddress(address)),
         'URL_PRIVATE',
         '禁止访问本机、私网或保留地址',
-      ); // 每个跳转必须重新获得 URL 授权，fetch 不自动重定向。
+      ); /* 每个跳转必须重新获得 URL 授权，fetch 不自动重定向。 EN: Every redirect requires fresh exact-URL authorization; fetch does not follow redirects automatically. */
       invariant(allowed.includes(url.href), 'REDIRECT_DENIED', '跳转 URL 未授权，请追加到授权列表');
       // 固定到已经检查的 DNS 地址，避免检查与连接之间的 DNS rebinding。
+      // EN: Pin the connection to the already checked DNS address to reduce rebinding between validation
+      // and connection.
       const pinned = addresses.find((a) => isIP(a.address) === 4) ?? addresses[0];
       const response = await pinnedRequest(url, pinned.address, signal);
       if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -990,6 +1123,9 @@ export class ToolGateway {
 /**
  * 使用已核验 IP 发出一次请求，保留 URL 的主机与 TLS 语义；20 秒超时与调用取消共同生效。
  * 不自动跟随重定向，返回 Location 供上层重新授权；普通正文按原始字节累计限制为 2 MiB。
+ * EN: Make one request to a verified IP while retaining URL host and TLS semantics. Combine caller
+ * cancellation with a twenty-second timeout. Return redirect Location for upper-layer authorization
+ * instead of following it, and bound normal body bytes to 2 MiB.
  */
 function pinnedRequest(
   url: URL,
@@ -1006,6 +1142,10 @@ function pinnedRequest(
           'Accept-Encoding': 'identity',
         },
         family: isIP(address),
+        /**
+         * HTTP连接固定返回已验证IP，禁止连接阶段重新进行DNS解析。
+         * EN: Return the already verified IP from HTTP lookup, preventing a fresh DNS resolution at connection time.
+         */
         lookup: (_host, _options, callback) => callback(null, address, isIP(address)),
       },
       (response) => {
@@ -1033,7 +1173,11 @@ function pinnedRequest(
     request.end();
   });
 }
-/** 过滤此模块列出的私有、回环、组播及保留地址段；输入应来自 IP 解析而非任意主机名。 */
+/**
+ * 过滤此模块列出的私有、回环、组播及保留地址段；输入应来自 IP 解析而非任意主机名。
+ * EN: Reject the private, loopback, multicast, and reserved ranges listed here. Inputs should come
+ * from IP parsing rather than arbitrary hostnames.
+ */
 export function isPublicAddress(address: string) {
   const a = address.toLowerCase();
   if (a.includes(':'))

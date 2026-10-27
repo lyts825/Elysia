@@ -1,10 +1,15 @@
-/* 确认交接内容的复核操作。 */
+/**
+ * 确认交接内容的复核操作。
+ * 对准备带入的交接来源展示分步复核与确认状态，向父组件报告待确认阶段；不直接发送续接请求。
+ * EN: Confirms the scope of reviewed content included in a handoff. Presents staged review/acknowledgement for handoff sources and reports pending confirmation to the parent without directly submitting continuation.
+ */
 import { useId } from 'react';
 import './handoff-review-confirmation.css';
 
 /**
  * 明确区分已加入与仍待加入的备注/差异数量。存在待处理内容时由父级记录本次忽略选择，
  * 此组件只报告决定，不能自动把待处理内容加入创建负载或删除原备注。
+ * EN: Distinguish added notes/differences from those still pending. The parent records an explicit ignore choice when pending content exists. This component reports a decision only; it cannot add pending content to the creation payload or delete original notes.
  */
 export function HandoffReviewConfirmation({
   added,
@@ -27,7 +32,10 @@ export function HandoffReviewConfirmation({
 }) {
   const explanationId = useId();
   const hasPending = !!pending || !!pendingDifferences;
-  // 没有任何复核备注或差异时无需确认范围。
+  /**
+   * 没有任何复核备注或差异时无需确认范围。
+   * EN: No scope confirmation is needed when there are no review notes or differences.
+   */
   if (!added && !pending && !addedDifferences && !pendingDifferences) return null;
   return (
     <section className="workflow-source handoff-confirmation" aria-label="确认复核备注范围">

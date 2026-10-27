@@ -1,5 +1,11 @@
-/* 定义 terminal-install-failure 对应界面的样式与布局。 */
-/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 终端安装失败说明：以自适应字段网格展示安装目标，再组织修复建议及动作。长镜像、路径和错误文字允许断行，避免失败证据超出安装记录卡片。
+ * EN: Terminal installation failure: uses adaptive target fields followed by repair guidance/actions. Long images, paths, and errors wrap to keep failure evidence within the installation card.
+ */
+/*
+ * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ */
 .terminal-install-failure-target {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -15,7 +21,10 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .terminal-install-failure-target dd {
   margin: 0;
   overflow-wrap: anywhere;

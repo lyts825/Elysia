@@ -1,4 +1,8 @@
-/* 展示产物文件内容，并支持终端日志上下文。 */
+/**
+ * 展示产物文件内容，并支持终端日志上下文。
+ * 把冻结产物或终端日志来源交给统一文件阅读视图，管理读取与定位；不从文件名推断其他版本正文。
+ * EN: Previews artifact file content and optionally exposes terminal log context. Routes frozen artifacts or terminal-log sources through the shared file reader with loading and location state; it does not infer another revision from a filename.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { FileContentView, fileEncodingOptions } from './FileContentView';
@@ -16,6 +20,7 @@ export interface TerminalLogContext {
  * 读取指定产物的有界预览，并按产物/检查点恢复编码和阅读位置。
  * logContext 可由调用方直接提供；缺省时只在允许且有运行检查点的情况下查询日志能力，
  * 普通产物不因此获得终端日志搜索权限。
+ * EN: Reads a bounded artifact preview and restores encoding and reading position per artifact and checkpoint. The caller may provide logContext; otherwise log capability is queried only when permitted and a run checkpoint exists. An ordinary artifact gains no terminal log search permission from being previewed.
  */
 export function ArtifactFilePreview({
   id,
@@ -32,7 +37,10 @@ export function ArtifactFilePreview({
   const client = useSurfaceClient(),
     { api } = client;
   const savedKey = JSON.stringify(['artifact', checkpointKey, id]);
-  // 文件编码和分页位置按产物与检查点隔离，重新打开时可恢复阅读状态。
+  /**
+   * 文件编码和分页位置按产物与检查点隔离，重新打开时可恢复阅读状态。
+   * EN: Keep encoding and pagination positions isolated by artifact and checkpoint so reopening can restore the correct reading state.
+   */
   const [encoding, setEncoding] = useState(
     () => readingCheckpoint<{ encoding: string }>(client, savedKey)?.encoding || 'auto',
   );
@@ -50,7 +58,10 @@ export function ArtifactFilePreview({
       ? resolvedContext
       : null;
   const context = logContext || currentResolvedContext?.value || undefined;
-  // 解析结果以运行与产物双重身份缓存；切换对象时取消旧请求，不让迟到结果覆盖当前上下文。
+  /**
+   * 解析结果以运行与产物双重身份缓存；切换对象时取消旧请求，不让迟到结果覆盖当前上下文。
+   * EN: Cache resolved context under both run and artifact identity. Cancel the old request when switching objects so late results cannot overwrite the current context.
+   */
   useEffect(() => {
     if (!resolveLogContext || logContext || !checkpointKey || currentResolvedContext) return;
     const controller = new AbortController();
@@ -75,12 +86,19 @@ export function ArtifactFilePreview({
     JSON.stringify([savedKey, 'outer', value?.page?.version]),
     !!value && !loading,
   );
+  /**
+   * 按客户端和阅读键保存编码偏好；编码变化只更新检查点，不主动修改文件内容。
+   * EN: Persists encoding preference by client and reading key; encoding changes update the checkpoint without modifying file content.
+   */
   useEffect(() => {
     saveReadingCheckpoint(client, savedKey, { encoding });
   }, [client, savedKey, encoding]);
   const [searchOpen, setSearchOpen] = useState(false),
     [query, setQuery] = useState('');
-  // query 是正在输入的文字，intent 才是已提交搜索；继续搜索沿用已读关键词与日志版本。
+  /**
+   * query 是正在输入的文字，intent 才是已提交搜索；继续搜索沿用已读关键词与日志版本。
+   * EN: query is the input being edited; intent is a submitted search. Continuing a search keeps the loaded term and log version.
+   */
   const [intent, setIntent] = useState<{
     query: string;
     cursor: number;
@@ -91,11 +109,18 @@ export function ArtifactFilePreview({
   const [searchPage, setSearchPage] = useState<TerminalLogSearchPage | null>(null);
   const [searchBusy, setSearchBusy] = useState(false),
     [searchError, setSearchError] = useState('');
-  // intent.id 区分同一关键词的显式重试，completed 阻止 effect 重渲染重复提交已结束请求。
+  /**
+   * intent.id 区分同一关键词的显式重试，completed 阻止 effect 重渲染重复提交已结束请求。
+   * EN: intent.id distinguishes an explicit retry of the same term; completed prevents rerenders from resubmitting an already finished request.
+   */
   const completed = useRef('');
   const [target, setTarget] = useState<(TerminalLogMatch & { requestId: string; version: string }) | null>(
     null,
   );
+  /**
+   * 按搜索意图、产物和终端任务身份读取日志匹配页；同查询/版本才追加，切换或卸载取消，结果有界去重。
+   * EN: Reads log matches by search intent, artifact, and terminal-task identity, appending only the same query/revision with bounded deduplication; changes or teardown abort the request.
+   */
   useEffect(() => {
     if (!intent || !context || completed.current === intent.id) return;
     const controller = new AbortController();
@@ -112,7 +137,10 @@ export function ArtifactFilePreview({
       .then((page) => {
         if (controller.signal.aborted) return;
         completed.current = intent.id;
-        // 只有同一查询、同一文件版本才能追加；按字节起点去重并保留最近 300 条匹配。
+        /**
+         * 只有同一查询、同一文件版本才能追加；按字节起点去重并保留最近 300 条匹配。
+         * EN: Append only for the same query and file version, deduplicate by starting byte offset, and retain at most the latest 300 matches.
+         */
         setSearchPage((old) =>
           intent.append && old?.query === page.query && old.version === page.version
             ? {
@@ -137,7 +165,10 @@ export function ArtifactFilePreview({
     return () => controller.abort();
   }, [intent, id, context?.runId, context?.taskId]);
   useEffect(() => {
-    // 日志匹配使用 UTF-8 字节定位，先等对应编码页就绪；文件版本变动后旧匹配不再可定位。
+    /**
+     * 日志匹配使用 UTF-8 字节定位，先等对应编码页就绪；文件版本变动后旧匹配不再可定位。
+     * EN: Log matches use UTF-8 byte positions. Wait for the corresponding encoded page before locating them; a file-version change invalidates old matches.
+     */
     if (!target || loading || !value?.page || value.encoding !== 'utf-8') return;
     if (target.version !== value.page.version) {
       setTarget(null);

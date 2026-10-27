@@ -1,4 +1,8 @@
-/* 展示评审模型选择及约束。 */
+/**
+ * 展示评审模型选择及约束。
+ * 编辑是否要求独立审计模型的策略并管理确认过程，向父组件报告未完成确认；具体连接和执行权限由上层校验。
+ * EN: Controls explicit same-model review exceptions. Edits the independent-audit-model policy and manages its acknowledgement, reporting pending confirmation while parents validate actual connections and execution authority.
+ */
 import { useId, useState } from 'react';
 import { Modal } from './Modal';
 import './workflow-policy-confirmation.css';
@@ -6,6 +10,7 @@ import './workflow-policy-confirmation.css';
 /**
  * 管理当前表单的同型号复核例外：开启先进入本地确认态，确认后才调用 change(true)。
  * pendingChanged 让外层阻止在未处理确认时提交；关闭确认不代表持久保存合同。
+ * EN: Enabling enters local confirmation and calls change(true) only afterward. pendingChanged blocks outer submission while unresolved; closing confirmation does not save a contract.
  */
 export function ReviewModelPolicy({
   allowed,
@@ -19,8 +24,15 @@ export function ReviewModelPolicy({
   pendingChanged: (pending: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  // 启用同模型例外需要单独确认；关闭选项可直接应用。
+  /**
+   * 启用同模型例外需要单独确认；关闭选项可直接应用。
+   * EN: Enabling needs separate confirmation; disabling may apply immediately.
+   */
   const helpId = useId();
+  /**
+   * 关闭模型策略的待确认步骤，并通知父组件不存在未完成确认，供导航保护同步。
+   * EN: Closes the model-policy confirmation step and notifies the parent that no pending confirmation remains for navigation protection.
+   */
   const close = () => {
     setConfirming(false);
     pendingChanged(false);

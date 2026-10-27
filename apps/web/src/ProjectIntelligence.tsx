@@ -1,4 +1,8 @@
-/* 管理项目记忆及能力配置。 */
+/**
+ * 管理项目记忆及能力配置。
+ * 编辑项目技能选择及记忆，分别维护目录、权威修订和本地原稿；提交回执只清理仍匹配请求的输入，未知写入结果保留核对依据。
+ * EN: Manages project memories and capabilities. Edits project capability selections and memories while separating catalog, authoritative revision, and local source; acknowledgements clear only matching input and unknown writes retain reconciliation evidence.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type {
@@ -28,7 +32,10 @@ const memoryShape = z
   })
   .strict();
 const pendingShape = z.discriminatedUnion('kind', [
-  // 持久化待处理操作及命令 ID，以便请求结果未知时保留核对依据。
+  /**
+   * 持久化待处理操作及命令 ID，以便请求结果未知时保留核对依据。
+   * EN: Persist pending operations/command IDs for reconciliation of unknown outcomes.
+   */
   selectionShape.extend({ kind: z.literal('capability'), commandId: z.string().uuid() }),
   memoryShape.extend({ kind: z.literal('memory'), commandId: z.string().uuid() }),
   z
@@ -56,12 +63,21 @@ type MemoryDraft = z.infer<typeof memoryShape>;
 type ReadState = { status: 'idle' | 'loading' | 'ready' | 'error'; message: string };
 const idle: ReadState = { status: 'idle', message: '' };
 const states = { draft: '草稿', active: '已启用', revoked: '已撤销' };
+/**
+ * 把Error实例的消息交给界面，其余未知失败使用统一可重试提示，避免渲染不可读异常对象。
+ * EN: Exposes Error messages and uses a consistent retry message for unknown failures instead of rendering an unreadable exception object.
+ */
 const errorText = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，请重试。');
+/**
+ * 按项目ID生成能力与记忆编辑草稿键，隔离不同项目的未提交输入。
+ * EN: Builds a project-scoped capabilities and memory draft key, isolating unsaved inputs between projects.
+ */
 export const projectIntelligenceKey = (id: string) => `draft:project-intelligence:${id}`;
 
 /**
  * 严格读取持久草稿；损坏、超限或记忆 ID/版本配对不完整时抛错，调用方保留原文供导出。
  * 缺少草稿是合法初始状态，不能把无法读取的草稿静默替换成空对象。
+ * EN: Strictly restore drafts; reject corruption, oversize input, or incomplete memory ID/revision pairing and preserve original for export. Absence is valid, unreadability must not silently become empty.
  */
 function readDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1 };
@@ -75,7 +91,10 @@ function readDraft(raw: unknown): Draft {
     throw Error('保存请求的记忆版本不完整，原稿保留。');
   return result.data;
 }
-/** 从权威记忆生成编辑基线，expectedRevision 随草稿保存以检测后续并发修改。 */
+/**
+ * 从权威记忆生成编辑基线，expectedRevision 随草稿保存以检测后续并发修改。
+ * EN: Build editing baseline from authoritative memory and retain expectedRevision for concurrent changes.
+ */
 function memoryDraft(memory: ProjectMemory): MemoryDraft {
   return {
     id: memory.id,
@@ -86,11 +105,19 @@ function memoryDraft(memory: ProjectMemory): MemoryDraft {
     status: memory.status,
   };
 }
+/**
+ * 逐项比较记忆草稿身份、预期版本和内容；提交回执只清理仍与原请求一致的草稿。
+ * EN: Compares memory identity, expected revision, and content so an acknowledgement clears only a draft still matching its request.
+ */
 const sameMemory = (value: MemoryDraft | undefined, request: MemoryDraft) =>
   !!value &&
   ['id', 'expectedRevision', 'title', 'text', 'source', 'status'].every(
     (key) => value[key as keyof MemoryDraft] === request[key as keyof MemoryDraft],
   );
+/**
+ * 比较能力选择的预期版本及两个有序ID列表，用于防止旧保存结果清除后续编辑。
+ * EN: Compares expected revision and both ordered capability-ID lists so an old save result cannot clear subsequent edits.
+ */
 const sameSelection = (
   value: z.infer<typeof selectionShape> | undefined,
   request: z.infer<typeof selectionShape>,
@@ -99,7 +126,10 @@ const sameSelection = (
   value.expectedRevision === request.expectedRevision &&
   JSON.stringify(value.builtinSkillIds) === JSON.stringify(request.builtinSkillIds) &&
   JSON.stringify(value.localItemIds) === JSON.stringify(request.localItemIds);
-/** 将无法安全处理的原草稿原样导出为文本，下载后延迟释放对象 URL。 */
+/**
+ * 将无法安全处理的原草稿原样导出为文本，下载后延迟释放对象 URL。
+ * EN: Export unsafe-to-process originals verbatim as text; release URL after download starts.
+ */
 function exportOriginal(raw: unknown, projectId: string) {
   const url = URL.createObjectURL(
     new Blob([typeof raw === 'string' ? raw : JSON.stringify(raw ?? '')], {
@@ -113,7 +143,10 @@ function exportOriginal(raw: unknown, projectId: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** 用 projectId 作为编辑器身份；切换项目重新建立读取、草稿和提交状态。 */
+/**
+ * 用 projectId 作为编辑器身份；切换项目重新建立读取、草稿和提交状态。
+ * EN: Key editor by projectId to rebuild reads/drafts/submission state on project changes.
+ */
 export function ProjectIntelligence({
   projectId,
   cache,
@@ -130,6 +163,7 @@ export function ProjectIntelligence({
  * 管理项目冻结能力选择、项目记忆及模型路由草稿。能力和记忆分别读取，草稿单独加载；
  * 未知保存结果以 pending 命令持久保留并锁住新提交，直到相同负载重试得到确定结果。
  * 归档、草稿损坏或基线版本过期时保持只读或要求重新核对，不能自行覆盖服务端数据。
+ * EN: Track capability/memory reads and local draft separately. Persist unknown saves as pending exact commands and lock new submissions until identical retry resolves them. Archive/corruption/stale baseline requires read-only handling or renewed review, not automatic server overwrite.
  */
 function IntelligenceEditor({
   projectId,
@@ -167,6 +201,10 @@ function IntelligenceEditor({
   const active = useRef(true),
     writing = useRef(false);
   const readers = useRef<{ capabilities?: AbortController; memories?: AbortController }>({});
+  /**
+   * 组件生命周期控制能力与记忆异步回写权限；卸载同时取消两个资源读取，提交结果另通过active检查。
+   * EN: Uses component lifetime to gate capability/memory updates, aborting both resource readers on teardown while submissions separately check active.
+   */
   useEffect(() => {
     active.current = true;
     return () => {
@@ -174,6 +212,10 @@ function IntelligenceEditor({
       Object.values(readers.current).forEach((reader) => reader?.abort());
     };
   }, []);
+  /**
+   * 缓存、项目键或重试代次变化时先确保完整原稿已载入；只有仍有效的effect发布就绪或错误，避免空状态覆盖未读草稿。
+   * EN: Ensures the complete source draft is loaded when cache, project key, or retry changes; only the live effect publishes readiness/error so an empty state cannot replace unread input.
+   */
   useEffect(() => {
     let current = true;
     void cache
@@ -192,9 +234,15 @@ function IntelligenceEditor({
     };
   }, [cache, key, draftAttempt]);
 
-  /** 取消同类旧读取后验证项目归属，再发布结果；能力读取不取消记忆读取。 */
+  /**
+   * 取消同类旧读取后验证项目归属，再发布结果；能力读取不取消记忆读取。
+   * EN: Cancel old same-kind reads, validate project, then publish; capability reads do not cancel memories.
+   */
   async function read(kind: 'capabilities' | 'memories') {
-    // 能力和记忆分别取消及读取；结果必须属于当前项目。
+    /**
+     * 能力和记忆分别取消及读取；结果必须属于当前项目。
+     * EN: Read/cancel capabilities and memories independently and validate current project.
+     */
     readers.current[kind]?.abort();
     const controller = new AbortController();
     readers.current[kind] = controller;
@@ -227,10 +275,18 @@ function IntelligenceEditor({
         setRead({ status: 'error', message: errorText(issue) });
     }
   }
+  /**
+   * 入口客户端或项目变化时分别读取能力目录和记忆基线，两类读取保持独立状态，取消由各读取器与生命周期清理协调。
+   * EN: Reads capability and memory baselines separately after client/project changes, retaining independent read state with cancellation coordinated by their readers and lifecycle cleanup.
+   */
   useEffect(() => {
     void read('capabilities');
     void read('memories');
   }, [api, projectId]);
+  /**
+   * 取消指定能力或记忆读取并标记需重读，保留上次结果和本地输入以供核对。
+   * EN: Cancels a capabilities or memories read and marks it for rereading while retaining the prior result and local input for inspection.
+   */
   function cancel(kind: 'capabilities' | 'memories') {
     readers.current[kind]?.abort();
     (kind === 'capabilities' ? setCapRead : setMemoryRead)({
@@ -245,9 +301,15 @@ function IntelligenceEditor({
   } catch (issue) {
     parseError = errorText(issue);
   }
-  /** 基于缓存中的最新草稿执行更新，再校验形状和总容量，成功后触发当前组件重读。 */
+  /**
+   * 基于缓存中的最新草稿执行更新，再校验形状和总容量，成功后触发当前组件重读。
+   * EN: Update newest cached draft, validate shape/capacity, then trigger reread after save.
+   */
   function change(update: (value: Draft) => Draft) {
-    // 先校验并检查容量，再覆盖缓存；失败时保留原草稿。
+    /**
+     * 先校验并检查容量，再覆盖缓存；失败时保留原草稿。
+     * EN: Validate/capacity-check before cache replacement; preserve old draft on failure.
+     */
     try {
       if (!loaded || !active.current) return false;
       const next = draftShape.parse(update(readDraft(cache.get(key))));
@@ -280,8 +342,16 @@ function IntelligenceEditor({
   const bytes = new TextEncoder().encode(editor?.text ?? '').length;
   const memoryLimit = memories?.limits.memoryBytes ?? 16384;
   const history = memories?.memories.find((item) => item.id === historyId);
+  /**
+   * 将名称与描述组合后按去空白、忽略大小写的查询筛选能力列表。
+   * EN: Filters capabilities by matching a trimmed case-insensitive query against combined name and description.
+   */
   const matched = (name: string, description: string) =>
     `${name} ${description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+  /**
+   * 把已选技能和本地导入ID解析为目录名称；缺失项保留失效标识，空集合明确显示未选择。
+   * EN: Resolves selected skill/import IDs to catalog names, preserving invalid-ID labels for missing entries and an explicit empty-selection label.
+   */
   const capabilityNames = (value: { builtinSkillIds: string[]; localItemIds: string[] }) =>
     [
       ...value.builtinSkillIds.map(
@@ -291,6 +361,10 @@ function IntelligenceEditor({
         (id) => view?.catalog.localItems.find((item) => item.id === id)?.name ?? `已失效导入项 ${id}`,
       ),
     ].join('、') || '未选择能力';
+  /**
+   * 在未锁定且已有选择草稿时增删指定能力ID；新增使用Set去重，其余草稿字段通过change保留。
+   * EN: Adds or removes a capability ID only for an unlocked existing selection, deduplicating additions with Set and preserving other draft fields through change.
+   */
   function toggle(field: 'builtinSkillIds' | 'localItemIds', id: string, checked: boolean) {
     if (!selection || locked) return;
     const next = {
@@ -305,9 +379,13 @@ function IntelligenceEditor({
    * 发送前将精确负载和 commandId 写入草稿，并确认它仍对应当前编辑内容。
    * 成功只清除属于本次命令且未被改动的部分；记忆写入后重新读完整列表。
    * 未知错误保留 pending，用户只能核对或重试同一请求，避免重复创建或覆盖新版本。
+   * EN: Persist exact payload/commandId before sending and confirm matching edits. Clear only unchanged parts of this command on success, then reread memories. Unknown failure retains pending for identical retry/reconciliation, avoiding duplicate creates or newer-version overwrite.
    */
   async function submit(request: Pending) {
-    // 发送前固定当前输入和请求；已有待核对请求只能使用同一内容继续。
+    /**
+     * 发送前固定当前输入和请求；已有待核对请求只能使用同一内容继续。
+     * EN: Freeze input/request first; unresolved commands continue only with the same content.
+     */
     if (writing.current || archived || !active.current) return;
     if (
       !change((value) => {
@@ -358,7 +436,10 @@ function IntelligenceEditor({
         if (next.projectId !== projectId || (id && next.id !== id))
           throw Error('保存返回的记忆不匹配，上次请求需核对。');
         if (!active.current) return;
-        // A successful item write does not confirm the whole list; cancel stale reads and refresh it.
+        /**
+         * 单项成功不能确认全列表；取消旧读取并刷新。
+         * EN: A successful item write does not confirm the whole list; cancel stale reads and refresh it.
+         */
         readers.current.memories?.abort();
         setMemories((value) =>
           value
@@ -417,6 +498,10 @@ function IntelligenceEditor({
       if (active.current) setBusy(false);
     }
   }
+  /**
+   * 在未锁定且无编辑器时创建记忆草稿；已有记忆保留身份与版本，可覆盖目标状态，新记忆从空字段开始。
+   * EN: Creates a memory draft only while unlocked and no editor is active, preserving existing identity/revision with an optional status change or initializing empty fields for a new memory.
+   */
   function prepareMemory(item?: ProjectMemory, status?: MemoryDraft['status']) {
     if (locked || editor) return;
     change((value) => ({
@@ -426,6 +511,10 @@ function IntelligenceEditor({
         : { title: '', text: '', source: '', status: 'draft' },
     }));
   }
+  /**
+   * 按读取类型与状态渲染重读、取消和错误反馈；保留结果时明确提示它们尚未更新。
+   * EN: Renders reread, cancellation, and error controls by resource and read state, indicating when retained results have not been refreshed.
+   */
   const readControls = (kind: 'capabilities' | 'memories', state: ReadState, retained: boolean) => (
     <div className="intelligence-read">
       <button
@@ -1082,6 +1171,10 @@ function IntelligenceEditor({
   );
 }
 
+/**
+ * 在可聚焦的阅读区域完整展示记忆正文和来源，使用上下文标签区分不同记忆。
+ * EN: Displays full memory text and source in focusable reading regions, using contextual labels to distinguish entries.
+ */
 function MemoryContent({ context, text, source }: { context: string; text: string; source: string }) {
   return (
     <div className="intelligence-content">

@@ -1,4 +1,10 @@
-// 启动 Electron 主进程并协调桌面窗口与本地服务。
+/**
+ * 启动 Electron 主进程并协调桌面窗口与本地服务。
+ * EN: Start the Electron main process and coordinate the desktop window with the local backend.
+ *
+ * 负责单实例、启动握手、窗口导航及服务装配；渲染层通过预加载桥申请桌面能力，避免直接访问主进程实现。
+ * EN: Own single-instance startup, build handshakes, navigation, and service assembly; renderer access goes through the preload bridge.
+ */
 const { app, BrowserWindow, dialog, Menu } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
@@ -22,6 +28,8 @@ const data = path.resolve(
   process.env.ELYSIA_DATA_DIR || path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'Elysia'),
 );
 // Electron 配置与业务数据共用所选数据目录，但桌面偏好单独放入 desktop 子目录。
+// EN: Use the selected data directory for Electron and application data, while keeping desktop
+// preferences in a separate desktop subdirectory.
 app.setName('Elysia');
 app.setPath('userData', path.join(data, 'desktop'));
 app.setAppUserModelId('local.elysia.desktop');
@@ -37,10 +45,17 @@ const logFile = packaged
   ? path.join(data, 'logs', 'desktop.log')
   : path.join(root, '.elysia-runtime', 'desktop.log');
 mkdirSync(path.dirname(logFile), { recursive: true });
+/**
+ * 向桌面日志追加带ISO时间戳的一行诊断文本。
+ * EN: Append one ISO-timestamped diagnostic line to the desktop log.
+ */
 const log = (text) => appendFileSync(logFile, new Date().toISOString() + ' ' + text + '\n');
 /**
  * 只执行一次关闭流程，先通知仍连接的后端安全退出，再尽力刷新诊断和关闭构建租约。
  * quitting 同时让窗口及 app 的关闭事件放行，避免安全关闭过程中递归触发新的关闭流程。
+ * EN: Run shutdown once: request safe backend termination, then attempt to flush diagnostics and
+ * close the build lease. The quitting flag also lets window and app close events proceed without
+ * recursively starting another shutdown.
  */
 async function shutdown() {
   if (quitting) return;
@@ -63,6 +78,8 @@ async function shutdown() {
   app.quit();
 }
 // 新实例未取得锁时通知启动器，已有窗口由 second-instance 事件激活。
+// EN: Notify the launcher when a new instance fails to acquire the lock; the second-instance event
+// activates the existing window.
 if (!app.requestSingleInstanceLock()) {
   if (process.send) process.send({ type: 'desktop-focused' }, () => app.quit());
   else app.quit();
@@ -70,8 +87,10 @@ if (!app.requestSingleInstanceLock()) {
   const launchBuild = packaged
     ? Promise.resolve().then(() => require('./packaged.cjs').packagedBuild(root))
     : waitForLaunchBuild(process, process.env.ELYSIA_LAUNCH_HANDSHAKE === '1');
-  // 安装包直接校验内置资源；源码启动等待启动器返回按输入摘要保存的构建。
-  // Attach immediately: a launcher failure may arrive before Electron's ready event.
+  // 安装包直接核验内置资源，源码启动等待启动器返回摘要构建；立即观察握手失败，因为错误可能早于 Electron ready 事件到达。
+  // EN: Packaged launches verify bundled resources; source launches await the launcher build keyed by
+  // its input digest. Observe handshake rejection immediately because launcher failure can precede
+  // Electron readiness.
   launchBuild.catch(() => {});
   app.on('second-instance', () => {
     if (window && !hiddenLaunch) {
@@ -106,6 +125,8 @@ if (!app.requestSingleInstanceLock()) {
       });
       Menu.setApplicationMenu(null);
       // 页面使用隔离上下文和沙箱；本机能力只能经 preload 暴露的接口访问。
+      // EN: Use context isolation and sandboxing; expose native capabilities only through the preload
+      // bridge.
       window = new BrowserWindow({
         title: 'Elysia',
         icon: iconPath,
@@ -137,16 +158,24 @@ if (!app.requestSingleInstanceLock()) {
         });
       }
       // 默认拒绝浏览器权限、新窗口和 webview；资源预览由受限导航规则控制。
+      // EN: Deny browser permissions, new windows, and webviews by default. Resource previews follow the
+      // restricted navigation policy.
       window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
       window.webContents.session.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-attach-webview', (event) => event.preventDefault());
       const startingUrl = pathToFileURL(path.join(__dirname, 'starting.html')).href;
+      /**
+       * 根据后端是否已就绪选择启动页或本地导航白名单。
+       * EN: Choose the fixed startup page or local navigation policy according to backend readiness.
+       */
       const allowed = (url, main) =>
         uiOrigin
           ? allowedLocalNavigation(url, window.webContents.getURL(), uiOrigin, main)
           : main && url === startingUrl;
       // 服务尚未就绪时只能打开固定启动页；就绪后切换为本地服务的导航白名单。
+      // EN: Before the backend is ready, allow only the fixed startup page. Afterwards, enforce the
+      // local-service navigation allowlist.
       window.webContents.on('will-frame-navigate', (event) => {
         if (!allowed(event.url, event.isMainFrame)) event.preventDefault();
       });
@@ -162,6 +191,8 @@ if (!app.requestSingleInstanceLock()) {
       });
       await window.loadFile(path.join(__dirname, 'starting.html'));
       // 先展示轻量窗口再启动后端；偏好和媒体加载不会阻塞服务创建。
+      // EN: Show a lightweight window before starting the backend. Preference and media reads do not gate
+      // service creation.
       if (!hiddenLaunch) window.show();
       diagnostics.mark('window-visible', hiddenLaunch ? 'skipped' : 'ok');
       const dev = !packaged && process.env.ELYSIA_DEV === '1';
@@ -175,6 +206,8 @@ if (!app.requestSingleInstanceLock()) {
       };
       if (packaged) {
         // 发行版使用随包 Node 和资源路径，不继承可改变模块解析或启动行为的 Node 配置。
+        // EN: Use the bundled Node runtime and resource paths for distributions; remove inherited Node
+        // settings that could alter startup or module resolution.
         backendEnvironment.ELYSIA_DEV = '0';
         delete backendEnvironment.NODE_OPTIONS;
         delete backendEnvironment.NODE_PATH;
@@ -195,6 +228,8 @@ if (!app.requestSingleInstanceLock()) {
       if (backend.pid) buildLease?.backend(backend.pid);
       let failed = false;
       // 后端错误、退出与加载失败可能竞争，只展示一次失败并进入统一关闭流程。
+      // EN: Backend errors, process exit, and page-load failure can race. Present one failure and enter
+      // the shared shutdown path.
       const fail = (message) => {
         if (failed || quitting) return;
         failed = true;
@@ -218,6 +253,8 @@ if (!app.requestSingleInstanceLock()) {
       backend.on('message', async (message) => {
         if (message?.type === 'desktop-request' && typeof message.id === 'string') {
           // 后端不能直接使用 Electron 安全存储/系统浏览器，通过带 ID 的请求回执桥调用。
+          // EN: The backend requests Electron safe storage or the system browser through an ID-based
+          // request/response bridge instead of accessing those APIs directly.
           try {
             const value = await desktopService(message);
             if (backend.connected) backend.send({ type: 'desktop-response', id: message.id, value });
@@ -230,6 +267,8 @@ if (!app.requestSingleInstanceLock()) {
         if (message.type === 'startup-error') return fail(message.message);
         if (message.type !== 'ready') return;
         // 安装包禁止连接到与清单版本不一致的服务，避免前后端协议混用。
+        // EN: Reject a packaged backend whose version differs from the distribution manifest to avoid mixing
+        // frontend and backend protocols.
         if (packaged && message.version !== prepared.manifest.version)
           return fail('分发包与本机服务版本不一致');
         diagnostics.mark('backend-ready');
@@ -239,6 +278,8 @@ if (!app.requestSingleInstanceLock()) {
           log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
           await window.loadURL(message.bootstrapUrl);
           // 页面加载完成后才向启动器报告 ready，避免把后端启动当作整个桌面已就绪。
+          // EN: Report ready to the launcher only after the page loads; backend readiness alone does not mean
+          // the desktop is ready.
           diagnostics.mark('web-loaded');
           ready = true;
           window.setTitle(`Elysia · ${message.version}`);

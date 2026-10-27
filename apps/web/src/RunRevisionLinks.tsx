@@ -1,4 +1,8 @@
-/* 展示运行与修订之间的关联。 */
+/**
+ * 展示运行与修订之间的关联。
+ * 展示原运行与后续修订的已记录关联并提供跳转，依赖服务端关系数据；不按名称或文本相似度猜测修订链。
+ * EN: Displays source and later-revision relationships. Displays recorded links between an original run and later revisions with navigation, using server relations rather than guessing chains from names or similar text.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type { RunLineage, RunRevisions } from '../../../packages/contracts/src/workflow';
@@ -18,10 +22,14 @@ const statuses: Record<string, string> = {
 /**
  * 按需展开来源链和修订页，两种读取独立报告错误并保留成功结果。
  * 打开某条关系前重新读取运行头；关系快照只提供标识，不保证目标仍存在或仍可访问。
+ * EN: Lazy-load lineage/revision pages with independent errors and retained successes. Reread the run header before opening; relationship snapshots provide IDs, not proof the target still exists or is accessible.
  */
 export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (run: Run) => void }) {
   const { api } = useSurfaceClient();
-  // 原始来源与后续修订分开保存，列表分页及打开任务各自跟踪读取状态。
+  /**
+   * 原始来源与后续修订分开保存，列表分页及打开任务各自跟踪读取状态。
+   * EN: Keep original source and later revisions separate; paging and navigation track separate reads.
+   */
   const readingId = useId();
   const navigation = useRef<AbortController | null>(null);
   const [open, setOpen] = useState(false),
@@ -74,7 +82,10 @@ export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (
     });
     return () => controller.abort();
   }, [api, runId, open, before, retry]);
-  /** 同时仅允许一个目标导航；关闭面板或切换运行会取消读取，过期回调不得跳转。 */
+  /**
+   * 同时仅允许一个目标导航；关闭面板或切换运行会取消读取，过期回调不得跳转。
+   * EN: Allow one navigation at a time. Panel close/run change cancels it; stale callbacks cannot navigate.
+   */
   async function navigate(id: string) {
     if (navigation.current || !open) return;
     const controller = new AbortController();

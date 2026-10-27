@@ -1,3 +1,7 @@
+<!--
+  工作区空状态插画：在 200×148 坐标中组合日光、手记、书签和花瓶。纸张、花瓶与光晕使用本地渐变，flower 路径复用以保持多朵花一致；仅为静态装饰，不携带工作区数据。
+  EN: Workspace empty-state illustration: combines sunlight, notes, bookmark, and vase in a 200×148 viewBox. Local gradients shade paper/vase/light and reusable flower geometry keeps blooms consistent; this static decoration contains no workspace data.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="148" viewBox="0 0 200 148" fill="none">
   <title>日光下的花枝与手记</title>
   <defs>

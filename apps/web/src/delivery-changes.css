@@ -1,4 +1,7 @@
-/* 定义 delivery-changes 对应界面的样式与布局。 */
+/*
+ * 交付版本对照：将变更结论、字段差异和数量摘要分层，未知结论使用独立状态样式。计数网格按容器宽度自动分列，长说明断行以适应侧栏或窄弹窗。
+ * EN: Delivery comparison: separates change conclusions, field differences, and counts, with distinct unknown-state treatment. Counts auto-fit the container and long explanations wrap for sidebars/narrow modals.
+ */
 .delivery-comparison-summary {
   min-width: 0;
   padding: var(--space-3);
@@ -7,7 +10,10 @@
   background: var(--surface-soft);
   color: var(--text);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .delivery-comparison-summary h4 {
   margin: 0;
   font-size: var(--font-md);
@@ -25,7 +31,10 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-/* 列数随容器宽度变化；每列以 8rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 8rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting an 8rem minimum per column without exceeding a narrower container.
+ */
 .delivery-comparison-summary .delivery-comparison-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));

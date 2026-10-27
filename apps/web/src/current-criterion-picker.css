@@ -1,5 +1,11 @@
-/* 定义 current-criterion-picker 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 当前验收标准选择：组织整体选择、标准选项、已选计数和保留/空状态提示。选中边框与组件状态一致，长标准文本换行，确保选择依据可阅读而不是只显示编号。
+ * EN: Current-criterion picker: arranges overall selection, criteria, chosen counts, and retained/empty guidance. Borders follow selection state and long criteria wrap so their meaning remains readable alongside identifiers.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .current-criterion-picker .current-criterion-selection {
   margin: 0 0 var(--space-3);
   color: var(--secondary);
@@ -13,7 +19,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 选中项使用强调边框和背景，与组件提供的选中状态一致。 */
+/*
+ * 选中项使用强调边框和背景，与组件提供的选中状态一致。
+ * EN: Highlights selected items with an accent border/background matching component selection state.
+ */
 .current-criterion-picker .current-criterion-overall[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);

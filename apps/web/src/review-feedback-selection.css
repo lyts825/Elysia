@@ -1,5 +1,11 @@
-/* 定义 review-feedback-selection 对应界面的样式与布局。 */
-/* 列数随容器宽度变化；每列以 4rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 复核反馈选择：以自适应计数区概览选中材料，再展示补充反馈内容。小尺寸统计列随容器自动分布，保持反馈编辑与数量提示的视觉层级。
+ * EN: Review-feedback selection: summarizes chosen material through adaptive counts before additional feedback. Small metric columns auto-fit their container while preserving the hierarchy between counts and editing.
+ */
+/*
+ * 列数随容器宽度变化；每列以 4rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 4rem minimum per column without exceeding a narrower container.
+ */
 .review-feedback-selection .review-feedback-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 4rem), 1fr));

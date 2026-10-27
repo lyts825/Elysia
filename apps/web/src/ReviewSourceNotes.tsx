@@ -1,4 +1,8 @@
-/* 展示评审来源及其备注。 */
+/**
+ * 展示评审来源及其备注。
+ * 展示续接带入备注的来源、原标准和完整文本，区分过期或不可验证来源；处理状态交由专用复验面板维护。
+ * EN: Displays review provenance and source notes. Displays continuation-note provenance, original standard, and full text while distinguishing stale/unverifiable sources; dedicated retest panels maintain resolution state.
+ */
 import type { ReviewSourceNote } from '../../../packages/contracts/src/workflow';
 import { useId, useState } from 'react';
 import { reviewNoteKey } from './ReviewSourceState';
@@ -10,7 +14,10 @@ const OriginalReview = deferredPanel(
   '原复核记录',
 );
 
-/** 将备注来源、原标准、正文和版本分开呈现；compact 仅折叠长文，不修改其内容。 */
+/**
+ * 将备注来源、原标准、正文和版本分开呈现；compact 仅折叠长文，不修改其内容。
+ * EN: Show source, original criterion, body, and version separately. compact folds long text without changing content.
+ */
 export function ReviewSourceNoteBody({
   note,
   compact = false,
@@ -20,7 +27,10 @@ export function ReviewSourceNoteBody({
   compact?: boolean;
   showHeading?: boolean;
 }) {
-  // 来源、原标准和备注分别展示；未记录标准时不推断其内容。
+  /**
+   * 来源、原标准和备注分别展示；未记录标准时不推断其内容。
+   * EN: Present provenance/criterion/note separately; do not infer unrecorded criterion text.
+   */
   return (
     <div className="review-source-note-body">
       {showHeading && (
@@ -71,6 +81,7 @@ export function ReviewSourceNoteBody({
 /**
  * 展示明确加入续接来源的备注，可由上层移除；只对保存记录提供原复核查看入口。
  * 弹出的来源必须仍在当前 notes 集合且属于相同 sourceRunId，否则不再展示旧选择。
+ * EN: Display explicitly added continuation notes and allow parent removal. Only saved records open original reviews. Hide an old selection unless it still appears in current notes with the same sourceRunId.
  */
 export function ReviewSourceNotes({
   notes,

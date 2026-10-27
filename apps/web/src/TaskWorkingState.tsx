@@ -1,4 +1,11 @@
-/* 展示和管理任务工作状态检查点。 */
+/**
+ * 展示和管理任务工作状态检查点。
+ *
+ * EN: Displays and edits task working-state checkpoints.
+ *
+ * 本模块管理任务检查点读取、要求草稿、批准/撤销命令及结果未知后的核对；以运行和任务身份隔离编辑器，保留命令 ID 和版本依据，服务端负责最终状态转换。
+ * EN: Owns checkpoint reads, requirement drafts, approval/revocation commands, and reconciliation after unknown outcomes. Editors are isolated by run/task and retain command IDs/revisions; the server owns final transitions.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { TaskWorkingStateView } from '../../../packages/contracts/src/working-state';
@@ -8,7 +15,11 @@ import { ApiError } from './api';
 import './task-working-state.css';
 
 const pendingShape = z.discriminatedUnion('kind', [
-  // 保存审批或撤销请求的命令 ID 和期望版本，结果未知时可继续核对。
+  /**
+   * 保存审批或撤销请求的命令 ID 和期望版本，结果未知时可继续核对。
+   *
+   * EN: Retains approval/revocation command IDs and expected revisions so unknown outcomes can be reconciled.
+   */
   z
     .object({
       kind: z.literal('approve'),
@@ -36,10 +47,16 @@ const draftShape = z
   .strict();
 type Draft = z.infer<typeof draftShape>;
 type Pending = z.infer<typeof pendingShape>;
+/**
+ * 从未知异常提取可显示文本，非 Error 值使用保留输入的通用提示；不改变草稿或命令状态。
+ * EN: Extracts display text from an unknown failure, using a draft-preservation fallback for non-Error values without changing draft/command state.
+ */
 const message = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，输入已保留。');
 /**
  * 读取工作状态的结构化草稿与待核对命令；旧客户端的纯文本要求仍可完整恢复。
  * 能识别为新版草稿的损坏数据必须报错并保留原文，不能误当纯文本后覆盖其命令身份。
+ *
+ * EN: Reads structured working-state drafts/pending commands and preserves legacy plain requirements. Recognizably new corrupt data fails without overwriting its command identity as plain text.
  */
 function parseDraft(raw: unknown): Draft {
   if (raw === undefined || raw === '') return { version: 1, kind: 'working-state', requirements: '' };
@@ -51,10 +68,18 @@ function parseDraft(raw: unknown): Draft {
     if (raw.includes('"kind":"working-state"') || issue instanceof z.ZodError)
       throw Error('工作状态草稿格式无法读取，原文已保留。');
   }
-  // Earlier clients stored the complete requirements as plain text.
+  /**
+   * 旧客户端把完整要求作为纯文本保存。
+   *
+   * EN: Earlier clients stored the complete requirements as plain text.
+   */
   return { version: 1, kind: 'working-state', requirements: raw };
 }
-/** 导出当前输入或不可读原稿为本地文本，延迟释放 URL 使下载点击可完成。 */
+/**
+ * 导出当前输入或不可读原稿为本地文本，延迟释放 URL 使下载点击可完成。
+ *
+ * EN: Downloads current text or unreadable originals and delays URL revocation until the click can complete.
+ */
 function download(value: string, taskId: string) {
   const url = URL.createObjectURL(new Blob([value], { type: 'text/plain;charset=utf-8' }));
   const link = document.createElement('a');
@@ -63,13 +88,19 @@ function download(value: string, taskId: string) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-/** 按运行和任务强制重建编辑器，避免上一任务的确认状态或 pending 命令串入新任务。 */
+/**
+ * 按运行和任务强制重建编辑器，避免上一任务的确认状态或 pending 命令串入新任务。
+ *
+ * EN: Remounts by run/task identity so prior confirmation or pending commands cannot leak into another task.
+ */
 export function TaskWorkingState(props: { runId: string; taskId: string; cache: WorkbenchCache }) {
   return <WorkingStateEditor key={`${props.runId}:${props.taskId}`} {...props} />;
 }
 /**
  * 将“当前服务端检查点”“用户有效要求”和“批准/撤销待确认请求”分开管理。
  * 批准必须绑定已读取的 snapshotHash、revision 和用户确认；断连后保留同一命令供重试核对。
+ *
+ * EN: Separates current server checkpoint, user requirements, and pending approval/revocation. Approval binds the read snapshotHash/revision and explicit confirmation; disconnection retains the exact command for reconciliation.
  */
 function WorkingStateEditor({
   runId,
@@ -126,7 +157,11 @@ function WorkingStateEditor({
       active = false;
     };
   }, [key, cache, draftRetry]);
-  /** 以缓存中的最新原稿执行变换，严格校验后整份保存；失败返回 false 并阻止后续网络提交。 */
+  /**
+   * 以缓存中的最新原稿执行变换，严格校验后整份保存；失败返回 false 并阻止后续网络提交。
+   *
+   * EN: Transforms the latest cached original, validates, and saves it whole; false on failure prevents network submission.
+   */
   function persist(change: (value: Draft) => Draft) {
     try {
       if (!draftReady || !live.current) return false;
@@ -142,7 +177,11 @@ function WorkingStateEditor({
       return false;
     }
   }
-  /** 核对响应中快照来源属于本编辑器任务，不能仅凭请求 URL 假定返回内容归属正确。 */
+  /**
+   * 核对响应中快照来源属于本编辑器任务，不能仅凭请求 URL 假定返回内容归属正确。
+   *
+   * EN: Verifies that response snapshot ownership matches this task instead of assuming the URL guarantees returned contents.
+   */
   function validateView(next: TaskWorkingStateView) {
     if (next.draft.source.runId !== runId || next.draft.source.taskId !== taskId)
       throw Error('返回的工作状态所属不匹配，请重新核对。');
@@ -150,6 +189,8 @@ function WorkingStateEditor({
   /**
    * 刷新安全检查点时取消上次读取并撤销旧确认；已读 view 可保留展示，但 current=false 禁止新批准。
    * 写入进行中不发起新读取，避免界面先应用一个早于待提交操作的快照。
+   *
+   * EN: Refreshing cancels earlier reads and invalidates confirmation. Old view may remain visible, but current=false blocks new approval; no read starts during a write.
    */
   async function read() {
     if (writing.current) return;
@@ -182,6 +223,8 @@ function WorkingStateEditor({
    * 发送前把精确请求保存进草稿，重试只接受同一命令负载。新批准还须核对当前视图和输入。
    * 成功只清除匹配 commandId 的 pending；明确 4xx 拒绝使旧确认失效，未知结果则保留原请求。
    * 批准工作状态仅影响后续上下文压缩，不启动或恢复执行。
+   *
+   * EN: Persists the exact request before sending; retries accept only that payload and new approvals recheck view/input. Success clears only matching commandId; definitive 4xx invalidates confirmation while unknown outcomes retain the request. Saving affects later compaction only, not execution.
    */
   async function save(request: Pending) {
     if (writing.current || !live.current) return;

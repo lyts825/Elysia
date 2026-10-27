@@ -1,4 +1,7 @@
-/* 定义 project-draft-backup 对应界面的样式与布局。 */
+/*
+ * 项目草稿备份：组织导入文件、预览、保护状态、来源和导入对照。对照默认双列，窄容器改排；长原文提供滚动阅读，使不可读备份与可编辑草稿的提示保持明确。
+ * EN: Project-draft backup: arranges file import, preview, protection state, provenance, and comparisons. Two comparison columns adapt to narrow containers; scrollable originals distinguish unreadable backups from editable drafts.
+ */
 .project-draft-backup {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -50,7 +53,10 @@
 .project-draft-protection[data-readable='false'] .project-draft-backup-heading > span {
   color: var(--warning);
 }
-/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+ */
 .project-draft-backup-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -118,7 +124,10 @@
 .project-draft-restore-wait {
   margin: var(--space-3) 0;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-draft-backup pre {
   max-height: min(50vh, 32rem);
   overflow: auto;

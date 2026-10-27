@@ -1,4 +1,10 @@
-// 核验交付归档所引用对象及本地路径的完整性。
+/**
+ * 核验交付归档所引用对象及本地路径的完整性。
+ * EN: Verify the integrity and local paths of objects referenced by saved delivery archives.
+ *
+ * 核对归档引用的对象、路径和文件证据，检查结果用于后续交付读取与删除确认；不能把仅有登记记录视为实际文件已完整。
+ * EN: Check referenced objects, paths, and evidence for delivery reads and deletion confirmation; registry presence alone does not prove complete files.
+ */
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -6,11 +12,23 @@ import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } fro
 import path from 'node:path';
 import { hash, stable } from './index.js';
 
+/**
+ * 在Windows按不区分大小写比较路径，其他平台保持原样比较。
+ * EN: Compare paths case-insensitively on Windows and exactly on other platforms.
+ */
 const samePath = (a: string, b: string) =>
   process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+/**
+ * 组合设备、inode、大小和纳秒时间，用于校验前后文件状态比较。
+ * EN: Combine device, inode, size, and nanosecond timestamps for before/after file-state comparison.
+ */
 const version = (stat: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }) =>
   `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
-/** 核对普通文件或目录及其真实路径，拒绝符号链接与路径中间层的重定向。 */
+/**
+ * 核对普通文件或目录及其真实路径，拒绝符号链接与路径中间层的重定向。
+ * EN: Check ordinary files or directories and their real paths; reject symbolic links and redirects
+ * in intermediate path components.
+ */
 function plain(filename: string, directory = false) {
   const stat = lstatSync(filename, { bigint: true });
   if (
@@ -23,9 +41,10 @@ function plain(filename: string, directory = false) {
 }
 
 /**
- * 在发布备份或安装恢复数据前验证全部已保存交付包。
- * 逐条核对项目、冻结清单、对象引用、大小和 SHA-256；读取前后核对文件身份与时间，
- * 防止校验期间替换文件。任何一条无法证明完整时抛错，由调用方中止操作。
+ * 发布备份或安装恢复数据前验证全部保存交付包。逐条核对项目、冻结清单、对象引用、大小和SHA-256，并在读取前后比较文件身份与时间；检测到不一致即抛错，由调用方中止操作。
+ * EN: Verify every saved delivery package before publishing a backup or installing restored data.
+ * Check project binding, frozen manifest, object reference, size, and SHA-256, comparing file
+ * identity and timestamps around reads. Reject detected inconsistencies so the caller aborts.
  */
 export function validateDeliveryArchiveObjects(db: DatabaseSync, directory: string) {
   if (
@@ -55,6 +74,8 @@ export function validateDeliveryArchiveObjects(db: DatabaseSync, directory: stri
     )
       throw new Error('保存交付包记录或清单绑定无效');
     // 清单自身的冻结哈希不参与其摘要计算，并与归档记录交叉核对。
+    // EN: Exclude the manifest own frozen hash from its digest input, and cross-check that hash against
+    // the archive record.
     const manifest = JSON.parse(row.manifest_data),
       { hash: frozenHash, ...snapshot } = manifest;
     if (

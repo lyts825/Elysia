@@ -1,4 +1,7 @@
-/* 定义 source-note-resolutions 对应界面的样式与布局。 */
+/*
+ * 来源备注处理：布局处理卡片、状态标签、原文依据、编辑器和处理动作。状态属性区分已解决、需修改与过期，窄屏纵向排列操作，较长正文保留独立阅读区。
+ * EN: Source-note resolutions: arranges cards, status, original evidence, editors, and actions. State attributes distinguish resolved/needs-changes/stale; narrow layouts stack actions and long bodies retain bounded reading.
+ */
 .source-note-resolutions,
 .source-resolution-card,
 .source-resolution-editor {
@@ -35,7 +38,10 @@
   background: var(--warning-bg);
   border-color: var(--warning-border);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .source-resolution-reading {
   max-height: min(14rem, 42dvh);
   min-width: 0;
@@ -141,7 +147,10 @@
   border-radius: var(--radius-control);
   line-height: var(--leading-body);
 }
-/* 窄屏减少备注区域留白，并将处理操作纵向排列。 */
+/*
+ * 窄屏减少备注区域留白，并将处理操作纵向排列。
+ * EN: Reduces note-section padding and stacks resolution actions on narrow screens.
+ */
 @media (max-width: 480px) {
   .source-note-resolutions {
     padding: var(--space-3);

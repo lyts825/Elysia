@@ -1,4 +1,8 @@
-/** 管理容器中终端 CLI 的安装和能力状态。 */
+/**
+ * 管理容器中终端 CLI 的安装和能力状态。
+ * 通过注入的 Docker/进程驱动检查和安装 CLI，规范安全失败并响应取消；只准备镜像，不自动绑定凭据或改旧任务配置。
+ * EN: Manages installation and capability state for terminal CLIs inside containers. Uses injected Docker/process drivers for cancellable checks/installations and sanitized failures, preparing images without rebinding credentials or existing runs.
+ */
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { AgentTerminalProfile, AppError, invariant } from '../../contracts/src/index.js';
@@ -32,10 +36,22 @@ const packages = {
   claude: { name: '@anthropic-ai/claude-code', version: '2.1.296', executable: 'claude' },
   gemini: { name: '@google/gemini-cli', version: '0.63.0', executable: 'gemini' },
 };
+/**
+ * 只接受完整的小写Docker SHA-256镜像ID，去除输出首尾空白后检查。
+ * EN: Accepts only a complete lowercase Docker SHA-256 image ID after trimming surrounding output whitespace.
+ */
 const digest = (value: string) => /^sha256:[a-f0-9]{64}$/.test(value.trim());
+/**
+ * 命令成功还必须无超时且输出未截断，不能仅凭退出码接受不完整检测证据。
+ * EN: A command is complete only with a zero exit code, no timeout, and no truncation; exit status alone is insufficient probe evidence.
+ */
 const complete = (result: DockerCommandResult) =>
   result.exitCode === 0 && !result.timedOut && !result.truncated;
 const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$/;
+/**
+ * 从有界版本横幅中提取唯一语义版本；多匹配或格式异常返回undefined，避免把依赖版本误当CLI版本。
+ * EN: Extracts one unique semantic version from a bounded banner; ambiguity or invalid syntax returns undefined instead of mistaking a dependency version for the CLI version.
+ */
 function detectedCliVersion(banner: string | undefined): string | undefined {
   if (!banner || banner.length > 200) return;
   const matches = [
@@ -44,8 +60,15 @@ function detectedCliVersion(banner: string | undefined): string | undefined {
   const version = matches.length === 1 ? matches[0][1] : undefined;
   return version && version.length <= 80 && VERSION.test(version) ? version : undefined;
 }
+/**
+ * 仅在内存中分类有界构建输出，返回固定错误类别；不回显或持久化可能含敏感值的原始输出。
+ * EN: Classifies bounded build output in memory and returns a fixed error category without echoing or persisting possibly sensitive raw output.
+ */
 function buildFailure(result: DockerCommandResult): AppError {
-  // Only inspect the already bounded capture; never return or persist any part of it.
+  /**
+   * 只检查已经有界截取的输出，绝不返回或保存其中任何内容。
+   * EN: Only inspect the already bounded capture; never return or persist any part of it.
+   */
   const output = `${result.stderr.slice(0, 20000)}\n${result.stdout.slice(0, 20000)}`.slice(0, 20000);
   const code = result.timedOut
     ? 'TERMINAL_CLI_INSTALL_TIMEOUT'
@@ -87,8 +110,10 @@ export interface TerminalResumeCapability {
   version?: string;
 }
 
-/** Explicit management actions only: no host CLI, credentials, workspace mounts or mutable image reuse. */
-/** 管理 Docker 中 CLI 的检测、能力记录、安装和资源容量检查。 */
+/**
+ * 仅执行显式管理操作，不使用宿主CLI、凭据、工作区挂载或可变镜像复用。 管理 Docker 中 CLI 的检测、能力记录、安装和资源容量检查。
+ * EN: Explicit management actions only: no host CLI, credentials, workspace mounts or mutable image reuse. Manages Docker CLI inspection, capability records, installation, and resource-capacity checks.
+ */
 export class DockerCliManager {
   private busy = false;
   private readonly probes = new Map<string, TerminalCliStatus>();
@@ -101,6 +126,10 @@ export class DockerCliManager {
   private readonly probeRecords = new Map<string, ProbeRecord>();
   private reconciling?: Promise<void>;
   private closed = false;
+  /**
+   * 绑定数据目录归属和传输实现，恢复可证明归属的探测记录并保留其资源，等待清理核验。
+   * EN: Binds data-directory ownership and transport, restoring only provably owned probe records and retaining their resources until cleanup is verified.
+   */
   constructor(
     private directory: string,
     private options: { transport: DockerTransport; resources?: TerminalResourcePool; store?: Store },
@@ -117,13 +146,24 @@ export class DockerCliManager {
         this.probeRecords.set(record.id, record);
         this.resources.hold(record.id, '服务曾中断，离线检测容器尚未确认清理', 'probe');
       } catch {
-        /* Unknown records do not authorize Docker mutations. */
+        /**
+         * 未知记录不能授权修改Docker资源。
+         * EN: Unknown records do not authorize Docker mutations.
+         */
       }
     }
   }
+  /**
+   * 统一Docker命令的本机工作目录，允许调用方覆盖超时、输出和取消选项，不经宿主shell。
+   * EN: Centralizes the local working directory for Docker commands, allowing explicit timeout, output, and abort overrides without a host shell.
+   */
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.options.transport.run(args, { cwd: this.directory, ...options });
   }
+  /**
+   * 先更新内存归属记录，再保存小型持久元数据，供崩溃后核对并清理探测容器。
+   * EN: Updates in-memory ownership and persists small metadata so probe containers can be identified and cleaned after a crash.
+   */
   private saveProbe(record: ProbeRecord) {
     this.probeRecords.set(record.id, record);
     this.options.store?.db
@@ -132,7 +172,10 @@ export class DockerCliManager {
       )
       .run('cli-probe:' + record.id, JSON.stringify(record));
   }
-  /** 按持久探测记录核对容器标签后清理；停止未确认时不能释放 held 资源。 */
+  /**
+   * 按持久探测记录核对容器标签后清理；停止未确认时不能释放 held 资源。
+   * EN: Validates container labels against persistent probe ownership before cleanup; unconfirmed stops retain held resources.
+   */
   private async cleanupProbe(id: string) {
     const record = this.probeRecords.get(id);
     if (!record) return;
@@ -174,7 +217,10 @@ export class DockerCliManager {
     this.resources.confirmStopped(id);
     this.resources.release(id);
   }
-  /** 合并并发恢复请求，先解决上次遗留的 held 探测，再开始新的 CLI 检查。 */
+  /**
+   * 合并并发恢复请求，先解决上次遗留的 held 探测，再开始新的 CLI 检查。
+   * EN: Coalesces recovery requests and resolves probes left held by the previous process before starting a new CLI inspection.
+   */
   private reconcileProbes() {
     if (this.reconciling) return this.reconciling;
     this.reconciling = (async () => {
@@ -188,8 +234,8 @@ export class DockerCliManager {
     return this.reconciling;
   }
   /**
-   * 相同固定镜像/命令检查共享短期离线容器。每个调用方只取消自己的订阅，最后一个
-   * 订阅者离开时才中止底层探测；无网络且只读，仍须单独核对清理结果才释放资源。
+   * 相同固定镜像/命令检查共享短期离线容器。每个调用方只取消自己的订阅，最后一个 订阅者离开时才中止底层探测；无网络且只读，仍须单独核对清理结果才释放资源。
+   * EN: Shares short-lived offline containers for identical pinned-image and command checks. A caller cancels only its subscription; the final subscriber aborts the probe. The container is read-only and offline, but cleanup still needs independent confirmation before resources are released.
    */
   private sharedProbe(
     key: string,
@@ -292,10 +338,18 @@ export class DockerCliManager {
     current.subscribers.add(token);
     return new Promise((resolve, reject) => {
       let finished = false;
+      /**
+       * 移除此调用方的订阅和取消监听，不影响仍在等待同一探测的其他订阅者。
+       * EN: Removes this caller's subscription and abort listener without affecting others awaiting the same probe.
+       */
       const detach = () => {
         current.subscribers.delete(token);
         signal?.removeEventListener('abort', abort);
       };
+      /**
+       * 只结算本订阅一次；最后一个订阅者取消时才中止共享探测，保留其他订阅者的结果等待。
+       * EN: Settles this subscription once; only the final subscriber's cancellation aborts the shared probe, preserving other subscribers' waits.
+       */
       const abort = () => {
         if (finished) return;
         finished = true;
@@ -323,13 +377,20 @@ export class DockerCliManager {
       if (signal?.aborted) abort();
     });
   }
+  /**
+   * 拒绝新检测，中止当前共享探测，并等待所有探测完成各自的清理路径。
+   * EN: Rejects new inspections, aborts shared probes, and waits for each probe to finish its cleanup path.
+   */
   async dispose() {
     this.closed = true;
     for (const probe of this.inFlight.values())
       probe.controller.abort(new AppError('TERMINAL_CLI_CLOSED', '终端检测服务正在退出'));
     await Promise.allSettled([...this.inFlight.values()].map((probe) => probe.promise));
   }
-  /** 刷新 Docker 资源容量；短时间内复用上次检查和在途请求。 */
+  /**
+   * 刷新 Docker 资源容量；短时间内复用上次检查和在途请求。
+   * EN: Refreshes Docker capacity, briefly reusing a recent result or an in-flight request.
+   */
   async refreshResourceCapacity(signal?: AbortSignal, force = false) {
     if (!this.options.resources) return;
     if (!force && Date.now() - this.capacityCheckedAt < 15000) return this.capacityProbe;
@@ -357,6 +418,10 @@ export class DockerCliManager {
     });
     return this.capacityProbe;
   }
+  /**
+   * 返回静态能力声明，明确区分条件支持、未支持和未知用量；此视图不代表真实CLI已验证。
+   * EN: Returns explicit capability declarations distinguishing conditional support, unsupported features, and unknown usage; the view is not proof that a real CLI was verified.
+   */
   capabilityMatrix(): TerminalCliCapability[] {
     return (['codex', 'dsh', 'claude', 'gemini', 'custom'] as const).map((appId) => ({
       appId,
@@ -394,6 +459,10 @@ export class DockerCliManager {
       },
     }));
   }
+  /**
+   * 检查Docker服务端响应及Linux模式；失败返回可解释错误，不自动启动引擎或切换模式。
+   * EN: Checks the Docker server response and Linux mode, raising an explanatory error without starting the engine or changing its mode.
+   */
   private async engine(signal?: AbortSignal) {
     const result = await this.command(['version', '--format', '{{json .Server}}'], { signal });
     invariant(complete(result), 'DOCKER_UNAVAILABLE', 'Docker Linux 引擎未就绪，请启动 Docker Desktop');
@@ -405,13 +474,17 @@ export class DockerCliManager {
     }
     invariant(server?.Os === 'linux', 'DOCKER_PLATFORM', 'CLI 管理需要 Docker Linux 容器模式');
   }
+  /**
+   * 只检查本地镜像并返回可核验的不可变摘要；命令失败或输出不完整时返回undefined，不自动拉取。
+   * EN: Inspects a local image and returns a verifiable immutable digest; failed or incomplete output returns undefined and never triggers a pull.
+   */
   private async image(image: string, signal?: AbortSignal) {
     const result = await this.command(['image', 'inspect', '--format', '{{.Id}}', image], { signal });
     return complete(result) && digest(result.stdout) ? result.stdout.trim() : undefined;
   }
   /**
-   * 按不可变镜像摘要和可执行名称缓存版本探测，不把可变镜像标签作为能力缓存身份。
-   * 引擎/镜像/CLI 失败分别返回状态；该离线检查不验证外部模型凭据。
+   * 按不可变镜像摘要和可执行名称缓存版本探测，不把可变镜像标签作为能力缓存身份。 引擎/镜像/CLI 失败分别返回状态；该离线检查不验证外部模型凭据。
+   * EN: Caches version probes by immutable image digest and executable name rather than a mutable profile tag. Engine, image, and CLI failures remain distinct; this offline inspection does not authenticate external model credentials.
    */
   async check(
     rawAppId: TerminalAppId,
@@ -502,7 +575,10 @@ export class DockerCliManager {
       };
     }
   }
-  /** 用户显式安装入口：使用固定版本构建派生镜像，受安装资源预约和取消信号约束。 */
+  /**
+   * 用户显式安装入口：使用固定版本构建派生镜像，受安装资源预约和取消信号约束。
+   * EN: Explicit user installation entry point: builds a derived image from fixed versions under installation-resource reservations and cancellation.
+   */
   async install(
     input: { appId: TerminalAppId; baseImage: string; version?: string },
     signal?: AbortSignal,
@@ -540,8 +616,10 @@ export class DockerCliManager {
         'DOCKER_IMAGE_MISSING',
         '基础镜像不存在，请先构建或导入；不会拉取自定义镜像',
       );
-      // BuildKit resolves named local images reliably; a bare configuration ID may be treated as a registry name.
-      // Keep this content-addressed alias so future task snapshots can still use the original image ID.
+      /**
+       * BuildKit可可靠解析带名称的本地镜像，裸配置ID可能被误当作注册表名称。 保留此内容寻址别名，使未来任务快照仍能使用原镜像ID。
+       * EN: BuildKit resolves named local images reliably; a bare configuration ID may be treated as a registry name. Keep this content-addressed alias so future task snapshots can still use the original image ID.
+       */
       let baseAlias: string | undefined;
       if (existing) {
         baseAlias = `elysia-managed/base:${existing.slice('sha256:'.length)}`;
@@ -572,7 +650,10 @@ export class DockerCliManager {
             ...(['codex', 'dsh'].includes(appId) ? [] : [`${item.name}@${version}`]),
           ];
       const dockerfile = `${prelude}RUN npm install --global ${install.map((specifier) => JSON.stringify(specifier)).join(' ')} && npm cache clean --force && mkdir -p /home/agent /workspace && chown node:node /home/agent /workspace\nLABEL io.elysia.cli-manager=${JSON.stringify(this.owner)} io.elysia.cli=${JSON.stringify(appId)} io.elysia.cli-version=${JSON.stringify(version)}\nUSER 1000:1000\nWORKDIR /workspace\nENV HOME=/home/agent CODEX_HOME=/home/agent/.codex DSH_HOME=/home/agent/.dsh\nCMD [${JSON.stringify(item.executable)}, "--version"]\n`;
-      // A Dockerfile-only stdin build sends no project files or credentials as context.
+      /**
+       * 只通过stdin发送Dockerfile，不把项目文件或凭据作为构建上下文。
+       * EN: A Dockerfile-only stdin build sends no project files or credentials as context.
+       */
       onPhase?.('build');
       const result = await this.command(['build', '--pull=false', '--tag', imageTag, '-'], {
         signal,
@@ -619,8 +700,10 @@ export class DockerCliManager {
       this.busy = false;
     }
   }
-  /** Probe the exact task image offline, never a host CLI or the mutable profile tag. */
-  /** 检查固定镜像的实际 CLI 帮助和版本后判断 resume 支持，不仅依据代理名称推测参数。 */
+  /**
+   * 离线探测任务固定镜像，不探测宿主CLI或模板中的可变标签。 检查固定镜像的实际 CLI 帮助和版本后判断 resume 支持，不仅依据代理名称推测参数。
+   * EN: Probe the exact task image offline, never a host CLI or the mutable profile tag. Checks actual help and version output from the pinned image before deciding resume support, rather than guessing flags from the agent name.
+   */
   async resumeCapability(profile: AgentTerminalProfile, imageId: string): Promise<TerminalResumeCapability> {
     if (profile.agent !== 'codex' || profile.protocol !== 'codex-jsonl')
       return { supported: false, reason: '当前 CLI 尚未验证原会话续接；可显式开启新会话' };
@@ -652,6 +735,10 @@ export class DockerCliManager {
     if (!result.version) this.resumeProbes.delete(key);
     return result;
   }
+  /**
+   * 先验证固定Codex镜像可执行，再离线读取resume帮助并逐项确认冻结命令需要的参数，形成续接能力证据。
+   * EN: Verifies the pinned Codex image, reads resume help offline, and checks every flag required by the frozen command to establish continuation capability.
+   */
   private async probeResume(
     profile: AgentTerminalProfile,
     imageId: string,

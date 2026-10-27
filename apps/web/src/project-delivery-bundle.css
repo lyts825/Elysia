@@ -1,5 +1,11 @@
-/* 定义 project-delivery-bundle 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 项目交付包：分层展示摘要、文件、证据和相关动作，默认以三列统计概览保留信息密度。子列允许收缩，窄容器重新排布，长文件或证据文字不会强行撑开工作台。
+ * EN: Project-delivery bundle: separates summaries, files, evidence, and actions, using three summary columns by default. Shrinkable columns adapt to narrow containers and contain long file/evidence text.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .project-delivery-bundle {
   margin: var(--space-5) 0;
   padding: var(--space-4);
@@ -11,7 +17,10 @@
 .project-delivery-bundle h4 {
   margin: 0 0 var(--space-2);
 }
-/* 三列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 三列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between three columns; zero minimums let columns shrink when space is limited.
+ */
 .project-bundle-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

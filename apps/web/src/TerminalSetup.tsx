@@ -1,4 +1,11 @@
-/* 配置终端任务的启动选项。 */
+/**
+ * 配置终端任务的启动选项。
+ *
+ * EN: Configures terminal-task startup options.
+ *
+ * 本模块编辑单个终端模板的代理、命令、环境变量名、镜像和资源，并调用检查接口展示配置可用性；非法命令原文保留在输入框，旧检查按配置指纹失效。
+ * EN: Edits one profile’s agent, command, environment names, image, and resources and invokes availability checks. Invalid command text remains editable; configuration fingerprints invalidate stale checks.
+ */
 import { useId, useRef, useState } from 'react';
 import {
   AgentTerminalProfile,
@@ -14,6 +21,8 @@ export { terminalPreset } from './TerminalPreset';
 /**
  * 编辑单个终端模板。value 为当前配置，change 向上提交修改；
  * 命令文本单独保存，解析失败时显示错误并将命令配置置为空数组。
+ *
+ * EN: Edits one controlled template via value/change. Command text is retained separately; parse failure displays an issue and exposes an empty command array.
  */
 export function TerminalSetup({
   value,
@@ -31,7 +40,11 @@ export function TerminalSetup({
     environmentHelpId = useId();
   const { api } = useSurfaceClient();
   const [argv, setArgv] = useState(() => JSON.stringify(value.command)),
-    // 命令编辑框保留尚未成为合法 JSON 的原文，不强制把用户输入格式化回 props。
+    /**
+     * 命令编辑框保留尚未成为合法 JSON 的原文，不强制把用户输入格式化回 props。
+     *
+     * EN: Retains raw invalid JSON in the command editor rather than forcing formatted props back into the input.
+     */
     [issue, setIssue] = useState(''),
     [checking, setChecking] = useState(false),
     [status, setStatus] = useState('');
@@ -39,7 +52,11 @@ export function TerminalSetup({
   const commandField = useRef<HTMLTextAreaElement>(null),
     advancedFields = useRef<HTMLDetailsElement>(null);
   currentProfile.current = JSON.stringify(value);
-  /** 更新配置并清除旧检查结果，同时记录当前值用于识别过期的异步响应。 */
+  /**
+   * 更新配置并清除旧检查结果，同时记录当前值用于识别过期的异步响应。
+   *
+   * EN: Patches configuration and clears stale health, recording the new fingerprint for asynchronous result checks.
+   */
   function patch(next: Partial<AgentTerminalProfile>) {
     setStatus('');
     const profile = { ...value, ...next };
@@ -63,7 +80,11 @@ export function TerminalSetup({
               value={value.agent}
               disabled={disabled}
               onChange={(e) => {
-                // 切换 Agent 使用对应预设，同时保留模板 ID、镜像和资源规格。
+                /**
+                 * 切换 Agent 使用对应预设，同时保留模板 ID、镜像和资源规格。
+                 *
+                 * EN: Agent switches apply that preset while preserving template ID, image, and resource specification.
+                 */
                 const next = terminalPreset(e.target.value as AgentTerminalProfile['agent']);
                 const profile = {
                   ...next,
@@ -196,7 +217,11 @@ export function TerminalSetup({
                   patch({ command });
                   setIssue('');
                 } catch {
-                  // 无效原文仍留在 argv；向外清空命令让整个配置无法保存，避免误用上一次有效命令。
+                  /**
+                   * 无效原文仍留在 argv；向外清空命令让整个配置无法保存，避免误用上一次有效命令。
+                   *
+                   * EN: Invalid raw text remains in argv; clearing the outward command blocks saving and avoids reusing the prior valid command.
+                   */
                   patch({ command: [] });
                   setIssue('请输入包含程序与参数的 JSON 数组，例如 ["agent", "--json"]。');
                 }
@@ -295,7 +320,11 @@ export function TerminalSetup({
           className="secondary"
           disabled={disabled || checking || !AgentTerminalProfile.safeParse(value).success}
           onClick={async () => {
-            // 请求发起时拍下配置指纹；用户继续编辑后，旧检查结论不能挂到新配置上。
+            /**
+             * 请求发起时拍下配置指纹；用户继续编辑后，旧检查结论不能挂到新配置上。
+             *
+             * EN: Captures a request-time fingerprint so checks cannot attach old conclusions to later edits.
+             */
             const checkedProfile = JSON.stringify(value);
             setChecking(true);
             setStatus('');

@@ -1,13 +1,22 @@
-// 在保存或预留模型时校验评审模型的独立性。
+/**
+ * 在保存或预留模型时校验评审模型的独立性。
+ * 在保存/预约的同一事务比较当前及历史真实型号，避免换连接规避模型隔离。
+ *
+ * EN: Validates review-model independence when saving or reserving model choices.
+ * Compares current/historical actual models in the saving/reservation transaction to prevent connection changes bypassing isolation.
+ */
 import { invariant, type Agent, type RequestRecord, type Run, type Task } from '../../contracts/src/index.js';
 import { reviewModelConflict, type ReviewModelAssignment } from '../../contracts/src/review-policy.js';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 import type { KernelStore as Store } from './ports.js';
 
-/** Validate the resolved models inside the same transaction that saves or reserves them. */
 /**
+ * 在保存或预留模型的同一事务中验证实际解析后的型号。
  * 校验本次候选与既有任务、历史已执行请求的模型隔离。replacingTaskIds 仅排除当前任务选择，
  * 不抹去其历史实际使用的模型；ledger 可由同事务的调用方传入以避免重复读取。
+ *
+ * EN: Validate the resolved models inside the same transaction that saves or reserves them.
+ * Checks candidate isolation from current tasks and historically executed requests. replacingTaskIds excludes only current choices, not actual historical model use; callers may supply the same-transaction ledger to avoid rereads.
  */
 export function assertReviewModelPolicy(
   store: Store,
@@ -17,7 +26,11 @@ export function assertReviewModelPolicy(
   ledger?: RequestLedgerRow[],
 ) {
   if (run.peerReview) {
-    // 候选执行模型不能占用独立评分模式冻结的评审型号。
+    /**
+     * 候选执行模型不能占用独立评分模式冻结的评审型号。
+     *
+     * EN: Candidate execution models cannot consume a model identity frozen for independent peer review.
+     */
     const frozenModels = new Set(
       run.peerReview.bindings.map((binding) => binding.model.trim().toLowerCase()),
     );
@@ -45,9 +58,17 @@ export function assertReviewModelPolicy(
       model: store.require<Agent>('agents', task.agentId).providerBinding.model,
     }));
   for (const request of ledger ?? store.requestLedger({ runId: run.id })) {
-    // 已释放请求和工具审核请求不作为普通执行／评审模型的历史分配。
+    /**
+     * 已释放请求和工具审核请求不作为普通执行／评审模型的历史分配。
+     *
+     * EN: Released requests and tool-review requests do not count as historical ordinary execution/review assignments.
+     */
     if (request.status === 'RELEASED' || request.purpose === 'tool-review') continue;
-    // Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
+    /**
+     * 旧账本可能缺少型号元数据；仅在这种情况下读取权威请求记录。
+     *
+     * EN: Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
+     */
     const original =
       !request.model || !request.taskId ? store.require<RequestRecord>('requests', request.id) : undefined;
     const task = byId.get(request.taskId ?? original?.taskId ?? '');

@@ -1,4 +1,8 @@
-/* 提供持久化运行的设置界面。 */
+/**
+ * 提供持久化运行的设置界面。
+ * 将运行设置表单与工作台缓存连接，保护损坏原稿并比较已保存基线；只维护启动输入，创建运行由父组件执行。
+ * EN: Adds persistent-draft gates around run setup. Connects run-setup forms to the workbench cache, protects malformed source, and compares saved baselines; it maintains launch input while parents create runs.
+ */
 import { useEffect, useState, type ComponentProps } from 'react';
 import { Modal } from './Modal';
 import { RunModal } from './RunSetupModal';
@@ -9,6 +13,7 @@ import type { WorkbenchCache } from './WorkbenchCache';
  * 在 RunModal 外提供按草稿键的加载和保存门禁。读取完成前不挂载可编辑表单，避免默认值
  * 回写覆盖尚未读到的保留草稿；解析失败只显示恢复入口，清空必须由用户明确操作。
  * submit 同时获得精确序列化快照，父级可据此仅清理本次创建所用的未变化草稿。
+ * EN: Load/save by draft key around RunModal. Mount editing only after read to prevent defaults overwriting retained input. Parse errors offer recovery; clearing is explicit. Submit includes exact serialized bytes so the parent clears only the unchanged creation draft.
  */
 export function PersistentRunSetup({
   cache,
@@ -31,7 +36,10 @@ export function PersistentRunSetup({
     [writeError, setWriteError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
-    // 草稿键准备完成后才恢复表单；读取失败时保留错误供重试。
+    /**
+     * 草稿键准备完成后才恢复表单；读取失败时保留错误供重试。
+     * EN: Restore after draft-key preparation; retain read failure for retry.
+     */
     let live = true;
     setLoaded(undefined);
     setReadError('');
@@ -49,10 +57,17 @@ export function PersistentRunSetup({
       live = false;
     };
   }, [cache, draftKey, retry]);
-  /** 语义相同的规范化表单沿用原始字节，防止默认字段补齐导致创建成功后的精确清理失配。 */
+  /**
+   * 语义相同的规范化表单沿用原始字节，防止默认字段补齐导致创建成功后的精确清理失配。
+   * EN: Reuse original bytes for semantically equal normalized forms so filled defaults do not break exact cleanup.
+   */
   const snapshot = (draft: RunSetupDraft) => {
     const raw = writeRunSetupDraft(draft);
     const current = cache.get(draftKey);
+    /**
+     * 先校验运行设置草稿，再统一可选字段的空值并序列化；使语义相同的缺省配置不会被误判为编辑冲突。
+     * EN: Validates a run-setup draft, normalizes empty optional fields, and serializes it so equivalent defaults are not mistaken for conflicting edits.
+     */
     const comparable = (value: unknown) => {
       const parsed = readRunSetupDraft(value);
       if (!parsed) return;
@@ -64,12 +79,21 @@ export function PersistentRunSetup({
         acceptanceCriteria: acceptanceCriteria ?? '',
       });
     };
-    // Reading normalizes field order and the form fills optional defaults.
-    // Preserve unchanged original bytes, also used to clear after submit.
+    /**
+     * 读取规范化字段顺序，表单补齐可选默认值。
+     * EN: Reading normalizes field order and the form fills optional defaults.
+     */
+    /**
+     * 未改变时保留原始字节，用于提交后的精确清除。
+     * EN: Preserve unchanged original bytes, also used to clear after submit.
+     */
     if (typeof current === 'string' && comparable(current) === comparable(raw)) return current;
     return raw;
   };
-  /** 序列化或缓存保存失败时返回 false，使“打开设置”等后续跳转保留当前表单。 */
+  /**
+   * 序列化或缓存保存失败时返回 false，使“打开设置”等后续跳转保留当前表单。
+   * EN: Return false on serialization/cache-save failure so subsequent navigation preserves the form.
+   */
   const save = (draft: RunSetupDraft) => {
     try {
       cache.set(draftKey, snapshot(draft));

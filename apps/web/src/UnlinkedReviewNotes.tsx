@@ -1,4 +1,8 @@
-/* 展示尚未关联的评审备注。 */
+/**
+ * 展示尚未关联的评审备注。
+ * 让用户把缺少可验证原标准的旧备注手工关联到当前标准或总备注，先展示合并结果再应用；不按旧序号自动关联。
+ * EN: Displays review notes without current criterion links. Lets users manually link legacy notes lacking a verifiable standard to current criteria or general notes, previewing merged text before applying rather than linking by old index.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import type { ReviewDraft } from './ReviewDraft';
@@ -9,6 +13,7 @@ import './unlinked-review-notes.css';
 /**
  * 将无法自动匹配新标准的旧备注交给用户手工关联，先选择目标并预览完整合并文字。
  * 确认只追加到本机草稿；只有上层 change 成功才移除旧条目，不自动改变原复核历史。
+ * EN: Ask users to select a target and preview merged text for old notes that cannot relink automatically. Confirmation appends to local draft only; remove the old entry only after parent change succeeds, without altering review history.
  */
 export function UnlinkedReviewNotes({
   value,
@@ -27,13 +32,20 @@ export function UnlinkedReviewNotes({
   const editor = useRef<HTMLElement>(null);
   const origin = useRef<HTMLButtonElement | null>(null);
   const item = selected === undefined ? undefined : draft.unlinked[selected];
-  // 旧备注先由用户选择当前目标，再合并到草稿；未记录的旧标准明确标记未知。
+  /**
+   * 旧备注先由用户选择当前目标，再合并到草稿；未记录的旧标准明确标记未知。
+   * EN: Choose current target before merging; missing old criterion text stays explicitly unknown.
+   */
   useEffect(() => {
     if (selected !== undefined) {
       editor.current?.focus({ preventScroll: true });
       editor.current?.scrollIntoView({ block: 'nearest' });
     }
   }, [selected]);
+  /**
+   * 取消旧备注关联选择并清空目标，若原备注按钮仍在DOM中则归还焦点。
+   * EN: Cancels legacy-note linking and clears its target, restoring focus to the originating note control if it remains connected.
+   */
   const returnToNote = () => {
     setSelected(undefined);
     setTarget(undefined);
@@ -45,7 +57,10 @@ export function UnlinkedReviewNotes({
   const current = target ? draft.criteriaNotes.find((note) => note.index === target.index) : undefined;
   const original = target === null ? draft.note : current?.note || '';
   const merged = original ? original + '\n\n' + addition : addition;
-  // undefined 表示未选择，null 表示整体备注；逐项目标还需核对已有标准文字与合并后的容量。
+  /**
+   * undefined 表示未选择，null 表示整体备注；逐项目标还需核对已有标准文字与合并后的容量。
+   * EN: undefined means no target, null means general note. Item targets additionally validate existing wording and merged capacity.
+   */
   const issue =
     target === undefined
       ? '请明确选择目标。'

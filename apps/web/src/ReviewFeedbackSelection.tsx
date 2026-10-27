@@ -1,4 +1,8 @@
-/* 选择需要处理的评审反馈。 */
+/**
+ * 选择需要处理的评审反馈。
+ * 区分候选、待加入和已加入的反馈备注，依据来源键去重并限制容量；选择结果写入上层续接草稿，不立即发送。
+ * EN: Selects review feedback for subsequent work. Separates candidate, pending, and added feedback notes with provenance-key deduplication and size limits; choices update the parent continuation draft without immediate submission.
+ */
 import { useId } from 'react';
 import type { DeliveryReview, ReviewSourceNote } from '../../../packages/contracts/src/workflow';
 import { readLocalReviewDraft, reviewCandidates, type ReviewCandidate } from './ReviewDraft';
@@ -14,7 +18,10 @@ import { ReviewHistory } from './ReviewHistory';
 import './handoff-selection.css';
 import './review-feedback-selection.css';
 
-/** 汇总已保存与本机反馈，并让调用方决定哪些备注加入后续任务。 */
+/**
+ * 汇总已保存与本机反馈，并让调用方决定哪些备注加入后续任务。
+ * EN: Combine saved/local feedback and let the parent choose what enters a later task.
+ */
 export function ReviewFeedbackSelection({
   runId,
   value,
@@ -58,13 +65,19 @@ export function ReviewFeedbackSelection({
   const items = value
     ? reviewCandidates(value.userReview, local, value.fingerprint, value.userReview?.reviewId ?? null)
     : [];
-  // pending 表示勾选草稿，added 才会作为新任务来源提交；两组按完整来源字段生成键去重。
+  /**
+   * pending 表示勾选草稿，added 才会作为新任务来源提交；两组按完整来源字段生成键去重。
+   * EN: pending is checked draft state; only added is submitted as new-task provenance. Deduplicate by complete source fields.
+   */
   const pendingKeys = new Set(state.pending.map(reviewNoteKey)),
     addedKeys = new Set(state.added.map(reviewNoteKey));
   const changed =
     !!value && !!(state.pending.length || state.added.length) && state.fingerprint !== value.fingerprint;
   const locked = disabled || reading || !!error || !value;
-  /** 首次勾选固定当前交付指纹，已有选择不因重新读取而被静默更新为新版本。 */
+  /**
+   * 首次勾选固定当前交付指纹，已有选择不因重新读取而被静默更新为新版本。
+   * EN: First selection freezes current delivery fingerprint; rereading never silently upgrades existing selections.
+   */
   function toggle(note: ReviewSourceNote) {
     const key = reviewNoteKey(note);
     change({
@@ -75,6 +88,10 @@ export function ReviewFeedbackSelection({
         : [...state!.pending, note],
     });
   }
+  /**
+   * 把候选备注渲染为受控选择项；根据锁定、校验错误及是否已加入限制选择，展示完整来源供核对。
+   * EN: Renders candidate notes as controlled choices, disabling selection for locks, validation errors, or already-added entries while displaying provenance for review.
+   */
   const choices = (candidates: ReviewCandidate[]) =>
     candidates.map((item) => (
       <article className="handoff-note-option" key={item.id}>
@@ -108,7 +125,10 @@ export function ReviewFeedbackSelection({
       </article>
     ));
   const addition = state.pending.filter((note) => !addedKeys.has(reviewNoteKey(note)));
-  // 容量校验针对加入后的完整集合，不能让每条单独合规的备注合并后突破总字节预算。
+  /**
+   * 容量校验针对加入后的完整集合，不能让每条单独合规的备注合并后突破总字节预算。
+   * EN: Validate total capacity after joining the whole collection, not each note in isolation.
+   */
   const combined = [...state.added, ...addition];
   const issue = reviewNotesIssue(combined);
   return (

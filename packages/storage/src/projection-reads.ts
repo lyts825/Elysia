@@ -1,4 +1,10 @@
-// 读取业务表投影，并向调用者报告无法安全读取的记录。
+/**
+ * 读取业务表投影，并向调用者报告无法安全读取的记录。
+ * EN: Read business-table projections and report records that cannot safely be read.
+ *
+ * 投影读取保留原记录的身份与失败信息，以有界正文支持列表和详情；异常记录不能被无提示地压成正常空值。
+ * EN: Provide bounded list/detail payloads while retaining record identity and failure information instead of silently turning invalid records into normal empty values.
+ */
 import { AppError, Status, type Entity } from '../../contracts/src/index.js';
 import type { ProjectionReadCoverage, ProjectionReadIssue } from '../../contracts/src/run-reads.js';
 import type { Store } from './index.js';
@@ -17,9 +23,16 @@ const states: Record<ProjectionTable, readonly string[]> = {
   tool_operations: ['INTENT', 'DONE', 'FAILED', 'UNCERTAIN'],
 };
 
-/** 记录投影读取问题，同时保留原始业务正文，供修复后重试。 */
+/**
+ * 记录投影读取问题，同时保留原始业务正文，供修复后重试。
+ * EN: Track projection-read issues while preserving original business bodies for repair and retry.
+ */
 export class ProjectionReads {
-  /** 建立问题表和失效触发器；正文修复会解除旧问题并使任务中心、历史搜索重新预热。 */
+  /**
+   * 建立问题表和失效触发器；正文修复会解除旧问题并使任务中心、历史搜索重新预热。
+   * EN: Create issue tracking and invalidation triggers; body repair clears stale diagnostics and
+   * requests fresh task-center and history-search warming.
+   */
   constructor(private store: Store) {
     store.tx(() => {
       store.db.exec(`CREATE TABLE IF NOT EXISTS projection_read_issues_v1(
@@ -53,15 +66,26 @@ export class ProjectionReads {
           ON CONFLICT(kind,scope) DO UPDATE SET revision=revision+1; END;`);
     });
   }
-  /** 生成排除已知问题行的 SQL 片段；table 来自固定表枚举，alias 仅供内部查询拼接。 */
+  /**
+   * 生成排除已知问题行的 SQL 片段；table 来自固定表枚举，alias 仅供内部查询拼接。
+   * EN: Build SQL excluding known bad rows. table comes from the fixed table enum, and alias is for
+   * internal query composition only.
+   */
   available(table: ProjectionTable, alias = table) {
     return `NOT EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.table_name='${table}' AND p.record_id=${alias}.id)`;
   }
-  /** 判断投影版本或 readModel 对象缺失，用于选取需要从权威正文重建的行。 */
+  /**
+   * 判断投影版本或 readModel 对象缺失，用于选取需要从权威正文重建的行。
+   * EN: Identify missing projection versions or readModel objects that need rebuilding from
+   * authoritative bodies.
+   */
   missing(table: ProjectionTable, alias = table) {
     return `(json_extract(${alias}.data,'$.readModelVersion') IS NOT 1 OR json_type(${alias}.data,'$.readModel') IS NOT 'object')`;
   }
-  /** 判断是否已登记不可读问题；不尝试读取或修复正文。 */
+  /**
+   * 判断是否已登记不可读问题；不尝试读取或修复正文。
+   * EN: Check whether an unreadable issue is already registered without reading or repairing its body.
+   */
   has(table: ProjectionTable, id: string) {
     return !!this.store.db
       .prepare('SELECT 1 FROM projection_read_issues_v1 WHERE table_name=? AND record_id=?')
@@ -70,10 +94,14 @@ export class ProjectionReads {
   /**
    * 读取并校验实体与数据库元数据的一致性。refresh 可重建投影；retry 允许重查已标记问题。
    * 单条数据错误写入问题表并返回 undefined，SQLite 本身的错误继续向上传递。
+   * EN: Read and validate entity consistency with database metadata. refresh rebuilds projections;
+   * retry rechecks marked issues. Record per-row data failures and return undefined, while propagating
+   * actual SQLite errors.
    */
   read<T extends Entity>(table: ProjectionTable, id: string, refresh = false, retry = false): T | undefined {
     if (!retry && this.has(table, id)) return;
     // 单条记录失败只回滚自身的刷新，不撤销外围批次中的其他记录。
+    // EN: A failed item rolls back only its own refresh, not other items in the surrounding batch.
     this.store.db.exec('SAVEPOINT projection_read_item');
     try {
       const entity = this.store.get<T>(table, id);
@@ -114,7 +142,10 @@ export class ProjectionReads {
       return;
     }
   }
-  /** 区分记录不存在与记录存在但当前不可读取。 */
+  /**
+   * 区分记录不存在与记录存在但当前不可读取。
+   * EN: Distinguish an absent record from a record that exists but is currently unreadable.
+   */
   require<T extends Entity>(table: ProjectionTable, id: string): T {
     const result = this.read<T>(table, id);
     if (result) return result;
@@ -122,7 +153,10 @@ export class ProjectionReads {
       throw new AppError(projectionIssue.code, projectionIssue.message, true, null, 422);
     throw new AppError('NOT_FOUND', '记录不存在', false, null, 404);
   }
-  /** Keep healthy records readable without touching the original business bodies. */
+  /**
+   * 健康记录继续可读，不改写原始业务正文。
+   * EN: Keep healthy records readable without rewriting original business bodies.
+   */
   collection<T extends Entity>(table: Exclude<ProjectionTable, 'runs'>, runId: string): T[] {
     const rows = this.store.db
       .prepare(`SELECT id FROM ${table} WHERE run_id=? AND ${this.available(table)} ORDER BY rowid`)
@@ -132,7 +166,10 @@ export class ProjectionReads {
       return row ? [row] : [];
     });
   }
-  /** 每批最多刷新 32 条缺少投影的健康记录。 */
+  /**
+   * 每批最多刷新 32 条缺少投影的健康记录。
+   * EN: Refresh at most 32 healthy records missing projections per batch.
+   */
   batch(table: ProjectionTable, runId?: string) {
     const rows = this.store.db
       .prepare(
@@ -144,15 +181,26 @@ export class ProjectionReads {
     });
     return rows.length;
   }
-  /** 分批预热并在批次之间让出事件循环。 */
+  /**
+   * 分批预热并在批次之间让出事件循环。
+   * EN: Warm projections in batches and yield to the event loop between batches.
+   */
   async warm(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  /** 在必须同步完成的初始化路径逐批预热；正常交互应使用会让出事件循环的 warm。 */
+  /**
+   * 在必须同步完成的初始化路径逐批预热；正常交互应使用会让出事件循环的 warm。
+   * EN: Warm synchronously only where initialization requires completion; normal interactions should
+   * use the yielding warm method.
+   */
   warmSync(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) {}
   }
-  /** 请求重新检查已有问题；仍不可读的记录继续保留问题标记。 */
+  /**
+   * 请求重新检查已有问题；仍不可读的记录继续保留问题标记。
+   * EN: Request rechecking of reported issues; records that remain unreadable keep their issue
+   * markers.
+   */
   async retry(runId?: string) {
     this.store.tx(() => {
       this.store.db
@@ -173,7 +221,11 @@ export class ProjectionReads {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
-  /** 返回指定表或运行的不可读数量；未指定表时按运行去重。 */
+  /**
+   * 返回指定表或运行的不可读数量；未指定表时按运行去重。
+   * EN: Return unreadable counts for a table or run; without a table filter, count distinct affected
+   * runs.
+   */
   coverage(table?: ProjectionTable, runId?: string): ProjectionReadCoverage {
     const clauses = [...(table ? ['table_name=?'] : []), ...(runId ? ['run_id=?'] : [])];
     const unavailable = Number(
@@ -189,7 +241,10 @@ export class ProjectionReads {
   }
 }
 const instances = new WeakMap<Store, ProjectionReads>();
-/** 每个 Store 复用一个读取器；WeakMap 不延长已释放 Store 的生命周期。 */
+/**
+ * 每个 Store 复用一个读取器；WeakMap 不延长已释放 Store 的生命周期。
+ * EN: Reuse one reader per Store through a WeakMap without extending the Store lifetime.
+ */
 export function projectionReads(store: Store) {
   let value = instances.get(store);
   if (!value) {

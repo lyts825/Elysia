@@ -1,4 +1,8 @@
-/** 解析并定位工作区中的文件。 */
+/**
+ * 解析并定位工作区中的文件。
+ * 按字节扫描行范围与 Markdown 锚点，游标有界且考虑编码/围栏/重复标题；文件版本变化使定位失效。
+ * EN: Resolves locations within workspace files. Scans line/Markdown targets by byte with bounded encoding/fence/duplicate-aware cursors; file version changes invalidate location.
+ */
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { AppError, invariant } from '../../../packages/contracts/src/index.js';
@@ -25,7 +29,10 @@ type Scan = {
   touched: number;
 };
 
-/** 解析 URI 锚点或 Lx-Ly 行范围；无效转义、控制字符和过大范围直接拒绝。 */
+/**
+ * 解析 URI 锚点或 Lx-Ly 行范围；无效转义、控制字符和过大范围直接拒绝。
+ * EN: Parses URI anchors or Lx-Ly ranges, rejecting invalid escapes, controls, and oversized ranges.
+ */
 function targetAnchor(input: string) {
   let anchor: string;
   try {
@@ -49,9 +56,15 @@ function targetAnchor(input: string) {
   );
   return { anchor, line, endLine };
 }
-/** 与前端 Markdown 可见标题使用相同 slug 规则，保留重复标题的序号匹配基础。 */
+/**
+ * 与前端 Markdown 可见标题使用相同 slug 规则，保留重复标题的序号匹配基础。
+ * EN: Uses the same visible-heading slug convention as frontend Markdown, including duplicate-heading numbering.
+ */
 function headingSlug(text: string) {
-  // Same visible-text slug convention as MarkdownDocument; HTML is skipped there.
+  /**
+   * 与MarkdownDocument共享可见文本slug规则，该处跳过HTML。
+   * EN: Same visible-text slug convention as MarkdownDocument; HTML is skipped there.
+   */
   return text
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/!\[[^\]]*\]\[[^\]]*\]/g, '')
@@ -80,15 +93,15 @@ function headingSlug(text: string) {
     .replace(/\s/g, '-');
 }
 
-// Opaque continuations bind a bounded scanner state to one file version and query.
-// No document contents leave this service other than the existing paged reader.
-/** 按文件及作用域定位锚点，保留有期限的扫描游标供后续请求续读。 */
+/**
+ * 不透明续读游标把有界扫描状态绑定到文件版本和查询。 除了已有分页读取器，不向此服务外发送文档正文。 按文件及作用域定位锚点，保留有期限的扫描游标供后续请求续读。
+ * EN: Opaque continuations bind a bounded scanner state to one file version and query. No document contents leave this service other than the existing paged reader. Locates anchors by file and scope and retains expiring scanner cursors for continuation.
+ */
 export class FileLocator {
   private cursors = new Map<string, Scan>();
   /**
-   * 每次最多扫描 8 MiB，以不透明游标保存文件版本、编码、行状态和标题重复计数。
-   * 续读必须匹配相同作用域、文件和锚点；扫描后重查文件版本，防止返回混合版本的位置。
-   * Markdown 围栏代码中的标题被忽略，超长行仅保留定位所需的有界状态。
+   * 每次最多扫描 8 MiB，以不透明游标保存文件版本、编码、行状态和标题重复计数。 续读必须匹配相同作用域、文件和锚点；扫描后重查文件版本，防止返回混合版本的位置。 Markdown 围栏代码中的标题被忽略，超长行仅保留定位所需的有界状态。
+   * EN: Scans at most 8 MiB per request. Opaque cursors bind file version, encoding, line state, and duplicate-heading counts. Continuations must match scope, file, and anchor; version is rechecked after scanning to prevent mixed-version positions. Fenced Markdown headings are ignored and oversized lines retain bounded locator state only.
    */
   async locate(filename: string, scope: string, options: FileLocationOptions): Promise<FileLocation> {
     const target = targetAnchor(options.anchor),
@@ -125,6 +138,10 @@ export class FileLocator {
             counts: new Map(),
             touched: Date.now(),
           };
+      /**
+       * 同时核对当前路径及已打开句柄版本并检查取消；定位期间文件变化返回冲突，防止游标错位。
+       * EN: Checks cancellation and both pathname/open-handle versions; changes during location produce conflicts to prevent cursor drift.
+       */
       const validate = async () => {
         signal?.throwIfAborted();
         if (
@@ -133,6 +150,10 @@ export class FileLocator {
         )
           throw new AppError('FILE_CHANGED', '文件已变化，请重新定位。', false, null, 409);
       };
+      /**
+       * 返回定位状态前先复核文件，消费旧游标；仅 continue 创建有界的新游标，避免同一旧扫描状态无限复用。
+       * EN: Revalidates before returning, consumes the old cursor and issues a bounded replacement only for continue, preventing indefinite reuse of stale scan state.
+       */
       const result = async (
         status: FileLocation['status'],
         extra: Partial<FileLocation> = {},
@@ -157,6 +178,10 @@ export class FileLocator {
         };
       };
       const soughtSlugs = new Set([target.anchor, target.anchor.replace(/-\d+$/, '')]);
+      /**
+       * 按标题 slug 及重复计数匹配目标锚点，找到时记录原始字节偏移和行号。
+       * EN: Matches heading slug plus duplicate count to the target anchor and records its raw byte offset/line.
+       */
       const heading = (text: string, offset: number, line: number) => {
         const slug = headingSlug(text);
         if (!soughtSlugs.has(slug)) return false;
@@ -166,6 +191,10 @@ export class FileLocator {
         state.found = { offset, line };
         return true;
       };
+      /**
+       * 消费一行定位状态：行号模式直接计数，锚点模式忽略代码围栏并识别 ATX/Setext 标题；解码失败明确报编码错误。
+       * EN: Consumes one line: direct counting for line targets, or fence-aware ATX/Setext heading detection for anchors. Decoding failures become explicit encoding errors.
+       */
       const consumeLine = (end: number) => {
         if (target.line) {
           if (state.line === target.line) state.found = { offset: state.lineStart, line: state.line };
@@ -220,6 +249,10 @@ export class FileLocator {
         const bytes = buffer.subarray(0, bytesRead),
           base = state.offset;
         let segment = 0;
+        /**
+         * 在单行字节上限内积累跨块内容；超限仅标记 overflow，不无限缓存巨大行。
+         * EN: Accumulates cross-chunk line content within its byte cap; excess marks overflow instead of buffering an unbounded line.
+         */
         const append = (part: Buffer) => {
           if (state.carry.length + part.length > lineLimit) state.overflow = true;
           if (!state.overflow) state.carry = Buffer.concat([state.carry, part]);

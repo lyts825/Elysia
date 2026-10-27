@@ -1,4 +1,8 @@
-/** 注册任务工作状态相关接口。 */
+/**
+ * 注册任务工作状态相关接口。
+ * 校验运行/任务/代理/会话归属后读写草稿和批准，批准绑定版本与原始快照；不安全工具配对仅可查看，终端不支持原生替换。
+ * EN: Registers task working-state endpoints. Validates run/task/agent/session ownership for drafts/approvals bound to revision/raw snapshot; unsafe tool pairing stays view-only and terminal has no native replacement.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -25,7 +29,10 @@ import type { Store } from '../../../packages/storage/src/index.js';
 
 type Params = { runId: string; taskId: string };
 
-/** 注册任务工作状态读取、保存和批准接口，写入前检查可变性及执行记录。 */
+/**
+ * 注册任务工作状态读取、保存和批准接口，写入前检查可变性及执行记录。
+ * EN: Registers working-state reads, saves and approvals with mutability and execution checks before writes.
+ */
 export function registerTaskWorkingStateRoutes(
   app: FastifyInstance,
   store: Store,
@@ -33,7 +40,10 @@ export function registerTaskWorkingStateRoutes(
   assertMutable: (runId: string | null, projectId?: string | null) => void,
   assertExecutionReadable: (runId: string) => void,
 ) {
-  /** 核验运行、任务、代理及会话的双向归属，工作状态不得引用另一代理的历史。 */
+  /**
+   * 核验运行、任务、代理及会话的双向归属，工作状态不得引用另一代理的历史。
+   * EN: Checks bidirectional run/task/agent/session ownership so working state cannot reference another agent's history.
+   */
   function entities(params: Params) {
     const runId = z.string().uuid().parse(params.runId);
     const taskId = z.string().uuid().parse(params.taskId);
@@ -51,8 +61,8 @@ export function registerTaskWorkingStateRoutes(
   }
 
   /**
-   * 根据当前权威状态重新生成草稿，并独立检查旧批准快照是否仍有效。
-   * 工具配对、执行边界或删除锁不安全时仅允许查看；终端自管上下文不支持批准替换。
+   * 根据当前权威状态重新生成草稿，并独立检查旧批准快照是否仍有效。 工具配对、执行边界或删除锁不安全时仅允许查看；终端自管上下文不支持批准替换。
+   * EN: Regenerates drafts from authoritative state and separately validates old approved snapshots. Unsafe tool pairing, execution boundaries or deletion locks permit viewing only; terminal-managed contexts do not support approval replacement.
    */
   function view(params: Params): TaskWorkingStateView {
     const { run, task, agent, history } = entities(params);
@@ -115,7 +125,10 @@ export function registerTaskWorkingStateRoutes(
     action: z.literal('revoke'),
   }).strict();
 
-  // 批准同时绑定记录版本和原始快照哈希，用户修改的“当前需求”不能掩盖批准期间历史已变化。
+  /**
+   * 批准同时绑定记录版本和原始快照哈希，用户修改的“当前需求”不能掩盖批准期间历史已变化。
+   * EN: Approval binds both revision and raw snapshot hash so edited requirements cannot hide concurrent history changes.
+   */
   app.post<{ Params: Params }>(route, (request) => {
     const body = z.union([approve, revoke]).parse(request.body);
     return store.command(body.commandId, { route, params: request.params, body }, () => {

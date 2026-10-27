@@ -1,4 +1,8 @@
-/** 注册终端日志搜索接口。 */
+/**
+ * 注册终端日志搜索接口。
+ * 只扫描登记操作的公开日志，按字节游标、有界重叠/上下文和请求预算搜索并重查版本；不读私有会话，不把页匹配数当总数。
+ * EN: Registers public terminal log search endpoints. Searches registered public logs by byte cursor with bounded overlap/context/budgets and version checks, excluding private sessions/global-count claims.
+ */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -30,12 +34,15 @@ const searchQuery = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .optional(),
 });
+/**
+ * 把有界日志上下文字节转为 UTF-8，并去掉块边界处的替代字符；仅用于搜索摘要，不改日志文件。
+ * EN: Decodes bounded log context and strips replacement characters at chunk edges for snippets only, without altering logs.
+ */
 const edgeText = (bytes: Buffer) => bytes.toString('utf8').replace(/^\uFFFD+|\uFFFD+$/g, '');
 
 /**
- * 只搜索已登记操作对应的公开终端日志，不访问私有 CLI 会话文件。
- * 每请求按字节游标扫描最多 8 MiB，跨块保留关键词重叠和短上下文，不把整个日志装入内存；
- * 页结束后重新核验产物版本，nextCursor 仅表示本次扫描进度，不是全日志匹配总数。
+ * 只搜索已登记操作对应的公开终端日志，不访问私有 CLI 会话文件。 每请求按字节游标扫描最多 8 MiB，跨块保留关键词重叠和短上下文，不把整个日志装入内存； 页结束后重新核验产物版本，nextCursor 仅表示本次扫描进度，不是全日志匹配总数。
+ * EN: Searches public logs for registered operations only, never private CLI sessions. Each request scans at most 8 MiB by byte cursor with small keyword overlap/context rather than loading a whole log. Rechecks artifact revision afterward; nextCursor reports scan progress, not total matches.
  */
 export function registerTerminalLogSearchRoutes(
   app: FastifyInstance,
@@ -77,8 +84,16 @@ export function registerTerminalLogSearchRoutes(
         '仅支持搜索已交付的公开终端日志',
       );
       const controller = new AbortController();
+      /**
+       * 中止当前公开日志扫描，停止读取后续字节块。
+       * EN: Aborts public-log scanning before further chunks.
+       */
       const abort = () => controller.abort();
       request.raw.once('aborted', abort);
+      /**
+       * 响应提前关闭时取消搜索，正常交付完毕不再中止。
+       * EN: Cancels search on premature response closure, preserving normal completion.
+       */
       const disconnected = () => {
         if (!reply.raw.writableEnded) abort();
       };
@@ -98,7 +113,10 @@ export function registerTerminalLogSearchRoutes(
         if (query.version && query.version !== resource.version)
           throw new AppError('FILE_CHANGED', '日志已变化，请重新搜索。', false, null, 409);
         invariant(query.cursor <= resource.size, 'TERMINAL_LOG_CURSOR', '搜索位置超出日志');
-        // Buffer only one stream chunk plus the small overlap; never materialize the full log.
+        /**
+         * 仅缓冲一个流块和少量重叠，不将完整日志装入内存。
+         * EN: Buffer only one stream chunk plus the small overlap; never materialize the full log.
+         */
         for await (const raw of resource.stream) {
           controller.signal.throwIfAborted();
           const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
@@ -135,7 +153,10 @@ export function registerTerminalLogSearchRoutes(
           carry = bytes.subarray(Math.max(0, bytes.length - Math.max(needle.length - 1, contextBytes)));
         }
         resource.stream.destroy();
-        // Revalidate after a partial scan, including disk replacements during the request.
+        /**
+         * 部分扫描后也要重新核验，包括请求期间的磁盘替换。
+         * EN: Revalidate after a partial scan, including disk replacements during the request.
+         */
         await previews.preview(artifact, 'utf-8', {
           limit: 1,
           version: resource.version,

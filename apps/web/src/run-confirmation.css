@@ -1,4 +1,7 @@
-/* 定义 run-confirmation 对应界面的样式与布局。 */
+/*
+ * 运行复核确认：排列运行字段、材料摘要和确认依据。标签保留最小宽度，内容列使用余量并允许断行，确保长版本或路径可以在提交前完整查看。
+ * EN: Run review confirmation: arranges run fields, material summaries, and confirmation basis. Minimum label widths and shrinkable/wrapping content preserve full revisions/paths for pre-submission inspection.
+ */
 .run-review-confirmation {
   min-width: 0;
 }
@@ -10,7 +13,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
-/* 为左侧标签预留最小宽度，右侧内容使用剩余空间。 */
+/*
+ * 为左侧标签预留最小宽度，右侧内容使用剩余空间。
+ * EN: Reserves a minimum width for left labels while the right content uses remaining space.
+ */
 .run-review-confirmation .run-review-fields > div {
   display: grid;
   grid-template-columns: minmax(4.5rem, 0.35fr) minmax(0, 1fr);
@@ -23,7 +29,10 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .run-review-confirmation .run-review-fields dd {
   margin: 0;
   font-size: var(--font-sm);

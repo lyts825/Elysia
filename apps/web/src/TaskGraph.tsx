@@ -1,4 +1,11 @@
-/* 展示任务及其依赖关系。 */
+/**
+ * 展示任务及其依赖关系。
+ *
+ * EN: Displays tasks and their dependencies.
+ *
+ * 本模块按已读取的任务及依赖边绘制运行结构，单独呈现未接受的计划；层级算法服务于可视化，数据不完整或依赖成环时不声称已完成业务校验。
+ * EN: Renders run structure from read tasks/edges and shows unaccepted plans separately. Ranking serves visualization and does not claim domain validation for incomplete or cyclic graphs.
+ */
 import { useId } from 'react';
 import type { Run, Task } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';
@@ -30,6 +37,10 @@ export type TaskGraphDetail = DetailReadState & {
   tasks: Pick<Task, 'id' | 'parentTaskId' | 'spec' | 'status' | 'phase' | 'waitReason'>[];
   edges: { taskId: string; dependencyId: string }[];
 };
+/**
+ * 将任务状态转成展示文案，对依赖失败和无进展等待补充原因；只读输入，不修改任务状态。
+ * EN: Converts task status to a label, distinguishing dependency failure and no-progress waits without changing the task.
+ */
 const taskStatus = (task: TaskGraphDetail['tasks'][number]) =>
   task.status === 'WAITING' && task.waitReason === 'dependency_failed'
     ? '依赖阻塞'
@@ -40,6 +51,8 @@ const taskStatus = (task: TaskGraphDetail['tasks'][number]) =>
 /**
  * 根据已读任务和依赖边绘制分层状态图，未接受计划以候选计划单独提示，不伪造已创建子任务。
  * 任务读取不完整时明确降低图的完整性声明；selectTask 只定位现有任务，不执行状态操作。
+ *
+ * EN: Layers actual tasks/dependency edges while showing unaccepted plans separately, without inventing created children. Incomplete reads limit completeness claims; selectTask locates existing tasks only.
  */
 export function TaskGraph({
   detail,
@@ -53,7 +66,11 @@ export function TaskGraph({
   const id = useId();
   const tasks = detail.tasks.filter((task) => task.parentTaskId);
   const root = detail.tasks.find((task) => !task.parentTaskId);
-  // 任务覆盖不完整时，界面不能把当前可见分支当作完整依赖图。
+  /**
+   * 任务覆盖不完整时，界面不能把当前可见分支当作完整依赖图。
+   *
+   * EN: Incomplete task coverage prevents treating visible branches as a complete dependency graph.
+   */
   const incomplete = detail.detailCoverage?.tasks.complete === false;
   const pendingPlan =
     detail.run.plan && (!detail.run.authorized || detail.run.acceptedPlanVersion !== detail.run.plan.version)
@@ -63,10 +80,18 @@ export function TaskGraph({
   const ended = ['DONE', 'CANCELLED'].includes(detail.run.status);
   const awaitingPlan =
     pendingPlan && !readOnly && detail.run.status === 'WAITING' && detail.run.reason === 'plan';
-  // 兼容计划 key 与持久任务 ID 的引用，但所有展示名称仍来自本次实际读取的任务。
+  /**
+   * 兼容计划 key 与持久任务 ID 的引用，但所有展示名称仍来自本次实际读取的任务。
+   *
+   * EN: Supports plan keys and durable task IDs, but display names still come from actual tasks read now.
+   */
   const findTask = (reference: string) =>
     detail.tasks.find((task) => task.id === reference) ||
     detail.tasks.find((task) => task.spec.key === reference);
+  /**
+   * 从当前边集合解析一个任务的直接前置任务，无法解析的引用忽略；返回值只用于图层级计算。
+   * EN: Resolves direct dependencies from the current edges, omitting unread references; the result serves display ranking only.
+   */
   const dependencies = (taskId: string) =>
     detail.edges
       .filter((edge) => edge.taskId === taskId)
@@ -74,7 +99,11 @@ export function TaskGraph({
       .filter((task): task is TaskGraphDetail['tasks'][number] => !!task);
   const ranks = new Map<string, number>();
   const visiting = new Set<string>();
-  /** 用最长依赖路径确定显示层；缓存已求层级，遇到环只中断本次递归，不把图显示当作业务校验。 */
+  /**
+   * 用最长依赖路径确定显示层；缓存已求层级，遇到环只中断本次递归，不把图显示当作业务校验。
+   *
+   * EN: Uses the longest dependency path for display rank and memoizes results; cycles stop recursion only, not replace domain graph validation.
+   */
   const rankOf = (task: TaskGraphDetail['tasks'][number]): number => {
     const known = ranks.get(task.id);
     if (known !== undefined) return known;

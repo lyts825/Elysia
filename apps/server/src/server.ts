@@ -1,4 +1,8 @@
-/** 创建服务端并组装路由和依赖。 */
+/**
+ * 创建服务端并组装路由和依赖。
+ * 装配单数据目录/入口的认证、路由、内核和执行器，限制原生/终端能力及资源生命周期；只创建服务对象，实际监听由调用方管理。
+ * EN: Creates the server and composes routes and dependencies. Composes auth/routes/kernel/executor per directory/surface with native/terminal and resource-lifecycle boundaries; callers own actual listening.
+ */
 import { RunApplicationService } from './run-application.js';
 import Fastify, { type FastifyRequest, type FastifyReply, type FastifyInstance } from 'fastify';
 import staticFiles from '@fastify/static';
@@ -91,9 +95,16 @@ const textPageQuery = z.object({
     .optional(),
   encoding: z.enum(projectTextEncodings).default('auto'),
 });
-/** 下载中断或响应提前关闭时取消文件读取；正常发送完成不误判为取消。 */
+/**
+ * 下载中断或响应提前关闭时取消文件读取；正常发送完成不误判为取消。
+ * EN: Cancels file reads on download abort or premature response closure without treating a completed send as cancellation.
+ */
 function fileRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController();
+  /**
+   * 中止当前资源响应的文件读取控制器。
+   * EN: Aborts file reading for this resource response.
+   */
   const abort = () => controller.abort();
   request.raw.once('aborted', abort);
   reply.raw.once('close', () => {
@@ -102,7 +113,10 @@ function fileRequestSignal(request: FastifyRequest, reply: FastifyReply) {
   });
   return controller.signal;
 }
-/** 将已校验文件资源的范围、版本和长度信息传给 HTTP 层，不在此重新解释路径。 */
+/**
+ * 将已校验文件资源的范围、版本和长度信息传给 HTTP 层，不在此重新解释路径。
+ * EN: Passes validated range, revision and length metadata to HTTP without reinterpreting paths.
+ */
 function sendFileResource(reply: FastifyReply, resource: FileResource) {
   reply
     .code(resource.status)
@@ -116,7 +130,10 @@ function sendFileResource(reply: FastifyReply, resource: FileResource) {
 }
 const restrictedResourcePolicy =
   "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
-/** 构造内置供应商的初始配置；实际凭据由后续连接流程提供。 */
+/**
+ * 构造内置供应商的初始配置；实际凭据由后续连接流程提供。
+ * EN: Builds initial built-in provider configuration; credentials arrive through the connection flow.
+ */
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -159,9 +176,8 @@ export function defaultProviders(): ProviderConfig[] {
   ];
 }
 /**
- * 为一个数据目录和界面入口装配 HTTP 服务、内核及执行器。可注入已有 Fastify 实例，
- * prefix 用于共享监听器下的路径归属，surface 决定原生/终端能力边界；鉴权在路由前统一执行。
- * 本函数只创建服务对象，监听端口和上层关闭由调用方管理。
+ * 为一个数据目录和界面入口装配 HTTP 服务、内核及执行器。可注入已有 Fastify 实例， prefix 用于共享监听器下的路径归属，surface 决定原生/终端能力边界；鉴权在路由前统一执行。 本函数只创建服务对象，监听端口和上层关闭由调用方管理。
+ * EN: Assembles HTTP, kernel and executor for one data directory and surface. Supports an injected Fastify instance; prefix scopes shared listeners and surface defines native/terminal capabilities. Authentication runs before routes. Listening and outer lifecycle remain caller-owned.
  */
 export function createServer(
   store: Store,
@@ -182,6 +198,10 @@ export function createServer(
 ) {
   const app = options.app ?? Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
   const prefix = options.prefix ?? '';
+  /**
+   * 把请求 URL 映射到本入口局部路径，其他入口返回 null，防止共享监听器上的路由越界。
+   * EN: Maps URLs to this surface's local path and returns null for other surfaces, preserving shared-listener route ownership.
+   */
   const localUrl = (url: string) =>
     prefix
       ? url.startsWith(prefix + '/')
@@ -195,10 +215,21 @@ export function createServer(
     options.surface === 'terminal'
       ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
       : undefined;
+  /**
+   * 原生入口才实例化账号服务；终端入口返回拒绝所有属性访问的代理，使误用立即失败且不加载凭据能力。
+   * EN: Instantiates account services only for native access; terminal receives a rejecting proxy so misuse fails without loading credential capabilities.
+   */
   const nativeService = <T extends object>(factory: () => T): T =>
-    // 终端入口连原生凭据服务都不实例化；误调用通过代理立即失败，避免隐藏的账号访问。
+    /**
+     * 终端入口连原生凭据服务都不实例化；误调用通过代理立即失败，避免隐藏的账号访问。
+     * EN: The terminal surface never instantiates native credential services; accidental access fails immediately through a proxy.
+     */
     options.surface === 'terminal'
       ? new Proxy({} as T, {
+          /**
+           * 拒绝终端入口访问原生账号代理的任意属性，抛明确入口边界错误。
+           * EN: Rejects every native-account proxy property access from terminal with an explicit surface-boundary error.
+           */
           get() {
             throw new AppError('SURFACE_EXECUTION', 'Agent 终端入口不访问原生模型和账号');
           },
@@ -211,28 +242,52 @@ export function createServer(
     () => options.codex ?? new CodexSubscription(store.directory, desktopServices()),
   );
   const keys = nativeService(() => options.keys ?? new ProviderKeys(desktopServices()));
+  /**
+   * 通过服务器持有的密钥能力读取指定 API 配置的模型目录，不把密钥服务传给运行时。
+   * EN: Reads an API binding's model catalog through server-held key capability without exposing it to runtime.
+   */
   const apiCatalog = (provider: ProviderConfig) => apiModels(provider, keys);
   const providerPlugins =
     options.surface === 'terminal'
       ? new ProviderRegistry([])
       : serverProviderPlugins({ codex, subscription, keys });
+  /**
+   * 按冻结配置从已注册服务商插件取得适配器，协议与认证不匹配会由注册表拒绝。
+   * EN: Resolves adapters from provider plugins for frozen bindings, rejecting unsupported protocol/auth pairs.
+   */
   const providerAdapter = (provider: ProviderConfig) => providerPlugins.adapter(provider);
   let terminal!: DockerAgentService;
   const executor = new NativeExecutor(kernel, {
+    /**
+     * 只允许原生执行器按代理冻结绑定创建模型适配器，终端入口调用立即失败。
+     * EN: Allows native execution to create adapters from frozen agent bindings and rejects terminal-surface calls.
+     */
     adapterFactory: (agent) => {
       invariant(options.surface !== 'terminal', 'SURFACE_EXECUTION', 'Agent 终端入口不调用原生模型');
       return providerAdapter(agent.providerBinding);
     },
+    /**
+     * 按服务入口筛选可调度的执行类型，未指定隔离入口时兼容接受两类运行。
+     * EN: Filters schedulable execution kinds by surface, accepting both when no isolated surface is specified.
+     */
     acceptRun: (run) =>
       options.surface === 'native'
         ? run.execution?.kind !== 'docker-agent'
         : options.surface === 'terminal'
           ? run.execution?.kind === 'docker-agent'
           : true,
+    /**
+     * 使用内核和受控网关创建 Docker 终端服务，注入可选终端凭据解析后返回执行插件。
+     * EN: Creates Docker terminal service from kernel/gateway, injects optional terminal credential resolution and returns its execution plugin.
+     */
     executionPlugins: (gateway) => {
       terminal = new DockerAgentService(kernel, gateway, {
         ...options.terminal,
-        ...(terminalControl ? { resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
+        ...(terminalControl ? { /**
+           * 把冻结终端绑定交给终端独立凭据服务解析，不读取原生账号存储。
+           * EN: Resolves frozen terminal bindings through terminal-only credentials rather than native account storage.
+           */
+          resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
       });
       return [terminalExecutionPlugin(terminal)];
     },
@@ -240,7 +295,10 @@ export function createServer(
   const runService = new RunApplicationService(kernel, executor, (runId, projectId) =>
     management.assertMutable(runId, projectId),
   );
-  /** 优先绑定项目明确选择且协议兼容的连接；最终由控制服务冻结凭据引用而非复制明文。 */
+  /**
+   * 优先绑定项目明确选择且协议兼容的连接；最终由控制服务冻结凭据引用而非复制明文。
+   * EN: Prefers an explicitly selected protocol-compatible project connection; control services freeze credential references rather than plaintext.
+   */
   const boundTerminalProfile = (profile: AgentTerminalProfile, projectId?: string | null) => {
     if (!terminalControl) return profile;
     if (profile.connectionId === undefined && projectId) {
@@ -268,16 +326,26 @@ export function createServer(
   app.addHook('onClose', async () => {
     await artifactPreviews.close();
   });
+  /**
+   * 从 Cookie 头提取会话值，仅负责语法提取，真实性由认证钩子核验。
+   * EN: Extracts the session cookie value only; authentication hooks validate authenticity.
+   */
   const cookieSession = (header?: string) =>
     header
       ?.split(';')
       .map((v) => v.trim())
       .find((v) => v.startsWith('elysia_session='))
       ?.slice(15);
-  // 第一层边界：本机 Host/Origin → 会话 Cookie → 修改请求 CSRF → 入口能力与旧历史只读。
+  /**
+   * 第一层边界：本机 Host/Origin → 会话 Cookie → 修改请求 CSRF → 入口能力与旧历史只读。
+   * EN: Applies boundaries in order: local Host/Origin, session cookie, mutation CSRF, then surface capabilities and read-only legacy history.
+   */
   app.addHook('onRequest', async (request, reply) => {
     const address = app.server.address();
-    // 端口可由系统分配，鉴权集合必须采用实际监听端口，而不是启动参数中的旧占位端口。
+    /**
+     * 端口可由系统分配，鉴权集合必须采用实际监听端口，而不是启动参数中的旧占位端口。
+     * EN: Authentication must use the actual listening port when the OS assigns it, not the initial placeholder.
+     */
     if (address && typeof address !== 'string') {
       hosts.delete(`127.0.0.1:${options.port}`);
       origins.delete(`http://127.0.0.1:${options.port}`);
@@ -287,7 +355,10 @@ export function createServer(
     invariant(hosts.has(request.headers.host ?? ''), 'HOST_DENIED', 'Host 不允许');
     const url = localUrl(request.url);
     if (url === null) return;
-    // Capability-scoped sandbox frames have opaque origins and no app session.
+    /**
+     * 能力限定的沙箱框架拥有不透明来源，且不携带应用会话。
+     * EN: Capability-scoped sandbox frames have opaque origins and no app session.
+     */
     if (url.startsWith('/preview/')) return;
     const origin = request.headers.origin;
     if (origin) invariant(origins.has(origin), 'ORIGIN_DENIED', 'Origin 不允许');
@@ -326,7 +397,10 @@ export function createServer(
         );
     }
   });
-  // 普通工作台使用统一 CSP；资源预览保留其更严格的沙箱策略，避免外部正文获得应用权限。
+  /**
+   * 普通工作台使用统一 CSP；资源预览保留其更严格的沙箱策略，避免外部正文获得应用权限。
+   * EN: Applies the workbench CSP while preserving stricter resource-preview sandbox policies so external bodies gain no app authority.
+   */
   app.addHook('onSend', async (_request, reply, payload) => {
     const url = localUrl(_request.url);
     if (url === null) return payload;
@@ -340,7 +414,10 @@ export function createServer(
       );
     return payload;
   });
-  // 原生入口保留旧终端历史时禁止通过项目级归档/删除间接修改这批只读历史。
+  /**
+   * 原生入口保留旧终端历史时禁止通过项目级归档/删除间接修改这批只读历史。
+   * EN: Native project archival/deletion cannot indirectly modify retained read-only legacy terminal history.
+   */
   app.addHook('preHandler', async (request) => {
     if (options.surface !== 'native' || ['GET', 'HEAD'].includes(request.method)) return;
     const url = localUrl(request.url);
@@ -361,7 +438,10 @@ export function createServer(
         409,
       );
   });
-  // 统一业务错误与输入校验的 HTTP 形态；范围错误保留 Content-Range 供客户端正确恢复读取。
+  /**
+   * 统一业务错误与输入校验的 HTTP 形态；范围错误保留 Content-Range 供客户端正确恢复读取。
+   * EN: Normalizes domain and validation errors into HTTP responses and retains Content-Range for range recovery.
+   */
   app.setErrorHandler((error, _request, reply) => {
     const e = error as any;
     const code =
@@ -385,12 +465,18 @@ export function createServer(
       });
   });
   if (options.surface !== 'terminal') registerLocalAgentRoutes(app, store, executor.gateway, prefix);
-  /** 修改入口的幂等包装：commandId 绑定路由和原始正文，重试返回已提交结果。 */
+  /**
+   * 修改入口的幂等包装：commandId 绑定路由和原始正文，重试返回已提交结果。
+   * EN: Binds commandId to route and original body; idempotent retries return the committed result.
+   */
   const command = <T>(body: unknown, route: string, fn: (b: any) => T) => {
     const b = Command.parse(body);
     return store.command(b.commandId, { route, body }, () => fn(body));
   };
-  /** 对覆盖式修改执行乐观并发检查，客户端缺失版本时不能按“最新”默默提交。 */
+  /**
+   * 对覆盖式修改执行乐观并发检查，客户端缺失版本时不能按“最新”默默提交。
+   * EN: Requires optimistic revisions for replacement writes rather than silently treating absent versions as current.
+   */
   const revision = (body: any, entity: { revision: number }) => {
     invariant(Number.isInteger(body.expectedRevision), 'REVISION_REQUIRED', '需要 expectedRevision');
     if (body.expectedRevision !== entity.revision)
@@ -402,7 +488,10 @@ export function createServer(
         409,
       );
   };
-  /** 运行中的代理只能查看上下文，必须等当前请求和副作用结束后才允许配置窗口。 */
+  /**
+   * 运行中的代理只能查看上下文，必须等当前请求和副作用结束后才允许配置窗口。
+   * EN: Active agents can preview context, but configuration requires current requests and side effects to settle.
+   */
   const contextBoundaries = (snapshot: ContextSnapshot): ContextSnapshot => ({
     ...snapshot,
     agents: snapshot.agents.map((context) =>
@@ -426,6 +515,10 @@ export function createServer(
     registerTerminalMaintenance(app, store, {
       snapshot: terminal.maintenanceSnapshot.bind(terminal),
       guard: terminal.withMaintenanceGuard.bind(terminal),
+      /**
+       * 合并原生调度快照和 Docker 宿主活动状态，维护操作必须等两者都停止。
+       * EN: Combines native scheduler and Docker host activity so maintenance waits for both to stop.
+       */
       isActive: (runId) =>
         executor.runtimeSnapshot(runId).activeTaskIds.length > 0 || terminal.hasActive(runId),
     });
@@ -633,6 +726,10 @@ export function createServer(
       });
     });
   });
+  /**
+   * 给保存的配置附凭据是否配置的公开状态；按认证类型选择账号缓存或保险库检查，不返回密钥。
+   * EN: Adds public credential-configuration state using auth-specific account caches or vault checks without returning secrets.
+   */
   const providerView = async (provider: ProviderConfig) => ({
     ...provider,
     keyConfigured:
@@ -760,7 +857,10 @@ export function createServer(
         'DeepSeek Chat Completions 端点请使用 https://api.deepseek.com 或 /v1；不支持其他协议路径',
       );
     }
-    // Validate command/revision before saving secrets. Command storage retains only a hash of the body.
+    /**
+     * 保存密钥前先验证命令和版本；命令存储仅保留正文哈希。
+     * EN: Validate command/revision before saving secrets. Command storage retains only a hash of the body.
+     */
     Command.parse(body);
     if (body.apiKey !== undefined) {
       invariant(
@@ -806,6 +906,10 @@ export function createServer(
     const provider = store.require<ProviderConfig>('providers', request.params.id);
     invariant(!provider.archived, 'PROVIDER_ARCHIVED', '该模型配置已删除');
     revision(body, provider);
+    /**
+     * 执行用户明确触发的最小模型调用并等待完整响应，再在命令事务内重查配置版本后保存验证状态；网络成功但配置变化也不能验证新版绑定。
+     * EN: Runs an explicit minimal inference and requires completion, then revision-checks configuration inside the command transaction before saving verification; a late success cannot validate edited bindings.
+     */
     const perform = async () => {
       const adapter = providerAdapter(
         officialDeepSeek(provider) ? { ...provider, reasoningEffort: 'none' } : provider,
@@ -841,8 +945,15 @@ export function createServer(
   });
   const runReads = new RunReads(store);
   const executionReadOnlyReason = '部分执行记录暂时无法读取，当前仅供查看。修复后请重试读取。';
+  /**
+   * 在幂等业务事务前核验恢复和执行记录可读性，使坏记录隔离独立保留；通过后才执行命令。
+   * EN: Checks recovery/execution readability before the idempotent business transaction so damaged-record isolation survives rejection, then runs the command.
+   */
   const executionCommand = <T>(runId: string, body: unknown, route: string, work: (body: any) => T) => {
-    // Preflight outside the business transaction so quarantined failures survive a rejected command.
+    /**
+     * 在业务事务外预检，使隔离损坏记录的结果不会随被拒绝的命令回滚。
+     * EN: Preflight outside the business transaction so quarantined failures survive a rejected command.
+     */
     store.recovery.assertReadable(runId);
     runReads.assertExecutionReadable(runId);
     return command(body, route, work);
@@ -902,6 +1013,10 @@ export function createServer(
     invariant(!body.profileId || profile, 'TERMINAL_PROFILE_MISSING', '终端模板已删除，请刷新后重试');
     return terminal.check(profile ? boundTerminalProfile(profile, body.projectId) : undefined);
   });
+  /**
+   * 核对运行执行资料可读、删除守卫及运行/项目非归档，返回当前运行供终端写操作使用。
+   * EN: Checks execution readability, deletion guards and run/project archival before returning the run for terminal mutations.
+   */
   const assertTerminalMutable = (runId: string) => {
     const run = store.require<Run>('runs', runId);
     runReads.assertExecutionReadable(run.id);
@@ -915,13 +1030,20 @@ export function createServer(
   };
   if (options.surface !== 'native')
     registerTerminalCommunication(app, store, kernel, {
+      /**
+       * 复用恢复层和运行记录的完整可读检查，供终端命令在写入前统一拒绝残缺历史。
+       * EN: Combines recovery and run-record readability checks so terminal commands reject incomplete history before writes.
+       */
       assertReadable: (runId) => {
         store.recovery.assertReadable(runId);
         runReads.assertExecutionReadable(runId);
       },
       assertMutable: assertTerminalMutable,
     });
-  // 终端验收采用准备/提交两阶段；异步核对完成后，命令事务内仍重查所有可变边界。
+  /**
+   * 终端验收采用准备/提交两阶段；异步核对完成后，命令事务内仍重查所有可变边界。
+   * EN: Terminal acceptance uses prepare/commit phases; the command transaction rechecks mutable boundaries after asynchronous verification.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/accept', async (request) => {
     const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).parse(request.body);
     if (store.db.prepare('SELECT id FROM commands WHERE id=?').get(body.commandId))
@@ -986,7 +1108,10 @@ export function createServer(
       return terminal.sessionView(run.id);
     },
   );
-  // 续接只消费用户明确选择的待收消息，事务提交后才释放本地停止标记并唤醒调度器。
+  /**
+   * 续接只消费用户明确选择的待收消息，事务提交后才释放本地停止标记并唤醒调度器。
+   * EN: Continuation consumes only explicitly selected inbox messages; local stop flags clear and scheduling wakes only after commit.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/terminal/continue', async (request) => {
     const body = Command.extend({
       expectedRevision: z.number().int().nonnegative(),
@@ -1022,7 +1147,10 @@ export function createServer(
     executor.resume(run.id);
     return result;
   });
-  // 创建流程先解析模型和冻结执行配置，再在幂等事务中创建合同、来源和项目交付关联。
+  /**
+   * 创建流程先解析模型和冻结执行配置，再在幂等事务中创建合同、来源和项目交付关联。
+   * EN: Creation resolves models and freezes execution settings before idempotently creating the contract, source and project-delivery association.
+   */
   app.post('/api/runs', async (request) => {
     const body = z
       .object({
@@ -1277,14 +1405,20 @@ export function createServer(
       try {
         contexts = contextBoundaries(kernel.contextSnapshot(run.id)).agents;
       } catch (error) {
-        // Legacy context calculation may reach an older body outside this message page.
+        /**
+         * 旧版上下文计算可能访问当前消息页之外更早的正文。
+         * EN: Legacy context calculation may reach an older body outside this message page.
+         */
         runReads.executionRecords(run.id);
         scope = 'all';
         if (!runReads.hasUnavailable(run.id)) throw error;
       }
     }
     const unavailable = runReads.hasUnavailable(run.id);
-    // Context expansion can discover an older damaged request after the first usage projection.
+    /**
+     * 首次用量投影后，上下文展开仍可能发现更早的损坏请求。
+     * EN: Context expansion can discover an older damaged request after the first usage projection.
+     */
     if (conversation && 'usageSummary' in conversation && unavailable)
       conversation.usageSummary = runReads.usage(run.id);
     return {
@@ -1332,7 +1466,10 @@ export function createServer(
         .all(run.id),
     };
   });
-  // 普通消息可基于较早版本追加；合同/重规划属于覆盖式修改，必须匹配当前版本。
+  /**
+   * 普通消息可基于较早版本追加；合同/重规划属于覆盖式修改，必须匹配当前版本。
+   * EN: Plain messages may append against an older revision; contract/replan replacements require the current revision.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/messages', async (request) => {
     const body = z
       .object({
@@ -1340,7 +1477,10 @@ export function createServer(
         expectedRevision: z.number().int(),
         text: z.string().min(1).max(20000),
         intent: z.enum(['continue', 'replan']).optional(),
-        // Keep omitted fields omitted in the command fingerprint for pre-upgrade retries.
+        /**
+         * 命令指纹保持未提供字段缺省，兼容升级前请求的重试。
+         * EN: Keep omitted fields omitted in the command fingerprint for pre-upgrade retries.
+         */
         contract: Contract.extend({ allowSameModelReview: z.boolean().optional() }).optional(),
         sameModelReviewConfirmed: z.boolean().optional(),
       })
@@ -1351,8 +1491,10 @@ export function createServer(
         body.contract && run.kind === 'task' && run.planMode !== false
           ? 'replan'
           : (body.intent ?? 'continue');
-      // Plain messages append to the inbox and cannot overwrite a run; streaming status
-      // revisions may advance while the user is typing. Contract edits remain optimistic.
+      /**
+       * 普通消息只追加收件箱，不能覆盖运行；用户输入期间 流式状态可能推进版本。合同修改仍使用乐观并发校验。
+       * EN: Plain messages append to the inbox and cannot overwrite a run; streaming status revisions may advance while the user is typing. Contract edits remain optimistic.
+       */
       if (body.contract || intent === 'replan') revision(body, run);
       else
         invariant(
@@ -1400,7 +1542,10 @@ export function createServer(
       executor.resume(request.params.id);
     return result;
   });
-  // 模型目录解析和计划模块加载在事务外，最终 accept 负责重新验证计划版本及模型绑定。
+  /**
+   * 模型目录解析和计划模块加载在事务外，最终 accept 负责重新验证计划版本及模型绑定。
+   * EN: Model catalog resolution and planning modules load outside transactions; accept revalidates the plan revision and model bindings.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/plan/accept', async (request) => {
     const body = z
       .object({
@@ -1450,7 +1595,10 @@ export function createServer(
     executor.resume(request.params.id);
     return result;
   });
-  // start/pause/resume 等状态规则交给应用服务；宿主取消和唤醒放在状态提交之后执行。
+  /**
+   * start/pause/resume 等状态规则交给应用服务；宿主取消和唤醒放在状态提交之后执行。
+   * EN: Application services own start/pause/resume rules; host cancellation and wake-up follow state commit.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/actions', async (request) => {
     const body = z
       .object({
@@ -1493,7 +1641,10 @@ export function createServer(
       } satisfies RunStopCurrentResult;
     }
     if (body.action === 'stop_current') {
-      // 停止优先于严格版本匹配：允许用户根据较早但真实的视图及时阻止当前副作用。
+      /**
+       * 停止优先于严格版本匹配：允许用户根据较早但真实的视图及时阻止当前副作用。
+       * EN: Stop takes precedence over strict revision matching so an older genuine view can still halt current effects promptly.
+       */
       const run = store.require<Run>('runs', request.params.id);
       management.assertMutable(run.id, run.projectId);
       invariant(!body.taskId, 'STOP_RUN_SCOPE', '停止当前执行作用于本机当前任务，不能指定其他代理');
@@ -1533,7 +1684,10 @@ export function createServer(
     await runService.afterAction(request.params.id, body, releasedFinishedHold);
     return result;
   });
-  // 这里只处理原生工具和请求的人工核验；容器停止及文件证据必须走终端专用核验入口。
+  /**
+   * 这里只处理原生工具和请求的人工核验；容器停止及文件证据必须走终端专用核验入口。
+   * EN: Handles manual verification of native tools/requests only; container shutdown and file evidence require terminal-specific verification.
+   */
   app.post<{ Params: { id: string } }>('/api/runs/:id/decisions', async (request) => {
     const body = z
       .object({
@@ -1620,7 +1774,10 @@ export function createServer(
       return decision;
     });
   });
-  // 持久事件通过游标补读，临时文本增量只供实时展示；两者都受每连接输出预算约束。
+  /**
+   * 持久事件通过游标补读，临时文本增量只供实时展示；两者都受每连接输出预算约束。
+   * EN: Replays persistent events by cursor and exposes ephemeral text deltas only live; both share per-connection output budgets.
+   */
   const streams = new Map<string, Set<any>>();
   const boundedStreams = new WeakMap<object, BoundedEventStream>();
   const management = registerManagement(
@@ -1648,7 +1805,15 @@ export function createServer(
       ? undefined
       : registerProjectSchedules(app, store, kernel, {
           assertMutable: management.assertMutable,
+          /**
+           * 将已提交的计划创建结果交给执行器唤醒，实际可运行性仍由调度守卫判断。
+           * EN: Wakes the executor after schedule creation commits; scheduler guards still decide run eligibility.
+           */
           resume: (runId) => executor.resume(runId),
+          /**
+           * 记录计划检查的安全领域错误，诊断不承担任务重试或状态修改。
+           * EN: Logs safe schedule-check domain errors without retrying tasks or mutating state.
+           */
           onError: (error) => app.log.error(error, '项目定时任务检查失败'),
         });
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
@@ -1663,7 +1828,10 @@ export function createServer(
         );
   };
   executor.onReasoningDelta = (value) => {
-    // JSON can escape each UTF-16 unit to six bytes; keep every public delta under the frame bound.
+    /**
+     * JSON 可将每个 UTF-16 单元转义为六字节；每个公开增量必须低于帧上限。
+     * EN: JSON can escape each UTF-16 unit to six bytes; keep every public delta under the frame bound.
+     */
     for (let offset = 0; offset < value.text.length; ) {
       const end = reasoningPrefixLength(value.text, offset + 8192);
       if (end <= offset) break;
@@ -1675,7 +1843,10 @@ export function createServer(
       offset = end;
     }
   };
-  // Last-Event-ID 优先于查询游标；只有帧成功交给有界流时才推进 after，防止背压时漏事件。
+  /**
+   * Last-Event-ID 优先于查询游标；只有帧成功交给有界流时才推进 after，防止背压时漏事件。
+   * EN: Last-Event-ID overrides the query cursor; after advances only once the bounded stream accepts a frame, preserving events under backpressure.
+   */
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     '/api/runs/:id/events',
     async (request, reply) => {
@@ -1696,6 +1867,10 @@ export function createServer(
       stream.write(': connected\n\n');
       if (!streams.has(runId)) streams.set(runId, new Set());
       streams.get(runId)!.add(stream);
+      /**
+       * 仅在有界 SSE 流可写时按持久游标补读事件；成功接受一帧才推进 after，背压时留待下一次排空。
+       * EN: Replays persisted events only while bounded SSE is writable, advancing after only once a frame is accepted and resuming after drain.
+       */
       const flush = () => {
         if (!bounded.available) return;
         for (const event of store.eventNotifications(runId, after)) {
@@ -1763,7 +1938,10 @@ export function createServer(
         details: null,
       }),
     );
-  // 先停止新定时任务并关闭事件连接，再并行等待凭据通道和执行器退出；局部失败仍尝试其余关闭。
+  /**
+   * 先停止新定时任务并关闭事件连接，再并行等待凭据通道和执行器退出；局部失败仍尝试其余关闭。
+   * EN: Stops new schedules and closes event streams before awaiting credential channels and executors in parallel; each close still runs after another fails.
+   */
   app.addHook('preClose', async () => {
     scheduler?.stop();
     for (const set of streams.values()) for (const stream of set) stream.end();
@@ -1785,15 +1963,27 @@ export function createServer(
     auth,
     bootstrapToken,
     origins,
+    /**
+     * 将已由宿主指定的前端来源及其 Host 加入当前会话允许集合。
+     * EN: Adds the host-supplied frontend origin and Host to this session's allowlists.
+     */
     allowFrontendOrigin: (origin: string) => {
       origins.add(origin);
       hosts.add(new URL(origin).host);
     },
+    /**
+     * 把当前引导令牌有效期延长到此刻后十五分钟，供宿主重新展示启动入口。
+     * EN: Extends bootstrap expiry to fifteen minutes from now for host reopening of the launch entry.
+     */
     refreshBootstrapExpiry: () => {
       auth.bootstrapExpires = Date.now() + 15 * 60000;
     },
   };
 }
+/**
+ * 识别资源预览路由并保留已设置的字符串 CSP，缺失时返回最小沙箱策略；普通路由返回 undefined 由工作台策略处理。
+ * EN: Recognizes preview routes, preserves existing string CSP or supplies minimal sandbox policy; ordinary routes return undefined for workbench policy.
+ */
 function requestPreviewPolicy(url: string, policy: unknown) {
   return url.startsWith('/preview/') ||
     /^\/api\/projects\/[^/]+\/(?:resources\/|files\/resource(?:\?|$))/.test(url) ||
@@ -1803,6 +1993,10 @@ function requestPreviewPolicy(url: string, policy: unknown) {
       : "default-src 'none'; sandbox; frame-ancestors 'self'"
     : undefined;
 }
+/**
+ * 兼容读取执行器活动映射并判断运行/任务占用；无活动映射时返回其缺省假值。
+ * EN: Compatibly checks executor active-map occupancy for a run/optional task, returning a falsy default when the map is absent.
+ */
 function executorHasActive(executor: NativeExecutor, runId: string, taskId?: string) {
   return (
     (executor as any).active &&

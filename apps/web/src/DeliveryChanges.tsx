@@ -1,10 +1,20 @@
-/* 展示交付内容的变更摘要。 */
+/**
+ * 展示交付内容的变更摘要。
+ * 呈现服务端冻结比较中的增删改内容与超限信息，不自行重新计算差异或推断未读取正文。
+ * EN: Displays a summary of changes in a delivery. Presents added/removed/changed content and limit notices from a server-frozen comparison without recomputing differences or inferring unread bodies.
+ */
 import type { DeliveryChangeSummary } from '../../../packages/contracts/src/workflow';
 import './delivery-changes.css';
 
-/** 渲染服务端确认的比较结果，只有 changed 才列变化范围；缺失基线不被转换为零变化。 */
+/**
+ * 渲染服务端确认的比较结果，只有 changed 才列变化范围；缺失基线不被转换为零变化。
+ * EN: Render the server-confirmed comparison. List changes only for changed, and never convert a missing baseline into zero changes.
+ */
 export function DeliveryChanges({ value }: { value?: DeliveryChangeSummary | null }) {
-  // 未知比较结果保留原因；只有服务端确认一致时才显示未变化。
+  /**
+   * 未知比较结果保留原因；只有服务端确认一致时才显示未变化。
+   * EN: Keep the reason for an unknown comparison; show unchanged only when the server has confirmed equality.
+   */
   if (!value) return null;
   if (value.status === 'unknown')
     return (

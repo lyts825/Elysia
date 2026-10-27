@@ -1,4 +1,7 @@
-/* 定义 project-todos 对应界面的样式与布局。 */
+/*
+ * 项目待办：布局数量摘要、待办行、状态与操作，使用自适应统计列保持概览紧凑。容器宽度不足时重排待办内容，长名称和要求保留换行空间。
+ * EN: Project todos: arranges counts, rows, states, and actions using adaptive compact metric columns. Narrow-container rules rearrange todo content while allowing long names/requirements to wrap.
+ */
 .project-todo-heading {
   display: flex;
   align-items: baseline;
@@ -10,7 +13,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 列数随容器宽度变化；每列以 7rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 7rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 7rem minimum per column without exceeding a narrower container.
+ */
 .project-todos .project-todo-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
@@ -59,7 +65,10 @@
 .project-todo-row .project-todo-meta .project-readiness {
   margin: 0;
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .project-todo-reading {
   max-height: min(9rem, 35dvh);
   overflow: auto;

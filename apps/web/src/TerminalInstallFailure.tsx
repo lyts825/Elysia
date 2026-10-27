@@ -1,4 +1,11 @@
-/* 展示终端安装失败信息及修复指引。 */
+/**
+ * 展示终端安装失败信息及修复指引。
+ *
+ * EN: Displays terminal installation failures and repair guidance.
+ *
+ * 本模块只解释失败的安装记录，保留错误证据并提供已知修复类别入口；修复回调携带原安装记录，是否导航或执行后续操作由父层决定。
+ * EN: Explains failed installation records, retaining error evidence and offering known repair categories. Repair callbacks carry the original job; the parent decides navigation or subsequent execution.
+ */
 import { useId } from 'react';
 import type { TerminalCliInstallationJob } from '../../../packages/contracts/src/index';
 import {
@@ -18,6 +25,8 @@ const actionLabels: Record<TerminalCliInstallRepair, string> = {
  * 只为 failed 安装记录解释已知错误类别、安装目标及可行修复入口，其他状态直接不渲染。
  * 保留原错误与记录版本供核对；repair 回传原 job 和选择的修复类别，由外层导航或安排操作。
  * disabled 只阻止修复按钮，不隐藏失败证据；此组件不会自动重试或采用新镜像。
+ *
+ * EN: Renders only failed installations with known category, target, and repairs. Retains original error/revision for inspection; repair passes the original job/action to parent navigation. disabled blocks repair buttons but not evidence; no automatic retry or image adoption occurs.
  */
 export function TerminalInstallFailure({
   job,
@@ -31,7 +40,11 @@ export function TerminalInstallFailure({
   const titleId = useId();
   const repairHelpId = useId();
   if (job.status !== 'failed') return null;
-  // 根据失败代码和消息生成修复类别；未失败的任务不显示此面板。
+  /**
+   * 根据失败代码和消息生成修复类别；未失败的任务不显示此面板。
+   *
+   * EN: Derives repair categories from failure code/message; nonfailed jobs do not render the panel.
+   */
   const failure = terminalCliInstallFailure(job.code, job.message);
   return (
     <div className="terminal-install-failure" data-failure={failure.code}>

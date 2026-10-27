@@ -1,5 +1,11 @@
-/* 定义 artifact-file-preview 对应界面的样式与布局。 */
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 产物文件预览：布局版本工具栏、读取状态、文件元数据与正文区域，并区分日志、图片和文本内容。长证据区域独立滚动并保留焦点轮廓，窄屏缩小留白以保留正文宽度。
+ * EN: Artifact-file preview: arranges version controls, read states, metadata, and content with separate log/image/text treatments. Long evidence scrolls locally with visible focus; narrow screens reduce padding to preserve reading width.
+ */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .artifact-preview-content {
   flex: 1;
   min-width: 0;
@@ -61,7 +67,10 @@
   overflow-wrap: anywhere;
   margin: 0;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .artifact-preview-reading:focus-visible,
 .artifact-preview-log ol:focus-visible {
   outline: 2px solid var(--accent);
@@ -167,7 +176,10 @@
   border-radius: var(--radius-sm);
   outline: 1px solid var(--accent);
 }
-/* 缩窄文件预览内容的内边距，为正文保留空间。 */
+/*
+ * 缩窄文件预览内容的内边距，为正文保留空间。
+ * EN: Reduces preview padding on narrow screens to preserve space for document content.
+ */
 @media (max-width: 560px) {
   .artifact-preview-content {
     padding: var(--space-3);

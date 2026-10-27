@@ -1,4 +1,10 @@
-// 协调同行评审轮次、提交和状态转换。
+/**
+ * 协调同行评审轮次、提交和状态转换。
+ * 整轮候选与评审模型冻结，只有所有逐项判断均通过后才允许原作者确认完成。
+ *
+ * EN: Coordinates peer-review rounds, submissions, and transitions.
+ * Candidates/reviewer models freeze per round; the author may confirm completion only after all criterion judgments pass.
+ */
 import {
   PeerReviewPolicy,
   PeerReviewSubmission,
@@ -20,9 +26,16 @@ import { hash, id, now, stable } from '../../contracts/src/identity.js';
 import type { KernelStore as Store } from './ports.js';
 import type { Kernel } from './index.js';
 
+/** 按实际型号规范化身份，账号、连接名称和推理强度不会使同一型号变成独立评审模型。
+ * EN: Normalizes actual model identity; account, connection label, and effort cannot turn one model into an independent reviewer.
+ */
 const modelIdentity = (model: string) => model.trim().toLowerCase();
 
-// 创建时核验权限、代理容量和模型独立性，保存评审连接供后续轮次使用。
+/**
+ * 创建时核验权限、代理容量和模型独立性，保存评审连接供后续轮次使用。
+ *
+ * EN: Checks authorization, agent capacity, and model independence at creation, retaining review bindings for later rounds.
+ */
 export function freezePeerReview(
   store: Store,
   contract: Contract,
@@ -63,13 +76,22 @@ export function freezePeerReview(
   return { bindings, reviewerTaskIds: [], rounds: [] };
 }
 
-/** Reserved review slots cannot be consumed by ordinary plan or delegated tasks. */
-// 尚未创建的评审任务保留代理名额，普通委派不能占用。
+/**
+ * 预留的评审名额不能被普通计划或委派任务占用。
+ * 尚未创建的评审任务保留代理名额，普通委派不能占用。
+ *
+ * EN: Reserved review slots cannot be consumed by ordinary plan or delegated tasks.
+ * Reserves capacity for review tasks not yet created; ordinary delegation cannot consume those slots.
+ */
 export function peerReviewReservedSlots(run: Run) {
   return Math.max(0, (run.peerReview?.bindings.length ?? 0) - (run.peerReview?.reviewerTaskIds.length ?? 0));
 }
 
-// 要求变化时使现有轮次失效；评审正在运行时先等待安全检查点。
+/**
+ * 要求变化时使现有轮次失效；评审正在运行时先等待安全检查点。
+ *
+ * EN: Requirement changes stale existing rounds; running reviewers must reach a safe checkpoint first.
+ */
 export function invalidatePeerReview(kernel: Kernel, run: Run, reason: string) {
   if (!run.peerReview?.rounds.length) return run;
   const latest = run.peerReview.rounds.at(-1)!;
@@ -108,6 +130,8 @@ export function invalidatePeerReview(kernel: Kernel, run: Run, reason: string) {
 /**
  * 将需求、作者绑定/会话、候选摘要、证据当前版本及收件箱状态共同纳入指纹。
  * 同一证据 ID 的内容或版本改变也会得到新指纹，不能沿用旧轮次的通过结论。
+ *
+ * EN: Fingerprints requirements, author binding/session, candidate summary, current evidence revisions, and inbox state. Changing content or revision under the same evidence ID creates a new fingerprint, invalidating old round success.
  */
 function candidateFingerprint(
   store: Store,
@@ -155,8 +179,13 @@ function candidateFingerprint(
   );
 }
 
-/** Called only after the gateway has verified every candidate evidence reference. */
-// 仅根任务需要进入评审；复用已通过的相同候选，评审中等待，超过轮次则停止推进。
+/**
+ * 仅在网关已核验全部候选证据引用后调用。
+ * 仅根任务需要进入评审；复用已通过的相同候选，评审中等待，超过轮次则停止推进。
+ *
+ * EN: Called only after the gateway has verified every candidate evidence reference.
+ * Only the root task enters peer review: reuse a passed identical candidate, wait during review, and stop advancing once the round limit is exhausted.
+ */
 export function gatePeerReview(
   kernel: Kernel,
   original: Task,
@@ -211,7 +240,11 @@ export function gatePeerReview(
       '请等待其余执行代理停止后再提交评审候选',
     );
     const fingerprint = candidateFingerprint(store, run, task, args);
-    // 已通过且完全相同的候选可放行；同候选评审中只等待，不再创建重复轮次或计费。
+    /**
+     * 已通过且完全相同的候选可放行；同候选评审中只等待，不再创建重复轮次或计费。
+     *
+     * EN: A passed identical candidate may proceed; one already under review only waits, without duplicate rounds or charges.
+     */
     const previous = run.peerReview.rounds.at(-1);
     if (previous?.candidate.fingerprint === fingerprint && previous.status === 'passed') return null;
     if (previous?.candidate.fingerprint === fingerprint && previous.status === 'reviewing') {
@@ -252,7 +285,11 @@ export function gatePeerReview(
         createdAt: now(),
       },
     };
-    // 后续轮次复用评审任务和累计步骤/请求账本，但创建新会话并指向新候选。
+    /**
+     * 后续轮次复用评审任务和累计步骤/请求账本，但创建新会话并指向新候选。
+     *
+     * EN: Later rounds reuse review tasks and cumulative step/request ledgers but create new sessions for the new candidate.
+     */
     const reviewerTaskIds = [...run.peerReview.reviewerTaskIds];
     for (const [index, binding] of run.peerReview.bindings.entries()) {
       const existing = reviewerTaskIds[index]
@@ -294,7 +331,11 @@ export function gatePeerReview(
           contextPolicy,
           contextPolicyRevision: 1,
         });
-        // 评审只读共享作者工作区，workspaceOwnerTaskId 表示它不拥有独立 checkout。
+        /**
+         * 评审只读共享作者工作区，workspaceOwnerTaskId 表示它不拥有独立 checkout。
+         *
+         * EN: Reviewers share the author workspace read-only; workspaceOwnerTaskId marks that they do not own an independent checkout.
+         */
         store.put<Task>('tasks', {
           id: taskId,
           revision: 0,
@@ -334,7 +375,11 @@ export function gatePeerReview(
           noProgress: undefined,
           peerReview: { candidateId: round.candidate.id, reviewerProviderId: binding.id },
         });
-        // Keep the existing step counter across rounds, just as the request ledger keeps its cumulative budget.
+        /**
+         * 跨轮次保留已有步骤计数，正如请求账本保留累计预算。
+         *
+         * EN: Keep the existing step counter across rounds, just as the request ledger keeps its cumulative budget.
+         */
         const attempts = store
           .all<Attempt>('attempts', run.id)
           .filter((attempt) => attempt.taskId === taskId);
@@ -362,7 +407,11 @@ export function gatePeerReview(
   });
 }
 
-// 校验评分提交并关联当前候选轮次，领域层负责记录与状态推进。
+/**
+ * 校验评分提交并关联当前候选轮次，领域层负责记录与状态推进。
+ *
+ * EN: Validates a score submission and binds it to the current candidate round; the domain layer records it and advances state.
+ */
 export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
   const submission = PeerReviewSubmission.parse(raw);
   invariant(
@@ -410,7 +459,11 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
       'PEER_REVIEW_CRITERIA',
       '评分必须完整覆盖每个验收项，且不能重复',
     );
-    // 每项必须属于当前候选；通过项至少引用一条该验收项的候选证据，不能借其他项的证据凑数。
+    /**
+     * 每项必须属于当前候选；通过项至少引用一条该验收项的候选证据，不能借其他项的证据凑数。
+     *
+     * EN: Each item must belong to this candidate; a pass must cite evidence for that same criterion, not borrow evidence from another.
+     */
     for (const item of submission.items) {
       invariant(
         item.criterion < round.candidate.acceptanceCriteria.length,
@@ -433,7 +486,11 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
         '通过的验收项必须引用候选证据',
       );
     }
-    // 总分只用于展示，真正通过要求所有单项 verdict=pass 且达到最低分。
+    /**
+     * 总分只用于展示，真正通过要求所有单项 verdict=pass 且达到最低分。
+     *
+     * EN: The average is for display; actual passing requires every criterion verdict to pass and meet the minimum score.
+     */
     const score = {
       ...submission,
       reviewerTaskId: task.id,
@@ -448,7 +505,11 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
     };
     const scores = [...round.scores, score];
     const complete = scores.length === state.bindings.length;
-    // 在全部模型提交之前保持 reviewing，某一模型先通过不能提前结束该轮。
+    /**
+     * 在全部模型提交之前保持 reviewing，某一模型先通过不能提前结束该轮。
+     *
+     * EN: Remains reviewing until every model submits; one early pass cannot finish the round.
+     */
     const status = !complete
       ? 'reviewing'
       : scores.every((entry) => entry.passed)

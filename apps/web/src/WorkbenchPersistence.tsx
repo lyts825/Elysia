@@ -1,11 +1,24 @@
-/* 展示和管理工作台草稿的保存状态。 */
+/**
+ * 展示和管理工作台草稿的保存状态。
+ * EN: Displays and resolves workbench draft persistence issues.
+ *
+ * 围绕单个草稿展示本地与远端差异、导出及明确选择，实际版本竞争交给缓存层。界面确认绑定核对令牌，采用远端前必须另存当前原稿。
+ * EN: Guide per-draft comparison, export, and explicit choice while the cache owns revision races. Confirmation binds to an inspection token, and adopting remote requires exporting the local original.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import type { WorkbenchCache, WorkbenchSnapshot, WorkbenchInspection } from './WorkbenchCache';
 import './workbench-persistence.css';
 
+/**
+ * 把完整文本封装为下载文件并触发浏览器保存，延迟释放临时 URL；导出过程不改变原草稿。
+ * EN: Download complete text through a Blob URL and revoke the temporary URL after triggering the browser save, leaving the draft unchanged.
+ */
 function downloadText(value: string, name: string, type = 'text/plain;charset=utf-8') {
-  // 本地导出保留完整原稿；临时下载 URL 在触发后释放。
+  /**
+   * 本地导出保留完整原稿；临时下载 URL 在触发后释放。
+   * EN: Local export retains complete originals; revoke temporary URL after download trigger.
+   */
   const url = URL.createObjectURL(new Blob([value], { type }));
   const link = document.createElement('a');
   link.href = url;
@@ -14,7 +27,15 @@ function downloadText(value: string, name: string, type = 'text/plain;charset=ut
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * 保留字符串原文，布尔值转换为文本，用于可恢复原稿导出，避免展示格式改变内容。
+ * EN: Preserve string originals and stringify booleans for draft export without applying display formatting.
+ */
 const originalText = (value: string | boolean) => (typeof value === 'string' ? value : String(value));
+/**
+ * 为核对界面生成可读值：布尔值显示状态，合法 JSON 缩进展示，普通文本保持原样。
+ * EN: Produce inspection display text: readable boolean states, indented valid JSON, or the unchanged plain string.
+ */
 const readableText = (value: string | boolean) => {
   if (typeof value === 'boolean') return value ? '已启用' : '已关闭';
   try {
@@ -24,6 +45,10 @@ const readableText = (value: string | boolean) => {
   }
 };
 
+/**
+ * 根据草稿键前缀识别用途及所属项目/会话，并解析名称；名称未加载时回退到短标识，保留可辨认的归属。
+ * EN: Resolve a draft key to its purpose and project/run name, falling back to a short identifier when the owner name is unavailable.
+ */
 export function workbenchEntryLabel(
   key: string,
   projects: { id: string; name: string }[],
@@ -64,6 +89,10 @@ export function workbenchEntryLabel(
   return '草稿与偏好';
 }
 
+/**
+ * 呈现同步状态、待保存数及浏览器恢复保护状态，并提供逐项恢复入口。读取失败和待处理问题优先显示，避免误报已保存。
+ * EN: Render synchronization, pending edits, and browser-recovery protection with access to item-level recovery; failures and issues take display precedence.
+ */
 export function WorkbenchSaveStatus({ snapshot, open }: { snapshot: WorkbenchSnapshot; open: () => void }) {
   const pending = snapshot.pendingKeys.length;
   return (
@@ -97,6 +126,7 @@ export function WorkbenchSaveStatus({ snapshot, open }: { snapshot: WorkbenchSna
  * 展示逐项保存问题并引导人工选择本地/服务端内容。inspect 返回的 token 固定核对快照，
  * 本地值或问题状态变化就使确认失效；采用远端前要求另存原稿并显式确认。
  * 每次只解决一个键，其他待保存项保留，实际版本检查和写入由 WorkbenchCache 完成。
+ * EN: Guide local/server conflict choices per key. inspect tokens freeze review snapshots; edits/issues invalidate confirmation. Adopting remote requires exported original and explicit confirmation. Resolve one key at a time; cache handles actual version checks/writes.
  */
 export function WorkbenchPersistence({
   cache,
@@ -144,7 +174,10 @@ export function WorkbenchPersistence({
     errorMessage.current?.scrollIntoView({ block: 'nearest' });
     errorMessage.current?.focus({ preventScroll: true });
   }, [error]);
-  /** 串行化核对、保存和导出动作，用请求序号屏蔽弹窗卸载后的错误与忙碌回写。 */
+  /**
+   * 串行化核对、保存和导出动作，用请求序号屏蔽弹窗卸载后的错误与忙碌回写。
+   * EN: Serialize inspect/save/export and use sequence to suppress errors/busy updates after dialog unmount.
+   */
   const run = async (label: string, action: () => Promise<void> | void) => {
     if (working.current) return;
     working.current = true;
@@ -164,6 +197,10 @@ export function WorkbenchPersistence({
       }
     }
   };
+  /**
+   * 启动单项冲突核对并重置选择、确认及导出凭据；仅当前请求仍有效时接收结果，避免关闭弹窗后回写旧核对。
+   * EN: Start inspection for one conflict and reset choice, consent, and export proof; accept results only while the request remains current.
+   */
   const inspect = (key: string) =>
     run(key, async () => {
       const current = request.current;
@@ -175,7 +212,10 @@ export function WorkbenchPersistence({
       setConfirmed(false);
       setDownloaded('');
     });
-  /** 只有当前 token 已确认且满足原稿另存门禁时才提交选择，结束后清除该次核对界面。 */
+  /**
+   * 只有当前 token 已确认且满足原稿另存门禁时才提交选择，结束后清除该次核对界面。
+   * EN: Apply only a confirmed current token satisfying original-export gates, then clear that inspection UI.
+   */
   const resolve = () => {
     if (!inspection || !confirmed || (choice === 'remote' && downloaded !== inspection.token)) return;
     const value = inspection;
@@ -198,6 +238,10 @@ export function WorkbenchPersistence({
       }
     });
   };
+  /**
+   * 导出单项的完整原文，并净化草稿键形成下载文件名；不会清除该项或改变保存状态。
+   * EN: Export one complete original, sanitizing its key for the filename without clearing the entry or changing its save state.
+   */
   const exportOne = (key: string, value: string | boolean) => {
     downloadText(originalText(value), `Elysia-草稿原稿-${key.replace(/[^a-zA-Z0-9-]/g, '_')}.txt`);
   };

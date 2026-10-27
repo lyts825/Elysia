@@ -1,4 +1,8 @@
-/* 提供对话内容搜索界面。 */
+/**
+ * 提供对话内容搜索界面。
+ * 管理运行内搜索、取消及跳转到历史消息，异步结果绑定运行和查询；实际检索与历史窗口切换通过API和父回调完成。
+ * EN: Provides search within conversation content. Manages per-run search, cancellation, and historical-message navigation with results scoped to run/query; APIs and parent callbacks perform retrieval and history-window changes.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center';
 import { Icon } from './Icon';
@@ -16,6 +20,7 @@ const roleLabels: Record<string, string> = {
  * 在单个运行内按需搜索完整公开消息。输入防抖、分页请求和消息定位分别维护状态；
  * 查询或运行改变会取消旧请求并递增序号，结果最多保留 60 条。
  * 选择结果等待外层定位成功，失败保留该消息 ID 供重试；关闭时恢复原触发焦点。
+ * EN: Search complete public messages within one run on demand. Track debounced input, paginated reads, and message navigation separately. A query or run change cancels old reads and advances the sequence; retain at most 60 results. Wait for parent navigation to succeed before closing a selected result; on failure retain its ID for retry. Restore the original trigger on close.
  */
 export function ConversationSearch({
   runId,
@@ -55,9 +60,15 @@ export function ConversationSearch({
   const context = useRef({ runId, query: query.trim(), open });
   context.current = { runId, query: query.trim(), open };
   const panelId = useId();
-  /** 查询身份固定为开始读取时的运行和关键字；append 只用于同一查询的后续页。 */
+  /**
+   * 查询身份固定为开始读取时的运行和关键字；append 只用于同一查询的后续页。
+   * EN: Bind a query to the run and term captured when reading starts. append is only for later pages of that same query.
+   */
   const read = async (before?: string | null, append = false, focusFeedback = false) => {
-    // 每次查询取消上一请求并递增序号，防止较慢的旧结果覆盖新查询。
+    /**
+     * 每次查询取消上一请求并递增序号，防止较慢的旧结果覆盖新查询。
+     * EN: Cancel the previous request and advance a sequence for each query, preventing slow old results from overwriting a newer search.
+     */
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -80,7 +91,10 @@ export function ConversationSearch({
       loadedQuery.current = JSON.stringify([target.runId, target.query]);
       setResult((current) => {
         if (!append || !current) return page;
-        // 增量页按消息 ID 去重，显示窗口最多保留 60 条。
+        /**
+         * 增量页按消息 ID 去重，显示窗口最多保留 60 条。
+         * EN: Deduplicate appended pages by message ID and keep at most 60 visible results.
+         */
         const items = new Map(current.items.map((item) => [item.messageId, item]));
         for (const item of page.items) items.set(item.messageId, item);
         return { ...page, items: [...items.values()].slice(0, 60) };
@@ -95,6 +109,10 @@ export function ConversationSearch({
       if (!controller.signal.aborted && ticket === sequence.current) setLoading(false);
     }
   };
+  /**
+   * 运行或嵌入模式变化时取消旧搜索、增加序号并清空查询和结果，使新面板从独立状态开始。
+   * EN: Aborts the old search, advances its sequence, and clears query/results when run or embedded mode changes, starting an isolated search state.
+   */
   useEffect(() => {
     if (binding.current.runId === runId && binding.current.embedded === embedded) return;
     binding.current = { runId, embedded };
@@ -109,6 +127,10 @@ export function ConversationSearch({
     setFailedSelection('');
     loadedQuery.current = '';
   }, [runId, embedded]);
+  /**
+   * 查询与展开状态驱动300毫秒防抖检索，已加载查询不重复读取；切换和关闭同时取消计时及请求并使旧序号失效。
+   * EN: Uses query/open state to drive 300 ms debounced search and skips loaded queries; changes or closure cancel both timer/request and invalidate the old sequence.
+   */
   useEffect(() => {
     request.current?.abort();
     sequence.current++;
@@ -123,7 +145,10 @@ export function ConversationSearch({
     setLoading(false);
     if (!open || disabled || !query.trim()) return;
     if (loadedQuery.current === key) return;
-    // 输入稳定 300 毫秒后再检索，关闭或切换查询时取消计时和请求。
+    /**
+     * 输入稳定 300 毫秒后再检索，关闭或切换查询时取消计时和请求。
+     * EN: Wait 300 milliseconds of stable input before searching; cancel both timer and request on close or query changes.
+     */
     const timer = setTimeout(() => void read(), 300);
     return () => {
       clearTimeout(timer);
@@ -131,18 +156,30 @@ export function ConversationSearch({
       sequence.current++;
     };
   }, [runId, query, open, disabled, api]);
+  /**
+   * 每次打开记录先前焦点并聚焦搜索框，关闭时由显式close流程选择安全归还目标。
+   * EN: Records previous focus and focuses the search input on opening; the explicit close flow chooses the safe return target.
+   */
   useEffect(() => {
     if (open) {
       returnFocus.current = document.activeElement as HTMLElement | null;
       input.current?.focus();
     }
   }, [open]);
+  /**
+   * 根据新的定位请求把错误或结果区域聚焦并滚动到最近位置，保证异步搜索反馈可被键盘读取。
+   * EN: Focuses and reveals the error or result region for each new focus request so asynchronous search feedback is keyboard-readable.
+   */
   useEffect(() => {
     if (!focusRequest) return;
     const target = focusRequest.target === 'error' ? errorRef.current : resultsRef.current;
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: 'nearest' });
   }, [focusRequest]);
+  /**
+   * 取消当前搜索、关闭面板并安全归还焦点；只聚焦仍连接且非inert的目标，随后通知上层关闭。
+   * EN: Aborts the current search, closes the panel, and safely restores focus only to a connected non-inert target, then notifies the parent.
+   */
   const close = () => {
     request.current?.abort();
     setOpen(false);
@@ -150,7 +187,10 @@ export function ConversationSearch({
     if (target?.isConnected && !target.closest('[inert]')) target.focus({ preventScroll: true });
     onClose?.();
   };
-  /** 外层可能需要异步切换历史窗口；结果只回写仍属于原运行与查询的搜索面板。 */
+  /**
+   * 外层可能需要异步切换历史窗口；结果只回写仍属于原运行与查询的搜索面板。
+   * EN: The parent may need to switch the history window asynchronously. Write results back only while the panel still belongs to the original run and query.
+   */
   const select = async (messageId: string) => {
     const target = { ...context.current };
     setSelecting(messageId);

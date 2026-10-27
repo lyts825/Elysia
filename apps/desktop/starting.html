@@ -1,3 +1,7 @@
+<!--
+  桌面启动页：在主工作台就绪前提供静态标志、状态和跳过入口，DOM 身份供 starting.js 更新；沿用 Startup.css，资源加载受页面 CSP 约束，实际服务连接由桌面启动流程处理。
+  EN: Desktop startup page: provides a static emblem, status, and skip action before the workbench is ready, with stable IDs for starting.js. Startup.css supplies visuals and CSP restricts resources; desktop startup logic handles service connection.
+-->
 <!doctype html>
 <html lang="zh-CN">
   <head>
@@ -11,7 +15,10 @@
     <link rel="stylesheet" href="../web/src/Startup.css" />
   </head>
   <body class="startup-screen">
-    <!-- 桌面启动窗口通过 starting.js 更新视觉内容和启动状态。 -->
+    <!--
+      桌面启动窗口通过 starting.js 更新视觉内容和启动状态。
+      EN: The desktop startup window uses starting.js to update its visuals and startup status.
+    -->
     <main class="startup-content">
       <div id="visual" class="startup-visual startup-bloom" aria-hidden="true">
         <div class="startup-emblem"><span>E</span><i></i><i></i><i></i></div>

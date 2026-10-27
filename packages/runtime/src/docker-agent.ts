@@ -1,4 +1,8 @@
-/** 管理 Docker 代理的执行、终端会话和状态投影。 */
+/**
+ * 管理 Docker 代理的执行、终端会话和状态投影。
+ * 协调冻结配置、资源、CLI 输入输出、检查点和人工核验；内核提交状态，宿主按绑定注入凭据，中断/未知效果不能猜为成功或无副作用。
+ * EN: Manages Docker-agent execution, terminal sessions, and runtime projections. Coordinates frozen settings/resources/CLI I/O/checkpoints/verification; kernel commits state and host injects bound credentials, preserving interrupted/unknown effects explicitly.
+ */
 import type { Store } from '../../storage/src/index.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -54,9 +58,15 @@ import {
 export type { TerminalSessionView, TerminalContinuationMode } from './terminal-session.js';
 
 export interface DockerCommandOptions {
-  /** Docker CLI 本机工作目录；容器工作目录由 create 参数单独指定。 */
+  /**
+   * Docker CLI 本机工作目录；容器工作目录由 create 参数单独指定。
+   * EN: Local working directory for the Docker CLI; container working directory is specified separately in create arguments.
+   */
   cwd: string;
-  /** 通过标准输入传入 CLI，不拼接到宿主 shell 命令。 */
+  /**
+   * 通过标准输入传入 CLI，不拼接到宿主 shell 命令。
+   * EN: Passed through standard input to the CLI, never concatenated into a host shell command.
+   */
   input?: string;
   timeoutMs?: number;
   outputLimit?: number;
@@ -70,16 +80,26 @@ export interface DockerCommandResult {
   truncated: boolean;
   timedOut: boolean;
 }
-/** Injectable argv transport. No host shell or inherited credential environment. */
+/**
+ * 可注入的argv传输层，不使用宿主shell或继承的凭据环境。
+ * EN: Injectable argv transport. No host shell or inherited credential environment.
+ */
 export interface DockerTransport {
   run(args: string[], options: DockerCommandOptions): Promise<DockerCommandResult>;
 }
-/** 通过子进程执行 Docker 命令，传入明确参数和受控环境。 */
+/**
+ * 通过子进程执行 Docker 命令，传入明确参数和受控环境。
+ * EN: Runs Docker commands as child processes using explicit arguments and a controlled environment.
+ */
 export class DockerCliTransport implements DockerTransport {
+  /**
+   * 保存Docker可执行程序入口；实际命令到run时才启动，便于宿主注入受控传输。
+   * EN: Stores the Docker executable entry; commands start only in run, allowing a controlled transport to be injected.
+   */
   constructor(private binary = 'docker') {}
   /**
-   * 启动 Docker CLI 并收集有界输出。onStdout 接收完整的 UTF-8 流，返回值 stdout/stderr
-   * 共用原始字节预算；取消只终止本次 CLI，容器本身仍由上层按归属标签单独停止。
+   * 启动 Docker CLI 并收集有界输出。onStdout 接收完整的 UTF-8 流，返回值 stdout/stderr 共用原始字节预算；取消只终止本次 CLI，容器本身仍由上层按归属标签单独停止。
+   * EN: Starts the Docker CLI and captures bounded output. onStdout receives the full UTF-8 stream; returned stdout and stderr share a raw-byte budget. Abort stops only this CLI process; the owning layer separately stops the container after checking ownership labels.
    */
   run(args: string[], options: DockerCommandOptions): Promise<DockerCommandResult> {
     return new Promise((resolve, reject) => {
@@ -97,6 +117,10 @@ export class DockerCliTransport implements DockerTransport {
         bytes = 0,
         truncated = false,
         timedOut = false;
+      /**
+       * 完整stdout交给流解析器，而返回捕获按stdout/stderr共享字节预算截取；输出超限仍继续消费管道。
+       * EN: Forwards full stdout to the stream parser while bounding returned stdout and stderr with one shared byte budget; pipes continue draining after truncation.
+       */
       const record = (value: Buffer, target: 'stdout' | 'stderr') => {
         if (target === 'stdout') options.onStdout?.(decoder.write(value));
         const remaining = Math.max(0, (options.outputLimit ?? 20000) - bytes);
@@ -108,12 +132,20 @@ export class DockerCliTransport implements DockerTransport {
       };
       child.stdout.on('data', (value: Buffer) => record(value, 'stdout'));
       child.stderr.on('data', (value: Buffer) => record(value, 'stderr'));
+      /**
+       * 中止本次Docker CLI子进程；容器生命周期不能由这个进程退出结果推断。
+       * EN: Stops this Docker CLI child process; its exit does not establish the container's lifecycle state.
+       */
       const abort = () => child.kill();
       const timer = setTimeout(() => {
         timedOut = true;
         abort();
       }, options.timeoutMs ?? 12000);
       options.signal?.addEventListener('abort', abort, { once: true });
+      /**
+       * 在启动错误和关闭回调中统一释放超时器及取消监听，避免结束后仍响应旧信号。
+       * EN: Releases the timer and abort listener from both startup-error and close paths so finished commands do not react to old signals.
+       */
       const cleanup = () => {
         clearTimeout(timer);
         options.signal?.removeEventListener('abort', abort);
@@ -130,14 +162,20 @@ export class DockerCliTransport implements DockerTransport {
         if (tail) options.onStdout?.(tail);
         resolve({ exitCode, stdout, stderr, truncated, timedOut });
       });
-      // A container that exits before consuming stdin must not crash the service.
+      /**
+       * 容器可能在读完stdin前退出，这不应使服务崩溃。
+       * EN: A container that exits before consuming stdin must not crash the service.
+       */
       child.stdin.on('error', () => {});
       child.stdin.end(options.input ?? '');
     });
   }
 }
 
-/** 生成受支持 CLI 的非交互命令；这些参数只在隔离容器内使用，不代替宿主授权检查。 */
+/**
+ * 生成受支持 CLI 的非交互命令；这些参数只在隔离容器内使用，不代替宿主授权检查。
+ * EN: Builds supported non-interactive CLI commands for isolated containers; their flags do not replace host-side authorization checks.
+ */
 export const defaultAgentCommand = (agent: AgentTerminalProfile['agent']): string[] => {
   if (agent === 'codex')
     return [
@@ -176,8 +214,10 @@ export const defaultAgentCommand = (agent: AgentTerminalProfile['agent']): strin
   return [];
 };
 
-/** Persist only public text and coarse tool activity, never private thinking or raw vendor stderr. */
-/** 将终端输出解析并投影为可展示的文本。 */
+/**
+ * 仅持久化公开文本和粗粒度工具活动，不保留私有思考或供应商原始stderr。 将终端输出解析并投影为可展示的文本。
+ * EN: Persist only public text and coarse tool activity, never private thinking or raw vendor stderr. Parses terminal output into displayable public text.
+ */
 export class TerminalProjection {
   private pending = '';
   private redactionPending = '';
@@ -189,13 +229,20 @@ export class TerminalProjection {
   truncated = false;
   sessionId?: string;
   summary = '';
+  /**
+   * 冻结协议、公开输出预算、待脱敏值和增量回调；私有字段由协议解析白名单排除。
+   * EN: Captures the protocol, public-output budget, redaction values, and delta callback; protocol allowlists exclude private fields.
+   */
   constructor(
     private protocol: AgentTerminalProfile['protocol'],
     private limit: number,
     private secrets: string[] = [],
     private onText?: (text: string) => void,
   ) {}
-  /** 暂存足够长的尾部以识别跨数据块的敏感值，替换后才发送到展示与持久日志。 */
+  /**
+   * 暂存足够长的尾部以识别跨数据块的敏感值，替换后才发送到展示与持久日志。
+   * EN: Retains a sufficiently long tail to recognize secrets split across chunks, then redacts before display and durable logging.
+   */
   private append(text: string) {
     this.redactionPending += text;
     for (const secret of this.secrets.filter(Boolean))
@@ -205,7 +252,10 @@ export class TerminalProjection {
     this.emit(this.redactionPending.slice(0, boundary));
     this.redactionPending = this.redactionPending.slice(boundary);
   }
-  /** 按脱敏后文本的 UTF-8 字节预算截取公开输出，超限标记截断并停止扩充持久展示文本。 */
+  /**
+   * 按脱敏后文本的 UTF-8 字节预算截取公开输出，超限标记截断并停止扩充持久展示文本。
+   * EN: Clips public output against a UTF-8 budget after redaction; marks truncation and stops growing persisted display text at the limit.
+   */
   private emit(text: string) {
     const remaining = Math.max(0, this.limit - this.bytes);
     const data = Buffer.from(text);
@@ -215,7 +265,10 @@ export class TerminalProjection {
     this.truncated ||= data.length > remaining;
     if (part) this.onText?.(part);
   }
-  /** 文本协议直接投影；结构化协议按行解析，单行超限标记为 malformed 而不猜测内容。 */
+  /**
+   * 文本协议直接投影；结构化协议按行解析，单行超限标记为 malformed 而不猜测内容。
+   * EN: Text protocols project directly; structured protocols parse complete lines and mark oversized lines malformed instead of guessing content.
+   */
   write(text: string) {
     if (this.protocol === 'text') {
       this.append(text);
@@ -233,7 +286,10 @@ export class TerminalProjection {
       this.pending = '';
     }
   }
-  /** 仅采纳各协议明确的公开回复和粗粒度工具事件，不把任意 JSON 字段作为助手正文。 */
+  /**
+   * 仅采纳各协议明确的公开回复和粗粒度工具事件，不把任意 JSON 字段作为助手正文。
+   * EN: Accepts only protocol-defined public replies and coarse tool events, never arbitrary JSON fields as assistant text.
+   */
   private line(line: string) {
     if (!line.trim()) return;
     if (Buffer.byteLength(line) > 256000) {
@@ -316,7 +372,10 @@ export class TerminalProjection {
         this.append(`[tool · ${typeof event.tool === 'string' ? event.tool.slice(0, 100) : '已记录'}]\n`);
     }
   }
-  /** 排空最后一行和脱敏缓冲，校验可保存的 sessionId，并限制摘要长度。 */
+  /**
+   * 排空最后一行和脱敏缓冲，校验可保存的 sessionId，并限制摘要长度。
+   * EN: Drains the final line and redaction tail, validates a persistable session ID, and bounds the summary length.
+   */
   finish() {
     if (this.protocol !== 'text' && this.pending.trim()) this.line(this.pending);
     this.pending = '';
@@ -360,6 +419,10 @@ const excludedDirectories = new Set([
   '.cache',
   '__pycache__',
 ]);
+/**
+ * 排除本地.env凭据文件，但保留可作为项目说明的.env.example模板。
+ * EN: Excludes local .env credential files while retaining .env.example templates as project inputs.
+ */
 const excludedFile = (name: string) =>
   name === '.env' || (name.startsWith('.env.') && name !== '.env.example');
 const SNAPSHOT_FILES = 5000,
@@ -371,12 +434,20 @@ type WorkspaceManifest = {
   excludesLocalEnvironment: true;
   files: ManifestFile[];
 };
+/**
+ * 按英文路径序形成稳定文件清单，并记录排除规则，供复制前后和验收阶段复核同一业务字节集合。
+ * EN: Builds a stable path-sorted manifest with exclusion rules, allowing copies and acceptance to verify the same set of business bytes.
+ */
 const manifest = (files: ManifestFile[]): WorkspaceManifest => ({
   version: 1,
   excludedDirectories: [...excludedDirectories].sort(),
   excludesLocalEnvironment: true,
   files: files.sort((a, b) => a.path.localeCompare(b.path, 'en')),
 });
+/**
+ * 以相对路径判断目录包含关系，拒绝绝对回退或父目录逃逸，不依赖容易误判的字符串前缀。
+ * EN: Checks containment using relative paths, rejecting absolute fallbacks and parent traversal rather than relying on ambiguous string prefixes.
+ */
 const contained = (root: string, filename: string) => {
   const relative = path.relative(root, filename);
   return !path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep);
@@ -396,7 +467,10 @@ export interface DockerAgentCheck {
   message: string;
 }
 
-/** 在原生 API 循环之外执行外部 CLI，统一管理容器、会话恢复与交付证据；任务调度仍由 NativeExecutor 驱动。 */
+/**
+ * 在原生 API 循环之外执行外部 CLI，统一管理容器、会话恢复与交付证据；任务调度仍由 NativeExecutor 驱动。
+ * EN: Executes external CLIs outside the native API loop while coordinating containers, session continuation, and delivery evidence; NativeExecutor still owns scheduling.
+ */
 export class DockerAgentService {
   private closed = false;
   private transport: DockerTransport;
@@ -412,6 +486,10 @@ export class DockerAgentService {
   private owner: string;
   private environment: (names: string[]) => Record<string, string>;
   private resolveConnection?: (binding: TerminalConnectionBinding) => Promise<string>;
+  /**
+   * 装配传输、CLI管理和共享资源池，按数据目录生成归属标签；凭据解析器只在执行冻结连接时调用。
+   * EN: Composes transport, CLI management, and the shared resource pool and derives ownership from the data directory; credential resolution occurs only for frozen connections at execution.
+   */
   constructor(
     public kernel: Kernel<Store>,
     public gateway: ToolGateway,
@@ -436,21 +514,39 @@ export class DockerAgentService {
         ));
     this.owner = hash(path.resolve(kernel.store.directory)).slice(0, 32);
   }
+  /**
+   * 统一访问当前内核的存储实例，避免终端服务维护另一份不一致的业务状态。
+   * EN: Uses the current kernel's Store consistently rather than maintaining a separate terminal business state.
+   */
   private get store() {
     return this.kernel.store;
   }
+  /**
+   * 以数据目录为本机cwd调用受控Docker传输，容器工作目录仍通过明确参数指定。
+   * EN: Invokes controlled Docker transport with the data directory as local cwd; container working directories remain explicit command arguments.
+   */
   private command(args: string[], options: Partial<DockerCommandOptions> = {}) {
     return this.transport.run(args, { cwd: this.store.directory, ...options });
   }
-  /** 仅刷新 Docker 容量，不创建任务容器；服务关闭后不再触发检测。 */
+  /**
+   * 仅刷新 Docker 容量，不创建任务容器；服务关闭后不再触发检测。
+   * EN: Refreshes Docker capacity without creating task containers; no probes start after shutdown.
+   */
   refreshResourceCapacity(signal?: AbortSignal) {
     if (this.closed) return Promise.resolve();
     return this.cliManager.refreshResourceCapacity(signal);
   }
+  /**
+   * 公开CLI管理器的能力矩阵，不因此启动CLI或将未验证能力标为已支持。
+   * EN: Exposes the CLI manager's capability matrix without starting a CLI or promoting unverified capabilities to supported status.
+   */
   capabilities() {
     return this.cliManager.capabilityMatrix();
   }
-  /** 活动性由本进程操作和仍持有的资源预约判定；未确认停止的预约也会阻止维护或重跑。 */
+  /**
+   * 活动性由本进程操作和仍持有的资源预约判定；未确认停止的预约也会阻止维护或重跑。
+   * EN: Activity is based on local operations and outstanding reservations; an unconfirmed stop also blocks maintenance and reruns.
+   */
   hasActive(runId?: string) {
     if ([...this.active.values()].some((entry) => !runId || entry.task.runId === runId)) return true;
     return this.resources
@@ -462,8 +558,8 @@ export class DockerAgentService {
       );
   }
   /**
-   * 合并持久阶段和当前资源预约，补充未确认停止任务的归属。阶段仅供展示，
-   * 不据此认定进程存活；返回 revision 只在展示内容实际变化时递增。
+   * 合并持久阶段和当前资源预约，补充未确认停止任务的归属。阶段仅供展示， 不据此认定进程存活；返回 revision 只在展示内容实际变化时递增。
+   * EN: Combines persisted phases with current reservations, including owners whose stops remain unconfirmed. Phases are display state rather than liveness proof; revision advances only when visible snapshot content changes.
    */
   runtimeSnapshot(runId?: string): TerminalRuntimeSnapshot {
     const rows = this.store.db
@@ -516,7 +612,10 @@ export class DockerAgentService {
       resources,
     };
   }
-  /** 保存阶段与活动时间；相同阶段的活动更新做 500 ms 节流，阶段变化才发布事件。 */
+  /**
+   * 保存阶段与活动时间；相同阶段的活动更新做 500 ms 节流，阶段变化才发布事件。
+   * EN: Saves phase and activity time. Same-phase updates are throttled to 500 ms; phase changes publish events.
+   */
   private runtimePhase(task: Task, phase: TerminalRuntimePhase, operationId?: string, activity = false) {
     const key = `terminal-runtime:${task.id}`;
     const row = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
@@ -550,7 +649,10 @@ export class DockerAgentService {
     if (previous?.phase !== phase || previous.operationId !== operationId)
       this.kernel.event(task.runId, 'terminal.phase', record, task.id);
   }
-  /** 只解析任务冻结的连接引用；密钥撤销或无法读取时直接失败，不更换成当前默认连接。 */
+  /**
+   * 只解析任务冻结的连接引用；密钥撤销或无法读取时直接失败，不更换成当前默认连接。
+   * EN: Resolves only the task's frozen connection reference. Revoked or unreadable credentials fail without switching to a current default connection.
+   */
   private async connectionConfiguration(profile: AgentTerminalProfile) {
     if (!profile.connection) return undefined;
     invariant(this.resolveConnection, 'TERMINAL_CREDENTIAL_UNAVAILABLE', '当前服务无法读取终端连接凭据');
@@ -561,14 +663,18 @@ export class DockerAgentService {
     );
   }
   /**
-   * 对业务文件生成稳定摘要清单，排除凭据和内部目录并拒绝符号链接。
-   * 读取前后比较文件身份和时间，变化时拒绝生成证据；清单总量受文件数和字节上限约束。
+   * 对业务文件生成稳定摘要清单，排除凭据和内部目录并拒绝符号链接。 读取前后比较文件身份和时间，变化时拒绝生成证据；清单总量受文件数和字节上限约束。
+   * EN: Builds a stable digest manifest of business files, excluding credentials and internal directories and rejecting symlinks. File identity and timestamps are compared around reads; detected changes reject evidence. File count and total bytes are bounded.
    */
   private async workspaceManifest(directory: string, signal: AbortSignal): Promise<WorkspaceManifest> {
     const root = await fs.realpath(directory),
       files: ManifestFile[] = [];
     let bytes = 0,
       entries = 0;
+    /**
+     * 异步递归核验工作区目录和普通文件，按上限读取并计算摘要；链接、特殊文件或读取期间变化会拒绝清单。
+     * EN: Asynchronously traverses workspace directories and regular files, hashing within bounds; symlinks, special files, or detected read-time changes reject the manifest.
+     */
     const visit = async (folder: string) => {
       for (const entry of (await fs.readdir(folder, { withFileTypes: true })).sort((a, b) =>
         a.name.localeCompare(b.name, 'en'),
@@ -616,11 +722,18 @@ export class DockerAgentService {
     await visit(root);
     return manifest(files);
   }
-  /** 同步验收阶段的文件清单核验，复用异步快照的忽略项/上限，保证最终事务内再次确认字节。 */
+  /**
+   * 同步验收阶段的文件清单核验，复用异步快照的忽略项/上限，保证最终事务内再次确认字节。
+   * EN: Synchronously verifies the file manifest during acceptance using the same exclusions and limits as asynchronous snapshots, checking bytes again inside the final transaction.
+   */
   private workspaceManifestSync(directory: string): WorkspaceManifest {
     const files: ManifestFile[] = [];
     let bytes = 0,
       entries = 0;
+    /**
+     * 同步执行验收所需的完整清单遍历，以相同排除规则和大小上限在最终事务中再次核对工作区。
+     * EN: Performs the complete synchronous acceptance scan with the same exclusions and size limits, rechecking the workspace inside the final transaction.
+     */
     const visit = (folder: string) => {
       for (const entry of readdirSync(folder, { withFileTypes: true }).sort((a, b) =>
         a.name.localeCompare(b.name, 'en'),
@@ -675,8 +788,8 @@ export class DockerAgentService {
     return manifest(files);
   }
   /**
-   * 无 Git 基线任务首次执行前复制项目资料到独占 staging，核对源/副本清单后才替换空工作区。
-   * building/ready 标记区分中断与完成；已有内容或未知中断标记必须人工处理，不能覆盖成半份快照。
+   * 无 Git 基线任务首次执行前复制项目资料到独占 staging，核对源/副本清单后才替换空工作区。 building/ready 标记区分中断与完成；已有内容或未知中断标记必须人工处理，不能覆盖成半份快照。
+   * EN: Before the first run without a Git baseline, copies project inputs into exclusive staging and compares source and copy manifests before replacing the empty workspace. Building and ready markers distinguish interruption from completion; existing content or unknown crash markers require manual handling rather than accepting a partial snapshot.
    */
   private async prepareInitialSnapshot(task: Task, signal: AbortSignal) {
     if (
@@ -765,18 +878,27 @@ export class DockerAgentService {
     } finally {
       if (!published) {
         await fs.rm(staging, { recursive: true, force: true });
-        // A normal cancelled/failed copy leaves the untouched empty workspace.
-        // Crash markers remain visible instead of accepting a partial snapshot.
+        /**
+         * 正常取消或复制失败会保留未修改的空工作区。 崩溃标记继续可见，不能把部分副本当成完整快照接受。
+         * EN: A normal cancelled/failed copy leaves the untouched empty workspace. Crash markers remain visible instead of accepting a partial snapshot.
+         */
         try {
           if ((await fs.readdir(workspace)).length === 0) await fs.rm(marker, { force: true });
         } catch {}
       }
     }
   }
-  /** 验收准备/提交之间的同步变化签名；Git 同时覆盖暂存、未暂存及未跟踪文件，非 Git 使用完整清单。 */
+  /**
+   * 验收准备/提交之间的同步变化签名；Git 同时覆盖暂存、未暂存及未跟踪文件，非 Git 使用完整清单。
+   * EN: Computes a synchronous change signature between acceptance preparation and commit. Git covers staged, unstaged, and untracked files; non-Git workspaces use the complete manifest.
+   */
   private workspaceSignature(task: Task, evidenceHash?: string) {
     invariant(task.workspace, 'WORKSPACE_MISSING', '任务工作区不存在');
     if (task.baseline) {
+      /**
+       * 同步运行有界Git状态读取，拒绝非零退出或截断结果，避免生成缺少文件变化的工作区签名。
+       * EN: Runs bounded synchronous Git reads, rejecting nonzero exits or truncation so workspace signatures cannot omit changes.
+       */
       const readGit = (args: string[]) => {
         try {
           return execFileSync('git', ['--no-optional-locks', '-C', task.workspace!, ...args], {
@@ -819,9 +941,9 @@ export class DockerAgentService {
       throw new AppError('TERMINAL_WORKSPACE_CHECK', '工作区正在变化，请等待文件写入完成后重试');
     }
   }
-  /** 检查 Docker Linux 引擎；有 profile 时进一步探测冻结镜像、CLI 与本地凭据可读性。
-   * sponsorId 让探测计入对应资源预约，避免已占资源任务被自己的检测再次排队。
-   * 结果按阶段保留失败位置，不向外部 API 发认证请求，因此 available 不代表认证已成功。
+  /**
+   * 检查 Docker Linux 引擎；有 profile 时进一步探测冻结镜像、CLI 与本地凭据可读性。 sponsorId 让探测计入对应资源预约，避免已占资源任务被自己的检测再次排队。 结果按阶段保留失败位置，不向外部 API 发认证请求，因此 available 不代表认证已成功。
+   * EN: Checks the Docker Linux engine and, when a profile is supplied, its pinned image, CLI, and locally readable credentials. sponsorId charges probes to the related reservation so an admitted task does not queue behind its own probe. Stage failures are preserved; no external API authentication request is sent, so available does not mean authentication succeeded.
    */
   async check(
     raw?: AgentTerminalProfile,
@@ -957,7 +1079,10 @@ export class DockerAgentService {
       };
     }
   }
-  /** 容器归属同时绑定数据目录、运行、任务和操作，名称相似不能作为停止权限。 */
+  /**
+   * 容器归属同时绑定数据目录、运行、任务和操作，名称相似不能作为停止权限。
+   * EN: Binds container ownership to data directory, run, task, and operation; a similar name alone never authorizes stopping it.
+   */
   private labels(task: Task, operation: Operation) {
     return {
       'io.elysia.owner': this.owner,
@@ -967,8 +1092,8 @@ export class DockerAgentService {
     };
   }
   /**
-   * inspect 归属标签后停止并移除本次容器。停止失败时保留资源占用，
-   * 只有确认容器不存在或已移除后才允许释放；创建中的迟到响应由调用方再次检查。
+   * inspect 归属标签后停止并移除本次容器。停止失败时保留资源占用， 只有确认容器不存在或已移除后才允许释放；创建中的迟到响应由调用方再次检查。
+   * EN: Inspects ownership labels before stopping and removing the container. Stop failures retain resource ownership until absence or removal is confirmed; callers recheck late create responses.
    */
   private async stopOwned(task: Task, operation: Operation) {
     const name = String(operation.args.containerName);
@@ -1018,7 +1143,10 @@ export class DockerAgentService {
       await this.markStateStopped(task, operation, true);
     if (!this.active.has(task.id)) this.resources.release(task.id);
   }
-  /** 原子更新同一操作的 owner.json；未知或缺失标记保守保留，不能据此授权维护删除。 */
+  /**
+   * 原子更新同一操作的 owner.json；未知或缺失标记保守保留，不能据此授权维护删除。
+   * EN: Atomically updates owner.json for the same operation. Missing or unknown markers are retained conservatively and do not authorize maintenance deletion.
+   */
   private async markStateStopped(task: Task, operation: Operation, stopped: boolean) {
     const root = path.resolve(this.store.directory, 'terminal-state'),
       folder = path.join(root, operation.id),
@@ -1045,13 +1173,17 @@ export class DockerAgentService {
       await fs.writeFile(temporary, stable({ ...marker, stopped }), { mode: 0o600, flag: 'wx' });
       await fs.rename(temporary, filename);
     } catch {
-      // A missing or unknown marker is retained conservatively and cannot authorize maintenance cleanup.
+      /**
+       * 缺失或未知的归属标记保守保留，不能据此授权维护清理。
+       * EN: A missing or unknown marker is retained conservatively and cannot authorize maintenance cleanup.
+       */
     } finally {
       if (temporary) await fs.rm(temporary, { force: true }).catch(() => {});
     }
   }
-  /** 停止指定运行的活动终端；提供任务 ID 时覆盖该任务及后代。
-   * 同一活动操作复用 stopping Promise，停止失败向上传递并保留资源归属，供核验后重试。
+  /**
+   * 停止指定运行的活动终端；提供任务 ID 时覆盖该任务及后代。 同一活动操作复用 stopping Promise，停止失败向上传递并保留资源归属，供核验后重试。
+   * EN: Stops active terminals for a run, or a task and its descendants. Reuses a stopping promise for the same operation; failures propagate and retain ownership for a verified retry.
    */
   async interrupt(runId: string, taskId?: string) {
     const tasks = taskId
@@ -1063,7 +1195,10 @@ export class DockerAgentService {
         .map((entry) => (entry.stopping ??= this.stopOwned(entry.task, entry.operation))),
     );
   }
-  /** 禁止新终端与检测，等待 CLI 探测退出，再按运行汇总停止活动容器。 */
+  /**
+   * 禁止新终端与检测，等待 CLI 探测退出，再按运行汇总停止活动容器。
+   * EN: Disallows new terminals and probes, waits for CLI inspection to finish, then stops active containers grouped by run.
+   */
   async dispose() {
     this.closed = true;
     await this.cliManager.dispose();
@@ -1073,7 +1208,10 @@ export class DockerAgentService {
       ),
     );
   }
-  /** 只删除已知操作目录中的 environment 文件；逐级核验链接，避免清理未知路径。 */
+  /**
+   * 只删除已知操作目录中的 environment 文件；逐级核验链接，避免清理未知路径。
+   * EN: Deletes only environment files inside known operation directories and validates each path segment to avoid cleaning unknown locations.
+   */
   private async clearEnvironmentFile(operation: Pick<Operation, 'id'>) {
     invariant(/^[a-f0-9-]{36}$/.test(operation.id), 'TERMINAL_STATE_SCOPE', '终端状态路径无效');
     const root = path.resolve(this.store.directory, 'terminal-state'),
@@ -1095,13 +1233,15 @@ export class DockerAgentService {
       if (error.code !== 'ENOENT') throw error;
     }
   }
-  /** 启动时清理已知操作的临时环境文件，并将未完成终端操作收敛到人工核验状态。
-   * 先持有资源再尝试停止具备正确标签的容器；Docker 不可用也保留 UNCERTAIN，绝不自动重跑副作用。
-   * 仅修复可证明归属的记录与展示阶段，未知目录保留；凭据清理失败单独发事件供处理。
+  /**
+   * 启动时清理已知操作的临时环境文件，并将未完成终端操作收敛到人工核验状态。 先持有资源再尝试停止具备正确标签的容器；Docker 不可用也保留 UNCERTAIN，绝不自动重跑副作用。 仅修复可证明归属的记录与展示阶段，未知目录保留；凭据清理失败单独发事件供处理。
+   * EN: On startup, removes temporary environment files for known operations and moves unfinished terminal operations to manual verification. Reserves resources before stopping correctly labelled containers; Docker unavailability still leaves UNCERTAIN and never reruns side effects. Repairs only provable owners and display phases, retaining unknown directories and separately reporting credential-cleanup failures.
    */
   async recover() {
-    // Known environment files need cleanup even after a terminal operation completed.
-    // Enumerate actual folders and small SQL ownership metadata, not every historical body.
+    /**
+     * 即使终端操作已经完成，也要清理已知的临时环境文件。 枚举实际目录和小型SQL归属元数据，不展开全部历史正文。
+     * EN: Known environment files need cleanup even after a terminal operation completed. Enumerate actual folders and small SQL ownership metadata, not every historical body.
+     */
     const stateRoot = path.join(this.store.directory, 'terminal-state');
     let folders: string[] = [];
     try {
@@ -1158,7 +1298,10 @@ export class DockerAgentService {
       try {
         await this.stopOwned(task, operation);
       } catch {
-        /* Keep uncertain state even when Docker is unavailable. */
+        /**
+         * Docker不可用时仍保留不确定状态。
+         * EN: Keep uncertain state even when Docker is unavailable.
+         */
       }
       const recoveredTask = task,
         recoveredOperation = operation;
@@ -1202,7 +1345,10 @@ export class DockerAgentService {
       this.runtimePhase(task, phase, runtime.operationId);
     }
   }
-  /** 同步取得可续接状态，校验运行版本、冻结身份、最新操作和维护锁，供异步准备前后复用。 */
+  /**
+   * 同步取得可续接状态，校验运行版本、冻结身份、最新操作和维护锁，供异步准备前后复用。
+   * EN: Synchronously reads resumable state and validates run version, frozen identity, latest operation, and maintenance locks for reuse before and after asynchronous preparation.
+   */
   private continuationState(
     runId: string,
     expectedRevision?: number,
@@ -1279,8 +1425,8 @@ export class DockerAgentService {
     return { run, task, operation, profile, record, imageId, identity };
   }
   /**
-   * 仅本机一致性证明，不探测 Docker 或读取凭据。只接受已可靠完成且记录私有状态的 Codex 会话；
-   * requireConsistent=false 允许为精确检查点恢复读取已丢失/修改的 rollout，但路径归属仍必须有效。
+   * 仅本机一致性证明，不探测 Docker 或读取凭据。只接受已可靠完成且记录私有状态的 Codex 会话； requireConsistent=false 允许为精确检查点恢复读取已丢失/修改的 rollout，但路径归属仍必须有效。
+   * EN: Produces local consistency proof without probing Docker or reading credentials. Accepts only reliably completed Codex sessions with recorded private state. requireConsistent=false permits reading a missing or changed rollout for restoration of that exact checkpoint, while path ownership must remain valid.
    */
   maintenanceSnapshot(
     runId: string,
@@ -1334,7 +1480,10 @@ export class DockerAgentService {
       consistent = stable(this.sessionSeal(record)) === stable(record.state);
     } catch (error) {
       if (error instanceof AppError && error.code === 'TERMINAL_SESSION_SCOPE') throw error;
-      // A missing or modified rollout can be repaired from the exact same reliable checkpoint.
+      /**
+       * 缺失或被修改的rollout可由同一可靠检查点的精确快照修复。
+       * EN: A missing or modified rollout can be repaired from the exact same reliable checkpoint.
+       */
     }
     invariant(
       options.requireConsistent === false || consistent,
@@ -1359,8 +1508,8 @@ export class DockerAgentService {
     };
   }
   /**
-   * 同步维护临界区：取得运行级锁并在 Store 事务中执行回调，拒绝 Promise，防止异步期间调度穿入。
-   * 回调后重新核对冻结身份和一致性；只读维护必须保持 rollout 原样，写维护成功递增会话 revision。
+   * 同步维护临界区：取得运行级锁并在 Store 事务中执行回调，拒绝 Promise，防止异步期间调度穿入。 回调后重新核对冻结身份和一致性；只读维护必须保持 rollout 原样，写维护成功递增会话 revision。
+   * EN: Runs a synchronous maintenance critical section under a run lock and Store transaction, rejecting promises so scheduling cannot enter during an asynchronous gap. Rechecks frozen identity and consistency afterward; read-only work must preserve the rollout, while successful writes advance session revision.
    */
   withMaintenanceGuard<T>(
     runId: string,
@@ -1406,7 +1555,10 @@ export class DockerAgentService {
       this.maintenanceLocks.delete(runId);
     }
   }
-  /** 核对 HOME 所属操作及实际目录链；需要续接时还必须通过 sessionSeal 与已保存私有状态匹配。 */
+  /**
+   * 核对 HOME 所属操作及实际目录链；需要续接时还必须通过 sessionSeal 与已保存私有状态匹配。
+   * EN: Checks private HOME ownership and its real directory chain; continuation additionally requires the session seal to match persisted private state.
+   */
   private sessionHome(record: TerminalSessionRecord, requireSession = false) {
     const source = this.store.require<Operation>('tool_operations', record.homeOperationId);
     invariant(
@@ -1439,8 +1591,8 @@ export class DockerAgentService {
     return home;
   }
   /**
-   * 有界扫描 HOME/.codex/sessions，要求 sessionId 唯一命中一个普通 JSONL 后仅保存路径和摘要。
-   * 私有 CLI 正文不进入业务数据库或公开日志；多命中、链接和异常层级均拒绝续接。
+   * 有界扫描 HOME/.codex/sessions，要求 sessionId 唯一命中一个普通 JSONL 后仅保存路径和摘要。 私有 CLI 正文不进入业务数据库或公开日志；多命中、链接和异常层级均拒绝续接。
+   * EN: Scans HOME/.codex/sessions within bounds and requires exactly one regular JSONL match for sessionId, saving only path and digest. Private CLI text never enters the business database or public log; duplicate matches, symlinks, and unexpected depth reject continuation.
    */
   private sessionSeal(record: TerminalSessionRecord) {
     invariant(
@@ -1460,6 +1612,10 @@ export class DockerAgentService {
       );
     let count = 0;
     const matches: string[] = [];
+    /**
+     * 在私有会话目录限定深度内查找普通JSONL，拒绝链接及不合规目录链，并收集唯一sessionId候选。
+     * EN: Searches regular JSONL files within the private-session depth limit, rejecting links and invalid directory chains while collecting a unique sessionId candidate.
+     */
     const visit = (directory: string, depth: number) => {
       invariant(depth <= 5, 'TERMINAL_SESSION_SCOPE', 'Codex 会话目录层级异常');
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -1489,7 +1645,10 @@ export class DockerAgentService {
       hash: this.rolloutHash(filename),
     };
   }
-  /** 分块计算最多 64 MiB 的私有会话摘要，并核对读取前后大小、时间和文件身份。 */
+  /**
+   * 分块计算最多 64 MiB 的私有会话摘要，并核对读取前后大小、时间和文件身份。
+   * EN: Hashes a private session in chunks up to 64 MiB and checks size, timestamps, and file identity before and after reading.
+   */
   private rolloutHash(filename: string) {
     const before = lstatSync(filename),
       descriptor = openSync(filename, 'r'),
@@ -1522,7 +1681,10 @@ export class DockerAgentService {
     );
     return digest.digest('hex');
   }
-  /** 读取续接能力并再次校验运行版本，生成终端会话可用性视图。 */
+  /**
+   * 读取续接能力并再次校验运行版本，生成终端会话可用性视图。
+   * EN: Reads continuation capability and rechecks the run revision before producing the session availability view.
+   */
   async sessionView(runId: string): Promise<TerminalSessionView> {
     const revision = this.store.require<Run>('runs', runId).revision;
     try {
@@ -1559,9 +1721,8 @@ export class DockerAgentService {
     }
   }
   /**
-   * 两阶段续接：先异步检查 CLI/镜像与会话，返回一个同步提交闭包。
-   * 闭包在事务中重新比较运行、操作、会话和消息快照，避免准备期间的新消息或状态变化
-   * 被误消费；只把显式选择的消息按持久到达顺序并入 stdin，随后将任务置为 READY。
+   * 两阶段续接：先异步检查 CLI/镜像与会话，返回一个同步提交闭包。 闭包在事务中重新比较运行、操作、会话和消息快照，避免准备期间的新消息或状态变化 被误消费；只把显式选择的消息按持久到达顺序并入 stdin，随后将任务置为 READY。
+   * EN: Prepares continuation in two phases: asynchronously inspect CLI, image, and session, then return a synchronous commit closure. The closure rechecks run, operation, session, and message snapshots in a transaction so new messages or state changes are not accidentally consumed. Only explicitly selected messages enter stdin in durable arrival order before the task becomes READY.
    */
   async prepareContinuation(
     runId: string,
@@ -1591,8 +1752,10 @@ export class DockerAgentService {
         '所选待处理消息已变化或不属于当前终端，请刷新后重试',
       );
     }
-    // Selection is a set; preserve durable arrival order so later corrections remain later.
-    // The client lists newest first and may also collect checkbox clicks in arbitrary order.
+    /**
+     * 选择是集合；保留持久到达顺序，使后来的更正仍出现在后面。 客户端按新到旧列出消息，复选框点击顺序也可能任意。
+     * EN: Selection is a set; preserve durable arrival order so later corrections remain later. The client lists newest first and may also collect checkbox clicks in arbitrary order.
+     */
     const selectedIds = new Set(inboxIds);
     const incoming = this.kernel.pendingTerminalInbox(runId).filter((message) => selectedIds.has(message.id));
     inboxIds = incoming.map((message) => message.id);
@@ -1676,7 +1839,10 @@ export class DockerAgentService {
         return next;
       });
   }
-  /** 复用调度器预约或临时获取资源；只有本方法自行申请的预约才在 finally 中释放。 */
+  /**
+   * 复用调度器预约或临时获取资源；只有本方法自行申请的预约才在 finally 中释放。
+   * EN: Reuses the scheduler reservation or acquires resources temporarily; finally releases only reservations acquired by this method.
+   */
   async run(task: Task, signal: AbortSignal) {
     invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
     const alreadyReserved = this.resources.has(task.id);
@@ -1703,9 +1869,8 @@ export class DockerAgentService {
     }
   }
   /**
-   * 在已预约资源上执行一轮 CLI：验证冻结配置→登记 INTENT→创建隔离状态→创建/启动容器
-   * →收集公开输出及文件证据→确认停止→进入人工验收。任意已启动后的不可靠退出进入
-   * UNCERTAIN 核验，不能因重试自动重复业务副作用。
+   * 在已预约资源上执行一轮 CLI：验证冻结配置→登记 INTENT→创建隔离状态→创建/启动容器 →收集公开输出及文件证据→确认停止→进入人工验收。任意已启动后的不可靠退出进入 UNCERTAIN 核验，不能因重试自动重复业务副作用。
+   * EN: Runs one CLI turn on reserved resources: validate frozen configuration, record INTENT, create isolated state and container, collect public output and file evidence, confirm stop, then await manual acceptance. An unreliable post-start exit enters UNCERTAIN, preventing retries from automatically repeating business side effects.
    */
   private async runWithReservation(task: Task, signal: AbortSignal) {
     invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
@@ -1754,7 +1919,10 @@ export class DockerAgentService {
           ['INTENT', 'UNCERTAIN'].includes(operation.status),
       );
     if (uncertain) {
-      // 同一任务存在未核验操作时不再启动第二个终端，防止两轮同时修改工作区。
+      /**
+       * 同一任务存在未核验操作时不再启动第二个终端，防止两轮同时修改工作区。
+       * EN: Do not start a second terminal while this task has an unverified operation, preventing concurrent turns from changing the workspace.
+       */
       this.kernel.wait(task, 'terminal_verification');
       return;
     }
@@ -1818,7 +1986,10 @@ export class DockerAgentService {
       });
       return;
     }
-    // Resolve only the immutable reference selected at creation. A revoked key fails before claiming work.
+    /**
+     * 只解析创建时选定的不可变凭据引用；密钥撤销会在领取工作前失败。
+     * EN: Resolve only the immutable reference selected at creation. A revoked key fails before claiming work.
+     */
     const configuration = await this.connectionConfiguration(profile);
     const values = configuration?.environment ?? this.environment(profile.environment);
     invariant(
@@ -1836,7 +2007,10 @@ export class DockerAgentService {
       '执行准备期间任务授权或模板已变化',
     );
     const attempt = this.kernel.claim(task.id);
-    // 授权与凭据准备通过后才 claim；工作区准备仍可能异步失败，后续操作账本保留恢复依据。
+    /**
+     * 授权与凭据准备通过后才 claim；工作区准备仍可能异步失败，后续操作账本保留恢复依据。
+     * EN: Claim only after authorization and credential preparation succeed. Workspace preparation may still fail asynchronously; the operation ledger retains recovery evidence.
+     */
     task = await this.gateway.prepare(this.store.require<Task>('tasks', task.id), signal);
     await this.prepareInitialSnapshot(task, signal);
     run = this.store.require<Run>('runs', task.runId);
@@ -1896,7 +2070,10 @@ export class DockerAgentService {
     );
     this.store.tx(() => {
       const currentSession = readTerminalSession(this.store, task.id);
-      // 在写 INTENT 的同一事务冻结新会话身份，确保任何临时凭据落盘前已有可追踪操作。
+      /**
+       * 在写 INTENT 的同一事务冻结新会话身份，确保任何临时凭据落盘前已有可追踪操作。
+       * EN: Freeze the new session identity in the INTENT transaction so an operation is traceable before temporary credentials reach disk.
+       */
       invariant(
         stable(currentSession ?? null) === stable(session ?? null),
         'TERMINAL_SESSION_CHANGED',
@@ -1924,6 +2101,10 @@ export class DockerAgentService {
       );
     });
     this.active.set(task.id, entry);
+    /**
+     * 取消CLI等待并启动同一操作的容器停止流程；停止结果仍需由后续逻辑核验，不能视作副作用撤销。
+     * EN: Aborts CLI waiting and starts the operation's container-stop path; later logic must still verify stopping, and side effects are not assumed undone.
+     */
     const abort = () => {
       entry.stopping ??= this.stopOwned(task, operation);
       void entry.stopping.catch(() => {});
@@ -1964,7 +2145,10 @@ export class DockerAgentService {
           await fs.writeFile(path.join(home, file.path), file.content, { mode: 0o600, flag: 'wx' });
       } else this.sessionHome(session!, true);
       await fs.writeFile(guard, 'gitdir: /elysia-hidden-git\n', { mode: 0o600 });
-      // The durable operation exists before any temporary credential file.
+      /**
+       * 任何临时凭据文件写入前，都已有持久化操作记录。
+       * EN: The durable operation exists before any temporary credential file.
+       */
       await fs.writeFile(
         envFile,
         Object.entries(values)
@@ -2016,8 +2200,10 @@ export class DockerAgentService {
           `${key}=${value}`,
         ]),
       ];
-      // Worktree .git points at the host. A read-only file mask hides that pointer;
-      // git diff and integration continue exclusively through the host gateway.
+      /**
+       * Worktree的.git会指向宿主路径，使用只读文件遮罩隐藏该指针。 Git差异和集成仍只通过宿主网关执行。
+       * EN: Worktree .git points at the host. A read-only file mask hides that pointer; git diff and integration continue exclusively through the host gateway.
+       */
       if (task.baseline) args.push('--mount', `type=bind,source=${guard},target=/workspace/.git,readonly`);
       args.push(check.imageId!, ...(configuration?.command ?? profile.command));
       invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
@@ -2031,7 +2217,10 @@ export class DockerAgentService {
         entry.creating = false;
       }
       await this.clearEnvironmentFile(operation);
-      // create 已读取 env-file；尽早移除本机明文临时文件，运行时不继续依赖该文件。
+      /**
+       * create 已读取 env-file；尽早移除本机明文临时文件，运行时不继续依赖该文件。
+       * EN: After create consumes env-file, promptly remove the plaintext host file; execution no longer depends on that file.
+       */
       invariant(
         created.exitCode === 0 &&
           !created.timedOut &&
@@ -2053,8 +2242,10 @@ export class DockerAgentService {
         invariant(!this.closed, 'TERMINAL_CLOSED', '终端服务正在退出，请稍后重试');
       }
       const prompt = this.store.tx(() => {
-        // Snapshot stdin once. Later arrivals stay PENDING for an explicit continuation.
-        // A continuation consumes only the items selected in its preparation command.
+        /**
+         * stdin只生成一次快照，之后到达的消息保持PENDING，等待显式续接。 一次续接只消费其准备命令明确选择的消息。
+         * EN: Snapshot stdin once. Later arrivals stay PENDING for an explicit continuation. A continuation consumes only the items selected in its preparation command.
+         */
         if (!pending) {
           const inboxIds = this.kernel.pendingTerminalInbox(run.id).map((message) => message.id);
           this.kernel.applyTerminalInbox(task, inboxIds, operation.id);
@@ -2086,6 +2277,10 @@ export class DockerAgentService {
       started = true;
       this.runtimePhase(task, 'running', operation.id);
       const controller = new AbortController();
+      /**
+       * 把外部取消传递到当前运行控制器，确保容器创建、附着和停止沿用同一次取消决定。
+       * EN: Relays external cancellation to the current run controller so create, attach, and stop share the same cancellation decision.
+       */
       const relay = () => controller.abort(signal.reason);
       signal.addEventListener('abort', relay, { once: true });
       const timer = setTimeout(
@@ -2107,6 +2302,10 @@ export class DockerAgentService {
             signal: controller.signal,
             timeoutMs: profile.timeoutMs + 1000,
             outputLimit: profile.outputLimit,
+            /**
+             * 将Docker附着stdout交给协议投影，只有经过筛选和脱敏的公开文本才进入后续展示。
+             * EN: Feeds attached Docker stdout into the protocol projection; only filtered and redacted public text reaches display.
+             */
             onStdout: (text) => projection.write(text),
           },
         );
@@ -2115,7 +2314,10 @@ export class DockerAgentService {
         signal.removeEventListener('abort', relay);
       }
       const transcript = projection.finish();
-      // 公开日志先登记为产物；即使后续完成校验失败，用户仍能回查已收到的输出。
+      /**
+       * 公开日志先登记为产物；即使后续完成校验失败，用户仍能回查已收到的输出。
+       * EN: Register the public log as an artifact first so users can inspect received output even if final verification later fails.
+       */
       this.runtimePhase(task, 'finalizing', operation.id);
       const artifact = this.gateway.artifact(
         task,
@@ -2173,7 +2375,10 @@ export class DockerAgentService {
         try {
           completedSession.state = this.sessionSeal(completedSession);
         } catch {
-          /* A reliable turn may still lack resumable private state; explicit new-session remains available. */
+          /**
+           * 可靠完成的一轮也可能没有可续接私有状态，此时仍允许显式新建会话。
+           * EN: A reliable turn may still lack resumable private state; explicit new-session remains available.
+           */
         }
       }
       this.store.tx(() => {
@@ -2203,11 +2408,17 @@ export class DockerAgentService {
       let stopped = false;
       try {
         await entry.stopping;
-        // A stop made during create cannot prove that a late create response left no container.
+        /**
+         * 在create期间发出停止，不能证明迟到的create响应没有留下容器。
+         * EN: A stop made during create cannot prove that a late create response left no container.
+         */
         await this.stopOwned(task, operation);
         stopped = true;
       } catch {
-        /* Do not turn a failed stop into a successful task. */
+        /**
+         * 停止失败不能转成任务成功。
+         * EN: Do not turn a failed stop into a successful task.
+         */
       }
       if (!stopped || (signal.aborted && !entry.created)) this.resources.hold(task.id);
       if (!terminalResult) {
@@ -2228,7 +2439,10 @@ export class DockerAgentService {
         };
       }
       const uncertain = started || signal.aborted;
-      // 已开始执行或被外部中止时无法仅凭错误判断副作用；启动前可靠失败才允许 FAILED。
+      /**
+       * 已开始执行或被外部中止时无法仅凭错误判断副作用；启动前可靠失败才允许 FAILED。
+       * EN: An error alone cannot establish side effects after execution starts or external abort; only reliable pre-start failure may become FAILED.
+       */
       let restorePending = false;
       if (pending && session && !uncertain && stopped && session.ready && session.state) {
         try {
@@ -2246,7 +2460,10 @@ export class DockerAgentService {
               ),
             ) === stable(identity);
         } catch {
-          /* Modified or unknown private state never falls back to a different continuation mode. */
+          /**
+           * 私有状态已修改或未知时，不会回退为其他续接模式。
+           * EN: Modified or unknown private state never falls back to a different continuation mode.
+           */
         }
       }
       this.store.tx(() => {
@@ -2293,8 +2510,8 @@ export class DockerAgentService {
     }
   }
   /**
-   * 验收准备先异步核对产物与当前工作区，再返回事务闭包。闭包重查版本、待收消息、
-   * 状态和工作区签名，只有证据仍匹配且必需子任务均完成时才将任务与运行置为 DONE。
+   * 验收准备先异步核对产物与当前工作区，再返回事务闭包。闭包重查版本、待收消息、 状态和工作区签名，只有证据仍匹配且必需子任务均完成时才将任务与运行置为 DONE。
+   * EN: Acceptance preparation asynchronously verifies artifacts and workspace, then returns a transaction closure. The closure rereads version, pending inbox, state, and workspace signature, marking task and run DONE only while evidence still matches and required children are complete.
    */
   async prepareAcceptance(runId: string, expectedRevision: number): Promise<() => unknown> {
     const run = this.store.require<Run>('runs', runId);
@@ -2447,13 +2664,16 @@ export class DockerAgentService {
         return accepted;
       });
   }
-  /** 简便入口仍遵守异步准备与同步提交的全部验收核验，不绕过版本和证据检查。 */
+  /**
+   * 简便入口仍遵守异步准备与同步提交的全部验收核验，不绕过版本和证据检查。
+   * EN: The convenience entry point retains all asynchronous preparation and synchronous acceptance checks, without bypassing versions or evidence.
+   */
   async accept(runId: string, expectedRevision: number) {
     return (await this.prepareAcceptance(runId, expectedRevision))();
   }
   /**
-   * 用户处理 UNCERTAIN 操作的两阶段核验。必须先确认旧容器已停；confirmed 会保存
-   * 人工核验说明和当前文件证据，not_applied 只记录未发生并暂停，不声称撤销已有副作用。
+   * 用户处理 UNCERTAIN 操作的两阶段核验。必须先确认旧容器已停；confirmed 会保存 人工核验说明和当前文件证据，not_applied 只记录未发生并暂停，不声称撤销已有副作用。
+   * EN: Handles UNCERTAIN operations through two-phase user verification. The old container must first be confirmed stopped. confirmed saves the user's verification note and current file evidence; not_applied records that outcome and pauses, without claiming existing side effects were undone.
    */
   async prepareVerification(
     runId: string,
@@ -2487,7 +2707,10 @@ export class DockerAgentService {
       'TERMINAL_VERIFICATION_NOTE',
       '请填写核验依据，最多 4000 字',
     );
-    // Never unblock an uncertain attempt while its agent can still modify files.
+    /**
+     * 只要代理仍可能修改文件，就不能解除不确定执行尝试的阻塞。
+     * EN: Never unblock an uncertain attempt while its agent can still modify files.
+     */
     await this.stopOwned(task, operation);
     const previous = operation.result as Partial<TerminalResult> | undefined;
     let result = previous as TerminalResult | undefined;

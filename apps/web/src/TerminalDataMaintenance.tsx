@@ -1,4 +1,11 @@
-/* 管理终端数据及清理操作。 */
+/**
+ * 管理终端数据及清理操作。
+ *
+ * EN: Manages terminal data and maintenance actions.
+ *
+ * 本模块展示数据占用扫描、备份历史、恢复资格及维护计划，按当前计划身份和版本提交确认操作；本地取消与远端取消分别处理，未确认计划保留以供后续核对。
+ * EN: Displays usage scans, backup history, eligibility, and maintenance plans, submitting confirmations with current plan identity/revision. Local and remote cancellation are separate; unconfirmed plans remain available for reconciliation.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { Run, RunListItem } from '../../../packages/contracts/src/index';
 import type {
@@ -12,11 +19,17 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import './terminal-maintenance.css';
 const endpoint = '/terminal/control/maintenance';
+/**
+ * 将字节数格式化为一位小数的 KiB 或 MiB 展示文本；假定输入是服务端给出的非负字节计数。
+ * EN: Formats a server-supplied nonnegative byte count as KiB or MiB with one decimal place for display.
+ */
 const size = (bytes: number) =>
   bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
 /**
  * 管理终端数据扫描、清理计划和会话快照。危险操作先生成计划，
  * 用户确认后通过 perform 和当前计划版本提交。
+ *
+ * EN: Manages scans, cleanup previews, and session snapshots; risky actions need a plan and explicit submission through perform with its revision.
  */
 export function TerminalDataMaintenance({
   disabled,
@@ -43,14 +56,22 @@ export function TerminalDataMaintenance({
     [eligibility, setEligibility] = useState<TerminalBackupEligibility | null>(null);
   const planRef = useRef<TerminalMaintenancePlan | null>(null),
     historyStarted = useRef(false),
-    // 待取消集合保留尚未收到服务端确认的计划，不能因关闭预览就遗忘远端计划。
+    /**
+     * 待取消集合保留尚未收到服务端确认的计划，不能因关闭预览就遗忘远端计划。
+     *
+     * EN: Pending cancellations retain unconfirmed remote plans even after their local preview closes.
+     */
     pendingPlanCancellation = useRef(new Set<string>()),
     planCancellation = useRef<Promise<void> | null>(null);
   const selectedBackup = backups.find((backup) => backup.id === backupId);
   const planHeading = useRef<HTMLHeadingElement>(null);
   const errorElement = useRef<HTMLParagraphElement>(null);
   const [feedbackFocus, setFeedbackFocus] = useState<{ target: 'plan' | 'error'; origin: Element | null }>();
-  // 异步结果只在焦点仍停留于触发位置时接管焦点，避免打断用户已转向的输入。
+  /**
+   * 异步结果只在焦点仍停留于触发位置时接管焦点，避免打断用户已转向的输入。
+   *
+   * EN: Async feedback takes focus only while the user remains at the initiating control, avoiding interruption of later input.
+   */
   useEffect(() => {
     if (!feedbackFocus) return;
     if (document.activeElement !== document.body && document.activeElement !== feedbackFocus.origin) return;
@@ -61,7 +82,11 @@ export function TerminalDataMaintenance({
   useEffect(() => {
     planRef.current = plan;
   }, [plan]);
-  /** 先清除界面上的旧计划，再串行请求取消；未确认的计划保留待下次重试。 */
+  /**
+   * 先清除界面上的旧计划，再串行请求取消；未确认的计划保留待下次重试。
+   *
+   * EN: Clears the displayed plan before serial cancellation; unconfirmed cancellations remain for a later retry.
+   */
   async function clearPlan() {
     const current = planRef.current;
     planRef.current = null;
@@ -81,7 +106,11 @@ export function TerminalDataMaintenance({
       if (planCancellation.current === request) planCancellation.current = null;
     }
   }
-  /** 选择、查询或目标改变后立即撤下旧预览；远端取消失败明确提示，下一次预览前重试。 */
+  /**
+   * 选择、查询或目标改变后立即撤下旧预览；远端取消失败明确提示，下一次预览前重试。
+   *
+   * EN: Selection/query/target changes remove the old preview immediately; failed remote cancellation is shown and retried before a new preview.
+   */
   function cancelPlanForChange() {
     void clearPlan().catch((issue) =>
       setError(
@@ -90,7 +119,11 @@ export function TerminalDataMaintenance({
       ),
     );
   }
-  /** 读取一页备份历史；所选备份不在新页时清除选择并取消关联计划。 */
+  /**
+   * 读取一页备份历史；所选备份不在新页时清除选择并取消关联计划。
+   *
+   * EN: Reads one backup-history page; losing the selected backup clears selection and cancels its linked plan.
+   */
   async function readHistory(query: string, cursor: string | undefined, signal?: AbortSignal) {
     const params = new URLSearchParams({ query, limit: '20' });
     if (cursor) params.set('cursor', cursor);
@@ -116,7 +149,11 @@ export function TerminalDataMaintenance({
       return;
     }
     const controller = new AbortController(),
-      // 查询输入防抖；游标变化也使用同一路径，过期读取由 cleanup 中止。
+      /**
+       * 查询输入防抖；游标变化也使用同一路径，过期读取由 cleanup 中止。
+       *
+       * EN: Debounces query input; cursor changes share this path and cleanup aborts stale reads.
+       */
       timer = setTimeout(() => {
         setHistoryBusy(true);
         void readHistory(historyQuery, historyCursor, controller.signal)
@@ -133,7 +170,11 @@ export function TerminalDataMaintenance({
       controller.abort();
     };
   }, [api, historyQuery, historyCursor]);
-  // 快照资格随历史版本改变而失效，不能沿用早先“可恢复”的结果生成新计划。
+  /**
+   * 快照资格随历史版本改变而失效，不能沿用早先“可恢复”的结果生成新计划。
+   *
+   * EN: Backup eligibility expires when history revision changes; old restorable status cannot authorize a new plan.
+   */
   useEffect(() => {
     setEligibility(null);
     if (!backupId) return;
@@ -156,7 +197,11 @@ export function TerminalDataMaintenance({
   const controllerRef = useRef<AbortController | null>(null),
     scanIdRef = useRef<string | null>(null);
   const scanning = scan?.status === 'running';
-  /** 当前扫描失败后中止本地轮询并尽力取消远端任务；已有取消信号的旧请求不更新界面。 */
+  /**
+   * 当前扫描失败后中止本地轮询并尽力取消远端任务；已有取消信号的旧请求不更新界面。
+   *
+   * EN: On current-scan failure, stops polling and best-effort cancels the remote scan; already-aborted stale requests never update the UI.
+   */
   function failedScan(controller: AbortController, issue: unknown, fallback: string) {
     if (controller.signal.aborted) return;
     const scanId = scanIdRef.current;
@@ -166,7 +211,11 @@ export function TerminalDataMaintenance({
     setScan((current) => (current ? { ...current, status: 'failed' } : null));
     setError(issue instanceof Error ? issue.message : fallback);
   }
-  /** 创建扫描并每 250 毫秒读取状态；调用方负责取消已创建的服务端扫描。 */
+  /**
+   * 创建扫描并每 250 毫秒读取状态；调用方负责取消已创建的服务端扫描。
+   *
+   * EN: Creates a scan and polls every 250 ms; the caller must cancel any created server scan.
+   */
   async function scanRequest(body: Record<string, unknown>, signal: AbortSignal) {
     let current = await api<TerminalMaintenanceScan>(endpoint + '/scans', body, undefined, signal);
     scanIdRef.current = current.id;
@@ -177,6 +226,10 @@ export function TerminalDataMaintenance({
     setScan(current);
     while (current.status === 'running') {
       await new Promise<void>((resolve, reject) => {
+        /**
+         * 取消扫描等待时清除延迟并拒绝当前 Promise，使轮询立即退出；远端扫描由上层负责取消。
+         * EN: Clears the delay and rejects the pending wait on cancellation so polling exits immediately; the caller cancels the remote scan.
+         */
         const abort = () => {
           clearTimeout(timer);
           reject(new DOMException('已取消', 'AbortError'));
@@ -201,7 +254,11 @@ export function TerminalDataMaintenance({
     if (current.status !== 'completed') throw new Error(current.message || '维护扫描未完成');
     return current;
   }
-  /** 建立新的扫描身份和占位进度，取消旧读取并使任何旧维护计划失效。 */
+  /**
+   * 建立新的扫描身份和占位进度，取消旧读取并使任何旧维护计划失效。
+   *
+   * EN: Establishes a new scan identity/placeholder progress, cancelling old reads and invalidating old maintenance plans.
+   */
   function beginScan() {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -227,10 +284,16 @@ export function TerminalDataMaintenance({
   /**
    * 刷新历史首页后并行读取占用扫描和可选运行列表，成功结果才替换 overview。
    * 外部 signal 转发到本次扫描；focusFeedback 只用于用户主动刷新失败后的可访问性反馈。
+   *
+   * EN: After refreshing history page one, reads usage scan/run choices concurrently and replaces overview only on success. External signal forwards cancellation; focusFeedback serves accessibility feedback after an explicit refresh failure.
    */
   async function load(signal?: AbortSignal, focusFeedback = false) {
     const origin = document.activeElement;
     const controller = beginScan(),
+      /**
+       * 把外部读取取消传给本次扫描控制器；只停止本地请求，服务端清理由扫描取消路径处理。
+       * EN: Forwards external read cancellation to this scan controller; it stops local requests while scan cancellation paths handle the server side.
+       */
       abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
@@ -254,7 +317,11 @@ export function TerminalDataMaintenance({
       if (controllerRef.current === controller) controllerRef.current = null;
     }
   }
-  /** 先停止本地等待，再向已知服务端扫描发送取消；取消未确认时保留错误提示供刷新核验。 */
+  /**
+   * 先停止本地等待，再向已知服务端扫描发送取消；取消未确认时保留错误提示供刷新核验。
+   *
+   * EN: Stops local waiting first, then cancels a known remote scan; unconfirmed cancellation leaves an error for refresh/reconciliation.
+   */
   async function cancelScan() {
     const scanId = scanIdRef.current;
     controllerRef.current?.abort();
@@ -271,7 +338,11 @@ export function TerminalDataMaintenance({
     const controller = new AbortController();
     void load(controller.signal);
     return () => {
-      // 卸载或入口客户端变化时撤销全部读取，并尽力释放已知扫描及预览计划。
+      /**
+       * 卸载或入口客户端变化时撤销全部读取，并尽力释放已知扫描及预览计划。
+       *
+       * EN: Unmount/client changes cancel all reads and best-effort release known scans/previews.
+       */
       controller.abort();
       controllerRef.current?.abort();
       const scanId = scanIdRef.current;
@@ -285,6 +356,8 @@ export function TerminalDataMaintenance({
   /**
    * 必须先确认旧计划已取消，再为所选操作创建扫描预览。备份/恢复取最新运行 revision，
    * 重试清理绑定旧清理记录 revision；返回的计划是后续提交的唯一依据，不在此修改数据。
+   *
+   * EN: Requires confirmed cancellation of the old plan before creating a preview. Backup/restore reads the latest run revision; cleanup retry binds the prior cleanup revision. The returned plan alone authorizes later submission; this function changes no data.
    */
   async function preview(
     kind: TerminalMaintenancePlan['kind'],
@@ -331,6 +404,8 @@ export function TerminalDataMaintenance({
   /**
    * 按预览类型选择提交端点，只传计划 ID 与其 revision，由服务端重新核验预览前提。
    * perform 统一管理外层禁用与错误；成功后清空计划和选择并重新扫描，失败保留待核对状态。
+   *
+   * EN: Chooses the apply endpoint from plan kind and sends only plan ID/revision for server revalidation. perform handles outer busy/errors; success clears plan/selection and rescans, failure retains reconciliation state.
    */
   async function apply() {
     if (!plan) return;

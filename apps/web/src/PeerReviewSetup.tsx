@@ -1,12 +1,23 @@
-/* 配置并校验同行评审。 */
+/**
+ * 配置并校验同行评审。
+ * 校验评审者与执行模型的区分、目录版本和人数约束，并编辑策略；实际评审轮次由执行流程安排。
+ * EN: Edits and validates peer-review policy. Validates reviewer/executor separation, catalog revision, and reviewer-count constraints while editing policy; execution flows schedule actual review rounds.
+ */
 import { useId } from 'react';
 import type { PeerReviewPolicy } from '../../../packages/contracts/src/peer-review';
 import type { SelectableProvider } from './ModelPicker';
 import './peer-review.css';
 
+/**
+ * 用去空白、转小写后的模型名称比较身份，避免仅大小写或首尾空白不同导致重复评审模型。
+ * EN: Normalizes model names by trimming and lowercasing so case or surrounding whitespace cannot disguise duplicate reviewer models.
+ */
 const modelIdentity = (model: string) => model.trim().toLowerCase();
 
-/** 评审模型须互不重复且不同于执行模型，并使用当前版本已验证的连接。 */
+/**
+ * 评审模型须互不重复且不同于执行模型，并使用当前版本已验证的连接。
+ * EN: Review models must be distinct from each other and the executor, using currently verified connections.
+ */
 export function peerReviewSetupIssue(
   value: PeerReviewPolicy | undefined,
   providers: SelectableProvider[],
@@ -40,6 +51,7 @@ export function peerReviewSetupIssue(
 /**
  * 编辑 1–3 个独立评审型号、逐项通过分数及轮次上限，按规范化型号身份去重。
  * 已选择但失效的连接保留为可移除项，不能因刷新目录而静默替换评审者；策略在任务创建时冻结。
+ * EN: Edit one to three normalized independent model identities, pass score, and round limit. Retain invalid selections as removable entries rather than silently replacing reviewers. Freeze policy at task creation.
  */
 export function PeerReviewSetup({
   value,
@@ -69,6 +81,10 @@ export function PeerReviewSetup({
   const unavailable = (value?.reviewerProviderIds ?? []).filter(
     (providerId) => !available.some((provider) => provider.id === providerId),
   );
+  /**
+   * 从当前评审策略中移除指定连接ID并通知父组件；尚未启用策略时保持无操作。
+   * EN: Removes a connection ID from the current review policy and notifies the parent; remains a no-op when no policy is enabled.
+   */
   const remove = (providerId: string) =>
     value &&
     change({

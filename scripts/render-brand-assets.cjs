@@ -1,4 +1,10 @@
-// 渲染并生成桌面应用所需的品牌图标资源。
+/**
+ * 渲染并生成桌面应用所需的品牌图标资源。
+ * EN: Render desktop brand icon resources from their canonical source artwork.
+ *
+ * 在 Electron 页面中按各目标尺寸渲染品牌源图，再写入图标资源；规范源图与输出格式分开，便于统一更新品牌素材。
+ * EN: Render canonical brand artwork at target sizes in Electron and write icon assets, separating the source artwork from output encodings.
+ */
 const { app, BrowserWindow } = require('electron');
 const { readFile, writeFile } = require('node:fs/promises');
 const path = require('node:path');
@@ -6,7 +12,11 @@ const root = path.resolve(__dirname, '..');
 const directory = path.join(root, 'assets', 'brand');
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
-/** 将不同尺寸的 PNG 帧写入 ICO 目录与数据区；256 像素在目录中用 0 表示。 */
+/**
+ * 将不同尺寸的 PNG 帧写入 ICO 目录与数据区；256 像素在目录中用 0 表示。
+ * EN: Encode differently sized PNG frames into ICO directory and data sections; the ICO directory
+ * represents size 256 as zero.
+ */
 function ico(frames) {
   const header = Buffer.alloc(6 + 16 * frames.length);
   header.writeUInt16LE(1, 2);
@@ -39,6 +49,7 @@ app.whenReady().then(async () => {
       'data:text/html,<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:"><canvas></canvas>',
     );
     // 同一 SVG 生成 512 像素 PNG 和多个 ICO 帧，保持桌面图标一致。
+    // EN: Render the same SVG into a 512-pixel PNG and multiple ICO frames for consistent desktop icons.
     const frames = [];
     for (const size of [...sizes, 512]) {
       const data = await window.webContents.executeJavaScript(`(async () => {

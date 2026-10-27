@@ -1,4 +1,8 @@
-/** 管理终端 CLI 的安装状态及相关接口。 */
+/**
+ * 管理终端 CLI 的安装状态及相关接口。
+ * 连接宿主安装器与版本化持久历史，显式检查、取消或应用镜像；安装成功不会自动修改已有任务的冻结镜像和 API 绑定。
+ * EN: Manages terminal CLI installation state and endpoints. Connects host installation to revisioned history and explicit check/cancel/apply actions; installation never automatically changes existing run images or API bindings.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AgentTerminalProfile, AppError, Command, invariant } from '../../../packages/contracts/src/index.js';
@@ -18,11 +22,18 @@ const version = z
   .max(80)
   .regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$/);
 type Manager = Pick<DockerCliManager, 'check' | 'install'>;
-/** 管理终端 CLI 检测和安装任务，并跟踪可取消的在途操作。 */
+/**
+ * 管理终端 CLI 检测和安装任务，并跟踪可取消的在途操作。
+ * EN: Manages CLI inspection and installation jobs while tracking abortable in-flight operations.
+ */
 export class TerminalCliManagement {
   private closed = false;
   private readonly checks = new Set<AbortController>();
   private readonly active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+  /**
+   * 绑定持久存储和 CLI 管理器；将上次进程留下的 running 安装改为中断失败，避免误报仍在安装。
+   * EN: Binds storage and CLI manager and marks persisted running jobs interrupted so a restart cannot report phantom active installations.
+   */
   constructor(
     private readonly store: Store,
     private readonly manager: Manager,
@@ -44,6 +55,10 @@ export class TerminalCliManagement {
         ),
       );
   }
+  /**
+   * 解析持久安装历史并规范化失败提示；没有记录返回空数组，损坏的保存结构明确抛错。
+   * EN: Parses stored installation history and normalizes safe failures; absent history returns an empty array while damaged records throw.
+   */
   jobs(): TerminalCliInstallationJob[] {
     const row = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(jobsKey) as
       | { value: string }
@@ -59,11 +74,19 @@ export class TerminalCliManagement {
           })
       : [];
   }
+  /**
+   * 按 ID 查找安装记录；不存在时抛领域错误，调用方不得猜测当前状态。
+   * EN: Finds an installation by ID or throws a domain error rather than guessing state.
+   */
   job(id: string) {
     const job = this.jobs().find((entry) => entry.id === id);
     invariant(job, 'TERMINAL_CLI_JOB_MISSING', 'CLI 安装记录不存在');
     return job;
   }
+  /**
+   * 校验筛选与页大小并按保存顺序分页；失效游标抛冲突，防止拼接不同历史。
+   * EN: Validates filters/page size and pages stored order; stale cursors throw conflicts to avoid mixing histories.
+   */
   history(input: unknown) {
     const query = z
       .object({
@@ -85,6 +108,10 @@ export class TerminalCliManagement {
       nextCursor: start + items.length < jobs.length ? items.at(-1)!.id : null,
     };
   }
+  /**
+   * 保留每个应用遇到的第一条安装记录，返回各 CLI 的最近状态。
+   * EN: Returns the first stored installation per app as each CLI's latest state.
+   */
   latest() {
     const found = new Set<TerminalAppId>();
     return this.jobs().filter((job) => {
@@ -93,6 +120,10 @@ export class TerminalCliManagement {
       return true;
     });
   }
+  /**
+   * 以稳定 JSON 整体更新安装历史元数据；事务边界由调用方决定。
+   * EN: Replaces installation metadata with stable JSON; transaction ownership remains with the caller.
+   */
   private write(jobs: TerminalCliInstallationJob[]) {
     this.store.db
       .prepare(
@@ -100,6 +131,10 @@ export class TerminalCliManagement {
       )
       .run(jobsKey, stable(jobs));
   }
+  /**
+   * 仅更新仍 running 的指定作业，递增版本并校验结构；关闭或已结束时忽略迟到进度。
+   * EN: Updates only a running job, incrementing revision and validating schema; shutdown and finished jobs ignore late progress.
+   */
   private update(id: string, change: Partial<TerminalCliInstallationJob>) {
     if (this.closed) return;
     this.store.tx(() => {
@@ -115,6 +150,10 @@ export class TerminalCliManagement {
       this.write(jobs.map((job) => (job.id === id ? next : job)));
     });
   }
+  /**
+   * 选择与应用匹配的已保存模板或内置预设，校验归属并移除 API 绑定，安装检查不得携带业务凭据。
+   * EN: Selects an app-compatible saved template or preset, validates ownership and strips API bindings so installation checks carry no business credentials.
+   */
   private profile(appId: TerminalAppId, profileId?: string) {
     const settings = terminalSettings(this.store);
     const selected = profileId
@@ -130,11 +169,17 @@ export class TerminalCliManagement {
       'TERMINAL_PROFILE_APP',
       '模板所属 CLI 与所选应用不一致，请重新选择',
     );
-    // Check/install receive only executable metadata. No API bindings or key references are needed.
+    /**
+     * 检测和安装只接收可执行程序元数据，不需要API绑定或密钥引用。
+     * EN: Check/install receive only executable metadata. No API bindings or key references are needed.
+     */
     const { connection: _binding, connectionId: _selection, ...safe } = profile;
     return { profile: AgentTerminalProfile.parse(safe), profileId: selected?.id ?? null };
   }
-  /** 检查指定应用和可选配置；服务关闭时拒绝新检测。 */
+  /**
+   * 检查指定应用和可选配置；服务关闭时拒绝新检测。
+   * EN: Checks an application and optional profile, rejecting new inspection after shutdown.
+   */
   async check(appId: TerminalAppId, profileId?: string) {
     invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '服务正在退出，请稍后重试');
     const controller = new AbortController();
@@ -146,8 +191,8 @@ export class TerminalCliManagement {
     }
   }
   /**
-   * 在幂等命令中创建安装作业后异步执行；同 commandId 重试返回该作业的最新状态。
-   * 只允许一个安装/收尾同时进行，安装成功不自动修改模板，需用户另行应用。
+   * 在幂等命令中创建安装作业后异步执行；同 commandId 重试返回该作业的最新状态。 只允许一个安装/收尾同时进行，安装成功不自动修改模板，需用户另行应用。
+   * EN: Creates an installation job idempotently, then runs it asynchronously. Repeated command IDs resolve the latest job state. Only one install/finalization may run; successful installation does not edit templates until the user applies it.
    */
   install(rawAppId: string, input: unknown, route: string) {
     const appId = TerminalAppId.parse(rawAppId);
@@ -186,13 +231,20 @@ export class TerminalCliManagement {
         createdAt: now(),
         updatedAt: now(),
       });
-      // Retain small metadata records so replayed commands can resolve their final status.
+      /**
+       * 保留小型元数据，使重放命令能解析到其最终状态。
+       * EN: Retain small metadata records so replayed commands can resolve their final status.
+       */
       this.write([created, ...jobs]);
       return created;
     });
     this.start(job);
     return job;
   }
+  /**
+   * 在幂等命令内核对版本并保存 cancelled，再中止宿主安装；结束任务拒绝取消，已取消状态可重放。
+   * EN: Revision-checks and persists cancellation idempotently before aborting host work; finished jobs reject cancellation and cancelled results can replay.
+   */
   cancel(rawId: string, input: unknown, route: string) {
     const id = z.string().uuid().parse(rawId);
     const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).strict().parse(input);
@@ -221,19 +273,31 @@ export class TerminalCliManagement {
       this.write(this.jobs().map((job) => (job.id === id ? next : job)));
       return next;
     });
-    // Commit the visible cancellation before aborting the process. A late result
-    // can no longer change a cancelled job, and the active slot stays occupied
-    // until the manager has finished cleaning up.
+    /**
+     * 先提交界面可见的取消，再中止进程；迟到结果 不能再修改已取消作业，活动槽仍保持占用， 直到管理器完成清理。
+     * EN: Commit the visible cancellation before aborting the process. A late result can no longer change a cancelled job, and the active slot stays occupied until the manager has finished cleaning up.
+     */
     this.active.get(id)?.controller.abort();
     return cancelled;
   }
+  /**
+   * 将所选成功安装的镜像应用到模板，具体资格和并发检查由 applyImage 统一执行。
+   * EN: Applies a successful installation image to a template through shared applyImage eligibility/concurrency checks.
+   */
   apply(rawId: string, input: unknown, route: string) {
     return this.applyImage(rawId, input, route, false);
   }
+  /**
+   * 通过 applyImage 的恢复模式切回已记录镜像，复用相同命令和版本校验。
+   * EN: Restores a recorded image through applyImage's restore mode with the same command/revision checks.
+   */
   restore(rawId: string, input: unknown, route: string) {
     return this.applyImage(rawId, input, route, true);
   }
-  /** 将完成作业的固定镜像写回原模板；核对模板版本、CLI 类型和当前镜像，拒绝覆盖并发编辑。 */
+  /**
+   * 将完成作业的固定镜像写回原模板；核对模板版本、CLI 类型和当前镜像，拒绝覆盖并发编辑。
+   * EN: Applies a completed job's pinned image to its original template, checking revision, CLI type, and current image to reject concurrent edits.
+   */
   private applyImage(rawId: string, input: unknown, route: string, restore: boolean) {
     const id = z.string().uuid().parse(rawId);
     const body = Command.extend({
@@ -275,7 +339,10 @@ export class TerminalCliManagement {
       });
     });
   }
-  /** 安装 Promise 生命周期拥有活动槽，取消可先显示，但必须等管理器清理结束后才删除 active。 */
+  /**
+   * 安装 Promise 生命周期拥有活动槽，取消可先显示，但必须等管理器清理结束后才删除 active。
+   * EN: The installation promise owns its active slot: cancellation may display first, but active is removed only after manager cleanup finishes.
+   */
   private start(job: TerminalCliInstallationJob) {
     const controller = new AbortController();
     const promise = Promise.resolve().then(async () => {
@@ -314,6 +381,10 @@ export class TerminalCliManagement {
     });
     this.active.set(job.id, { controller, promise });
   }
+  /**
+   * 拒绝新安装、取消探测和安装并持久标记中断；最多等待三秒收束宿主作业，避免退出无限阻塞。
+   * EN: Rejects new work, cancels checks/installations and persists interruption, waiting at most three seconds for host work to settle.
+   */
   async close() {
     if (this.closed) return;
     this.closed = true;
@@ -345,6 +416,10 @@ export class TerminalCliManagement {
     if (timer) clearTimeout(timer);
   }
 }
+/**
+ * 注册 CLI 检查、安装、历史及镜像应用接口；参数在边界校验，服务关闭时释放管理器活动工作。
+ * EN: Registers CLI check/install/history/image routes with boundary validation and lifecycle cleanup of active management work.
+ */
 export function registerCliManagement(app: FastifyInstance, store: Store, manager: Manager) {
   const management = new TerminalCliManagement(store, manager);
   const root = '/api/terminal/control';

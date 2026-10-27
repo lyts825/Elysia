@@ -1,4 +1,11 @@
-/* 展示终端任务的运行状态。 */
+/**
+ * 展示终端任务的运行状态。
+ *
+ * EN: Displays terminal runtime state.
+ *
+ * 本模块只展示宿主提供的调度队列、终端执行阶段和资源预约快照，允许导航到相关任务；本地计时刷新经过时长，不轮询宿主、不启动任务或释放资源。
+ * EN: Displays host-provided scheduler queues, terminal phases, and resource-reservation snapshots with task navigation. Local ticks refresh elapsed time without polling the host, starting work, or releasing resources.
+ */
 import { useEffect, useState } from 'react';
 import type { Task } from '../../../packages/contracts/src/index';
 import type {
@@ -31,7 +38,11 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'terminal-capacity': '规格超出 Docker 容量，请增加 Docker 资源或新建较小规格任务',
   'terminal-engine': '等待 Docker 引擎',
 };
-/** 无法格式化的时间保留原值，避免隐藏异常数据。 */
+/**
+ * 无法格式化的时间保留原值，避免隐藏异常数据。
+ *
+ * EN: Preserves invalid timestamp originals instead of hiding anomalous data.
+ */
 function runtimeTime(timestamp: number) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? (
@@ -43,6 +54,8 @@ function runtimeTime(timestamp: number) {
 /**
  * 将宿主快照分为排队原因、终端执行阶段与资源预约展示；此组件本身不轮询或修改运行。
  * 本地计时器只刷新活动阶段经过时间，资源“暂留”与任务仍运行分开呈现，避免误判资源已释放。
+ *
+ * EN: Separates queue reasons, execution phases, and resource reservations from host snapshots; the component neither polls nor mutates runs. Its timer refreshes active-phase elapsed time only, and held resources are distinct from active work.
  */
 export function TerminalRuntimePanel({
   snapshot,
@@ -59,18 +72,30 @@ export function TerminalRuntimePanel({
   );
   useEffect(() => {
     if (!working) return;
-    // 只在存在活动阶段时刷新经过时间，空闲时不保留计时器。
+    /**
+     * 只在存在活动阶段时刷新经过时间，空闲时不保留计时器。
+     *
+     * EN: Refreshes elapsed time only while a phase is active, with no idle timer.
+     */
     setTime(Date.now());
     const timer = setInterval(() => setTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [working]);
+  /**
+   * 以最近一次本地计时值计算阶段时长，负差值夹到零；返回秒或分秒文案，不改变宿主时间戳。
+   * EN: Computes phase age using the last local tick, clamping negative differences to zero and returning seconds/minutes without changing host timestamps.
+   */
   const age = (timestamp: number) => {
     const seconds = Math.max(0, Math.floor((time - timestamp) / 1000));
     return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
   };
   const names = new Map(tasks.map((task) => [task.id, task.spec.title]));
   const resource = snapshot.terminal.resources;
-  // held 记录可能保留给尚待清理的容器，即使队列已空也应继续告知用户。
+  /**
+   * held 记录可能保留给尚待清理的容器，即使队列已空也应继续告知用户。
+   *
+   * EN: held may retain resources for containers still awaiting cleanup, even when the queue is empty.
+   */
   const held = resource.reservations.filter((item) => item.held);
   return (
     <details className="terminal-activity terminal-runtime">

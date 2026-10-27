@@ -1,4 +1,8 @@
-/** 封装 Codex 进程发现和 RPC 通信。 */
+/**
+ * 封装 Codex 进程发现和 RPC 通信。
+ * 管理受控子进程、JSON 行协议、调用关联及关闭；缓冲与等待受限，桥接本身不授予 Elysia 工具执行权限。
+ * EN: Wraps Codex process discovery and RPC communication. Owns controlled child processes, JSON-lines protocol, call correlation and closure with bounded buffers/waits; the bridge grants no Elysia tool authority.
+ */
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
@@ -7,7 +11,10 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import { AppError, VERSION } from '../../../packages/contracts/src/index.js';
 
-// Process-only overrides: never write the user's Codex configuration or read auth.json.
+/**
+ * 覆盖仅作用于进程，不写用户Codex配置，也不读取auth.json。
+ * EN: Process-only overrides: never write the user's Codex configuration or read auth.json.
+ */
 export const codexConfig: Record<string, string | boolean | number | string[]> = {
   model_provider: 'openai',
   forced_login_method: 'chatgpt',
@@ -47,7 +54,10 @@ export const codexConfig: Record<string, string | boolean | number | string[]> =
   notify: [],
 };
 
-/** 从显式路径、系统 PATH 或 Windows 桌面安装目录查找 Codex，并校验版本。 */
+/**
+ * 从显式路径、系统 PATH 或 Windows 桌面安装目录查找 Codex，并校验版本。
+ * EN: Finds Codex through an explicit path, system PATH, or Windows desktop installation directory and validates its version.
+ */
 export async function findCodex(): Promise<{ binary: string; version: string }> {
   const explicit = process.env.ELYSIA_CODEX_BINARY;
   const candidates: string[] = explicit ? [path.resolve(explicit)] : [];
@@ -96,7 +106,10 @@ export async function findCodex(): Promise<{ binary: string; version: string }> 
   );
 }
 
-/** 维护 Codex 子进程 RPC 会话，按请求 ID 管理等待响应和超时。 */
+/**
+ * 维护 Codex 子进程 RPC 会话，按请求 ID 管理等待响应和超时。
+ * EN: Maintains a Codex child-process RPC session with ID-based response waiters and timeouts.
+ */
 export class CodexRpc extends EventEmitter {
   private child: ChildProcessWithoutNullStreams;
   private pending = new Map<
@@ -106,6 +119,10 @@ export class CodexRpc extends EventEmitter {
   private sequence = 0;
   private closed = false;
   private buffer = '';
+  /**
+   * 以独立 stdio app-server 子进程建立 JSON 行协议，移除宿主 API 凭据环境变量；有界解析响应并分发请求/通知，协议错误关闭所有待处理调用。
+   * EN: Starts an isolated stdio app-server JSON-lines bridge after stripping host API credentials. Bounded parsing dispatches responses/notifications; protocol failures close pending calls.
+   */
   constructor(binary: string, cwd: string, home?: string) {
     super();
     const env: NodeJS.ProcessEnv = { ...process.env, ...(home ? { CODEX_HOME: home } : {}) };
@@ -151,7 +168,10 @@ export class CodexRpc extends EventEmitter {
           if (message.error) request.reject(new AppError('CODEX_RPC', cleanError(message.error.message)));
           else request.resolve(message.result);
         } else if (message.id !== undefined) {
-          // This adapter performs one inference only. Every actual action goes through Elysia's gateway.
+          /**
+           * 此适配器仅执行一次推理；所有实际动作都经Elysia网关。
+           * EN: This adapter performs one inference only. Every actual action goes through Elysia's gateway.
+           */
           this.send({
             id: message.id,
             error: { code: -32601, message: 'Native tool execution is disabled in Elysia' },
@@ -160,7 +180,10 @@ export class CodexRpc extends EventEmitter {
         } else this.emit('notification', message);
       }
     });
-    // Vendor stderr may include private request context. Do not persist or forward it.
+    /**
+     * 供应商stderr可能含私有请求上下文，不持久化也不转发。
+     * EN: Vendor stderr may include private request context. Do not persist or forward it.
+     */
     this.child.stderr.resume();
     this.child.stdin.on('error', () => this.close(new AppError('CODEX_DISCONNECTED', 'Codex 连接已中断')));
     this.child.on('error', () =>
@@ -170,10 +193,17 @@ export class CodexRpc extends EventEmitter {
       this.close(new AppError('CODEX_EXIT', 'Codex 已退出，请重新连接；也请检查 Codex 配置是否有效')),
     );
   }
+  /**
+   * 连接未关闭时写入一行 JSON 协议消息；仅负责发送，响应生命周期由 pending 管理。
+   * EN: Writes one JSON protocol line while open; pending calls separately own response lifetimes.
+   */
   private send(message: unknown) {
     if (!this.closed) this.child.stdin.write(JSON.stringify(message) + '\n');
   }
-  /** 为单次 RPC 分配递增 ID 和独立超时；迟到响应找不到 pending 时忽略，不归属给后续请求。 */
+  /**
+   * 为单次 RPC 分配递增 ID 和独立超时；迟到响应找不到 pending 时忽略，不归属给后续请求。
+   * EN: Allocates a monotonically increasing ID and timeout for each RPC. Late responses without a matching waiter are ignored, never reassigned to a later request.
+   */
   call(method: string, params: unknown, timeout = 30000): Promise<any> {
     if (this.closed) return Promise.reject(new AppError('CODEX_DISCONNECTED', 'Codex 连接已关闭'));
     return new Promise((resolve, reject) => {
@@ -186,7 +216,10 @@ export class CodexRpc extends EventEmitter {
       this.send({ id, method, params });
     });
   }
-  /** 完成协议初始化再发 initialized 通知，调用方必须等待后才能使用账号和推理接口。 */
+  /**
+   * 完成协议初始化再发 initialized 通知，调用方必须等待后才能使用账号和推理接口。
+   * EN: Completes protocol initialization before sending initialized; callers must await it before account or inference operations.
+   */
   async initialize() {
     await this.call('initialize', {
       clientInfo: { name: 'elysia', title: 'Elysia', version: VERSION },
@@ -194,7 +227,10 @@ export class CodexRpc extends EventEmitter {
     });
     this.send({ method: 'initialized' });
   }
-  /** 幂等结束进程、拒绝全部在途 RPC 并清监听器；进程退出不被当作有效空响应。 */
+  /**
+   * 幂等结束进程、拒绝全部在途 RPC 并清监听器；进程退出不被当作有效空响应。
+   * EN: Idempotently terminates the process, rejects every pending RPC, and removes listeners; process exit is not a valid empty response.
+   */
   close(error = new AppError('CODEX_CLOSED', 'Codex 连接已关闭')) {
     if (this.closed) return;
     this.closed = true;
@@ -209,7 +245,10 @@ export class CodexRpc extends EventEmitter {
   }
 }
 
-/** 清理错误文本中的凭据样式和服务地址，并限制返回长度。 */
+/**
+ * 清理错误文本中的凭据样式和服务地址，并限制返回长度。
+ * EN: Removes credential-like strings and service addresses from error text and bounds returned length.
+ */
 export function cleanError(value: unknown) {
   return String(value || 'Codex 请求失败')
     .replace(/(?:Bearer\s+|sk-)[\w.\-]+/gi, '[redacted]')

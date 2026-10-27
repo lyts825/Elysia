@@ -1,4 +1,8 @@
-/** 协调终端数据的备份、恢复和维护操作。 */
+/**
+ * 协调终端数据的备份、恢复和维护操作。
+ * 预览与应用两阶段绑定文件摘要/当前引用，提交前重查，提交后物理删除可重试；未知内容保留，恢复先备份当前文件且不重启任务。
+ * EN: Coordinates terminal backup, restore and maintenance operations. Binds previews/applies to file hashes/current refs with pre-commit rechecks and retryable post-commit deletion; preserves unknowns and snapshots current files before restore without restarting tasks.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as fs from 'node:fs';
@@ -40,23 +44,36 @@ export type TerminalMaintenanceDependencies = {
   ) => TerminalMaintenanceSnapshot | Promise<TerminalMaintenanceSnapshot>;
   guard: Guard;
   isActive: (runId?: string) => boolean;
-  /** File-system failure injection for isolated acceptance; never selected by HTTP input. */
+  /**
+   * 隔离验收使用的文件系统故障注入；HTTP 输入不能选择此项。
+   * EN: File-system failure injection for isolated acceptance; never selected by HTTP input.
+   */
   removeQuarantine?: (directory: string) => void;
 };
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const sessionKey = 'terminal-session:';
 const cleanupKey = 'terminal-maintenance:cleanup:';
 type ScanOptions = {
-  /** 正在显示该扫描的任务标识；删除资格检查据此排除扫描对自己的占用。 */
+  /**
+   * 正在显示该扫描的任务标识；删除资格检查据此排除扫描对自己的占用。
+   * EN: Identifies the job displaying this scan so deletion checks can exclude the scan's own occupancy.
+   */
   scanId?: string;
   signal?: AbortSignal;
   progress?: (patch: Partial<TerminalMaintenanceScan>) => void;
 };
+/**
+ * 检查扫描取消并抛维护专用冲突错误，使取消不会降级成可应用的部分预览。
+ * EN: Checks scan cancellation and throws a maintenance conflict so cancellation cannot become an applicable partial preview.
+ */
 function cancelled(options: ScanOptions) {
   if (options.signal?.aborted)
     throw new AppError('TERMINAL_MAINTENANCE_CANCELLED', '维护扫描已取消', false, null, 409);
 }
-/** 长目录遍历定期让出事件循环；让出前后都检查取消，避免取消后继续哈希下一批文件。 */
+/**
+ * 长目录遍历定期让出事件循环；让出前后都检查取消，避免取消后继续哈希下一批文件。
+ * EN: Long traversals yield periodically and check cancellation before/after each yield so cancelled scans do not hash another batch.
+ */
 async function pause(options: ScanOptions) {
   cancelled(options);
   await turn();
@@ -64,9 +81,21 @@ async function pause(options: ScanOptions) {
 }
 const secretName =
   /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.git-credentials|auth\.json|credentials(?:\.json)?|api-keys\.bin|environment|config\.toml)$/i;
+/**
+ * 识别认证、环境及内部 CLI/Git 路径段，备份工作区时将这些内容排除。
+ * EN: Identifies authentication/environment/internal CLI/Git path segments excluded from workspace backups.
+ */
 const excludedName = (name: string) =>
   secretName.test(name) || ['.git', '.codex', '.dsh', 'credentials'].includes(name.toLowerCase());
+/**
+ * 逐段应用敏感路径规则，避免嵌套认证文件绕过快照过滤。
+ * EN: Applies sensitive-name rules to every segment so nested credentials cannot bypass snapshot filtering.
+ */
 const excludedPath = (value: string) => value.split(/[\\/]/).some(excludedName);
+/**
+ * 抛出标准维护范围冲突，允许具体核验提供更精确代码。
+ * EN: Throws a standard maintenance-scope conflict with optional branch-specific code.
+ */
 function fail(message: string, code = 'TERMINAL_MAINTENANCE_SCOPE'): never {
   throw new AppError(code, message, false, null, 409);
 }
@@ -149,7 +178,10 @@ const cleanupJournalSchema = z
   .strict();
 type CleanupJournal = z.infer<typeof cleanupJournalSchema>;
 
-/** 只检查规范化后的词法包含关系；文件系统链接检查由 secure/secureAsync 另行完成。 */
+/**
+ * 只检查规范化后的词法包含关系；文件系统链接检查由 secure/secureAsync 另行完成。
+ * EN: Checks normalized lexical containment only; secure/secureAsync separately validate filesystem links.
+ */
 function within(root: string, candidate: string, allowRoot = false) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return (
@@ -159,7 +191,10 @@ function within(root: string, candidate: string, allowRoot = false) {
     !path.isAbsolute(relative)
   );
 }
-/** Resolve each existing component separately: lexical containment alone is insufficient on Windows junctions. */
+/**
+ * 逐个解析现有路径段；Windows junction 不能仅靠词法包含关系判断。
+ * EN: Resolve each existing component separately: lexical containment alone is insufficient on Windows junctions.
+ */
 function secure(root: string, relative: string, allowMissing = false) {
   if (path.isAbsolute(relative) || relative.includes(':') || /[\0\r\n]/.test(relative))
     fail('维护路径必须是数据目录中的相对路径');
@@ -182,8 +217,8 @@ function secure(root: string, relative: string, allowMissing = false) {
   return target;
 }
 /**
- * 同步获取目录清单，供最终应用阶段再次核对。限制深度、项目数和总大小，并拒绝链接。
- * hashes=true 读取真实摘要；否则以时间戳作为低成本变化签名，不能用作内容完整性证据。
+ * 同步获取目录清单，供最终应用阶段再次核对。限制深度、项目数和总大小，并拒绝链接。 hashes=true 读取真实摘要；否则以时间戳作为低成本变化签名，不能用作内容完整性证据。
+ * EN: Synchronously inventories for final apply checks with depth/count/size limits and no links. hashes=true reads actual digests; timestamps are lower-cost change signatures, not content-integrity evidence.
  */
 function tree(root: string, options: { filterSecrets?: boolean; hashes?: boolean } = {}) {
   const files: FileEntry[] = [],
@@ -193,6 +228,10 @@ function tree(root: string, options: { filterSecrets?: boolean; hashes?: boolean
   if (!fs.existsSync(root)) return { files, excluded, bytes };
   if (fs.lstatSync(root).isSymbolicLink() || !fs.lstatSync(root).isDirectory())
     fail('维护源目录不能是链接或特殊文件');
+  /**
+   * 同步递归构造最终文件清单，限制深度、项数及总字节，拒绝链接并可计算真实摘要；摘要读取前后比较时间/大小，变化即拒绝。
+   * EN: Synchronously builds final inventories with depth/count/byte caps, link rejection and optional real hashes, rejecting detected before/after time/size changes.
+   */
   function visit(directory: string, depth: number) {
     if (depth > 24) fail('维护目录层级过深');
     for (const name of fs.readdirSync(directory).sort()) {
@@ -228,7 +267,10 @@ function tree(root: string, options: { filterSecrets?: boolean; hashes?: boolean
   visit(root, 0);
   return { files, excluded, bytes };
 }
-/** 可取消的路径核验；逐级拒绝链接与硬链接，允许缺失仅用于即将创建的目标尾部。 */
+/**
+ * 可取消的路径核验；逐级拒绝链接与硬链接，允许缺失仅用于即将创建的目标尾部。
+ * EN: Cancellable path validation rejects links/hard links component by component; missing tails are allowed only for targets about to be created.
+ */
 async function secureAsync(root: string, relative: string, options: ScanOptions, allowMissing = false) {
   cancelled(options);
   if (path.isAbsolute(relative) || relative.includes(':') || /[\0\r\n]/.test(relative))
@@ -259,8 +301,8 @@ async function secureAsync(root: string, relative: string, options: ScanOptions,
   return target;
 }
 /**
- * 分块计算普通文件摘要并报告实际处理字节。打开后核对 inode、设备号和硬链接数，
- * 读取结束再比大小、修改时间和状态变化时间；检测到这些变化时拒绝生成本次计划。
+ * 分块计算普通文件摘要并报告实际处理字节。打开后核对 inode、设备号和硬链接数， 读取结束再比大小、修改时间和状态变化时间；检测到这些变化时拒绝生成本次计划。
+ * EN: Hashes regular files in chunks and reports processed bytes. Rechecks inode/device/link count after open and size/mtime/ctime after reading; detected changes reject this plan.
  */
 async function hashFileAsync(filename: string, options: ScanOptions) {
   cancelled(options);
@@ -305,7 +347,10 @@ async function hashFileAsync(filename: string, options: ScanOptions) {
     await handle.close();
   }
 }
-/** 有界读取并排序目录项；每 32 项让出执行权，防止大型目录使取消请求长时间无响应。 */
+/**
+ * 有界读取并排序目录项；每 32 项让出执行权，防止大型目录使取消请求长时间无响应。
+ * EN: Reads/sorts bounded directory entries and yields every 32 entries to keep cancellation responsive.
+ */
 async function namesAsync(directory: string, options: ScanOptions) {
   const handle = await fsp.opendir(directory),
     names: string[] = [];
@@ -324,8 +369,8 @@ async function namesAsync(directory: string, options: ScanOptions) {
   return names.sort();
 }
 /**
- * 扫描预览使用的异步目录读取。partial=true 时保留已确认部分并标记覆盖率，
- * 只有完整扫描才能被后续操作当成完整清单；取消始终向上传递，不降级为部分成功。
+ * 扫描预览使用的异步目录读取。partial=true 时保留已确认部分并标记覆盖率， 只有完整扫描才能被后续操作当成完整清单；取消始终向上传递，不降级为部分成功。
+ * EN: Asynchronous preview inventory can retain verified partial coverage only when requested; only complete scans are full inventories. Cancellation always propagates instead of becoming partial success.
  */
 async function treeAsync(
   root: string,
@@ -336,9 +381,17 @@ async function treeAsync(
   let count = 0,
     bytes = 0,
     coverage: 'complete' | 'partial' | 'unknown' = 'complete';
+  /**
+   * 在允许部分扫描时把覆盖率降为 partial 或 unknown，保留已核验内容但不授予完整删除依据。
+   * EN: Degrades permitted partial scans to partial/unknown coverage, retaining verified content without granting complete deletion evidence.
+   */
   function preserve() {
     coverage = files.length ? 'partial' : 'unknown';
   }
+  /**
+   * 可取消地递归构造预览清单并上报处理量；敏感路径排除，遇到未知内容按 partial 选项保留缺口或失败，取消始终继续上抛。
+   * EN: Builds preview inventories recursively with cancellation/progress, excluding sensitive paths and retaining gaps or failing per partial policy; cancellation always propagates.
+   */
   async function visit(directory: string, depth: number): Promise<void> {
     if (depth > 24) fail('维护目录层级过深');
     for (const name of await namesAsync(directory, options)) {
@@ -395,6 +448,10 @@ async function treeAsync(
     reason: coverage === 'complete' ? undefined : '链接、权限、变化或扫描上限导致部分占用未计入',
   };
 }
+/**
+ * 安全定位并异步哈希当前 rollout，返回路径/大小/摘要；确实不存在返回 null，其他读取错误不能当缺失。
+ * EN: Safely locates and asynchronously hashes current rollout into path/size/digest; ENOENT returns null while other errors remain failures.
+ */
 async function currentRolloutAsync(
   snapshot: TerminalMaintenanceSnapshot,
   options: ScanOptions,
@@ -412,7 +469,10 @@ async function currentRolloutAsync(
     throw error;
   }
 }
-/** 提取可续接身份：绑定同任务、最新操作、冻结镜像、权限与 CLI 会话状态，而非只绑定文件名。 */
+/**
+ * 提取可续接身份：绑定同任务、最新操作、冻结镜像、权限与 CLI 会话状态，而非只绑定文件名。
+ * EN: Extracts continuation identity bound to task, latest operation, frozen image, permissions and CLI session state rather than filename alone.
+ */
 function checkpoint(snapshot: TerminalMaintenanceSnapshot) {
   return {
     runId: snapshot.run.id,
@@ -427,6 +487,10 @@ function checkpoint(snapshot: TerminalMaintenanceSnapshot) {
     state: snapshot.record.state,
   };
 }
+/**
+ * 同步核对当前 rollout 为有界普通文件并比较摘要读取前后版本；缺失返回 null，变化拒绝维护。
+ * EN: Synchronously validates bounded regular rollout and before/after hash-read version; absent returns null and detected change blocks maintenance.
+ */
 function currentRollout(snapshot: TerminalMaintenanceSnapshot): FileEntry | null {
   const filename = secure(snapshot.home, snapshot.rollout.relativePath, true);
   if (!fs.existsSync(filename)) return null;
@@ -438,7 +502,10 @@ function currentRollout(snapshot: TerminalMaintenanceSnapshot): FileEntry | null
     fail('会话文件正在变化');
   return { path: snapshot.rollout.relativePath, bytes: before.size, hash: digest };
 }
-/** 复制前核对源摘要，复制后同时复核目标和源；不能静默接受复制期间变化的业务文件。 */
+/**
+ * 复制前核对源摘要，复制后同时复核目标和源；不能静默接受复制期间变化的业务文件。
+ * EN: Checks source digest before copy and both destination/source afterward so changing business files are not silently accepted.
+ */
 function copyFileChecked(sourceRoot: string, destinationRoot: string, entry: FileEntry) {
   const source = secure(sourceRoot, entry.path),
     destination = secure(destinationRoot, entry.path, true);
@@ -450,9 +517,15 @@ function copyFileChecked(sourceRoot: string, destinationRoot: string, entry: Fil
     fail('快照复制时源文件变化');
 }
 
-/** 管理终端数据扫描、清理计划以及备份和恢复预览。 */
+/**
+ * 管理终端数据扫描、清理计划以及备份和恢复预览。
+ * EN: Manages terminal scans, cleanup plans and backup/restore previews.
+ */
 export class TerminalMaintenance {
-  // 预览是短期本地授权凭据，包含文件摘要和引用版本；客户端回传的计划不能直接执行。
+  /**
+   * 预览是短期本地授权凭据，包含文件摘要和引用版本；客户端回传的计划不能直接执行。
+   * EN: Previews are short-lived local authority tokens containing file hashes and reference revisions; client-returned plans are not executable authority.
+   */
   private plans = new Map<string, InternalPlan>();
   private scans = new Map<
     string,
@@ -462,6 +535,10 @@ export class TerminalMaintenance {
   private backupReaders = new Map<string, number>();
   private closed = false;
   private owner: string;
+  /**
+   * 由数据目录派生本机 owner，并创建仅通过安全路径及清单核验能力访问磁盘的备份索引。
+   * EN: Derives a local owner from the data directory and creates backup indexing through safe path/manifest readers only.
+   */
   constructor(
     private store: Store,
     private dependencies: TerminalMaintenanceDependencies,
@@ -480,8 +557,9 @@ export class TerminalMaintenance {
       async (backupId, options) => this.historyView(await this.readBackupAsync(backupId, options)),
     );
   }
-  /** 启动有界只读扫描并立即返回可轮询任务；最多两项并行，断连遗失的任务两分钟后自动取消。
-   * 进度增量只在 running 阶段累计；失败/取消丢弃部分预览，不把不完整结果交给应用入口。
+  /**
+   * 启动有界只读扫描并立即返回可轮询任务；最多两项并行，断连遗失的任务两分钟后自动取消。 进度增量只在 running 阶段累计；失败/取消丢弃部分预览，不把不完整结果交给应用入口。
+   * EN: Starts bounded read-only jobs and returns pollable handles, with at most two concurrent jobs and two-minute expiry for lost clients. Progress accumulates only while running; failed/cancelled jobs discard partial previews.
    */
   startScan(input: unknown) {
     if (this.closed) fail('维护服务已停止');
@@ -504,12 +582,19 @@ export class TerminalMaintenance {
       updatedAt: createdAt,
     };
     this.scans.set(view.id, { view, controller, ...('backupId' in body ? { backupId: body.backupId } : {}) });
-    // A disconnected POST may never deliver its job ID to the caller. Such read-only work expires locally.
+    /**
+     * POST 断连后任务 ID 可能未交付给调用方；此类只读任务在本地自动到期。
+     * EN: A disconnected POST may never deliver its job ID to the caller. Such read-only work expires locally.
+     */
     const expiry = setTimeout(() => controller.abort(), 120000);
     expiry.unref();
     const options: ScanOptions = {
       signal: controller.signal,
       scanId: view.id,
+      /**
+       * 仅对仍运行且未取消的作业累计增量计数和阶段，更新可轮询时间；迟到回调忽略。
+       * EN: Accumulates incremental counts/phase/time only for running uncancelled jobs, ignoring late callbacks.
+       */
       progress: (patch) => {
         if (view.status !== 'running' || controller.signal.aborted) return;
         for (const field of ['filesVisited', 'bytesProcessed', 'groupsCompleted'] as const)
@@ -558,14 +643,20 @@ export class TerminalMaintenance {
     })();
     return TerminalMaintenanceScan.parse(view);
   }
-  /** 返回扫描的校验后快照；扫描只在当前进程保留，重启后要求调用方重新预览。 */
+  /**
+   * 返回扫描的校验后快照；扫描只在当前进程保留，重启后要求调用方重新预览。
+   * EN: Returns a validated scan snapshot held only in this process; restart requires a new preview.
+   */
   scan(scanId: string) {
     z.string().uuid().parse(scanId);
     const value = this.scans.get(scanId);
     if (!value) throw new AppError('NOT_FOUND', '维护扫描不存在或服务已重启', false, null, 404);
     return TerminalMaintenanceScan.parse(value.view);
   }
-  /** 取消只读扫描并移除未交付结果；已完成的扫描保持原状态。 */
+  /**
+   * 取消只读扫描并移除未交付结果；已完成的扫描保持原状态。
+   * EN: Cancels read-only scans and removes undelivered results; completed jobs retain their state.
+   */
   cancelScan(scanId: string) {
     const view = this.scan(scanId),
       job = this.scans.get(scanId)!;
@@ -579,27 +670,42 @@ export class TerminalMaintenance {
     }
     return this.scan(scanId);
   }
-  /** 关闭只读扫描入口并取消活动扫描；已经登记的清理日志保留给下次恢复。 */
+  /**
+   * 关闭只读扫描入口并取消活动扫描；已经登记的清理日志保留给下次恢复。
+   * EN: Closes scan admission and cancels active jobs while retaining registered cleanup journals for recovery.
+   */
   close() {
     this.closed = true;
     for (const job of this.scans.values()) if (job.view.status === 'running') this.cancelScan(job.view.id);
   }
-  /** 使指定预览失效；删除内存计划不会删除任何会话或备份文件。 */
+  /**
+   * 使指定预览失效；删除内存计划不会删除任何会话或备份文件。
+   * EN: Invalidates one preview in memory without deleting any session or backup files.
+   */
   cancelPlan(planId: string) {
     z.string().uuid().parse(planId);
     this.plans.delete(planId);
     return { cancelled: true };
   }
-  /** 统计已核验占用及保留理由，覆盖率不足时明确标记，不能据此删除尚未扫描的内容。 */
+  /**
+   * 统计已核验占用及保留理由，覆盖率不足时明确标记，不能据此删除尚未扫描的内容。
+   * EN: Counts verified occupancy and preservation reasons with explicit incomplete coverage; unscanned contents are never thereby authorized for deletion.
+   */
   async overview(options: ScanOptions = {}): Promise<TerminalMaintenanceOverview> {
     const scan = await this.inventoryAsync(options);
     return TerminalMaintenanceOverview.parse(scan.overview);
   }
-  /** 当前连接的变化计数用于异步预览前后比较，补充关键实体 revision 的一致性检查。 */
+  /**
+   * 当前连接的变化计数用于异步预览前后比较，补充关键实体 revision 的一致性检查。
+   * EN: Captures the current connection's change counter before/after asynchronous previews as an additional consistency check alongside entity revisions.
+   */
   private databaseChange() {
     return (this.store.db.prepare('SELECT total_changes() AS count').get() as { count: number }).count;
   }
-  /** 仅读取引用核验所需的投影字段，以稳定 ID 游标分批遍历，避免解压全部业务正文。 */
+  /**
+   * 仅读取引用核验所需的投影字段，以稳定 ID 游标分批遍历，避免解压全部业务正文。
+   * EN: Reads only reference-check projection fields with stable ID paging rather than decompressing every business body.
+   */
   private referenceRows(table: 'runs' | 'tasks' | 'tool_operations', after = '', limit?: number) {
     return this.store.db
       .prepare(
@@ -607,7 +713,10 @@ export class TerminalMaintenance {
       )
       .all(after) as { id: string; revision: number; run_id: string | null; data: string }[];
   }
-  /** 兼容旧投影；旧工具操作缺少 taskId 时才回查权威正文，不把缺失字段当成无引用。 */
+  /**
+   * 兼容旧投影；旧工具操作缺少 taskId 时才回查权威正文，不把缺失字段当成无引用。
+   * EN: Supports legacy projections by loading authoritative tool operations only when taskId is missing; absent fields do not imply no reference.
+   */
   private reference(
     table: 'runs' | 'tasks' | 'tool_operations',
     row: { id: string; revision: number; run_id: string | null; data: string },
@@ -624,10 +733,17 @@ export class TerminalMaintenance {
       status: read.status ?? value.status ?? legacy?.status,
     };
   }
+  /**
+   * 将有界投影行映射成当前引用摘要，供同步最终应用阶段核对，不展开无关正文。
+   * EN: Maps bounded projection rows to reference summaries for synchronous final-apply checks without unrelated body expansion.
+   */
   private references(table: 'runs' | 'tasks' | 'tool_operations') {
     return this.referenceRows(table).map((row) => this.reference(table, row));
   }
-  /** 分批让出事件循环读取引用；调用方还需在扫描前后核对数据库变化，分页本身不是一致快照。 */
+  /**
+   * 分批让出事件循环读取引用；调用方还需在扫描前后核对数据库变化，分页本身不是一致快照。
+   * EN: Reads references in yielding batches; callers still compare database changes because paging itself is not a consistent snapshot.
+   */
   private async referencesAsync(table: 'runs' | 'tasks' | 'tool_operations', options: ScanOptions) {
     const values: ReturnType<TerminalMaintenance['reference']>[] = [];
     let cursor = '';
@@ -641,8 +757,8 @@ export class TerminalMaintenance {
     return values;
   }
   /**
-   * 应用清理前的同步存活引用核验。只有会话/任务/操作全部缺失且 owner 明确停止的受管残留
-   * 才进入 cleanup；未知元数据、HOME 或链接一律列入 preserved，不以未找到引用草率删除。
+   * 应用清理前的同步存活引用核验。只有会话/任务/操作全部缺失且 owner 明确停止的受管残留 才进入 cleanup；未知元数据、HOME 或链接一律列入 preserved，不以未找到引用草率删除。
+   * EN: Synchronously rechecks live references before apply. Only owned, stopped residues with no session/task/operation enter cleanup; unknown metadata, HOME and links are preserved instead of deleted from absent references alone.
    */
   private inventory() {
     const runs = this.references('runs'),
@@ -872,7 +988,10 @@ export class TerminalMaintenance {
       },
     };
   }
-  /** 可取消的维护占用扫描；分批读取引用并记录各组覆盖率，扫描期间引用变化会使预览失效。 */
+  /**
+   * 可取消的维护占用扫描；分批读取引用并记录各组覆盖率，扫描期间引用变化会使预览失效。
+   * EN: Scans occupancy with cancellation, batched references and group coverage; changing references invalidate the preview.
+   */
   private async inventoryAsync(options: ScanOptions = {}) {
     const change = this.databaseChange();
     options.progress?.({ phase: 'references' });
@@ -1183,7 +1302,10 @@ export class TerminalMaintenance {
       },
     };
   }
-  /** 创建有效期十分钟的预览视图；revision 绑定本次核验依据，应用时必须再次匹配。 */
+  /**
+   * 创建有效期十分钟的预览视图；revision 绑定本次核验依据，应用时必须再次匹配。
+   * EN: Creates a ten-minute preview whose revision binds the verified basis and must match at apply.
+   */
   private plan(
     kind: TerminalMaintenancePlan['kind'],
     revision: string,
@@ -1206,7 +1328,10 @@ export class TerminalMaintenance {
     this.plans.set(view.id, { view });
     return view;
   }
-  /** 核对计划存在性、类型、版本和有效期，客户端提供的 ID 本身不构成执行授权。 */
+  /**
+   * 核对计划存在性、类型、版本和有效期，客户端提供的 ID 本身不构成执行授权。
+   * EN: Checks plan presence, type, revision and expiry; a client-supplied ID alone grants no execution authority.
+   */
   private requested(input: unknown, kind: TerminalMaintenancePlan['kind']) {
     const body = TerminalMaintenanceApply.parse(input),
       plan = this.plans.get(body.planId);
@@ -1219,7 +1344,10 @@ export class TerminalMaintenance {
       fail('维护计划已失效，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
     return { body, plan };
   }
-  /** 扫描终端数据并生成清理候选计划；读取期间响应取消信号。 */
+  /**
+   * 扫描终端数据并生成清理候选计划；读取期间响应取消信号。
+   * EN: Scans terminal data and builds cleanup candidates while observing cancellation.
+   */
   async cleanupPlan(options: ScanOptions = {}) {
     const scan = await this.inventoryAsync(options);
     const items: TerminalMaintenancePlan['items'] = [];
@@ -1247,7 +1375,10 @@ export class TerminalMaintenance {
       warnings: ['不删除存活任务、未知 HOME、工作区、对象、日志和任何镜像。'],
     });
   }
-  /** 读取本数据目录拥有的清理日志；归属或格式不明时保留文件并拒绝继续删除。 */
+  /**
+   * 读取本数据目录拥有的清理日志；归属或格式不明时保留文件并拒绝继续删除。
+   * EN: Reads only journals owned by this data directory; unknown ownership or format preserves files and blocks further deletion.
+   */
   private journal(id: string) {
     const row = this.store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(cleanupKey + id) as
       | { value: string }
@@ -1257,7 +1388,10 @@ export class TerminalMaintenance {
     if (entry.owner !== this.owner || entry.id !== id) fail('暂存清理归属无法确认，已保留');
     return entry;
   }
-  /** 只展示可核验的待清理登记；损坏日志不会被解释为新的删除权限。 */
+  /**
+   * 只展示可核验的待清理登记；损坏日志不会被解释为新的删除权限。
+   * EN: Shows verifiable pending-cleanup registrations only; damaged journals confer no new deletion authority.
+   */
   private pendingCleanup(): TerminalMaintenanceOverview['pendingCleanup'] {
     const rows = this.store.db
       .prepare(
@@ -1278,14 +1412,24 @@ export class TerminalMaintenance {
           message: '清理登记已完成，暂存文件待移除；重试前需要重新检查',
         });
       } catch {
-        /* Invalid records are preserved, never adopted as deletion authority. */
+        /**
+         * 无效记录保留，绝不采纳为删除授权。
+         * EN: Invalid records are preserved, never adopted as deletion authority.
+         */
       }
     }
     return result;
   }
-  /** 有界列出真实目录层级，配合文件清单发现隔离区内新增的未知空目录。 */
+  /**
+   * 有界列出真实目录层级，配合文件清单发现隔离区内新增的未知空目录。
+   * EN: Lists bounded real-directory structure to detect unknown new empty directories alongside file inventories.
+   */
   private directoryEntries(root: string): string[] {
     const entries: string[] = [];
+    /**
+     * 有界遍历隔离区真实目录并记录目录名，通过 secure 拒绝链接和越界，为新增空目录检测提供依据。
+     * EN: Boundedly walks real quarantine directories through secure checks, recording names to detect added empty directories.
+     */
     const walk = (current: string, depth: number) => {
       if (depth > 24 || entries.length > 20000) fail('暂存目录范围超限');
       for (const name of fs.readdirSync(current).sort()) {
@@ -1300,8 +1444,8 @@ export class TerminalMaintenance {
     return entries;
   }
   /**
-   * 清理重试前重新证明原删除授权仍成立：无活动终端/未知操作，且会话和运行未重新引用残留。
-   * 备份还必须已有删除墓碑且没有恢复读取者；日志本身不能免除当前引用检查。
+   * 清理重试前重新证明原删除授权仍成立：无活动终端/未知操作，且会话和运行未重新引用残留。 备份还必须已有删除墓碑且没有恢复读取者；日志本身不能免除当前引用检查。
+   * EN: Before retry, reproves deletion authority: no active/unknown work and no renewed session/run references. Backups also require a deletion tombstone and no restore readers; a journal never bypasses current-reference checks.
    */
   private assertJournalReferences(entry: CleanupJournal) {
     if (this.dependencies.isActive()) fail('存在活跃终端，暂存文件保留');
@@ -1391,7 +1535,10 @@ export class TerminalMaintenance {
       }
     }
   }
-  /** 允许上次删除造成的缺失，但任何新增/变化文件、目录或 slot 都拒绝；返回当前剩余内容证明。 */
+  /**
+   * 允许上次删除造成的缺失，但任何新增/变化文件、目录或 slot 都拒绝；返回当前剩余内容证明。
+   * EN: Allows files removed by an earlier attempt but rejects any added/changed file, directory or slot; returns proof of remaining content.
+   */
   private journalFiles(entry: CleanupJournal) {
     this.assertJournalReferences(entry);
     const relative = 'maintenance/cleanup/' + entry.id,
@@ -1430,7 +1577,10 @@ export class TerminalMaintenance {
     }
     return proof;
   }
-  /** 生成可取消的隔离内容证明，结束前再核对引用，供重试预览版本绑定。 */
+  /**
+   * 生成可取消的隔离内容证明，结束前再核对引用，供重试预览版本绑定。
+   * EN: Builds cancellable quarantine proof and rechecks references before completion for the retry preview revision.
+   */
   private async journalFilesAsync(entry: CleanupJournal, options: ScanOptions) {
     this.assertJournalReferences(entry);
     const root = await secureAsync(this.store.directory, 'maintenance/cleanup/' + entry.id, options, true);
@@ -1472,7 +1622,10 @@ export class TerminalMaintenance {
       const files = item.directory
         ? (await treeAsync(filename, { ...options, hashes: true })).files
         : [{ path: '@file', bytes: stat.size, hash: await hashFileAsync(filename, options) }];
-      // Directory names are bounded by the owned-residue rules (empty HOME only).
+      /**
+       * 目录名受残留归属规则限制，仅允许空 HOME。
+       * EN: Directory names are bounded by the owned-residue rules (empty HOME only).
+       */
       const directories = item.directory ? this.directoryEntries(filename) : [];
       if (
         directories.some((value) => !item.directories.includes(value)) ||
@@ -1491,8 +1644,8 @@ export class TerminalMaintenance {
     return proof;
   }
   /**
-   * 数据库登记提交后才尝试移除隔离区。返回 true 表示物理清理仍待重试，
-   * 不回滚已经提交的逻辑删除，也不将文件系统失败误报为全部完成。
+   * 数据库登记提交后才尝试移除隔离区。返回 true 表示物理清理仍待重试， 不回滚已经提交的逻辑删除，也不将文件系统失败误报为全部完成。
+   * EN: Attempts physical quarantine removal only after database registration commits. True means cleanup remains pending; committed logical deletion is not rolled back or reported fully removed on filesystem failure.
    */
   private finishCleanup(entry: CleanupJournal) {
     try {
@@ -1510,7 +1663,10 @@ export class TerminalMaintenance {
       return true;
     }
   }
-  /** 重新扫描已登记隔离内容及引用，生成新的重试预览，不能直接复用旧计划的摘要。 */
+  /**
+   * 重新扫描已登记隔离内容及引用，生成新的重试预览，不能直接复用旧计划的摘要。
+   * EN: Rescans registered quarantine contents/references for a fresh retry preview rather than reusing old hashes.
+   */
   async retryCleanupPlan(retryId: string, expectedRevision?: number, options: ScanOptions = {}) {
     z.string().uuid().parse(retryId);
     const entry = this.journal(retryId);
@@ -1535,8 +1691,9 @@ export class TerminalMaintenance {
     this.plans.set(view.id, { view, retry: entry });
     return view;
   }
-  /** 重试已隔离但尚未物理移除的内容，先核对日志、文件与引用证明，再递增日志版本提交。
-   * 命令重放只返回已有结果，不再次执行文件删除；仍有残留时保留日志并要求重新预览。
+  /**
+   * 重试已隔离但尚未物理移除的内容，先核对日志、文件与引用证明，再递增日志版本提交。 命令重放只返回已有结果，不再次执行文件删除；仍有残留时保留日志并要求重新预览。
+   * EN: Retries physical removal after checking journal, file and reference proof and committing a new journal revision. Command replay returns the old receipt without deleting again; remaining content retains its journal and needs another preview.
    */
   retryCleanup(retryId: string, input: unknown) {
     z.string().uuid().parse(retryId);
@@ -1568,8 +1725,9 @@ export class TerminalMaintenance {
       message: pending ? '暂存内容仍未移除，记录已保留；请排除文件占用后重新预览' : '暂存清理已完成',
     };
   }
-  /** 在幂等事务中重新验证完整占用和引用，将已证明可清理的文件移到专属隔离目录并登记日志。
-   * 提交失败时将已移动文件归位；提交成功后才物理删除，删除失败作为 pendingCleanup 保留重试依据。
+  /**
+   * 在幂等事务中重新验证完整占用和引用，将已证明可清理的文件移到专属隔离目录并登记日志。 提交失败时将已移动文件归位；提交成功后才物理删除，删除失败作为 pendingCleanup 保留重试依据。
+   * EN: Within an idempotent transaction, rechecks complete occupancy/references, moves authorized files into dedicated quarantine and journals them. Pre-commit failure restores moved files; physical removal follows commit and failures retain pendingCleanup evidence.
    */
   cleanup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input);
@@ -1616,7 +1774,10 @@ export class TerminalMaintenance {
               });
             }
           if (items.length) {
-            // 先登记每个可删除文件的身份与摘要，再把文件移到独占隔离区，便于失败后恢复。
+            /**
+             * 先登记每个可删除文件的身份与摘要，再把文件移到独占隔离区，便于失败后恢复。
+             * EN: Registers each deletable file's identity/digest before moving it into exclusive quarantine for recoverable failures.
+             */
             journal = cleanupJournalSchema.parse({
               format: 1,
               owner: this.owner,
@@ -1648,7 +1809,10 @@ export class TerminalMaintenance {
         },
       );
     } catch (error) {
-      // Rollback is only for failures before the database command commits.
+      /**
+       * 仅数据库命令提交前的失败才执行回滚。
+       * EN: Rollback is only for failures before the database command commits.
+       */
       for (const move of moved.reverse()) {
         if (fs.existsSync(move.from))
           fail('清理回滚路径被占用；原内容保留在暂存区', 'TERMINAL_CLEANUP_ROLLBACK');
@@ -1666,7 +1830,10 @@ export class TerminalMaintenance {
       ...(pending ? { message: '清理登记已完成，暂存文件待移除；重启后可重新预览并重试' } : {}),
     };
   }
-  /** 页面恢复旧预览时重新生成核验依据；仅依据未变化时恢复原 ID 和原到期时间。 */
+  /**
+   * 页面恢复旧预览时重新生成核验依据；仅依据未变化时恢复原 ID 和原到期时间。
+   * EN: Rebuilds verification for a restored UI preview and retains the old ID/expiry only if its basis is unchanged.
+   */
   async loadPlan(input: unknown) {
     const supplied = TerminalMaintenancePlan.parse(input);
     if (Date.parse(supplied.expiresAt) < Date.now()) fail('计划已过期，请重新预览');
@@ -1688,7 +1855,10 @@ export class TerminalMaintenance {
     this.plans.set(supplied.id, plan);
     return plan.view;
   }
-  /** 返回旧入口的备份视图，明确剥离完整会话记录、工作区清单及 owner 等内部证明字段。 */
+  /**
+   * 返回旧入口的备份视图，明确剥离完整会话记录、工作区清单及 owner 等内部证明字段。
+   * EN: Returns legacy backup views stripped of full session/workspace manifests and internal owner proofs.
+   */
   backups() {
     return this.readBackups().map(
       ({
@@ -1703,7 +1873,10 @@ export class TerminalMaintenance {
       }) => TerminalSessionBackupView.parse(view),
     );
   }
-  /** 只接受本机 owner 和目录 ID 匹配的有界备份清单；未知备份留在磁盘但不作为恢复输入。 */
+  /**
+   * 只接受本机 owner 和目录 ID 匹配的有界备份清单；未知备份留在磁盘但不作为恢复输入。
+   * EN: Accepts only bounded manifests matching the local owner and directory ID; unknown backups remain on disk but cannot become restore inputs.
+   */
   private readBackups(): Backup[] {
     const root = secure(this.store.directory, 'maintenance/backups', true);
     if (!fs.existsSync(root)) return [];
@@ -1718,12 +1891,18 @@ export class TerminalMaintenance {
         if (entry.owner !== this.owner || entry.id !== name) continue;
         backups.push(entry);
       } catch {
-        /* Unknown backup files are preserved and never accepted as restore input. */
+        /**
+         * 未知备份文件保留，且不接受为恢复输入。
+         * EN: Unknown backup files are preserved and never accepted as restore input.
+         */
       }
     }
     return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
-  /** 从已核验备份生成小型非秘密索引，历史列表不加载私有会话正文。 */
+  /**
+   * 从已核验备份生成小型非秘密索引，历史列表不加载私有会话正文。
+   * EN: Creates small nonsecret indexes from verified backups without loading private session bodies into history lists.
+   */
   private historyView(backup: Backup, title?: string): TerminalBackupHistoryItem {
     const run = this.store.get<Run>('runs', backup.runId);
     return TerminalBackupHistoryItem.parse({
@@ -1741,13 +1920,16 @@ export class TerminalMaintenance {
       excludedCount: backup.excluded.length,
     });
   }
-  /** 按查询条件分页读取终端备份历史。 */
+  /**
+   * 按查询条件分页读取终端备份历史。
+   * EN: Pages terminal backup history by the requested query.
+   */
   async backupPage(input: unknown, options: ScanOptions = {}) {
     return this.backupIndex.page(input, options);
   }
   /**
-   * 登记读取者后分块读取有界清单，核对文件打开身份、读取后版本、owner 和双重摘要。
-   * 已删除墓碑拒绝重读，finally 解除读取占用；此时仅核验清单，正文文件由具体操作再查。
+   * 登记读取者后分块读取有界清单，核对文件打开身份、读取后版本、owner 和双重摘要。 已删除墓碑拒绝重读，finally 解除读取占用；此时仅核验清单，正文文件由具体操作再查。
+   * EN: Registers a reader before bounded chunk reads and verifies opened identity, post-read revision, owner and both digests. Tombstones block rereads; finally releases occupancy. Only manifests are checked here; operations verify body files separately.
    */
   private async readBackupAsync(backupId: string, options: ScanOptions = {}): Promise<Backup> {
     z.string().uuid().parse(backupId);
@@ -1811,7 +1993,10 @@ export class TerminalMaintenance {
       else this.backupReaders.delete(backupId);
     }
   }
-  /** 备份删除需无活动/未确认操作、待续接会话和其他恢复读取/计划；只可排除当前预览自身占用。 */
+  /**
+   * 备份删除需无活动/未确认操作、待续接会话和其他恢复读取/计划；只可排除当前预览自身占用。
+   * EN: Backup deletion requires no active/unverified work, resumable sessions, other restore readers or plans; only this preview's own occupancy may be excluded.
+   */
   private assertBackupDeletable(backup: Backup, ignorePlanId?: string, ignoreScanId?: string) {
     const run = this.store.get<Run>('runs', backup.runId),
       task = this.store.get<Task>('tasks', backup.taskId);
@@ -1858,7 +2043,10 @@ export class TerminalMaintenance {
           fail('此快照有待确认的恢复计划，请取消该计划后删除', 'TERMINAL_BACKUP_REFERENCED');
       }
   }
-  /** 分别判断当前恢复资格和删除资格；恢复可用仅表示身份匹配，正式预览/执行仍核验文件摘要。 */
+  /**
+   * 分别判断当前恢复资格和删除资格；恢复可用仅表示身份匹配，正式预览/执行仍核验文件摘要。
+   * EN: Separates restore identity eligibility from deletion eligibility; restore previews/applies still verify file digests.
+   */
   async backupEligibility(backupId: string, options: ScanOptions = {}): Promise<TerminalBackupEligibility> {
     const backup = await this.readBackupAsync(backupId, options),
       run = this.store.get<Run>('runs', backup.runId);
@@ -1903,7 +2091,10 @@ export class TerminalMaintenance {
       deleteReason,
     });
   }
-  /** 把运行/任务/会话/相关操作的版本状态纳入删除证明，检测预览期间重新出现的引用。 */
+  /**
+   * 把运行/任务/会话/相关操作的版本状态纳入删除证明，检测预览期间重新出现的引用。
+   * EN: Binds run/task/session/operation revision state into deletion proof to detect references reappearing during preview.
+   */
   private backupReferenceProof(backup: Pick<Backup, 'runId' | 'taskId'>) {
     const run = this.store.get<Run>('runs', backup.runId),
       task = this.store.get<Task>('tasks', backup.taskId),
@@ -1919,8 +2110,9 @@ export class TerminalMaintenance {
         .map((op) => [op.id, op.revision, op.status]),
     };
   }
-  /** 生成单份快照删除预览：核验完整目录与清单，并把运行、任务、会话和操作引用绑定到 revision。
-   * 扫描前后重复检查资格和引用；任何已检测变化都要求重新预览，不以单纯“备份存在”授权删除。
+  /**
+   * 生成单份快照删除预览：核验完整目录与清单，并把运行、任务、会话和操作引用绑定到 revision。 扫描前后重复检查资格和引用；任何已检测变化都要求重新预览，不以单纯“备份存在”授权删除。
+   * EN: Builds single-backup deletion previews from complete directory/manifests and binds all relevant references into revision. Rechecks eligibility/references before and after scan; detected changes require re-preview, and mere existence never grants deletion.
    */
   async deleteBackupPlan(input: unknown, options: ScanOptions = {}) {
     const { backupId } = z.object({ backupId: z.string().uuid() }).strict().parse(input),
@@ -1953,7 +2145,10 @@ export class TerminalMaintenance {
     this.plans.set(view.id, { view, backup, deletionProof: proof });
     return view;
   }
-  /** 快照目录必须与清单精确相符；额外文件、未知目录或缺失正文都保留整份快照而非部分删除。 */
+  /**
+   * 快照目录必须与清单精确相符；额外文件、未知目录或缺失正文都保留整份快照而非部分删除。
+   * EN: The snapshot directory must exactly match its manifest; extra files, unknown directories or missing bodies preserve the entire snapshot rather than partially deleting it.
+   */
   private validateSnapshotFiles(backup: Backup, files: FileEntry[], directories: string[]) {
     const expected = [
       { path: 'backup.json', bytes: 0, hash: '' },
@@ -1976,9 +2171,9 @@ export class TerminalMaintenance {
     )
       fail('快照目录含未知、缺失或变更文件，保留全部内容');
   }
-  /** 应用删除预览时再次核对归属、文件清单、引用和计划 revision，再将快照移入专属隔离目录。
-   * 逻辑删除、历史墓碑与清理日志在同一命令事务提交；失败尝试归位，提交后物理删除可显式重试。
-   * 重放旧命令保留原回执，不重建已移除快照，也不触发当前会话或工作区的变更。
+  /**
+   * 应用删除预览时再次核对归属、文件清单、引用和计划 revision，再将快照移入专属隔离目录。 逻辑删除、历史墓碑与清理日志在同一命令事务提交；失败尝试归位，提交后物理删除可显式重试。 重放旧命令保留原回执，不重建已移除快照，也不触发当前会话或工作区的变更。
+   * EN: Rechecks ownership, inventory, references and preview revision before moving the snapshot into dedicated quarantine. Logical deletion, tombstones and journal commit atomically; pre-commit failure attempts restoration, while post-commit physical removal is retryable. Replay retains the receipt without recreating snapshots or altering current workspaces.
    */
   deleteBackup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input),
@@ -2063,8 +2258,8 @@ export class TerminalMaintenance {
     };
   }
   /**
-   * 按预期运行版本生成备份预览。扫描工作区时过滤已知认证和环境路径，
-   * revision 同时绑定检查点、会话记录版本、文件清单和 rollout，应用时任何变化都需重预览。
+   * 按预期运行版本生成备份预览。扫描工作区时过滤已知认证和环境路径， revision 同时绑定检查点、会话记录版本、文件清单和 rollout，应用时任何变化都需重预览。
+   * EN: Builds backup previews under the expected run revision, excluding known auth/environment paths. Revision binds checkpoint, session revision, inventory and rollout; detected changes require a new preview.
    */
   async backupPlan(input: unknown, options: ScanOptions = {}) {
     const body = z
@@ -2114,8 +2309,8 @@ export class TerminalMaintenance {
     return view;
   }
   /**
-   * 在运行守卫内执行备份，重新计算同步清单后才发布文件。commandId 绑定完整请求，
-   * 已提交命令重放原结果，避免网络重试创建第二份快照；预览本身不会自动锁定文件。
+   * 在运行守卫内执行备份，重新计算同步清单后才发布文件。commandId 绑定完整请求， 已提交命令重放原结果，避免网络重试创建第二份快照；预览本身不会自动锁定文件。
+   * EN: Applies backup under the run guard after recomputing synchronous inventory. commandId binds the complete request; committed replay returns the original result rather than duplicating a snapshot. Preview alone never locks files.
    */
   async createBackup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input);
@@ -2146,8 +2341,8 @@ export class TerminalMaintenance {
     );
   }
   /**
-   * 发布一份新备份目录：逐文件核对复制结果，最后写 backup.json 并登记索引。
-   * 中途失败只清理本次创建且可安全核验的目录，不覆盖已有同名目录或未知内容。
+   * 发布一份新备份目录：逐文件核对复制结果，最后写 backup.json 并登记索引。 中途失败只清理本次创建且可安全核验的目录，不覆盖已有同名目录或未知内容。
+   * EN: Publishes a new backup by checking each copied file and writing backup.json/index last. Failures clean only newly created safely verified directories, never overwrite same-name or unknown content.
    */
   private publish(
     snapshot: TerminalMaintenanceSnapshot,
@@ -2205,7 +2400,10 @@ export class TerminalMaintenance {
       throw error;
     }
   }
-  /** 读取指定备份并生成恢复预览；预览期间登记读取者。 */
+  /**
+   * 读取指定备份并生成恢复预览；预览期间登记读取者。
+   * EN: Reads a selected backup and builds a restore preview while registering a reader.
+   */
   async restorePlan(input: unknown, options: ScanOptions = {}) {
     const body = z
         .object({ backupId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
@@ -2221,7 +2419,10 @@ export class TerminalMaintenance {
       else this.backupReaders.delete(backupId);
     }
   }
-  /** 生成恢复前当前内容与备份清单的联合指纹，后续应用不得悄悄使用另一个当前工作区版本。 */
+  /**
+   * 生成恢复前当前内容与备份清单的联合指纹，后续应用不得悄悄使用另一个当前工作区版本。
+   * EN: Fingerprints both current contents and backup inventory so apply cannot silently use another current-workspace version.
+   */
   private async restorePlanInternal(input: unknown, options: ScanOptions = {}) {
     const body = z
         .object({ backupId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
@@ -2274,8 +2475,8 @@ export class TerminalMaintenance {
     return view;
   }
   /**
-   * 恢复必须来自同一冻结身份和最新轮次的一致检查点；旧快照不能借恢复操作续接新轮次。
-   * 此处只核验绑定与清单，文件字节由同步/异步的 validateRestore 继续验证。
+   * 恢复必须来自同一冻结身份和最新轮次的一致检查点；旧快照不能借恢复操作续接新轮次。 此处只核验绑定与清单，文件字节由同步/异步的 validateRestore 继续验证。
+   * EN: Restore requires matching frozen identity and a consistent checkpoint from the latest turn, preventing old snapshots from resuming new turns. This stage checks binding/manifests; validateRestore verifies bytes.
    */
   private validateRestoreMetadata(snapshot: TerminalMaintenanceSnapshot, backup: Backup) {
     if (
@@ -2300,7 +2501,10 @@ export class TerminalMaintenance {
       fail('备份清单数量或路径无效');
     return root;
   }
-  /** 最终应用前逐项验证备份大小、摘要和敏感路径排除规则；总读取量也受上限约束。 */
+  /**
+   * 最终应用前逐项验证备份大小、摘要和敏感路径排除规则；总读取量也受上限约束。
+   * EN: Before final apply, verifies every backup size/digest and sensitive-path exclusion under a total read limit.
+   */
   private validateRestore(snapshot: TerminalMaintenanceSnapshot, backup: Backup) {
     const root = this.validateRestoreMetadata(snapshot, backup);
     let bytes = 0;
@@ -2323,7 +2527,10 @@ export class TerminalMaintenance {
           fail('备份文件缺失或摘要不一致');
       }
   }
-  /** 异步哈希之后重读数据库变化计数和关键版本，拒绝扫描期间发生状态切换的预览。 */
+  /**
+   * 异步哈希之后重读数据库变化计数和关键版本，拒绝扫描期间发生状态切换的预览。
+   * EN: Rereads database change counters and key revisions after asynchronous hashing, rejecting state changes during preview.
+   */
   private checkPreviewSnapshot(snapshot: TerminalMaintenanceSnapshot, change: number, options: ScanOptions) {
     cancelled(options);
     if (
@@ -2337,7 +2544,10 @@ export class TerminalMaintenance {
       fail('预览期间会话、工作区或引用变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
     options.progress?.({ phase: 'verification' });
   }
-  /** 预览阶段可取消的逐文件恢复校验，遵守与同步应用相同的路径、摘要及 512 MiB 总量限制。 */
+  /**
+   * 预览阶段可取消的逐文件恢复校验，遵守与同步应用相同的路径、摘要及 512 MiB 总量限制。
+   * EN: Validates restore files cancellably during preview with the same path/digest rules and 512 MiB total cap as synchronous apply.
+   */
   private async validateRestoreAsync(
     snapshot: TerminalMaintenanceSnapshot,
     backup: Backup,
@@ -2367,9 +2577,8 @@ export class TerminalMaintenance {
       }
   }
   /**
-   * 在运行守卫和幂等命令内恢复。先保存当前内容为独立快照，再覆盖会话和业务文件，
-   * 完成后核对工作区及 rollout；失败时尝试用恢复前快照回滚，回滚失败则明确要求人工核验。
-   * 恢复只改文件，不自行重新启动终端任务。
+   * 在运行守卫和幂等命令内恢复。先保存当前内容为独立快照，再覆盖会话和业务文件， 完成后核对工作区及 rollout；失败时尝试用恢复前快照回滚，回滚失败则明确要求人工核验。 恢复只改文件，不自行重新启动终端任务。
+   * EN: Restores under a run guard and idempotent command. First snapshots current content, then replaces session/business files and verifies workspace/rollout. Failure attempts rollback from that snapshot; failed rollback requires manual verification. Restore changes files without restarting tasks.
    */
   async restore(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input),
@@ -2399,7 +2608,10 @@ export class TerminalMaintenance {
           if (revision !== plan.view.revision)
             fail('恢复预览后会话或工作区变化，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
           const beforeId = id();
-          // 即使后续复制失败，恢复前快照仍保留，供自动回滚失败后人工恢复。
+          /**
+           * 即使后续复制失败，恢复前快照仍保留，供自动回滚失败后人工恢复。
+           * EN: Retains the pre-restore snapshot even if later copies fail, enabling manual recovery when automatic rollback fails.
+           */
           const before = this.publish(snapshot, current.files, current.excluded, beforeId),
             source = secure(this.store.directory, 'maintenance/backups/' + backup.id),
             rollback = secure(this.store.directory, 'maintenance/backups/' + beforeId);
@@ -2446,7 +2658,10 @@ export class TerminalMaintenance {
   }
 }
 
-/** 注册扫描/预览与应用两类入口；请求断开仅取消只读扫描，持久命令的幂等结果由各应用方法维护。 */
+/**
+ * 注册扫描/预览与应用两类入口；请求断开仅取消只读扫描，持久命令的幂等结果由各应用方法维护。
+ * EN: Registers read-only scans/previews separately from applies; disconnects cancel only scans, while apply methods preserve durable idempotent receipts.
+ */
 export function registerTerminalMaintenance(
   app: FastifyInstance,
   store: Store,
@@ -2463,14 +2678,25 @@ export function registerTerminalMaintenance(
       .parse(request.body ?? {});
     return maintenance.cancelScan(request.params.id);
   });
-  // HTTP 读请求中断时停止后续磁盘扫描，finally 撤销监听，避免完成后的连接关闭影响已结束操作。
+  /**
+   * HTTP 读请求中断时停止后续磁盘扫描，finally 撤销监听，避免完成后的连接关闭影响已结束操作。
+   * EN: Stops further disk scans on read-request abort and removes listeners in finally so later connection closure cannot affect finished work.
+   */
   const readonly = async (
     request: { raw: import('node:http').IncomingMessage },
     reply: { raw: import('node:http').ServerResponse },
     action: (options: ScanOptions) => Promise<unknown>,
   ) => {
     const controller = new AbortController(),
+      /**
+       * 取消当前维护 HTTP 的只读扫描控制器。
+       * EN: Aborts the current maintenance HTTP read-only scan.
+       */
       abort = () => controller.abort(),
+      /**
+       * 响应未写完而提前关闭时取消扫描，正常完成不影响已经交付的计划。
+       * EN: Cancels scans on premature response closure without affecting normally delivered plans.
+       */
       close = () => {
         if (!reply.raw.writableEnded) abort();
       };

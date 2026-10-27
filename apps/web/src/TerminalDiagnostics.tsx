@@ -1,4 +1,11 @@
-/* 展示终端诊断及修复选项。 */
+/**
+ * 展示终端诊断及修复选项。
+ *
+ * EN: Displays terminal diagnostics and repair options.
+ *
+ * 本模块按模板及可选项目读取配置和运行环境诊断，并把明确修复目标交给父层导航；诊断绑定配置指纹，配置变更或显式复查触发重新核验，不在界面内直接执行修复。
+ * EN: Reads configuration/runtime diagnostics for a template and optional project, forwarding explicit repair targets to parent navigation. Results bind to a configuration fingerprint and changes/rechecks rerun verification; repairs are not executed here.
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { TerminalProfileDiagnostics } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -29,6 +36,8 @@ const stageLabels: Record<string, string> = {
 /**
  * 按模板及可选项目检查配置来源与本地运行环境，并将修复目标交给上层导航。
  * 配置变化时取消旧检查，外部 recheckRequest 可触发一次重新检查。
+ *
+ * EN: Checks configuration provenance and local readiness by template/optional project, passing repair targets to parent navigation. Configuration changes cancel old probes; recheckRequest triggers a new one.
  */
 export function TerminalDiagnostics({
   profileId,
@@ -56,7 +65,11 @@ export function TerminalDiagnostics({
     [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const checkedRequest = useRef(0);
-  // 模板、项目或配置指纹改变后旧诊断不再适用，取消请求并清空其结果。
+  /**
+   * 模板、项目或配置指纹改变后旧诊断不再适用，取消请求并清空其结果。
+   *
+   * EN: Template/project/fingerprint changes invalidate old diagnostics, cancel reads, and clear results.
+   */
   useEffect(() => {
     controller.current?.abort();
     setResult(null);
@@ -64,13 +77,21 @@ export function TerminalDiagnostics({
     setBusy(false);
     return () => controller.current?.abort();
   }, [configKey, profileId, projectId]);
-  // 外层修复完成可递增请求号；每个请求号只消费一次，忙碌时等待当前检查结束。
+  /**
+   * 外层修复完成可递增请求号；每个请求号只消费一次，忙碌时等待当前检查结束。
+   *
+   * EN: Outer repair completion may increment the request number; each is consumed once after busy work settles.
+   */
   useEffect(() => {
     if (!recheckRequest || checkedRequest.current === recheckRequest || disabled || busy) return;
     checkedRequest.current = recheckRequest;
     void check().finally(() => rechecked?.());
   }, [recheckRequest, disabled, busy]);
-  /** 先读取配置诊断，再检查运行环境；环境检查失败仍展示已取得的配置诊断。 */
+  /**
+   * 先读取配置诊断，再检查运行环境；环境检查失败仍展示已取得的配置诊断。
+   *
+   * EN: Reads configuration diagnosis before readiness; readiness failure still shows the obtained configuration evidence.
+   */
   async function check() {
     if (disabled || busy) return;
     const request = new AbortController();
@@ -109,7 +130,11 @@ export function TerminalDiagnostics({
       if (!request.signal.aborted) setBusy(false);
     }
   }
-  /** 把诊断结果中的实际应用和连接身份传给外层导航，不直接执行修复或修改配置。 */
+  /**
+   * 把诊断结果中的实际应用和连接身份传给外层导航，不直接执行修复或修改配置。
+   *
+   * EN: Passes actual app/connection identities to parent navigation without repairing or editing settings directly.
+   */
   function target(kind: TerminalDiagnosticRepair['kind']) {
     const configuration = result!.configuration;
     repair?.({
@@ -120,7 +145,11 @@ export function TerminalDiagnostics({
       ...(projectId ? { projectId } : {}),
     });
   }
-  /** 将已知配置问题映射到对应修复入口，其他问题回到模板设置。 */
+  /**
+   * 将已知配置问题映射到对应修复入口，其他问题回到模板设置。
+   *
+   * EN: Maps recognized configuration issues to repair destinations; other issues return to template settings.
+   */
   function issueKind(code: string): TerminalDiagnosticRepair['kind'] {
     if (code === 'TERMINAL_PROJECT_CONNECTION_FALLBACK') return 'project';
     if (['API_KEY_MISSING', 'TERMINAL_CREDENTIAL_MISSING'].includes(code) && result?.configuration.connection)

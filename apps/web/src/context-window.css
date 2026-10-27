@@ -1,4 +1,7 @@
-/* 定义 context-window 对应界面的样式与布局。 */
+/*
+ * 上下文窗口设置：组织窗口预设、自定义容量、保留分配、用量指标和详情弹层。容器规则支持嵌入窄栏，短窗口把滚动移到弹窗并固定标题，以保持表单和操作入口可达。
+ * EN: Context-window settings: organizes presets, custom capacity, reservations, usage metrics, and detail popovers. Container rules support narrow embedding; short windows move scrolling to the modal with a sticky heading to keep controls reachable.
+ */
 .context-policy-editor {
   display: grid;
   gap: var(--space-2);
@@ -68,7 +71,10 @@
   color: var(--muted);
   opacity: 0.62;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .context-policy-editor :is(button, select, input):focus-visible,
 .context-meter:focus-visible,
 .context-window-details summary:focus-visible,
@@ -344,7 +350,10 @@
 .context-compact-setup[open] > summary {
   margin-bottom: var(--space-3);
 }
-/* 缩小窗口指标控件的高度与间距。 */
+/*
+ * 缩小窗口指标控件的高度与间距。
+ * EN: Reduces window-metric control height and spacing.
+ */
 @media (max-width: 760px) {
   .context-meter {
     min-height: var(--control-md);
@@ -359,7 +368,10 @@
     gap: var(--space-2);
   }
 }
-/* 压缩用量文字，并调整剩余容量区域的列布局。 */
+/*
+ * 压缩用量文字，并调整剩余容量区域的列布局。
+ * EN: Compacts usage text and changes the remaining-capacity column layout.
+ */
 @media (max-width: 400px) {
   .context-usage-summary strong {
     font-size: var(--font-2xl);
@@ -378,9 +390,15 @@
     gap: var(--space-3);
   }
 }
-/* 短窗口将弹窗改为外层滚动，并固定标题以保留上下文。 */
+/*
+ * 短窗口将弹窗改为外层滚动，并固定标题以保留上下文。
+ * EN: Uses outer modal scrolling with a sticky heading in short windows to retain context.
+ */
 @media (max-height: 500px) {
-  /* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+  /*
+   * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+   * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+   */
   .modal.context-window-modal {
     overflow: auto;
     overscroll-behavior: contain;

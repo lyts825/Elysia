@@ -1,4 +1,7 @@
-/* 定义应用使用的全局基础样式。 */
+/*
+ * 应用全局基础样式：导入共享变量，定义基础控件、应用壳、侧栏、会话、任务工具栏、表单与弹窗等公共结构。宽度/高度断点调整导航与工具栏，减少动态、透明度及高对比度规则覆盖公共材质；功能模块在各自样式文件继续补充。
+ * EN: Application-wide foundation: imports tokens and defines controls, shell, sidebar, conversations, run toolbars, forms, and modals. Width/height breakpoints adapt navigation/toolbars; motion/transparency/contrast preferences override shared materials, with feature files adding local rules.
+ */
 @import './design-tokens.css';
 
 :root {
@@ -38,7 +41,10 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible,
@@ -280,7 +286,10 @@ a {
   font-variant-numeric: tabular-nums;
   font-size: var(--font-xs);
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-list {
   flex: 0 1 auto;
   max-height: 27vh;
@@ -913,7 +922,10 @@ a {
   background: var(--danger);
   border-color: var(--danger);
 }
-/* 中等宽度允许运行工具栏与控制项换行，并减少标签留白。 */
+/*
+ * 中等宽度允许运行工具栏与控制项换行，并减少标签留白。
+ * EN: Allows run-toolbar controls to wrap and reduces label padding at medium widths.
+ */
 @media (max-width: 1050px) {
   .run-toolbar {
     flex-wrap: wrap;
@@ -926,7 +938,14 @@ a {
     padding: var(--space-2) var(--space-5);
   }
 }
-/* 窄屏隐藏空间选择器，并允许管理表单字段收缩。 */
+/*
+ * 窄屏隐藏空间选择器，并允许管理表单字段收缩。
+ * EN: Hides the workspace selector and lets management fields shrink on narrow screens.
+ */
+/*
+ * 此宽度下顶栏空间不足，后续规则逐步把导航改为覆盖式布局；断点仅调整呈现，菜单开关仍由组件状态控制。
+ * EN: At this width, toolbar space is constrained and responsive rules adapt navigation toward an overlay; presentation changes here while components retain menu state.
+ */
 @media (max-width: 760px) {
   .space-selector {
     display: none;
@@ -1931,7 +1950,10 @@ a {
   padding: 3px 6px;
   border-radius: var(--radius-sm);
 }
-/* 较窄窗口收紧侧栏和顶部工具栏的宽度与内边距。 */
+/*
+ * 较窄窗口收紧侧栏和顶部工具栏的宽度与内边距。
+ * EN: Tightens sidebar/top-toolbar widths and padding in narrower windows.
+ */
 @media (max-width: 1250px) {
   .sidebar {
     width: 244px;
@@ -1955,7 +1977,10 @@ a {
     justify-content: flex-start;
   }
 }
-/* 进一步收窄侧栏并减少详情内容留白。 */
+/*
+ * 进一步收窄侧栏并减少详情内容留白。
+ * EN: Further narrows the sidebar and reduces detail-content padding.
+ */
 @media (max-width: 1050px) {
   .sidebar {
     width: 232px;
@@ -1979,7 +2004,10 @@ a {
     font-size: var(--font-xs);
   }
 }
-/* 窄屏将侧栏改为可开合的固定导航，并调整遮罩和内容区域。 */
+/*
+ * 窄屏将侧栏改为可开合的固定导航，并调整遮罩和内容区域。
+ * EN: Makes the sidebar a toggleable fixed navigation panel and adjusts its scrim/content region on narrow screens.
+ */
 @media (max-width: 760px) {
   .sidebar {
     position: fixed;
@@ -2095,7 +2123,10 @@ a {
     max-width: none;
   }
 }
-/* 短窗口调整侧栏底部导航的尺寸、换行和缓存状态布局。 */
+/*
+ * 短窗口调整侧栏底部导航的尺寸、换行和缓存状态布局。
+ * EN: Adjusts sidebar-footer navigation size, wrapping, and cache-status layout in short windows.
+ */
 @media (max-height: 600px) {
   .sidebar-bottom {
     display: flex;
@@ -2121,7 +2152,10 @@ a {
     width: 100%;
   }
 }
-/* 极短窗口减少侧栏、品牌区和新建按钮的垂直留白。 */
+/*
+ * 极短窗口减少侧栏、品牌区和新建按钮的垂直留白。
+ * EN: Reduces vertical padding in the sidebar, brand area, and new-task button in very short windows.
+ */
 @media (max-height: 480px) {
   .sidebar {
     padding-top: 10px;
@@ -2156,7 +2190,10 @@ a {
     min-height: 64px;
   }
 }
-/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
+/*
+ * 遵循减少动态效果的系统偏好，限制此处动画或过渡。
+ * EN: Respects reduced-motion preferences by limiting animations or transitions here.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2166,7 +2203,10 @@ a {
     scroll-behavior: auto !important;
   }
 }
-/* 遵循减少透明效果的系统偏好，调整此处的透明材质。 */
+/*
+ * 遵循减少透明效果的系统偏好，调整此处的透明材质。
+ * EN: Respects reduced-transparency preferences by changing translucent materials here.
+ */
 @media (prefers-reduced-transparency: reduce) {
   .overlay {
     backdrop-filter: none !important;
@@ -2181,14 +2221,20 @@ a {
     min-width: var(--control-lg);
   }
 }
-/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
+/*
+ * 遵循更高对比度偏好，调整此处颜色、边框或透明度。
+ * EN: Respects higher-contrast preferences by adjusting colors, borders, or opacity here.
+ */
 @media (prefers-contrast: more) {
   .icon-button,
   .text-button {
     color: var(--accent);
   }
 }
-/* Local folders and subscription accounts. */
+/*
+ * 本地文件夹与订阅账号。
+ * EN: Local folders and subscription accounts.
+ */
 .folder-picker {
   width: 100%;
   margin-bottom: 18px;

@@ -1,5 +1,11 @@
-/* 定义 markdown 对应界面的样式与布局。 */
-/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
+/*
+ * Markdown 文档排版：统一标题、段落、列表、引用、代码、链接、表格和媒体的层级与间距。长文本可断行，代码和表格可横向阅读；窄屏缩小字号和单元格留白而保留内容。
+ * EN: Markdown typography: unifies heading, paragraph, list, quote, code, link, table, and media hierarchy/spacing. Long text wraps while code/tables remain scrollable; narrow screens reduce type/cell padding without dropping content.
+ */
+/*
+ * 允许长内容在必要时断行，避免无空格的文本撑开容器。
+ * EN: Wraps long content when needed so unspaced text cannot force the container wider.
+ */
 .markdown-document {
   min-width: 0;
   max-width: 100%;
@@ -151,7 +157,10 @@
   background: var(--surface-hover);
   color: var(--text);
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .markdown-document .markdown-code-block pre {
   margin: 0;
   padding: var(--space-3) 14px;
@@ -239,7 +248,10 @@
   white-space: normal;
   color: inherit;
 }
-/* 窄屏缩小文档字体和表格单元格留白。 */
+/*
+ * 窄屏缩小文档字体和表格单元格留白。
+ * EN: Reduces document font size and table-cell padding on narrow screens.
+ */
 @media (max-width: 560px) {
   .markdown-document {
     font-size: var(--font-md);

@@ -1,4 +1,8 @@
-/* 提供项目计划的导入和导出操作。 */
+/**
+ * 提供项目计划的导入和导出操作。
+ * 提供计划文件预览、导入前对比、明确确认和导出入口，向导航层暴露预览生命周期；解析和应用由传输模块完成。
+ * EN: Imports and exports reusable project plan files. Provides plan-file preview, preflight comparison, acknowledgement, and export controls and exposes preview lifecycle to navigation; transfer helpers parse and apply plans.
+ */
 import { useEffect, useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { PROJECT_BOARD_DRAFT_LIMIT, type ProjectBoardEdit } from './ProjectBoardDraft';
 import {
@@ -15,6 +19,7 @@ export type PlanImportLifecycle = { hasPending: () => boolean; discard: () => vo
  * 在当前编辑计划上导入或导出可复用计划文件，读取本身只形成预览，不改变草稿。
  * 确认键同时包含当前编辑内容和导入内容，任一变化都撤销确认；应用还要满足保留原稿后的
  * 总容量检查。lifecycle 向外层暴露未处理预览，跨页面离开时先由导航门禁处理。
+ * EN: Reading creates preview only. Confirmation binds current edit and import, invalidating on changes. Applying includes retained-original capacity checks. Expose pending lifecycle to outer navigation guards before leaving.
  */
 export function ProjectPlanTransfer({
   projectId,
@@ -49,7 +54,15 @@ export function ProjectPlanTransfer({
   useImperativeHandle(
     lifecycle,
     () => ({
+      /**
+       * 向导航协调器同步返回是否存在待处理的导入预览，读取ref避免闭包滞后。
+       * EN: Returns whether an import preview is pending to the navigation coordinator, using a ref to avoid stale closure state.
+       */
       hasPending: () => pending.current,
+      /**
+       * 增加读取代次并丢弃当前导入预览、确认和读取标志，使旧文件读取即使完成也不会恢复预览。
+       * EN: Advances the read generation and discards the import preview, acknowledgement, and reading flag so an old file read cannot restore the preview.
+       */
       discard: () => {
         generation.current++;
         pending.current = false;
@@ -69,7 +82,10 @@ export function ProjectPlanTransfer({
       generation.current++;
     };
   }, [projectId]);
-  /** 严格 UTF-8 解码并校验格式/大小，generation 使重选文件或离开后的旧 File 读取失效。 */
+  /**
+   * 严格 UTF-8 解码并校验格式/大小，generation 使重选文件或离开后的旧 File 读取失效。
+   * EN: Decode strict UTF-8 and validate size/format; generation invalidates old File reads after reselection/leaving.
+   */
   const read = async (file: File) => {
     const request = ++generation.current;
     setPreview(undefined);
@@ -392,6 +408,10 @@ export function ProjectPlanTransfer({
   );
 }
 
+/**
+ * 完整展示当前或导入侧的交付项名称、说明、交付物与验收要求，使用序号和来源标签辅助逐项比较。
+ * EN: Displays the full current/imported deliverable title, description, outputs, and acceptance criteria with index and side labels for item-by-item comparison.
+ */
 function PlanItemText({
   item,
   index,

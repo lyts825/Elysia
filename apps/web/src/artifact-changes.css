@@ -1,9 +1,15 @@
-/* 定义 artifact-changes 对应界面的样式与布局。 */
+/*
+ * 产物版本变更面板：以自适应网格并列版本摘要，长名称和变更正文在各自区域换行或滚动。这样版本卡片可随容器收缩，阅读大段差异时不会把外层面板不断推长。
+ * EN: Artifact-change panel: places version summaries in an adaptive grid and wraps/scrolls names and change bodies locally. Cards can shrink with their container while long differences do not continually extend the outer panel.
+ */
 .artifact-changes {
   color: var(--text);
   background: var(--surface);
 }
-/* 列数随容器宽度变化；每列以 14rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 14rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 14rem minimum per column without exceeding a narrower container.
+ */
 .artifact-change-versions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
@@ -25,7 +31,10 @@
   font-size: var(--font-md);
   line-height: var(--leading-heading);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .artifact-change-reading {
   max-height: min(10rem, 40dvh);
   overflow: auto;

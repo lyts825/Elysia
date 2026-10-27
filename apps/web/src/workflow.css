@@ -1,4 +1,7 @@
-/* 定义 workflow 对应界面的样式与布局。 */
+/*
+ * 工作流公共内容：统一任务确认、人工审阅、备注、历史、材料和动作区域的排版。长证据与历史局部滚动，窄屏调整文件和分页布局，子模块继续补充各自状态样式。
+ * EN: Shared workflow content: unifies task confirmation, user review, notes, history, materials, and actions. Long evidence/history scroll locally; narrow rules adapt file/paging layouts while feature modules add state-specific styling.
+ */
 .workflow-body {
   min-height: 0;
 }
@@ -186,7 +189,10 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .workflow-preview {
   min-height: 180px;
   max-height: 480px;
@@ -256,7 +262,10 @@
 .workflow-modal .modal-footer {
   flex-wrap: wrap;
 }
-/* 窄屏收紧复核内容留白，并调整文件和分页操作布局。 */
+/*
+ * 窄屏收紧复核内容留白，并调整文件和分页操作布局。
+ * EN: Tightens review-content padding and changes file/pagination action layout on narrow screens.
+ */
 @media (max-width: 480px) {
   .workflow-defaults,
   .workflow-criterion,
@@ -266,7 +275,10 @@
   .workflow-file {
     align-items: flex-start;
   }
-  /* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+  /*
+   * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
+   * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+   */
   .workflow-pagination-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

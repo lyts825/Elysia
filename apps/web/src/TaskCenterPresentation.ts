@@ -1,4 +1,11 @@
-/* 生成任务中心分类和条目的显示信息。 */
+/**
+ * 生成任务中心分类和条目的显示信息。
+ *
+ * EN: Builds display labels and actions for task-center categories and items.
+ *
+ * 本模块把任务中心列表投影转换为分类标签、状态、提示和动作文案；它保留读取异常和待核验状态的区别，不能替代打开任务时的详情复核。
+ * EN: Maps task-center list projections to category labels, statuses, hints, and actions. It preserves distinctions between read failures and verification needs; opening a task still requires a fresh detail check.
+ */
 import type { TaskCenterCategory, TaskCenterItem } from '../../../packages/contracts/src/task-center';
 
 export const taskCenterCategoryLabels: Record<TaskCenterCategory, string> = {
@@ -31,6 +38,8 @@ const reasons: Record<string, { action: string; hint: string }> = {
 /**
  * 把列表快照转换为状态标签、动作和提示，区分执行结束与用户复核。
  * 持久暂停优先显示停止调度原因，读取异常不伪造执行状态；真正打开后仍须重新读取详情决定目标。
+ *
+ * EN: Maps a row snapshot to labels/actions while separating execution end from human review. Durable holds take precedence, and read errors never fabricate execution state; opening still rereads detail.
  */
 export function taskCenterPresentation(item: TaskCenterItem): {
   status: string;
@@ -39,7 +48,11 @@ export function taskCenterPresentation(item: TaskCenterItem): {
   target: TaskCenterCategory | 'review';
   review: boolean;
 } {
-  // 读取异常与可复核状态优先显示；其余根据分类和等待原因生成动作提示。
+  /**
+   * 读取异常与可复核状态优先显示；其余根据分类和等待原因生成动作提示。
+   *
+   * EN: Read errors and reviewable state take display priority; otherwise category and wait reason determine guidance.
+   */
   const status = item.readIssue
     ? taskCenterCategoryLabels.unavailable
     : item.status === 'CANCELLED'

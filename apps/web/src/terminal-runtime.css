@@ -1,4 +1,7 @@
-/* 定义 terminal-runtime 对应界面的样式与布局。 */
+/*
+ * 终端运行快照：组织队列、执行阶段、阶段时间和资源预约，摘要与展开详情分层。完整任务名和资源身份可聚焦阅读，长状态在有界区域滚动，暂留资源可与活动任务分别呈现。
+ * EN: Terminal runtime snapshot: arranges queues, phases, times, and reservations with summary/detail hierarchy. Focusable full names/resource identities and bounded state reading support showing held resources separately from active work.
+ */
 .terminal-activity.terminal-runtime {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -16,7 +19,10 @@
   font-size: var(--font-sm);
   font-weight: 400;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .terminal-runtime > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
@@ -140,7 +146,10 @@
   margin-top: var(--space-3);
   max-width: 100%;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .terminal-runtime .terminal-runtime-reading {
   display: block;
   max-height: min(10rem, 36dvh);

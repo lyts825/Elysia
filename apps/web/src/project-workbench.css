@@ -1,5 +1,11 @@
-/* 定义 project-workbench 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 项目工作台框架：统一项目标题、标签、分区、统计、表单和交付项编辑的基本排版。内容可滚动，容器规则调整嵌入分区，视口规则压缩窄屏留白并保留可聚焦阅读区。
+ * EN: Project-workbench foundation: unifies project headings, tabs, sections, metrics, forms, and delivery-item editing. Scrollable content, container adaptations, and narrow-screen spacing preserve focusable reading across embedded sections.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-workbench {
   flex: 1;
   min-height: 0;
@@ -344,7 +350,10 @@
   color: var(--danger);
   overflow-wrap: anywhere;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .project-workbench button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -410,7 +419,10 @@
     padding: var(--space-4);
   }
 }
-/* 窄屏减少工作台和标签的留白，并调整统计区域的网格。 */
+/*
+ * 窄屏减少工作台和标签的留白，并调整统计区域的网格。
+ * EN: Reduces workbench/tab padding and changes the statistics grid on narrow screens.
+ */
 @media (max-width: 480px) {
   .project-workbench {
     padding: var(--space-5) var(--space-3) var(--space-10);

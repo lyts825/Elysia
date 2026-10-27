@@ -1,4 +1,7 @@
-/* 定义 project-item-setup 对应界面的样式与布局。 */
+/*
+ * 项目条目启动配置：突出目标标题、版本依据、配置内容和读取错误。版本信息双列对照并允许内容收缩，较长说明独立滚动，使启动前依据可完整核对。
+ * EN: Project-item setup: emphasizes target title, revision basis, configuration, and read failures. Shrinkable version-comparison columns and bounded text reading preserve complete prelaunch evidence.
+ */
 .project-item-setup,
 .project-item-setup-error {
   min-width: 0;
@@ -9,7 +12,10 @@
   margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .project-item-setup-reading {
   min-width: 0;
   max-height: min(14rem, 42dvh);
@@ -26,7 +32,10 @@
   margin: var(--space-1) 0 var(--space-3);
   font-weight: 600;
 }
-/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+ */
 .project-item-setup-versions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

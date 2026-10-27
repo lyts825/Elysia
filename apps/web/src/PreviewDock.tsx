@@ -1,4 +1,8 @@
-/* 提供预览停靠区域。 */
+/**
+ * 提供预览停靠区域。
+ * 管理对话与预览分栏的尺寸、拖动、键盘调整及退出焦点，持久化比例；不负责读取具体预览文件。
+ * EN: Provides the preview docking region. Manages conversation/preview split size, dragging, keyboard resizing, exit focus, and persisted ratio without reading preview files.
+ */
 import { Activity, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Artifact } from '../../../packages/contracts/src/index';
 import { ArtifactFilePreview, type TerminalLogContext } from './ArtifactFilePreview';
@@ -8,13 +12,23 @@ import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';
 import './preview-dock.css';
 import { readingCheckpoint, saveReadingCheckpoint } from './ReadingCheckpoint';
 
+/**
+ * 从本地存储恢复严格位于0与1之间的分栏比例；非法或不可读时回退为均分布局。
+ * EN: Restores a split ratio strictly between zero and one from localStorage, falling back to equal columns for invalid or unreadable values.
+ */
 function savedRatio(ratioKey: string) {
-  // 只接受 0 到 1 之间的比例；本地存储不可用时回退到均分。
+  /**
+   * 只接受 0 到 1 之间的比例；本地存储不可用时回退到均分。
+   * EN: Accept ratios from zero to one; use equal split when storage is unavailable.
+   */
   try {
     const value = Number(localStorage.getItem(ratioKey));
     if (Number.isFinite(value) && value > 0 && value < 1) return value;
   } catch {
-    // The split still works when browser storage is unavailable.
+    /**
+     * 浏览器存储不可用时，分屏仍可工作。
+     * EN: The split still works when browser storage is unavailable.
+     */
   }
   return 0.5;
 }
@@ -23,6 +37,7 @@ function savedRatio(ratioKey: string) {
  * 为工作区预览和产物预览提供可切换/分屏的停靠容器。已访问视图由 Activity 保留，
  * 窄屏或展开模式将会话设为 inert 并接管焦点；退出后恢复原交互状态。
  * 分屏比例按入口保存，当前产物、视图及展开状态按会话检查点保存；旧产物可按 ID 单独补读。
+ * EN: Provide switchable/split workspace and artifact views. Activity retains visited panels. Narrow/expanded mode makes conversation inert and manages focus, restoring interaction on exit. Persist ratio per surface and artifact/view/expanded state per checkpoint; older artifact IDs may be read separately.
  */
 export function PreviewDock({
   children,
@@ -74,7 +89,10 @@ export function PreviewDock({
   const [lastArtifactId, setLastArtifactId] = useState(selectedArtifactId || saved?.artifactId);
   const handledWorkspaceRequest = useRef(saved?.requestId || '');
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
-  // 两个阅读区各需至少 320 px，另计分隔条；不足时切换为单面板模式。
+  /**
+   * 两个阅读区各需至少 320 px，另计分隔条；不足时切换为单面板模式。
+   * EN: Each pane requires 320 pixels plus the separator; fall back to one pane if insufficient.
+   */
   const single = available < 668;
   const usable = Math.max(0, available - 8);
   const minimum = 320;
@@ -127,6 +145,10 @@ export function PreviewDock({
 
   useLayoutEffect(() => {
     const layout = panel.current!.parentElement!;
+    /**
+     * 读取分栏父容器当前宽度并发布可用尺寸，由ResizeObserver在布局变化时重新调用。
+     * EN: Reads the split container width and publishes available space, with ResizeObserver rerunning it after layout changes.
+     */
     const measure = () => setAvailable(layout.clientWidth);
     measure();
     const observer = new ResizeObserver(measure);
@@ -195,7 +217,10 @@ export function PreviewDock({
       try {
         localStorage.setItem(ratioKey, String(ratio));
       } catch {
-        // Resizing is usable without persisted preferences.
+        /**
+         * 无需已保存偏好也可调整分屏。
+         * EN: Resizing is usable without persisted preferences.
+         */
       }
     }, 150);
     return () => window.clearTimeout(timer);
@@ -207,9 +232,17 @@ export function PreviewDock({
     }
   }, [single, wide, present]);
 
+  /**
+   * 将请求的面板像素宽度夹到当前最小最大范围，再转换为比例，避免容器缩小时拖出可用区域。
+   * EN: Clamps the requested panel width to current bounds and converts it to a ratio, preventing a drag beyond usable space after container shrinkage.
+   */
   const resize = (next: number) => {
     if (usable > 0) setRatio(Math.max(minimum, Math.min(maximum, next)) / usable);
   };
+  /**
+   * 关闭预览并在当前入口内归还预览开关焦点；preventScroll避免分栏收起后页面跳动。
+   * EN: Closes the preview and restores focus to its toggle in the current surface, using preventScroll to avoid a jump after collapse.
+   */
   const dismiss = () => {
     close();
     surfaceRoot?.current?.querySelector<HTMLElement>('.preview-toggle')?.focus({ preventScroll: true });

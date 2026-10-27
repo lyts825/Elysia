@@ -1,4 +1,7 @@
-/* 定义 review-note-linking 对应界面的样式与布局。 */
+/*
+ * 复核备注关联：组织验收标准选项及关联依据，以实际复选框状态突出选中标准。长关联说明提供局部滚动阅读，避免备注正文挤掉标准选择控件。
+ * EN: Review-note linking: organizes criterion choices and linking evidence, highlighting actual checkbox selection. Bounded long-text reading keeps note bodies from displacing criterion controls.
+ */
 .criterion-picker {
   min-width: 0;
   margin: var(--space-3) 0;
@@ -24,7 +27,10 @@
 .criterion-picker-option .workflow-note-choice {
   margin: 0 0 var(--space-2);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .review-link-reading {
   max-height: min(14rem, 42dvh);
   overflow: auto;

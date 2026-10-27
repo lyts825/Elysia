@@ -1,5 +1,13 @@
+<!--
+  512×512 应用图标：圆角底板叠加玫瑰渐变和日光，再通过可复用 emblem 路径绘制花叶、丝带与细节。defs 中的渐变和阴影仅供本文件引用，变换把小坐标标识放大到图标画布，保持主体比例。
+  EN: 512×512 application icon: layers rose/sunlight over a rounded tile, then draws the reusable emblem, foliage, ribbon, and details. Local defs provide gradients/shadow; transforms scale the small-coordinate mark while preserving its proportions.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <title>Elysia · 花间日光</title>
+<!--
+  复用渐变、阴影与标识几何，use 仅引用本地 ID，避免不同尺寸图层重复维护花形。
+  EN: Shares gradients, shadow, and emblem geometry through local IDs so differently scaled layers reuse the same flower shape.
+-->
   <defs>
     <linearGradient id="rose" x1="80" y1="30" x2="405" y2="498" gradientUnits="userSpaceOnUse">
       <stop stop-color="#ebc1b9"/><stop offset=".5" stop-color="#cf9b9f"/><stop offset="1" stop-color="#a8788b"/>

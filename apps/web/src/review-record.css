@@ -1,4 +1,7 @@
-/* 定义 review-record 对应界面的样式与布局。 */
+/*
+ * 复核条目详情：展示记录标题、结论摘要、来源字段及可展开原文。长身份和原文采用可聚焦阅读区，保持证据完整性，同时使元数据和结论易于区分。
+ * EN: Review-record detail: presents headings, conclusions, provenance fields, and expandable originals. Focusable regions preserve long identity/source evidence while distinguishing metadata from conclusions.
+ */
 .review-entry-record {
   min-width: 0;
 }
@@ -44,13 +47,19 @@
   overflow-wrap: anywhere;
   line-height: var(--leading-body);
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .review-entry-record .review-entry-time {
   max-height: min(8rem, 28dvh);
   overflow: auto;
   scrollbar-gutter: stable;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .review-entry-record .review-entry-time:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

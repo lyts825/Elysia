@@ -1,9 +1,16 @@
-/* 展示项目运行列表及状态。 */
+/**
+ * 展示项目运行列表及状态。
+ * 按项目目录展示运行及其执行、交付、复核状态，复用服务端状态标签；打开、归档和关联动作由父组件提供。
+ * EN: Displays paged project tasks and status. Displays project runs with execution/delivery/review status from server records; parent callbacks provide opening, archiving, and association actions.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-run-list.css';
-/** 将执行状态转为界面文案；未知或缺失状态明确显示为未知。 */
+/**
+ * 将执行状态转为界面文案；未知或缺失状态明确显示为未知。
+ * EN: Convert known states to labels and show unknown for missing/unrecognized status.
+ */
 export const executionLabel = (status: string | null) =>
   ({
     DRAFT: '待开始',
@@ -24,6 +31,7 @@ export const reviewLabels = {
 /**
  * 分页读取当前项目的任务，既可浏览也可作为交付项关联选择器。
  * 项目或查询变化清空游标，新读取取消旧请求；不可读记录仍显示缺口但禁止选择关联。
+ * EN: Browse or select runs for linking. Project/query changes reset cursors and cancel old reads. Keep unreadable gaps visible but disallow linking them.
  */
 export function ProjectRunList({
   projectId,

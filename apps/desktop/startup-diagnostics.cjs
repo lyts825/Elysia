@@ -1,4 +1,10 @@
-// 记录和读取桌面启动阶段诊断信息。
+/**
+ * 记录和读取桌面启动阶段诊断信息。
+ * EN: Record and read diagnostic information for desktop startup stages.
+ *
+ * 把启动阶段转换为有界诊断记录，保留可供设置页读取的信息；诊断写入不能替代真实启动完成判断。
+ * EN: Maintain bounded startup-stage records for the settings view; diagnostic writes do not themselves establish startup completion.
+ */
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -20,7 +26,10 @@ const stages = [
 ];
 const statuses = ['ok', 'skipped', 'error'];
 const LIMIT = 64 * 1024;
-/** 只保留允许的阶段、状态和有界耗时，忽略无效输入。 */
+/**
+ * 只保留允许的阶段、状态和有界耗时，忽略无效输入。
+ * EN: Keep only recognized stages, statuses, and bounded elapsed times; discard invalid input.
+ */
 function cleanStage(value) {
   if (
     !value ||
@@ -40,7 +49,10 @@ function cleanStage(value) {
     ...(value.surface ? { surface: value.surface } : {}),
   };
 }
-/** 校验历史记录并限制阶段数，不直接信任磁盘上的 JSON。 */
+/**
+ * 校验历史记录并限制阶段数，不直接信任磁盘上的 JSON。
+ * EN: Validate persisted records and limit their stage count instead of trusting on-disk JSON.
+ */
 function cleanRecord(value) {
   if (
     !value ||
@@ -63,6 +75,9 @@ function cleanRecord(value) {
 /**
  * 汇总本次启动阶段与最多 20 条历史记录。写入串行执行并通过临时文件替换，
  * renderer 上报的时间转换为相对启动耗时；异常诊断数据不会阻止应用启动。
+ * EN: Combine this startup with at most twenty retained records. Serialize writes through
+ * temporary-file replacement and convert renderer timestamps into startup-relative durations.
+ * Invalid diagnostic data must not block startup.
  */
 function createStartupDiagnostics(directory, options = {}) {
   const now = performance.timeOrigin + performance.now();
@@ -91,10 +106,17 @@ function createStartupDiagnostics(directory, options = {}) {
           .filter((record) => record.id !== current.id);
     } catch {}
   })();
+  /**
+   * 返回本次记录与旧历史的有界快照，不等待写盘。
+   * EN: Return a bounded snapshot of current and prior records without waiting for persistence.
+   */
   const snapshot = () => ({ version: 1, records: [cleanRecord(current), ...prior].slice(0, 20) });
   /**
    * 将持久化排到前次写入之后，历史加载完成后再取快照；总大小超限时先丢弃最旧记录。
    * 写入错误被观察但不阻塞启动，下一次阶段记录仍可排入队列重试保存。
+   * EN: Queue persistence after the previous write and load history before taking a snapshot. Drop the
+   * oldest records first when the size limit is exceeded. Observe write failures without blocking
+   * startup, and let later stages attempt persistence again.
    */
   function schedule() {
     writing = writing
@@ -122,6 +144,8 @@ function createStartupDiagnostics(directory, options = {}) {
     writing.catch(() => {});
   }
   // 同一阶段、入口和状态组合只记录一次，限制单次启动的记录数量。
+  // EN: Record each stage/surface/status combination once and bound the number of stages for one
+  // startup.
   function record(value) {
     const normalized = cleanStage(value);
     if (!normalized) return false;
@@ -135,11 +159,18 @@ function createStartupDiagnostics(directory, options = {}) {
   record({ stage: 'launch-entry', status: 'ok', elapsedMs: 0 });
   if (Array.isArray(options.marks)) for (const mark of options.marks.slice(0, 12)) record(mark);
   return {
-    /** 主进程阶段用同一时钟计算相对耗时，返回是否实际加入了新记录。 */
+    /**
+     * 主进程阶段用同一时钟计算相对耗时，返回是否实际加入了新记录。
+     * EN: Measure main-process stages with the same clock and return whether a new record was added.
+     */
     mark(stage, status = 'ok') {
       return record({ stage, status, elapsedMs: performance.timeOrigin + performance.now() - started });
     },
-    /** 接收页面的绝对高精度时间，拒绝明显超前的值，再转换为本次启动相对时间。 */
+    /**
+     * 接收页面的绝对高精度时间，拒绝明显超前的值，再转换为本次启动相对时间。
+     * EN: Accept renderer absolute high-resolution timestamps, reject clearly future values, and convert
+     * them to elapsed startup time.
+     */
     recordFromRenderer(value) {
       if (
         !value ||
@@ -155,12 +186,20 @@ function createStartupDiagnostics(directory, options = {}) {
         elapsedMs: value.atEpoch - started,
       });
     },
-    /** 等待历史文件加载后返回内存快照，不要求此前每个阶段写入都已落盘。 */
+    /**
+     * 等待历史文件加载后返回内存快照，不要求此前每个阶段写入都已落盘。
+     * EN: Wait for history loading and return the in-memory snapshot; earlier scheduled writes need not
+     * have reached disk yet.
+     */
     async read() {
       await loaded;
       return snapshot();
     },
-    /** 关闭前尽力等待当前写队列；诊断失败不作为应用无法退出的理由。 */
+    /**
+     * 关闭前尽力等待当前写队列；诊断失败不作为应用无法退出的理由。
+     * EN: Attempt to drain the current write queue before closing; diagnostic failure must not prevent
+     * application exit.
+     */
     async flush() {
       await writing.catch(() => {});
     },

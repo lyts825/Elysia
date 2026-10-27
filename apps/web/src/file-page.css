@@ -1,4 +1,7 @@
-/* 定义 file-page 对应界面的样式与布局。 */
+/*
+ * 文件分页控制：展示当前范围、页码输入、前后页动作和定位反馈。长范围信息支持聚焦及滚动阅读，窄屏重新安排动作以保持分页按钮和页码输入可用。
+ * EN: File pagination: presents current ranges, page input, previous/next actions, and navigation feedback. Long ranges support focused scrolling; narrow screens reposition actions to keep paging/input usable.
+ */
 .file-page-controls {
   display: flex;
   align-items: center;
@@ -80,7 +83,10 @@
   color: var(--secondary);
   line-height: var(--leading-body);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .file-page-detail-reading {
   max-height: clamp(8rem, 30dvh, 16rem);
   overflow: auto;
@@ -89,7 +95,10 @@
   margin-top: var(--space-2);
   line-height: var(--leading-body);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .file-page-detail-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -111,7 +120,10 @@
 .file-page-detail p {
   margin: var(--space-2) 0 0;
 }
-/* 窄屏减少分页控件的水平留白并调整操作区位置。 */
+/*
+ * 窄屏减少分页控件的水平留白并调整操作区位置。
+ * EN: Reduces pagination horizontal spacing and repositions actions on narrow screens.
+ */
 @media (max-width: 420px) {
   .file-page-controls {
     padding-inline: var(--space-3);

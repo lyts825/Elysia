@@ -1,4 +1,7 @@
-/* 定义 project-schedules 对应界面的样式与布局。 */
+/*
+ * 项目定时任务：组织任务列表、配置模板、统计、编辑字段与操作提示。不同断点分别重排统计和配置网格，使较窄工作台仍能展示完整配置及启停反馈。
+ * EN: Project schedules: arranges schedule lists, templates, statistics, fields, and action feedback. Separate breakpoints adapt statistics/configuration grids so narrower workbenches retain complete settings and start/stop feedback.
+ */
 .project-schedules {
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
@@ -102,7 +105,10 @@
   gap: var(--space-3);
   margin: var(--space-4) 0;
 }
-/* 三列共享可用宽度；零最小值允许列在空间不足时收缩。 */
+/*
+ * 三列共享可用宽度；零最小值允许列在空间不足时收缩。
+ * EN: Splits available width between three columns; zero minimums let columns shrink when space is limited.
+ */
 .schedule-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -212,7 +218,10 @@
 .schedule-template {
   margin: var(--space-4) 0;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .schedule-template pre {
   max-height: 360px;
   overflow: auto;
@@ -247,7 +256,10 @@
 .schedule-delete .text-button {
   color: var(--danger);
 }
-/* 窄屏调整定时任务统计列，将各指标内容横向排列。 */
+/*
+ * 窄屏调整定时任务统计列，将各指标内容横向排列。
+ * EN: Changes schedule-stat columns and arranges each metric horizontally on narrow screens.
+ */
 @media (max-width: 480px) {
   .schedule-metrics {
     grid-template-columns: 1fr;
@@ -266,7 +278,10 @@
     grid-template-columns: 1fr;
   }
 }
-/* 较窄窗口减少定时面板的内边距并调整配置字段网格。 */
+/*
+ * 较窄窗口减少定时面板的内边距并调整配置字段网格。
+ * EN: Reduces schedule-panel padding and changes its configuration-field grid in narrower windows.
+ */
 @media (max-width: 720px) {
   .project-schedules {
     padding: var(--space-4);

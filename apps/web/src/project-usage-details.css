@@ -1,4 +1,7 @@
-/* 定义 project-usage-details 对应界面的样式与布局。 */
+/*
+ * 项目用量详情：分层展示版本、连接/运行汇总和完整身份信息。详情可折叠，长计费或身份值可聚焦并滚动核对，避免标识截断掩盖用量来源。
+ * EN: Project usage detail: separates revisions, connection/run totals, and full identities. Expandable sections and focusable scrolling allow complete billing/identity inspection without hiding provenance behind truncation.
+ */
 .project-usage-meta {
   display: flex;
   flex-wrap: wrap;
@@ -39,7 +42,10 @@
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .project-usage-reading {
   min-width: 0;
   max-height: min(14rem, 38dvh);
@@ -48,7 +54,10 @@
   scrollbar-gutter: stable;
   white-space: pre-wrap;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .project-usage-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

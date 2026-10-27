@@ -1,4 +1,7 @@
-/* 定义 delivery-status-card 对应界面的样式与布局。 */
+/*
+ * 交付状态卡片：紧凑呈现审阅结论、标签、时间及相关操作。时间原值可在聚焦阅读区查看，操作行可换行，使较长日期或本地化文本不会压缩关键结论。
+ * EN: Delivery status card: compactly presents review outcome, labels, timestamps, and actions. Focusable timestamp reading and wrapping actions keep long/localized dates from crowding the conclusion.
+ */
 .delivery-status-panel .delivery-status-review {
   display: grid;
   gap: var(--space-2);
@@ -20,13 +23,19 @@
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .delivery-status-panel .delivery-status-time-reading {
   max-height: min(8rem, 30dvh);
   overflow: auto;
   scrollbar-gutter: stable;
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .delivery-status-panel .delivery-status-time-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

@@ -1,4 +1,8 @@
-/** 汇总任务中心数据并注册查询接口。 */
+/**
+ * 汇总任务中心数据并注册查询接口。
+ * 持久当前分类、复核摘要及单调通知/墓碑，触发器维护小投影且旧正文按需预热；通知核对当前状态，首个基线不误报历史为新事件。
+ * EN: Aggregates task-center data and registers reads. Persists current categories/reviews/monotonic notifications and tombstones with compact triggers/lazy warming; verifies current state and never reports history as new baseline events.
+ */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, type Entity } from '../../../packages/contracts/src/index.js';
@@ -45,23 +49,44 @@ const categories = [
 ] as const;
 const reviewStatuses = ['unreviewed', 'accepted', 'changes_requested', 'stale'] as const;
 const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+/**
+ * 生成兼容新旧投影的状态 SQL，别名来自内部固定表引用。
+ * EN: Builds status SQL supporting current/legacy projections using internal fixed aliases.
+ */
 const state = (alias: string) =>
   `COALESCE(json_extract(${alias ? alias + '.' : ''}data,'$.readModel.status'),json_extract(${alias ? alias + '.' : ''}data,'$.status'))`;
+/**
+ * 生成任务等待原因 SQL，优先读取小投影并兼容旧字段。
+ * EN: Builds wait-reason SQL preferring compact projections with legacy fallback.
+ */
 const waitReason = (alias: string) =>
   `COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))`;
 
-/** A small persistent current-state read model; historical bodies are warmed only on explicit access. */
-/** 读取任务中心投影和交付复核摘要，支持筛选、分页及增量查询。 */
+/**
+ * 采用小型持久当前状态投影；仅在显式访问时预热历史正文。 读取任务中心投影和交付复核摘要，支持筛选、分页及增量查询。
+ * EN: A small persistent current-state read model; historical bodies are warmed only on explicit access. Reads task-center projections and delivery review summaries with filtering, paging and incremental queries.
+ */
 export class TaskCenterReads {
   private warming?: Promise<void>;
   private delivery: DeliveryReviewReads;
   private projections: ProjectionReads;
+  /**
+   * 创建当前分类、单调通知序号和删除墓碑投影及触发器；分类综合问题、核验、hold 和交付复核，历史正文仅按需预热。
+   * EN: Creates current classification, monotonic notification and tombstone projections/triggers. Classification combines questions, verification, holds and delivery review while history bodies warm lazily.
+   */
   constructor(private store: Store) {
-    // 用小型当前状态投影维护分类与通知序号；历史正文只在显式预热/读取时展开。
+    /**
+     * 用小型当前状态投影维护分类与通知序号；历史正文只在显式预热/读取时展开。
+     * EN: Maintains categories and notification sequence with a small current-state projection; historical bodies expand only on explicit warm/read.
+     */
     this.projections = projectionReads(store);
     this.delivery = deliveryReviewReads(store);
     const status = state('r');
     const runReason = "COALESCE(json_extract(r.data,'$.readModel.reason'),json_extract(r.data,'$.reason'))";
+    /**
+     * 生成同运行任务存在性子查询，把内部分类条件嵌入只读触发器 SQL。
+     * EN: Builds same-run task existence SQL from internal classification predicates for read-model triggers.
+     */
     const tasks = (condition: string) => `EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id AND ${condition})`;
     const taskWaiting = `${state('t')}='WAITING'`;
     const verification = [
@@ -180,9 +205,15 @@ export class TaskCenterReads {
       `);
     }
   }
-  /** 触发器复用的投影更新语句；通知版本仅在可通知的状态转换时变化，普通文本更新不重复通知。 */
+  /**
+   * 触发器复用的投影更新语句；通知版本仅在可通知的状态转换时变化，普通文本更新不重复通知。
+   * EN: Builds projection updates shared by triggers; notification revisions change only for notifiable transitions, not ordinary text updates.
+   */
   private refreshSql(runId: string) {
-    // seq is allocated even on upsert, so observations can continue across process restarts.
+    /**
+     * 即使执行 upsert 也分配 seq，使观察游标可跨进程重启继续。
+     * EN: seq is allocated even on upsert, so observations can continue across process restarts.
+     */
     const meaningful =
       "excluded.notification_status IS NOT NULL AND (excluded.category IS NOT task_center_changes_v1.category OR (excluded.status='DONE' AND task_center_changes_v1.status IS NOT 'DONE'))";
     return `INSERT INTO task_center_changes_v1(run_id,position,title,project_id,kind,status,revision,category,reason,archived,updated_at,notification_status)
@@ -196,6 +227,10 @@ export class TaskCenterReads {
         notification_status=CASE WHEN ${meaningful} THEN excluded.notification_status ELSE task_center_changes_v1.notification_status END,
         notification_revision=CASE WHEN ${meaningful} THEN excluded.seq ELSE task_center_changes_v1.notification_revision END;`;
   }
+  /**
+   * 合并同时发生的预热请求并在完成/失败后清除相同承诺，让后续读取可继续补齐。
+   * EN: Coalesces concurrent warm requests and clears the same promise after settlement so later reads can continue warming.
+   */
   private async warm() {
     if (this.warming) return this.warming;
     const pending = this.warmCurrent();
@@ -206,6 +241,10 @@ export class TaskCenterReads {
       if (this.warming === pending) this.warming = undefined;
     }
   }
+  /**
+   * 先补齐旧 hold 分类，再根据独立完成标记决定是否需要全面预热，避免把旧版本部分工作视为完成。
+   * EN: Warms legacy hold classification first, then checks independent completion markers before full warming so old partial builds are not mistaken for complete.
+   */
   private async warmCurrent() {
     await this.warmExecutionHolds();
     if (
@@ -219,6 +258,10 @@ export class TaskCenterReads {
       return;
     await this.warmBatches();
   }
+  /**
+   * 按持久 ID 游标分批重算 hold 运行分类，每批提交进度并让出事件循环；新插入/解除由触发器覆盖。
+   * EN: Reclassifies held runs in persistent-ID batches, committing resumable progress and yielding between batches while triggers cover concurrent hold changes.
+   */
   private async warmExecutionHolds() {
     const key = 'task-center-holds:v1';
     let after =
@@ -228,8 +271,10 @@ export class TaskCenterReads {
           | undefined
       )?.value ?? '';
     if (after === 'complete') return;
-    // Existing cached rows may predate hold-aware classification. Rebuild only held
-    // runs in bounded, resumable batches; triggers cover concurrent inserts/releases.
+    /**
+     * 旧缓存行可能早于支持 hold 的分类；仅对 hold 运行分批重建并支持续扫，触发器覆盖并发插入和解除。
+     * EN: Existing cached rows may predate hold-aware classification. Rebuild only held runs in bounded, resumable batches; triggers cover concurrent inserts/releases.
+     */
     for (;;) {
       const rows = this.store.db
         .prepare('SELECT run_id FROM execution_holds_v1 WHERE run_id>? ORDER BY run_id LIMIT 32')
@@ -243,9 +288,15 @@ export class TaskCenterReads {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
+  /**
+   * 分批补齐所有必要旧投影及分类，并在原子写完成标记前再次检查全表缺口；兼容旧写入者在让出期间修改前面批次的情况。
+   * EN: Batch-warms required legacy projections/classifications and rechecks all gaps before atomically marking completion, covering old writers changing earlier tables during yields.
+   */
   private async warmBatches() {
-    // Older builds cleared this marker before their first batch. A separate completion
-    // marker makes their partial rebuilds recoverable, without scanning on every read.
+    /**
+     * 旧构建在首批前已清除此标记；独立的完成 标记使部分重建可恢复，而不用每次读取都全量扫描。
+     * EN: Older builds cleared this marker before their first batch. A separate completion marker makes their partial rebuilds recoverable, without scanning on every read.
+     */
     this.store.db.prepare("UPDATE storage_meta SET value='1' WHERE key='task-center-warm:v1'").run();
     for (;;) {
       for (const table of ['runs', 'tasks', 'requests', 'tool_operations'] as const) {
@@ -280,8 +331,10 @@ export class TaskCenterReads {
         });
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
-      // A legacy writer can change an earlier table while a later batch yields.
-      // Check all projections once more before atomically marking this build complete.
+      /**
+       * 旧版写入者可能在后续批次让出执行权时修改前面的表。 原子标记构建完成之前，必须再检查所有投影。
+       * EN: A legacy writer can change an earlier table while a later batch yields. Check all projections once more before atomically marking this build complete.
+       */
       const pending = (['runs', 'tasks', 'requests', 'tool_operations'] as const).some((table) => {
         const where =
           table === 'runs' || table === 'tasks'
@@ -305,6 +358,10 @@ export class TaskCenterReads {
       }
     }
   }
+  /**
+   * 仅裁剪超过保留量的删除墓碑并推进单调保留下限，旧游标随后必须全量重建。
+   * EN: Prunes excess deletion tombstones and advances the monotonic retention floor so older cursors require full rebuild.
+   */
   private prune() {
     const old = this.store.db
       .prepare('SELECT seq FROM task_center_changes_v1 WHERE deleted=1 ORDER BY seq DESC LIMIT 1 OFFSET 1024')
@@ -318,7 +375,10 @@ export class TaskCenterReads {
       .run(through);
     this.store.db.prepare('DELETE FROM task_center_changes_v1 WHERE deleted=1 AND seq<=?').run(through);
   }
-  /** 将投影映射为公开项；不可读分类不附带推测的复核状态，通知也须仍与当前分类一致。 */
+  /**
+   * 将投影映射为公开项；不可读分类不附带推测的复核状态，通知也须仍与当前分类一致。
+   * EN: Maps projections to public items; unreadable categories get no inferred review state, and notifications must still match current classification.
+   */
   private item(row: Row): TaskCenterItem {
     const unavailable = row.category === 'unavailable';
     const executionHold = this.store.getExecutionHold(row.run_id);
@@ -355,8 +415,8 @@ export class TaskCenterReads {
     };
   }
   /**
-   * 在预热/可选重试后按过滤条件分页，复核读取与列表组装共享一致性边界。
-   * coverage 单独计入归属不明的损坏记录，不因它们无法匹配标题/项目就把结果声称完整。
+   * 在预热/可选重试后按过滤条件分页，复核读取与列表组装共享一致性边界。 coverage 单独计入归属不明的损坏记录，不因它们无法匹配标题/项目就把结果声称完整。
+   * EN: Pages after warm/optional retry with review reads and assembly sharing a consistency boundary. Coverage includes damaged records with unknown ownership instead of claiming completeness when title/project matching is impossible.
    */
   async list(query: {
     filter: (typeof categories)[number];
@@ -396,8 +456,10 @@ export class TaskCenterReads {
         ...(query.kind ? [query.kind] : []),
         ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
       ];
-      // Known scope exclusions remain exact. A broken Run body may also hide its
-      // project/title, so those uncertain memberships stay in the coverage warning.
+      /**
+       * 可证明的范围排除仍准确执行；损坏运行正文也可能隐藏 项目和标题，因此归属不确定的记录仍保留在覆盖率警告中。
+       * EN: Known scope exclusions remain exact. A broken Run body may also hide its project/title, so those uncertain memberships stay in the coverage warning.
+       */
       const unknownRun =
         "EXISTS(SELECT 1 FROM projection_read_issues_v1 p WHERE p.table_name='runs' AND p.record_id=task_center_changes_v1.run_id)";
       const unknownKind = "kind IS NULL OR kind NOT IN ('task','chat')";
@@ -439,8 +501,10 @@ export class TaskCenterReads {
         clauses.push('run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)');
         params.push(query.reviewFilter);
       }
-      // New kind-filtered callers must not use another scope's cursor. Legacy callers
-      // retain their original cursor semantics when no kind is supplied.
+      /**
+       * 新增 kind 筛选不能使用其他范围的游标；未提供 kind 的旧调用方 保持原游标语义。
+       * EN: New kind-filtered callers must not use another scope's cursor. Legacy callers retain their original cursor semantics when no kind is supplied.
+       */
       if (
         query.kind &&
         query.before &&
@@ -483,7 +547,10 @@ export class TaskCenterReads {
       };
     });
   }
-  /** Verify one queued notification against current state without expanding its Run. */
+  /**
+   * 仅依据当前状态核验一项排队通知，不展开其运行正文。
+   * EN: Verify one queued notification against current state without expanding its Run.
+   */
   async itemById(runId: string): Promise<{ item: TaskCenterItem | null }> {
     await this.warm();
     return this.delivery.read(() => {
@@ -494,8 +561,8 @@ export class TaskCenterReads {
     }, runId);
   }
   /**
-   * 读取持久单调序号后的当前变更及删除墓碑；游标早于保留下限或晚于当前序号时要求全量重建。
-   * 首次调用只建立 baseline，不把既有历史误报为刚发生的通知。
+   * 读取持久单调序号后的当前变更及删除墓碑；游标早于保留下限或晚于当前序号时要求全量重建。 首次调用只建立 baseline，不把既有历史误报为刚发生的通知。
+   * EN: Reads current changes and deletion tombstones after a persistent monotonic sequence. Cursors outside retention/current bounds require a rebuild; the first call establishes a baseline without reporting old history as fresh notifications.
    */
   async changes(after: number | undefined, limit: number): Promise<TaskCenterChanges> {
     await this.warm();
@@ -537,7 +604,10 @@ export class TaskCenterReads {
     });
   }
 }
-/** 注册任务中心查询接口，并校验筛选和分页参数。 */
+/**
+ * 注册任务中心查询接口，并校验筛选和分页参数。
+ * EN: Registers task-center queries and validates filters and pagination.
+ */
 export function registerTaskCenter(app: FastifyInstance, store: Store) {
   const reads = new TaskCenterReads(store);
   app.get('/api/task-center', (request) =>

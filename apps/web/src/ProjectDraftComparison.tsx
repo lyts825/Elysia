@@ -1,10 +1,15 @@
-/* 比较项目草稿与当前内容。 */
+/**
+ * 比较项目草稿与当前内容。
+ * 将三方合并结果按字段展示并收集冲突选择，保留原始、本地和当前值；实际合并算法和保存由专用模块处理。
+ * EN: Displays baseline/current/local draft comparisons. Displays three-way merge differences by field and collects conflict choices while preserving original/local/current values; dedicated modules perform merging and saving.
+ */
 import { differenceText, type MergeChoice, type ProjectDraftDifference } from './ProjectDraftMerge';
 import './project-draft-comparison.css';
 
 /**
  * 纯展示三方字段差异和采用结果，不修改合并结果本身。
  * 每个冲突的选择以稳定 key 回传，父组件负责将选择绑定到当次完整比较身份。
+ * EN: Pure presentation of three-way differences and choices. Return stable conflict keys; parent binds choices to complete comparison identity and owns the merged result.
  */
 export function ProjectDraftComparison({
   differences,
@@ -15,7 +20,10 @@ export function ProjectDraftComparison({
   choose: (key: string, choice: MergeChoice) => void;
   busy: boolean;
 }) {
-  // 显示基线、当前值和本机值；冲突选择交由父组件保存。
+  /**
+   * 显示基线、当前值和本机值；冲突选择交由父组件保存。
+   * EN: Show baseline/current/local values; parent retains conflict selections.
+   */
   return (
     <div className="project-draft-differences">
       {!differences.length && <p>内容未发生变化，可核对后沿用当前计划版本。</p>}

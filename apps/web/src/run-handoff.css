@@ -1,5 +1,11 @@
-/* 定义 run-handoff 对应界面的样式与布局。 */
-/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
+/*
+ * 运行交接：组织交接来源、产物详情、元数据与反馈阅读区。长依据可聚焦滚动，短窗口把滚动移到整个交接弹窗并固定标题，解除内部表单的高度限制。
+ * EN: Run handoff: arranges source evidence, artifact details, metadata, and feedback. Focusable scrolling preserves long evidence; short windows scroll the entire modal with a sticky heading and release internal form-height constraints.
+ */
+/*
+ * 内容溢出时允许在此区域滚动，便于查看超出部分。
+ * EN: Allows this region to scroll when content exceeds its bounds.
+ */
 .run-handoff-source .run-handoff-reading,
 .run-handoff-modal .run-handoff-reading,
 .run-handoff-feedback .run-handoff-reading {
@@ -13,7 +19,10 @@
   scroll-padding-block: var(--space-2);
   line-height: var(--leading-body);
 }
-/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
+/*
+ * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
+ * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
+ */
 .run-handoff-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -57,7 +66,10 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-/* 短窗口让交接弹窗整体滚动并固定标题，释放表单自身的滚动约束。 */
+/*
+ * 短窗口让交接弹窗整体滚动并固定标题，释放表单自身的滚动约束。
+ * EN: Scrolls the entire handoff modal with a sticky heading in short windows and removes internal form scrolling constraints.
+ */
 @media (max-height: 600px) {
   .run-handoff-modal {
     overflow-y: auto;

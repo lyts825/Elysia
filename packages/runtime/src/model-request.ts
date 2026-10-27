@@ -1,4 +1,8 @@
-/** 执行模型请求并发布上下文运行指标。 */
+/**
+ * 执行模型请求并发布上下文运行指标。
+ * 管理编译、预算预留、流式投影、结算和结果保存，核对活动身份并隔离可选推理缓存失败；未知用量保守保留，不凭空释放。
+ * EN: Executes model requests and publishes context runtime metrics. Owns compilation/reservation/streaming/settlement/persistence with activity checks and optional reasoning-cache isolation; unknown usage remains conservatively accounted.
+ */
 import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
@@ -22,19 +26,32 @@ import type { RunControl } from './scheduler.js';
 import { delay } from './async.js';
 
 export interface ModelRequestServices {
-  /** 由代理创建时的冻结绑定选择适配器，不能读取当前默认模型代替它。 */
+  /**
+   * 由代理创建时的冻结绑定选择适配器，不能读取当前默认模型代替它。
+   * EN: Selects the adapter from the binding frozen when the agent was created, never from a current default model.
+   */
   adapterFactory(agent: Agent): ProviderAdapter;
-  /** 接收已经持久提交的正文片段；offset 是该请求的 UTF-16 字符偏移。 */
+  /**
+   * 接收已经持久提交的正文片段；offset 是该请求的 UTF-16 字符偏移。
+   * EN: Receives text only after persistence commits; offset is the request's UTF-16 character offset.
+   */
   onDelta(runId: string, taskId: string, text: string, requestId: string, offset: number): void;
   onReasoningDelta(value: ReasoningDelta): void;
 }
 export class ModelRequestRunner {
+  /**
+   * 注入内核、运行控制和供应商/增量回调，避免请求服务自行拥有调度或模型默认选择。
+   * EN: Injects kernel, run control, and provider/delta callbacks so the request service does not own scheduling or default model selection.
+   */
   constructor(
     readonly kernel: Kernel<Store>,
     private readonly control: RunControl,
     private readonly services: ModelRequestServices,
   ) {}
-  /** 更新上下文指标；提供请求 ID 时，同时保存到该请求清单并发布事件。 */
+  /**
+   * 更新上下文指标；提供请求 ID 时，同时保存到该请求清单并发布事件。
+   * EN: Updates context metrics; with a request ID, also saves them to the request manifest and publishes an event.
+   */
   publishContext(task: Task, attempt: Attempt, metrics: ContextRuntimeMetrics, recordId?: string) {
     const current = { ...metrics, updatedAt: new Date().toISOString() };
     this.kernel.store.tx(() => {
@@ -50,9 +67,8 @@ export class ModelRequestRunner {
     return current;
   }
   /**
-   * 执行一次逻辑模型请求，检查账号并发和分钟额度并最多尝试三次。
-   * 流式正文先持久化再通知界面；成功后在事务中结算用量并追加助手消息。
-   * 限流需要延后调度时返回 undefined，调用方不得将其视为完成响应。
+   * 执行一次逻辑模型请求，检查账号并发和分钟额度并最多尝试三次。 流式正文先持久化再通知界面；成功后在事务中结算用量并追加助手消息。 限流需要延后调度时返回 undefined，调用方不得将其视为完成响应。
+   * EN: Executes one logical request with account concurrency and minute quotas, trying at most three times. Stream text is persisted before display; success settles usage and appends the assistant message atomically. Returns undefined when scheduling must wait for a rate limit, not a completed response.
    */
   async run(
     task: Task,
@@ -70,7 +86,10 @@ export class ModelRequestRunner {
       request = adapter.compile(context);
     const previous = store.latestTaskRequest(run.id, task.id);
     context.manifest.difference = requestDifference(previous?.manifest, context.manifest);
-    // 恢复限流等待时沿用逻辑请求 ID，并以账本记录防止重启后重置重试次数。
+    /**
+     * 恢复限流等待时沿用逻辑请求 ID，并以账本记录防止重启后重置重试次数。
+     * EN: Reuse the logical request ID after a rate-limit wait and consult the ledger so a restart cannot reset retry counts.
+     */
     const retryHistory = cooldown?.logicalId
       ? store.requestLedger({ runId: run.id, logicalId: cooldown.logicalId, attemptId: attempt.id })
       : [];
@@ -101,7 +120,10 @@ export class ModelRequestRunner {
         });
         return;
       }
-      // 用最近一分钟的已结算或预留用量计算 RPM/TPM，缺失用量按预留值计入。
+      /**
+       * 用最近一分钟的已结算或预留用量计算 RPM/TPM，缺失用量按预留值计入。
+       * EN: Compute RPM and TPM from settled or reserved usage in the last minute; missing receipts retain their reserved amounts.
+       */
       const accountRequests = store.requestLedger({ account: config.account, since: Date.now() - 60000 });
       const requestTokens = context.estimatedTokens + config.outputLimit;
       if (requestTokens > config.tpm) {
@@ -140,7 +162,10 @@ export class ModelRequestRunner {
         context.estimatedTokens,
         logicalId,
       );
-      // 先预留预算和请求身份再发网络请求，中断后才能保守保留未知用量并回查原始片段。
+      /**
+       * 先预留预算和请求身份再发网络请求，中断后才能保守保留未知用量并回查原始片段。
+       * EN: Reserve budget and request identity before network I/O, so interruption can retain unknown usage and preserve original fragments.
+       */
       store.startRequestStream(record.id);
       let partial = '';
       let reasoningOffset = 0,
@@ -160,7 +185,10 @@ export class ModelRequestRunner {
             store.appendRequestText(record.id, event.text, partial.length);
             partial += event.text;
             this.services.onDelta(run.id, task.id, event.text, record.id, partial.length - event.text.length);
-            // Throttle persisted snapshots; text bytes are estimates, not tokenizer receipts.
+            /**
+             * 持久快照节流写入；文本字节只是估计，不是分词器用量回执。
+             * EN: Throttle persisted snapshots; text bytes are estimates, not tokenizer receipts.
+             */
             if (Date.now() - lastContextUpdate >= 500) {
               metrics = this.publishContext(
                 task,
@@ -193,7 +221,10 @@ export class ModelRequestRunner {
                     ...saved,
                   });
               } catch {
-                // Optional display caching cannot change model output, usage or tool execution.
+                /**
+                 * 可选的展示缓存不能改变模型输出、用量或工具执行。
+                 * EN: Optional display caching cannot change model output, usage or tool execution.
+                 */
                 reasoningCacheFailed = true;
               }
             }
@@ -205,12 +236,18 @@ export class ModelRequestRunner {
         break;
       } catch (error) {
         const rejected =
-          // 只有服务端明确在开始响应前拒绝的 4xx 才可按未执行释放，其他异常可能已产生用量。
+          /**
+           * 只有服务端明确在开始响应前拒绝的 4xx 才可按未执行释放，其他异常可能已产生用量。
+           * EN: Only an explicit pre-response 4xx rejection can release a request as unexecuted; other failures may already have consumed usage.
+           */
           error instanceof ProviderError &&
           !error.responseStarted &&
           error.status >= 400 &&
           error.status < 500;
-        // 中断后保留已有正文引用；不把部分文本误认作完整助手回复。
+        /**
+         * 中断后保留已有正文引用；不把部分文本误认作完整助手回复。
+         * EN: Retain partial-text references after interruption; partial text is not a complete assistant response.
+         */
         if (partial) {
           const object = store.object(
             stable({ requestId: record.id, partialText: partial, completed: false }),
@@ -234,7 +271,10 @@ export class ModelRequestRunner {
             manifest: { ...current.manifest, providerError: error.details },
           });
         }
-        // A failed response can still include a complete, validated provider usage receipt.
+        /**
+         * 失败响应仍可能包含完整、经过校验的供应商用量回执。
+         * EN: A failed response can still include a complete, validated provider usage receipt.
+         */
         this.kernel.settle(
           record.id,
           error instanceof ProviderError ? (error.usage ?? null) : null,
@@ -256,7 +296,10 @@ export class ModelRequestRunner {
         );
         if (signal.aborted) throw error;
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
-        // 短等待在本步内退避；超过一分钟交还调度器，避免长期占用执行槽。
+        /**
+         * 短等待在本步内退避；超过一分钟交还调度器，避免长期占用执行槽。
+         * EN: Back off briefly inside the step; waits longer than one minute return to the scheduler instead of holding an execution slot.
+         */
         const wait = Math.max(error.retryAfterMs, 1000 * 2 ** retry);
         if (wait > 60000) {
           this.control.waitAtRateLimit(task, {
@@ -272,7 +315,10 @@ export class ModelRequestRunner {
     }
     if (!complete) return;
     const completed = complete;
-    // 用量结算、助手消息、步骤计数和流指针清理同事务提交，避免完成消息与账本各写一半。
+    /**
+     * 用量结算、助手消息、步骤计数和流指针清理同事务提交，避免完成消息与账本各写一半。
+     * EN: Commit usage settlement, assistant message, step count, and stream-pointer cleanup in one transaction, avoiding half-written completion state.
+     */
     const assistantMessage = store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
       metrics = this.publishContext(
@@ -313,7 +359,10 @@ export class ModelRequestRunner {
       try {
         store.completeRequestReasoning(successfulRequestId!, completed.reasoningContent);
       } catch {
-        /* The canonical Message still supports explicit historical reads. */
+        /**
+         * 权威消息仍支持显式读取完整历史。
+         * EN: The canonical Message still supports explicit historical reads.
+         */
       }
     }
     return { message: assistantMessage, attempt, completed };

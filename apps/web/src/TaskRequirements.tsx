@@ -1,11 +1,23 @@
-/* 编辑并校验任务交付物和验收标准。 */
-/** 按行去除首尾空白和空项，供表单校验与提交载荷复用。 */
+/**
+ * 编辑并校验任务交付物和验收标准。
+ * 按行去除首尾空白和空项，供表单校验与提交载荷复用。
+ *
+ * EN: Edits and validates task deliverables and acceptance criteria.
+ * Trims each line and removes empty entries for shared form validation and payload building.
+ *
+ * 本模块提供交付物与验收标准的受控编辑、按行规范化和共享校验；输入阶段保留原文，规范化结果用于后续合同载荷，持久化由调用方完成。
+ * EN: Provides controlled editing, line normalization, and shared validation for deliverables/acceptance criteria. Editing preserves raw text; normalized values feed later contract payloads and the caller persists them.
+ */
 export const requirementLines = (value: string) =>
   value
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-/** 必填时两组至少各一项；每组最多 40 项，每项最多 2000 字。 */
+/**
+ * 必填时两组至少各一项；每组最多 40 项，每项最多 2000 字。
+ *
+ * EN: When required, both groups need an entry; each allows at most 40 lines of 2000 characters.
+ */
 export const validRequirements = (deliverables: string, criteria: string, required: boolean) =>
   [deliverables, criteria].every((value) => {
     const lines = requirementLines(value);
@@ -17,6 +29,8 @@ export const validRequirements = (deliverables: string, criteria: string, requir
 /**
  * 受控编辑交付物与验收标准原文，以逐行计数显示输入限制；不在输入时删改用户换行或空白。
  * required 由执行模式决定，真正创建合同前使用同一规范化函数和完整校验再次检查。
+ *
+ * EN: Controlled raw-text editing with per-line limits, preserving user whitespace/newlines during input. Execution mode determines required, and creation reuses the same normalization/validation.
  */
 export function TaskRequirements({
   deliverables,

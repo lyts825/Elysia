@@ -1,4 +1,8 @@
-/* 配置项目角色的模型路由。 */
+/**
+ * 配置项目角色的模型路由。
+ * 在项目能力草稿容器内编辑后续任务的角色默认连接，保留精确待核对命令；现有任务的模型仍由冻结绑定决定。
+ * EN: Edits default role-model routing for a project. Edits role defaults for future tasks inside the capability draft container and retains exact pending commands; existing tasks retain their frozen model bindings.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import { RoleRoutingPolicy, type RoleRoutingView } from '../../../packages/contracts/src/model-routing';
@@ -10,14 +14,25 @@ import './project-model-routing.css';
 const routingPayload = z
   .object({ expectedRevision: z.number().int().nonnegative(), policy: RoleRoutingPolicy })
   .strict();
-// 草稿保留期望版本与可选待处理命令，供并发冲突和未知结果核对。
+/**
+ * 草稿保留期望版本与可选待处理命令，供并发冲突和未知结果核对。
+ * EN: Retain expected revision and optional pending command for conflicts/unknown outcomes.
+ */
 export const routingDraftShape = routingPayload
   .extend({ pending: routingPayload.extend({ commandId: z.string().uuid() }).optional() })
   .strict();
 type RoutingDraft = z.infer<typeof routingDraftShape>;
 type Request = NonNullable<RoutingDraft['pending']>;
+/**
+ * 将已知Error消息转换为界面反馈，未知失败使用保留输入的统一提示。
+ * EN: Converts known Error messages into UI feedback and uses a consistent retained-input message for unknown failures.
+ */
 const message = (issue: unknown) => (issue instanceof Error ? issue.message : '请求失败，输入已保留。');
 
+/**
+ * 展示所选角色连接及当前目录信息；空选择说明需每次指定，失效ID保留供用户核对。
+ * EN: Shows the selected role connection and current catalog details; an empty choice requires explicit per-run selection, while an invalid ID remains visible for inspection.
+ */
 function RoutingSelection({
   selected,
   providers,
@@ -57,6 +72,10 @@ function RoutingSelection({
   );
 }
 
+/**
+ * 用项目ID重建内部路由编辑器，避免项目切换时继承上个项目的读取和保存状态。
+ * EN: Keys the routing editor by project ID so switching projects cannot retain the previous project read or save state.
+ */
 export function ProjectModelRouting(props: { projectId: string; cache: WorkbenchCache; archived?: boolean }) {
   return <RoutingEditor key={props.projectId} {...props} />;
 }
@@ -64,6 +83,7 @@ export function ProjectModelRouting(props: { projectId: string; cache: Workbench
  * 编辑项目默认角色模型，草稿嵌在项目能力容器中，更新时必须保留容器其他字段。
  * 读取基线过期时禁用新保存；发送前持久化精确请求，未知结果仅允许原样核对。
  * 保存只影响后续任务，已有任务的模型绑定由服务端冻结记录决定。
+ * EN: Routing lives inside capability draft; preserve sibling fields. Stale baseline blocks new save. Persist exact request first; unknown results permit identical retry only. Defaults affect future tasks; existing model bindings stay server-frozen.
  */
 function RoutingEditor({
   projectId,
@@ -92,6 +112,10 @@ function RoutingEditor({
     reader = useRef<AbortController | null>(null);
   const key = `draft:project-intelligence:${projectId}`,
     endpoint = `/projects/${projectId}/model-routing`;
+  /**
+   * 挂载允许路由配置回写，卸载标记失效并取消权威配置读取，供保存响应检查页面是否仍存在。
+   * EN: Enables routing updates while mounted and marks the view inactive while aborting configuration reads on teardown, allowing save responses to check liveness.
+   */
   useEffect(() => {
     live.current = true;
     return () => {
@@ -99,6 +123,10 @@ function RoutingEditor({
       reader.current?.abort();
     };
   }, []);
+  /**
+   * 按缓存和草稿键确保原始容器完整载入后再允许编辑；重试替换effect，旧Promise仅失效回写而不覆盖新状态。
+   * EN: Ensures the full draft container is loaded by cache/key before editing; retries replace the effect and obsolete promises lose update authority without overwriting new state.
+   */
   useEffect(() => {
     let active = true;
     void cache
@@ -116,7 +144,10 @@ function RoutingEditor({
       active = false;
     };
   }, [cache, key, retry]);
-  /** 读取最新草稿容器而不从 render 快照拼接，避免覆盖同期编辑的能力或记忆内容。 */
+  /**
+   * 读取最新草稿容器而不从 render 快照拼接，避免覆盖同期编辑的能力或记忆内容。
+   * EN: Update newest container rather than render snapshot to preserve concurrent capability/memory edits.
+   */
   function container() {
     const raw = cache.get(key);
     const value = raw === undefined || raw === '' ? { version: 1 } : JSON.parse(String(raw));
@@ -138,6 +169,10 @@ function RoutingEditor({
   const pending = saved?.pending;
   const locked = busy || !!pending || archived || !ready || !!parseError;
   const stale = !!record && !!draft && record.revision !== draft.expectedRevision;
+  /**
+   * 读取完整能力草稿容器后只改routing字段，校验并限制序列化体积；成功写缓存返回true，异常保留旧稿并显示错误。
+   * EN: Reads the full capability draft container and changes only routing, validating and bounding serialized size. It returns true after caching; errors preserve the prior draft and expose feedback.
+   */
   function update(change: (value: RoutingDraft | undefined) => RoutingDraft | undefined) {
     try {
       if (!ready || !live.current) return false;
@@ -157,6 +192,10 @@ function RoutingEditor({
       return false;
     }
   }
+  /**
+   * 取消旧角色配置读取并标记旧基线失效；核对项目身份后只向仍挂载且未取消的界面发布权威配置。
+   * EN: Cancels the prior routing read and invalidates its baseline, publishing authoritative configuration only after project checks and while the view remains mounted and un-aborted.
+   */
   async function read() {
     reader.current?.abort();
     const controller = new AbortController();
@@ -180,15 +219,26 @@ function RoutingEditor({
       }
     }
   }
+  /**
+   * 入口或项目变化时读取角色默认配置，建立新的权威修订基线；请求替换和取消由read统一管理。
+   * EN: Reads role defaults when surface client or project changes to establish a new authoritative baseline; read centrally manages request replacement/cancellation.
+   */
   useEffect(() => {
     void read();
   }, [api, projectId]);
+  /**
+   * 在草稿可编辑时合并角色策略补丁并保留其他草稿字段，同时清除旧成功提示。
+   * EN: Merges a role-policy patch only while editable, preserving other draft fields and clearing the previous success notice.
+   */
   function change(patch: Partial<RoleRoutingPolicy>) {
     if (!draft || locked) return;
     update((value) => ({ ...(value ?? draft), policy: { ...(value?.policy ?? draft.policy), ...patch } }));
     setNotice('');
   }
-  /** 核对当前基线与策略后保存；成功仅清理相同命令及未变化策略，明确拒绝使读取失效。 */
+  /**
+   * 核对当前基线与策略后保存；成功仅清理相同命令及未变化策略，明确拒绝使读取失效。
+   * EN: Validate baseline/policy; clear only same command and unchanged policy on success. Definitive rejection invalidates read state.
+   */
   async function save(request: Request) {
     if (writing.current || archived || !live.current) return;
     if (

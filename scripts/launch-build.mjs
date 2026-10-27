@@ -1,11 +1,21 @@
-// 检查启动构建输入并执行所需的构建命令。
+/**
+ * 检查启动构建输入并执行所需的构建命令。
+ * EN: Fingerprint launch-build inputs and run the required local build commands.
+ *
+ * 基于源码与配置指纹判断构建是否可复用，构建过程集中管理输出和失败；启动器只接受完成核验的构建结果。
+ * EN: Use source/configuration fingerprints to determine build reuse and manage build output and failures; launch accepts only validated build results.
+ */
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-/** 优先使用当前 Node 自带的 Corepack；失败时向启动流程传递明确错误。 */
+/**
+ * 优先使用当前 Node 自带的 Corepack；失败时向启动流程传递明确错误。
+ * EN: Prefer Corepack bundled with the current Node runtime; propagate failed commands as explicit
+ * launcher errors.
+ */
 function pnpm(root, command) {
   const corepack = path.join(
     path.dirname(process.execPath),
@@ -31,7 +41,11 @@ function pnpm(root, command) {
   if (result.error || result.status !== 0)
     throw result.error || new Error(`pnpm ${command} 失败，请查看启动日志`);
 }
-/** 从项目本地依赖的 package.json 解析可执行入口，避免依赖全局命令版本。 */
+/**
+ * 从项目本地依赖的 package.json 解析可执行入口，避免依赖全局命令版本。
+ * EN: Resolve a binary from the project local package.json instead of depending on a global command
+ * version.
+ */
 function packageCommand(root, packageName, binary, args) {
   const require = createRequire(path.join(root, 'package.json'));
   const manifestPath = require.resolve(packageName + '/package.json');
@@ -47,10 +61,18 @@ function packageCommand(root, packageName, binary, args) {
     throw result.error || new Error(`${binary} 构建失败，请查看启动日志`);
 }
 
-/** 按稳定目录顺序计算构建输入摘要，并保存将随构建发布的提示词和技能原文。 */
+/**
+ * 按稳定目录顺序计算构建输入摘要，并保存将随构建发布的提示词和技能原文。
+ * EN: Fingerprint inputs in stable directory order and capture exact prompt/skill bytes to publish
+ * with this build.
+ */
 function captureBuildInputs(root) {
   const fingerprint = createHash('sha256');
   const resources = new Map();
+  /**
+   * 按稳定顺序递归收集构建输入，拒绝内置资源链接并跳过依赖与构建输出目录。
+   * EN: Collect build inputs recursively in stable order, rejecting links for built-in resources and skipping dependencies/build outputs.
+   */
   function add(relative) {
     for (const entry of readdirSync(path.join(root, relative), { withFileTypes: true }).sort((a, b) =>
       a.name.localeCompare(b.name),
@@ -90,6 +112,10 @@ function captureBuildInputs(root) {
  * 校验锁定依赖后按输入摘要复用或构建缓存。新构建先写入独立临时目录，
  * 核对源文件未变化和资源哈希后再原子发布；不完整的既有缓存不会被覆盖。
  * mark 接收启动阶段，commands 可由调用方注入构建命令。
+ * EN: After checking locked dependencies, reuse or build a digest-keyed cache. Build into a unique
+ * stage, verify unchanged inputs and resource hashes, then publish atomically. Never overwrite an
+ * incomplete existing cache. mark receives startup stages; commands allows host injection of build
+ * runners.
  */
 export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCommand }) {
   if (
@@ -106,6 +132,10 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
   const resourceHashes = Object.fromEntries(
     [...resources].map(([name, bytes]) => [name, createHash('sha256').update(bytes).digest('hex')]),
   );
+  /**
+   * 逐条核对已捕获资源的实际摘要，防止缓存清单与发布字节不一致。
+   * EN: Verify captured-resource digests against actual bytes so cache metadata and published resources agree.
+   */
   const resourcesMatch = (directory) =>
     Object.entries(resourceHashes).every(
       ([name, hash]) =>
@@ -113,6 +143,10 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
           .update(readFileSync(path.join(directory, 'resources', name)))
           .digest('hex') === hash,
     );
+  /**
+   * 同时核对构建协议、输入摘要、入口和资源完整性，异常视为缓存不完整。
+   * EN: Check build protocol, input digest, entry points, and resource integrity; treat exceptions as an incomplete cache.
+   */
   const complete = () => {
     try {
       const manifest = JSON.parse(readFileSync(path.join(destination, 'build.json'), 'utf8'));
@@ -137,7 +171,9 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
     const stage = path.join(builds, '.building-' + randomUUID());
     mkdirSync(stage);
     try {
-      // Publish the exact bytes included in this build's fingerprint, even if the checkout changes later.
+      // 发布与本次指纹完全相同的资源字节，即使之后工作区内容发生变化。
+      // EN: Publish the exact resource bytes included in this fingerprint, even if the checkout changes
+      // afterwards.
       for (const [name, bytes] of resources) {
         const target = path.join(stage, 'resources', name);
         mkdirSync(path.dirname(target), { recursive: true });
@@ -180,14 +216,18 @@ export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCom
           break;
         } catch (error) {
           if (complete()) break;
-          // Windows scanners can briefly hold freshly written files. Never replace an existing build.
+          // Windows扫描程序可能短暂占用新文件，因此有限重试重命名，但绝不替换已有构建。
+          // EN: Windows scanners may briefly hold new files, so retry rename within bounds without ever
+          // replacing an existing build.
           if (existsSync(destination) || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 5)
             throw error;
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * 2 ** attempt);
         }
       }
     } finally {
-      // Only this invocation's unpublished stage is disposable; published builds may serve live windows.
+      // 只清理本次尚未发布的临时stage，已发布构建可能仍被窗口使用。
+      // EN: Only this invocation unpublished stage is disposable; published builds may still serve live
+      // windows.
       if (existsSync(stage)) rmSync(stage, { recursive: true, force: true });
     }
   }

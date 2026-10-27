@@ -1,4 +1,8 @@
-/* 提供通用弹窗及其错误提示上下文。 */
+/**
+ * 提供通用弹窗及其错误提示上下文。
+ * 统一入口内弹窗的焦点捕获、Escape/Tab处理、滚动锁定及错误提示作用域；仅最上层弹窗响应键盘。
+ * EN: Provides shared modal layout and error context. Centralizes surface-local modal focus, Escape/Tab handling, scroll locking, and error-feedback scope, allowing only the top modal to handle keys.
+ */
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { createContext, useContext, useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
@@ -10,6 +14,7 @@ export const ModalErrorContext = createContext('');
  * 通用模态容器：在当前入口内隔离背景交互，顶层弹窗拥有 Tab 环和 Esc 行为。
  * busy 阻止背景点击和 Esc 关闭；退出动画期间立即取消交互，销毁后恢复原 inert 和焦点。
  * 最新 close/busy 保存在 ref 中，使长期键盘监听不捕获过期回调。
+ * EN: Isolate background interaction per surface. Only the top modal traps Tab/Escape; busy blocks backdrop/Escape closure. Disable interaction at exit start, then restore prior inert/focus state on removal. Refs keep keyboard handlers on the latest close/busy values.
  */
 export function Modal({
   title,
@@ -42,7 +47,10 @@ export function Modal({
   busyRef.current = busy;
   useLayoutEffect(() => {
     if (!present) return;
-    // 弹窗展示时使主内容和侧栏不可交互，关闭时恢复它们原本的 inert 状态。
+    /**
+     * 弹窗展示时使主内容和侧栏不可交互，关闭时恢复它们原本的 inert 状态。
+     * EN: Make main content and sidebar inert while displayed, restoring their original inert values on close.
+     */
     const previous = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     const shell = (surfaceRoot?.current || document).querySelector<HTMLElement>('.main');
@@ -53,6 +61,10 @@ export function Modal({
       node.inert = true;
     });
     dialog.focus();
+    /**
+     * 只让当前入口最上层弹窗响应键盘：非输入法组合状态下处理Escape，并将Tab焦点循环限制在可操作控件内。
+     * EN: Lets only the top dialog in the current surface handle keys: Escape closes outside IME composition, and Tab cycles through usable controls inside the dialog.
+     */
     const keydown = (event: KeyboardEvent) => {
       const dialogs = (surfaceRoot?.current || document).querySelectorAll('[role="dialog"]');
       if (dialogs[dialogs.length - 1] !== dialog) return;
@@ -61,7 +73,10 @@ export function Modal({
         if (!busyRef.current) closeRef.current();
       }
       if (event.key !== 'Tab') return;
-      // 仅顶层弹窗处理键盘导航，Tab 循环在可见且可操作的控件之间。
+      /**
+       * 仅顶层弹窗处理键盘导航，Tab 循环在可见且可操作的控件之间。
+       * EN: Only the top modal handles keys; cycle Tab among visible, usable controls.
+       */
       const elements = [
         ...dialog.querySelectorAll<HTMLElement>(
           'button, input, select, textarea, a[href], summary, [tabindex="0"]',

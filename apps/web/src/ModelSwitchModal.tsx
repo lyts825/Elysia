@@ -1,4 +1,8 @@
-/* 提供任务模型切换的弹窗。 */
+/**
+ * 提供任务模型切换的弹窗。
+ * 读取当前绑定和可选模型，核对任务修订后提交切换或恢复；未知结果保留操作依据，避免直接重放新命令。
+ * EN: Provides the task model-switch dialog. Reads current bindings and model choices and submits a switch/resume against the task revision, retaining operation evidence for unknown outcomes rather than blindly replaying new commands.
+ */
 import { useId, useState } from 'react';
 import type { Agent, Task } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';
@@ -12,6 +16,7 @@ export { modelTaskCanContinue, modelSwitchReason } from './ModelSwitchGuards';
  * 对比代理冻结绑定与本次选择，只有连接/型号/强度确实变化且通过 ModelPicker 校验才提交。
  * disabledReason 由当前运行边界计算；“仅应用”和“应用并继续”分别回传，恢复资格不能
  * 仅依据是否换了模型推断，最终版本与执行状态仍由父级动作及服务端检查。
+ * EN: Compare frozen binding with the proposed choice; submit only a validated connection/model/effort change. disabledReason reflects run boundaries. Apply and Apply-and-continue remain distinct; changing models alone does not grant resume eligibility, which parent/server checks enforce.
  */
 export function ModelSwitchModal({
   providers,
@@ -40,7 +45,10 @@ export function ModelSwitchModal({
       : defaultChoice(providers),
   );
   const [modelReady, setModelReady] = useState(false);
-  // 连接、模型或推理强度确实变化且模型校验通过后，才允许提交切换。
+  /**
+   * 连接、模型或推理强度确实变化且模型校验通过后，才允许提交切换。
+   * EN: Enable submission only for a real connection/model/effort change that passes model validation.
+   */
   const changed =
     choice.providerId !== agent.providerId ||
     choice.model !== binding.model ||

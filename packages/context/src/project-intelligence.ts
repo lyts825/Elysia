@@ -1,4 +1,10 @@
-// 管理项目记忆、能力配置及其快照。
+/**
+ * 管理项目记忆、能力配置及其快照。
+ * 配置用乐观修订写入，能力内容内联冻结，记忆历史有界保留且恢复创建新修订。
+ *
+ * EN: Manages project memories, capability configuration, and snapshots.
+ * Uses optimistic configuration writes, inline capability freezes, and bounded memory history with restore creating a new revision.
+ */
 import { z } from 'zod';
 import { AppError, invariant, type Project } from '../../contracts/src/index.js';
 import {
@@ -16,7 +22,13 @@ import { hash, id, now, stable, type Store } from '../../storage/src/index.js';
 import { importedLibrary, localItemText, pageLocalText, publicLocalItem } from './local-library.js';
 import { listSkills, captureBuiltinSkill } from './skills.js';
 
+/** 项目能力配置的版本化元数据键，不与记忆集合共用记录。
+ * EN: Builds the versioned metadata key for capability configuration, separate from memory records.
+ */
 export const projectIntelligenceKey = (projectId: string) => `project-intelligence:v1:${projectId}`;
+/** 项目记忆集合的版本化元数据键，项目标识由上层作用域检查。
+ * EN: Builds the versioned memory-collection key; the upper layer validates project scope.
+ */
 export const projectMemoriesKey = (projectId: string) => `project-memories:v1:${projectId}`;
 const versionSchema = ProjectMemoryContent.extend({
   revision: z.number().int().positive(),
@@ -38,7 +50,11 @@ const configSchema = ProjectCapabilitySelection.extend({
   mode: z.literal('explicit'),
   updatedAt: z.string().datetime(),
 }).strict();
-/** 有界读取元数据 JSON；缺失与损坏分开，损坏不覆盖或重建原记录。 */
+/**
+ * 有界读取元数据 JSON；缺失与损坏分开，损坏不覆盖或重建原记录。
+ *
+ * EN: Reads bounded metadata JSON, distinguishing missing from corrupt; corruption is neither overwritten nor rebuilt silently.
+ */
 function readMeta(store: Store, key: string, limit: number): unknown | undefined {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
     | { value: string }
@@ -57,12 +73,19 @@ function readMeta(store: Store, key: string, limit: number): unknown | undefined
     );
   }
 }
-/** 按稳定格式序列化并在写入前检查 UTF-8 字节容量。 */
+/**
+ * 按稳定格式序列化并在写入前检查 UTF-8 字节容量。
+ *
+ * EN: Serializes deterministically and checks UTF-8 byte capacity before writing.
+ */
 function saveMeta(store: Store, key: string, value: unknown, limit: number) {
   const text = stable(value);
   invariant(Buffer.byteLength(text) <= limit, 'PROJECT_MEMORY_LIMIT', '项目能力或记忆记录超过存储容量上限');
   store.db.prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)').run(key, text);
 }
+/** 统一拒绝损坏或错属记录，不通过自动重建覆盖原始数据。
+ * EN: Rejects corrupt or foreign records consistently without overwriting originals through automatic rebuilding.
+ */
 function invalid(): never {
   throw new AppError(
     'PROJECT_INTELLIGENCE_INVALID',
@@ -72,13 +95,21 @@ function invalid(): never {
     409,
   );
 }
-/** 所有项目能力/记忆入口共用的归档检查，防止已归档项目继续编辑或调用能力。 */
+/**
+ * 所有项目能力/记忆入口共用的归档检查，防止已归档项目继续编辑或调用能力。
+ *
+ * EN: A shared archive guard prevents archived projects from editing or invoking capabilities.
+ */
 export function requireIntelligenceProject(store: Store, projectId: string) {
   const project = store.require<Project>('projects', projectId);
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目再使用项目能力和记忆');
   return project;
 }
-// 修改配置前比较调用方持有的修订，防止覆盖并发更新。
+/**
+ * 修改配置前比较调用方持有的修订，防止覆盖并发更新。
+ *
+ * EN: Compares the caller revision before configuration edits to prevent overwriting concurrent changes.
+ */
 export function assertIntelligenceRevision(expected: number, actual: number) {
   if (expected !== actual)
     throw new AppError(
@@ -89,7 +120,11 @@ export function assertIntelligenceRevision(expected: number, actual: number) {
       409,
     );
 }
-// 没有显式配置时沿用旧版默认选择；损坏或不属于当前项目的配置不能静默回退。
+/**
+ * 没有显式配置时沿用旧版默认选择；损坏或不属于当前项目的配置不能静默回退。
+ *
+ * EN: Without explicit configuration, preserves legacy defaults; corrupt or foreign-project settings cannot silently fall back.
+ */
 export function readProjectIntelligence(store: Store, projectId: string): ProjectIntelligenceConfig {
   requireIntelligenceProject(store, projectId);
   const raw = readMeta(store, projectIntelligenceKey(projectId), 256 * 1024);
@@ -109,7 +144,11 @@ export function readProjectIntelligence(store: Store, projectId: string): Projec
   if (!parsed.success || parsed.data.projectId !== projectId) return invalid();
   return parsed.data;
 }
-/** 返回当前选择、可选择的目录和限制；目录不内联技能/记忆正文。 */
+/**
+ * 返回当前选择、可选择的目录和限制；目录不内联技能/记忆正文。
+ *
+ * EN: Returns current selection, selectable catalogs, and limits without inlining skill/memory bodies.
+ */
 export function projectIntelligenceView(store: Store, projectId: string): ProjectIntelligenceView {
   return {
     config: readProjectIntelligence(store, projectId),
@@ -117,7 +156,11 @@ export function projectIntelligenceView(store: Store, projectId: string): Projec
     limits: PROJECT_INTELLIGENCE_LIMITS,
   };
 }
-// 在同一事务核对修订和所选能力，再保存新的显式配置。
+/**
+ * 在同一事务核对修订和所选能力，再保存新的显式配置。
+ *
+ * EN: Checks revisions and selected capabilities atomically before saving a new explicit configuration.
+ */
 export function updateProjectIntelligence(
   store: Store,
   projectId: string,
@@ -152,8 +195,13 @@ export function updateProjectIntelligence(
     return next;
   });
 }
-/** Capture executable/readable content inline so object maintenance cannot invalidate a run's capability snapshot. */
-// 正文和资源随快照保存，并检查大小、内容哈希与 UTF-8；超限时拒绝而非截断。
+/**
+ * 内联捕获可执行/可读取内容，避免对象维护使运行能力快照失效。
+ * 正文和资源随快照保存，并检查大小、内容哈希与 UTF-8；超限时拒绝而非截断。
+ *
+ * EN: Capture executable/readable content inline so object maintenance cannot invalidate a run's capability snapshot.
+ * Captures bodies/resources inline and checks size, digest, and UTF-8 validity; rejects over-limit data rather than truncating it.
+ */
 export function freezeProjectCapabilities(store: Store, projectId: string): ProjectCapabilitySnapshot {
   return store.tx(() => {
     const config = readProjectIntelligence(store, projectId);
@@ -166,6 +214,9 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
       builtinSkills: [],
       localItems: [],
     };
+    /** 使用完整序列化快照加预期哈希字段核对容量，每次追加资源后都调用。
+     * EN: Checks the serialized snapshot plus its expected hash field after every resource append.
+     */
     const checkSize = () =>
       invariant(
         Buffer.byteLength(stable({ ...snapshot, hash: '0'.repeat(64) })) <=
@@ -173,7 +224,11 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
         'CAPABILITY_SNAPSHOT_LIMIT',
         '任务能力快照超过 2 MiB，请减少项目选择的记忆、技能或资源；内容未截断',
       );
-    // 每次加入入口或资源后检查总容量，超限整次捕获失败，不保存无法完整执行的截断技能。
+    /**
+     * 每次加入入口或资源后检查总容量，超限整次捕获失败，不保存无法完整执行的截断技能。
+     *
+     * EN: Checks total capacity after each entry/resource; overflow fails the capture rather than saving an incomplete skill.
+     */
     for (const skillId of config.builtinSkillIds) {
       snapshot.builtinSkills.push(captureBuiltinSkill(skillId));
       checkSize();
@@ -214,11 +269,16 @@ export function freezeProjectCapabilities(store: Store, projectId: string): Proj
     return { ...snapshot, hash: hash(stable(snapshot)) };
   });
 }
+/** 只对影响记忆语义的字段取摘要，版本和时间不改变内容身份。
+ * EN: Hashes only semantic memory fields; revisions and timestamps do not change content identity.
+ */
 const memoryHash = (memory: ProjectMemoryContent) =>
   hash(stable({ title: memory.title, text: memory.text, source: memory.source, status: memory.status }));
 /**
  * 读取并验证当前项目的记忆集合、当前内容摘要及递增历史修订。
  * activeOnly 过滤草稿和撤销项，但读取损坏的历史仍报错，避免把不完整集合当成正常结果。
+ *
+ * EN: Reads and validates the project memory collection, current content digests, and increasing historical revisions. activeOnly hides drafts/revoked items, but corrupt history still fails to avoid presenting incomplete data as normal.
  */
 export function listProjectMemories(
   store: Store,
@@ -255,6 +315,9 @@ export function listProjectMemories(
   }
   return options.activeOnly ? memories.filter((memory) => memory.status === 'active') : memories;
 }
+/** 按集合格式保存全部项目记忆并施加项目总字节上限；调用方负责事务及单条内容验证。
+ * EN: Saves the entire memory collection under the project byte cap; callers own transactions and per-record validation.
+ */
 function saveMemories(store: Store, projectId: string, memories: ProjectMemory[]) {
   saveMeta(
     store,
@@ -263,7 +326,11 @@ function saveMemories(store: Store, projectId: string, memories: ProjectMemory[]
     PROJECT_INTELLIGENCE_LIMITS.projectMemoryBytes,
   );
 }
-/** 创建修订 1 的草稿或启用记忆；容量包含已撤销项，撤销不用于绕过记录数量上限。 */
+/**
+ * 创建修订 1 的草稿或启用记忆；容量包含已撤销项，撤销不用于绕过记录数量上限。
+ *
+ * EN: Creates a draft/enabled memory at revision one; capacity includes revoked items so revocation cannot bypass count limits.
+ */
 export function createProjectMemory(
   store: Store,
   projectId: string,
@@ -296,6 +363,8 @@ export function createProjectMemory(
 /**
  * 按期望修订更新、撤销或恢复历史正文；恢复是新增一个修订，不回退版本号。
  * 保存完整旧版本供回查，并按数量与单记录容量逐个移除最旧历史，始终保留当前版本。
+ *
+ * EN: Edits, revokes, or restores history against the expected revision; restore creates a new higher revision. Retains full old versions and evicts complete oldest versions to satisfy count/record capacity while always keeping the current version.
  */
 export function updateProjectMemory(
   store: Store,
@@ -351,8 +420,13 @@ export function updateProjectMemory(
       updatedAt: now(),
       history: [...current.history, previous].slice(-PROJECT_INTELLIGENCE_LIMITS.historyCount),
     };
-    // Retention is bounded per record. Evict only complete oldest versions; the current
-    // version always fits, so reaching the project limit cannot lock out edits or revocation.
+    /**
+     * 每条记录的保留范围有界，只淘汰完整的最旧版本；当前
+     * 版本始终容得下，因此项目达到上限也不会锁住编辑或撤销。
+     *
+     * EN: Retention is bounded per record. Evict only complete oldest versions; the current
+     * version always fits, so reaching the project limit cannot lock out edits or revocation.
+     */
     while (
       next.history.length &&
       Buffer.byteLength(stable(next)) > PROJECT_INTELLIGENCE_LIMITS.memoryRecordBytes
@@ -371,7 +445,11 @@ export function updateProjectMemory(
     return next;
   });
 }
-/** 仅从当前项目已启用的记忆中分页正文，同时返回来源、修订和摘要供调用方核验。 */
+/**
+ * 仅从当前项目已启用的记忆中分页正文，同时返回来源、修订和摘要供调用方核验。
+ *
+ * EN: Pages only enabled memories from the current project, returning source, revision, and digest for validation.
+ */
 export function readProjectMemory(
   store: Store,
   projectId: string,

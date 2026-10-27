@@ -1,4 +1,8 @@
-/** 提供数据备份、恢复等维护服务。 */
+/**
+ * 提供数据备份、恢复等维护服务。
+ * 把不可信计划 JSON 交给对应维护服务，分别输出正式结果与进度；文件维护能力显式禁止 Docker 和凭据读取。
+ * EN: Provides backup, restore, and other data-maintenance commands. Routes untrusted plan JSON to maintenance services with separate results/progress; file maintenance explicitly denies Docker and credential access.
+ */
 import {
   Store,
   dataDirectory,
@@ -46,7 +50,10 @@ import {
 import { prepareStartupUpgrade } from './startup-storage.js';
 import { ObjectCleanupPlan } from './object-maintenance.js';
 import { inspectObjectAudit, runObjectMaintenance } from './object-maintenance-runner.js';
-// 维护命令由动作及可选入口、计划和报告参数组成；不经过常驻 HTTP 服务。
+/**
+ * 维护命令由动作及可选入口、计划和报告参数组成；不经过常驻 HTTP 服务。
+ * EN: Maintenance arguments specify an action and optional surface, plan, and report fields; they do not use the resident HTTP service.
+ */
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -104,9 +111,8 @@ if (terminalActions.includes(action) && hasSelection && selection !== 'terminal'
   throw new Error('terminal-* 维护操作只能用于 terminal 入口');
 
 /**
- * 使用禁用 Docker、CLI 环境和 API 凭据访问的终端服务执行纯文件维护。
- * 预览输出封装 plan 与 commandId；应用前重建并验证计划，已提交命令则直接重放原回执。
- * 调用方持有双方入口锁，退出时取消扫描并释放网关和 Store。
+ * 使用禁用 Docker、CLI 环境和 API 凭据访问的终端服务执行纯文件维护。 预览输出封装 plan 与 commandId；应用前重建并验证计划，已提交命令则直接重放原回执。 调用方持有双方入口锁，退出时取消扫描并释放网关和 Store。
+ * EN: Performs filesystem-only maintenance through terminal services with Docker, CLI environments, and API credential access disabled. Previews include plan and commandId; apply reconstructs and verifies plans, while committed commands replay original receipts. Callers hold both surface locks and cancel scans/dispose gateway and Store on exit.
  */
 async function terminalMaintenance(directory: string) {
   assertSurfacePath(directory, 'terminal');
@@ -117,13 +123,25 @@ async function terminalMaintenance(directory: string) {
     gateway = new ToolGateway(kernel);
   const service = new DockerAgentService(kernel, gateway, {
     transport: {
+      /**
+       * 拒绝文件维护路径调用 Docker，作为能力隔离的失败桩。
+       * EN: Rejects Docker execution from file maintenance as an explicit capability boundary.
+       */
       run: async () => {
         throw new Error('文件维护不能调用 Docker');
       },
     },
+    /**
+     * 拒绝维护路径读取 CLI 凭据环境，避免文件操作取得终端认证能力。
+     * EN: Rejects CLI credential-environment access from file maintenance.
+     */
     environment: () => {
       throw new Error('文件维护不能读取 CLI 凭据');
     },
+    /**
+     * 拒绝维护路径解析 API 凭据；备份与清理无需模型认证。
+     * EN: Rejects API credential resolution because backup/cleanup requires no model authentication.
+     */
     resolveConnection: async () => {
       throw new Error('文件维护不能读取 API 凭据');
     },
@@ -131,10 +149,21 @@ async function terminalMaintenance(directory: string) {
   const maintenance = new TerminalMaintenance(store, {
     snapshot: service.maintenanceSnapshot.bind(service),
     guard: service.withMaintenanceGuard.bind(service),
+    /**
+     * 按持久任务状态判断运行是否有 RUNNING 任务，供维护占用守卫使用。
+     * EN: Checks persisted task states for RUNNING work as maintenance occupancy input.
+     */
     isActive: (runId) => store.all<any>('tasks', runId).some((task) => task.status === 'RUNNING'),
   });
+  /**
+   * 解析命令行指定的有界普通 JSON 文件；拒绝缺失参数、链接和特殊文件，解析错误直接终止维护。
+   * EN: Parses a bounded regular JSON file named by CLI arguments; missing paths, links, special files and parse failures stop maintenance.
+   */
   function input() {
-    // 维护计划作为不可信本地输入，同样拒绝链接、特殊文件及过大的 JSON。
+    /**
+     * 维护计划作为不可信本地输入，同样拒绝链接、特殊文件及过大的 JSON。
+     * EN: Treats maintenance plans as untrusted local input, rejecting links, special files, and oversized JSON.
+     */
     if (!argument) throw new Error(action + ' 需要预览输入或计划 JSON 文件路径');
     const filename = path.resolve(argument),
       stat = lstatSync(filename);
@@ -143,6 +172,10 @@ async function terminalMaintenance(directory: string) {
     return JSON.parse(readFileSync(filename, 'utf8'));
   }
   const controller = new AbortController(),
+    /**
+     * 将进程取消信号映射为当前终端维护扫描取消。
+     * EN: Maps process cancellation to the current terminal-maintenance scan.
+     */
     cancel = () => controller.abort();
   process.once('SIGINT', cancel);
   process.once('SIGTERM', cancel);
@@ -184,7 +217,10 @@ async function terminalMaintenance(directory: string) {
           ? 'backup'
           : 'restore';
     if (envelope.plan.kind !== expectedKind) throw new Error('维护计划与当前操作不一致');
-    // A committed command is replayed using its original payload before revalidating an expired plan.
+    /**
+     * 已提交命令先按原负载重放，再考虑已过期计划的重新校验。
+     * EN: A committed command is replayed using its original payload before revalidating an expired plan.
+     */
     if (!store.db.prepare('SELECT id FROM commands WHERE id=?').get(envelope.commandId))
       await maintenance.loadPlan(envelope.plan);
     const body = {
@@ -212,7 +248,10 @@ async function terminalMaintenance(directory: string) {
 }
 
 const configuredDirectory = dataDirectory();
-// 审计查看不取得服务锁，只验证回执绑定；真正备份/恢复/清理必须在下方持锁分支执行。
+/**
+ * 审计查看不取得服务锁，只验证回执绑定；真正备份/恢复/清理必须在下方持锁分支执行。
+ * EN: Audit reads do not take service locks and only validate receipt binding; real backup/restore/cleanup executes under the locked branch below.
+ */
 if (action === 'objects-audit') {
   if (!argument || hasSelection) throw new Error('objects-audit 需要审计 JSONL 文件，不接受 --surface');
   const report = path.resolve(argument);
@@ -255,7 +294,10 @@ if (action === 'objects-audit') {
   );
   console.log('已请求服务在安全边界停止（两个入口整体停止）');
 } else {
-  // Preflight both surface locks before backup, recovery, migration or terminal maintenance.
+  /**
+   * 备份、恢复、迁移或终端维护前预检两个入口锁。
+   * EN: Preflight both surface locks before backup, recovery, migration or terminal maintenance.
+   */
   const release = acquireSurfaceLocks(configuredDirectory);
   const directory = realpathSync(configuredDirectory);
   try {
@@ -288,7 +330,15 @@ if (action === 'objects-audit') {
         );
       }
       const controller = new AbortController(),
+        /**
+         * 将对象维护的宿主取消请求传给工作者信号。
+         * EN: Forwards host cancellation to the object-maintenance worker signal.
+         */
         cancel = () => controller.abort();
+      /**
+       * 仅接收 maintenance-cancel IPC 类型并触发取消，其他宿主消息不影响维护。
+       * EN: Accepts only maintenance-cancel IPC messages; other host messages cannot alter maintenance.
+       */
       const cancelMessage = (message: unknown) => {
         if (
           message &&
@@ -306,6 +356,10 @@ if (action === 'objects-audit') {
           { directory, selection, action: action === 'objects-plan' ? 'plan' : 'cleanup', plan, report },
           {
             signal: controller.signal,
+            /**
+             * 把对象扫描进度以稳定 JSON 写入 stderr，保留 stdout 给正式结果。
+             * EN: Writes object-scan progress as stable JSON to stderr, reserving stdout for the final result.
+             */
             onProgress: (progress) => console.error(stable({ type: 'objects-progress', ...progress })),
           },
         );
@@ -408,7 +462,10 @@ if (action === 'objects-audit') {
           surface: selection,
           surfaces: entries,
         };
-        // Publish metadata last so incomplete copies are never valid restore sources.
+        /**
+         * 最后发布元数据，使未完成副本不能成为有效恢复来源。
+         * EN: Publish metadata last so incomplete copies are never valid restore sources.
+         */
         copyDirectory(stage, target);
         writeFileSync(path.join(target, 'backup.json'), stable(metadata));
         console.log('备份完成（' + surfaces.join('、') + '）：' + target);

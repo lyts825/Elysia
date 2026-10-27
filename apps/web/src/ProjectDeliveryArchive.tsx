@@ -1,4 +1,8 @@
-/* 展示和管理项目交付归档。 */
+/**
+ * 展示和管理项目交付归档。
+ * 分页浏览独立保存的ZIP，协调生成、取消、下载与删除确认，并核对清单/对象哈希；取消作业后仍读取最终状态以区分已完成保存。
+ * EN: Displays and manages project delivery archives. Browses independently saved ZIPs and coordinates generation, cancellation, download, and deletion acknowledgement with manifest/object hashes; cancelled jobs are reconciled to distinguish completed saves.
+ */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBundleJob,
@@ -13,14 +17,26 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import './project-delivery-bundle.css';
 import './project-delivery-archive.css';
 
+/**
+ * 按字节、KiB或MiB显示保存包大小，较大单位保留一位小数便于列表核对。
+ * EN: Formats archive sizes in bytes, KiB, or MiB with one decimal for larger units for list inspection.
+ */
 const sizeLabel = (bytes: number) =>
   bytes < 1024
     ? `${bytes} B`
     : bytes < 1024 * 1024
       ? `${(bytes / 1024).toFixed(1)} KiB`
       : `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+/**
+ * 以项目及清单身份生成归档资源路径，所有下载和查询都绑定这一清单。
+ * EN: Builds the archive resource path from project and manifest identities so reads and downloads target the same manifest.
+ */
 const archiveBase = (archive: Pick<Archive, 'projectId' | 'manifestId'>) =>
   `/projects/${archive.projectId}/delivery-manifests/${archive.manifestId}/archive`;
+/**
+ * 把清单哈希和对象哈希加入预期版本参数；服务端可拒绝身份变化后的文件读取。
+ * EN: Adds expected manifest and object hashes as query parameters so the server can reject reads after identity changes.
+ */
 const archiveQuery = (archive: Archive) =>
   '?expectedManifestHash=' +
   encodeURIComponent(archive.manifestHash) +
@@ -29,9 +45,13 @@ const archiveQuery = (archive: Archive) =>
 /**
  * 下载前在浏览器核对声明长度、ZIP 头和完整 SHA-256，取消检查放在耗时摘要计算之后。
  * 只有全部一致才创建下载链接，防止网络或存储异常内容被当作已验证保存包交付。
+ * EN: Before download validate declared length, ZIP signature, and full SHA-256; check cancellation after hashing. Create links only for consistent data so corrupt bytes are not delivered as verified archives.
  */
 async function downloadArchive(bytes: Uint8Array, archive: Archive, signal?: AbortSignal) {
-  // 下载前先检查声明长度和 ZIP 文件头，后续再核对内容摘要。
+  /**
+   * 下载前先检查声明长度和 ZIP 文件头，后续再核对内容摘要。
+   * EN: Check declared length and ZIP header before content digest.
+   */
   if (
     bytes.length !== archive.size ||
     bytes.length < 4 ||
@@ -56,6 +76,10 @@ async function downloadArchive(bytes: Uint8Array, archive: Archive, signal?: Abo
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * 展示已归档文件包的数量、大小、清单及对象哈希等事实，供下载前核对冻结身份。
+ * EN: Displays archive facts including file count, size, and manifest/object hashes for verification of the frozen identity before downloading.
+ */
 function ArchiveFacts({ value }: { value: Archive }) {
   return (
     <dl className="archive-facts">
@@ -79,6 +103,7 @@ function ArchiveFacts({ value }: { value: Archive }) {
  * 分页浏览持久保存的项目文件包，记录独立于当前运行和产物是否仍存在。
  * 下载和删除按冻结清单哈希及对象哈希绑定；取消或读取错误时禁用动作，保留上一页供查看。
  * onSnapshot 在读取开始即置空，避免外层删除确认继续信任旧集合。
+ * EN: Browse persistent packages independently of surviving runs/artifacts. Bind download/delete to manifest/object hashes. On cancellation/read errors disable actions and retain the old page. Clear onSnapshot at read start so outer deletion guards cannot trust an old set.
  */
 export function ProjectDeliveryArchives({
   projectId,
@@ -98,6 +123,10 @@ export function ProjectDeliveryArchives({
   const { api, apiBytes } = useSurfaceClient();
   const archiveId = useId();
   type Position = { before: string; trail: string[] };
+  /**
+   * 创建无游标、无返回轨迹的独立首页位置，供刷新或项目切换后重置分页。
+   * EN: Creates a fresh first-page position without a cursor or return trail for refreshes and project changes.
+   */
   const firstPage = (): Position => ({ before: '', trail: [] });
   const [display, setDisplay] = useState<{ page: ProjectDeliveryArchiveList; position: Position }>();
   const [intent, setIntent] = useState<{
@@ -123,6 +152,10 @@ export function ProjectDeliveryArchives({
   const [removing, setRemoving] = useState<Archive>();
   const request = useRef<AbortController | null>(null),
     live = useRef(true);
+  /**
+   * 挂载标记列表视图可接收异步结果，卸载撤销该标记并中断下载请求，供下载后的昂贵校验再次检查。
+   * EN: Marks the archive list live for async results and revokes that flag while aborting downloads on teardown, supporting post-verification liveness checks.
+   */
   useEffect(() => {
     live.current = true;
     return () => {
@@ -130,11 +163,19 @@ export function ProjectDeliveryArchives({
       request.current?.abort();
     };
   }, []);
+  /**
+   * 项目、列表修订或分页意图变化时读取保存包列表；核对每项归属和页游标，清理取消并仅解除自己的控制器引用。
+   * EN: Reads archives on project, list revision, or page-intent changes, validating item ownership/cursor; cleanup aborts and detaches only its own controller reference.
+   */
   useEffect(() => {
     const controller = new AbortController();
     listRequest.current = controller;
     const target =
       intent?.projectId === projectId && intent.revision === revision ? intent.position : firstPage();
+    /**
+     * 判断当前列表控制器是否仍为最新且未取消；所有异步回写以此屏蔽旧页结果。
+     * EN: Checks that this list controller is still current and not aborted, guarding asynchronous updates from obsolete page reads.
+     */
     const active = () => listRequest.current === controller && !controller.signal.aborted;
     setListRead({ status: 'loading', error: '' });
     onSnapshot?.(undefined);
@@ -169,6 +210,10 @@ export function ProjectDeliveryArchives({
       if (listRequest.current === controller) listRequest.current = undefined;
     };
   }, [api, projectId, intent, revision, onSnapshot]);
+  /**
+   * 取消上一次列表读取并记录新分页意图，递增尝试号以便同位置重试也触发读取。
+   * EN: Aborts the prior list read and records a new page intent, incrementing its attempt so retrying the same position triggers a read.
+   */
   const requestList = (target: Position) => {
     listRequest.current?.abort();
     setIntent((previous) => ({
@@ -178,12 +223,20 @@ export function ProjectDeliveryArchives({
       attempt: (previous?.attempt ?? 0) + 1,
     }));
   };
+  /**
+   * 取消列表读取、清空上层摘要并显示取消状态；已读列表仍保留用于核对。
+   * EN: Cancels the list read, clears the parent snapshot, and displays cancellation while retaining previously loaded list content.
+   */
   const cancelList = () => {
     listRequest.current?.abort();
     listRequest.current = undefined;
     onSnapshot?.(undefined);
     setListRead({ status: 'cancelled', error: '' });
   };
+  /**
+   * 串行下载指定冻结归档并校验身份、长度和完整摘要；仅当前未取消请求触发浏览器保存，失败发布错误。
+   * EN: Downloads one frozen archive at a time and validates identity, length, and full digest. Only the current non-aborted request triggers browser saving; failures expose an error.
+   */
   const download = async (archive: Archive) => {
     if (request.current) return;
     const controller = new AbortController();
@@ -208,7 +261,10 @@ export function ProjectDeliveryArchives({
       }
     }
   };
-  /** 删除只移除项目中的保存对象；响应必须确认同一项目、清单且 archive 为 null。 */
+  /**
+   * 删除只移除项目中的保存对象；响应必须确认同一项目、清单且 archive 为 null。
+   * EN: Delete only the saved project object; response must match project/manifest and confirm archive=null.
+   */
   const remove = async () => {
     if (!removing || request.current) return;
     const archive = removing,
@@ -257,7 +313,10 @@ export function ProjectDeliveryArchives({
           className="secondary"
           disabled={loading || !!busy}
           onClick={() => {
-            // Explicitly rechecking the list is the existing recovery path for a failed file action.
+            /**
+             * 文件动作失败后可通过明确重查列表恢复。
+             * EN: Explicitly rechecking the list is the existing recovery path for a failed file action.
+             */
             setError('');
             requestList(firstPage());
           }}
@@ -466,7 +525,10 @@ type SaveRequest = {
   cancelled: boolean;
   cancellation?: Promise<ProjectDeliveryBundleJob>;
 };
-/** Explicitly save to the project; cancelling waits for an authoritative outcome. */
+/**
+ * 明确保存至项目，取消也等待权威结果。
+ * EN: Explicitly save to the project; cancelling waits for an authoritative outcome.
+ */
 export function ProjectDeliveryArchive({
   manifest,
   archived,
@@ -492,6 +554,10 @@ export function ProjectDeliveryArchive({
   const base = `/projects/${manifest.projectId}/delivery-manifests/${manifest.id}`;
   const [clientId] = useState(() => crypto.randomUUID());
   const body = { expectedManifestHash: manifest.hash, clientId };
+  /**
+   * 为本次保存作业复用一个取消Promise；先等待创建返回，再按确定jobId请求删除，避免取消未知作业。
+   * EN: Reuses one cancellation promise for this save job, waiting for creation before deleting the exact jobId to avoid cancelling an unknown job.
+   */
   const cancelJob = (request: SaveRequest) =>
     (request.cancellation ??= request.creation.then(() =>
       api<ProjectDeliveryBundleJob>(
@@ -501,10 +567,18 @@ export function ProjectDeliveryArchive({
         AbortSignal.timeout(15_000),
       ),
     ));
+  /**
+   * 核对归档的项目、清单ID和清单哈希，防止把其他版本的保存结果应用到当前清单。
+   * EN: Checks archive project, manifest ID, and manifest hash so a save result from another revision cannot be applied to this manifest.
+   */
   const belongs = (value: Archive) =>
     value.projectId === manifest.projectId &&
     value.manifestId === manifest.id &&
     value.manifestHash === manifest.hash;
+  /**
+   * 读取当前清单的保存状态并核对响应身份；身份不符时抛错，防止展示其他清单的独立保存包。
+   * EN: Reads archive state for this manifest and validates response identity, throwing on mismatch rather than displaying an archive from another manifest.
+   */
   const read = async (signal?: AbortSignal) => {
     const result = await api<ProjectDeliveryArchiveView>(
       base + '/archive?expectedManifestHash=' + encodeURIComponent(manifest.hash),
@@ -521,6 +595,10 @@ export function ProjectDeliveryArchive({
       throw Error('保存包状态不属于当前清单，请重读。');
     return result.archive;
   };
+  /**
+   * 清单哈希、归档修订或重试变化时读取保存状态；旧请求中断后不回写loading、错误或保存包，避免跨清单显示。
+   * EN: Reads archive state on manifest-hash, archive-revision, or retry changes; aborted reads cannot update loading, errors, or archives across manifests.
+   */
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -538,6 +616,10 @@ export function ProjectDeliveryArchive({
       });
     return () => controller.abort();
   }, [api, base, manifest.hash, revision, retry]);
+  /**
+   * 保存面板卸载时标记本次操作取消，中断浏览器读取并尽力取消精确服务端作业；完成保存仍由取消核对流程识别。
+   * EN: On save-panel teardown, marks its operation cancelled, aborts browser reads, and best-effort cancels the exact server job; cancellation reconciliation still recognizes completed saves.
+   */
   useEffect(() => {
     live.current = true;
     return () => {
@@ -550,6 +632,10 @@ export function ProjectDeliveryArchive({
       }
     };
   }, []);
+  /**
+   * 验证归档归属后向仍挂载的界面发布保存成功，并通知上层刷新；身份不符直接抛错。
+   * EN: Validates archive ownership before publishing success to a live view and notifying the parent to refresh; an identity mismatch throws.
+   */
   const accept = (value: Archive) => {
     if (!belongs(value)) throw Error('保存结果不属于当前清单，请重读项目保存包。');
     if (!live.current) return;
@@ -558,6 +644,10 @@ export function ProjectDeliveryArchive({
     setError('');
     onSaved?.();
   };
+  /**
+   * 读取精确作业的取消结果；若保存已完成则接受归档，否则确认终止并重新读取权威状态，避免把取消等同于回滚。
+   * EN: Settles cancellation for the exact job. A completed save is accepted; otherwise termination is confirmed and authoritative archive state is reread, because cancellation does not imply rollback.
+   */
   const settleCancellation = async (request: SaveRequest) => {
     const result = await cancelJob(request);
     if (!live.current || operation.current !== request) return;
@@ -575,6 +665,10 @@ export function ProjectDeliveryArchive({
       setNotice('本次保存已取消，项目尚未保存此文件包。可以重新保存。');
     }
   };
+  /**
+   * 在无并发操作且清单可保存时创建独立保存作业，轮询并校验身份；取消后核对最终状态，完成结果由accept统一发布。
+   * EN: Creates an isolated save job only when no operation is active and the manifest is eligible, polling with identity checks. Cancellation reconciles final state; accept publishes completed results.
+   */
   const save = async () => {
     if (operation.current || archive || loading || error || archived) return;
     const controller = new AbortController(),
@@ -625,6 +719,10 @@ export function ProjectDeliveryArchive({
           return;
         }
         await new Promise<void>((resolve) => {
+          /**
+           * 结束一次轮询间隔等待并解除中断监听；定时完成和取消信号共用此收束路径。
+           * EN: Ends one polling delay and removes its abort listener, sharing cleanup between timeout completion and cancellation.
+           */
           const done = () => {
             clearTimeout(timer);
             controller.signal.removeEventListener('abort', done);
@@ -760,7 +858,10 @@ export function ProjectDeliveryArchive({
 }
 
 export type ProjectArchiveDeleteConsent = { projectId: string; setHash: string };
-/** Read every retained-set identity before allowing project deletion; failures never mean zero. */
+/**
+ * 项目删除前读取全部保留集合身份，失败不能当作零。
+ * EN: Read every retained-set identity before allowing project deletion; failures never mean zero.
+ */
 export function ProjectArchiveDeleteNotice({
   projectId,
   disabled,

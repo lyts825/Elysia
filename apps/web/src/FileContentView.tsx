@@ -1,4 +1,8 @@
-/* 展示文件文本内容及编码选项。 */
+/**
+ * 展示文件文本内容及编码选项。
+ * 统一处理源码、编码、行定位和阅读区域展示，保留原始文本；分页请求和版本选择由调用方提供。
+ * EN: Displays file content and encoding-related options. Shares source, encoding, line-location, and reading-region presentation while retaining original text; callers supply paginated content and revision selection.
+ */
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownDocument } from './MarkdownDocument';
 import type { FilePreviewContent } from './useFilePage';
@@ -18,6 +22,7 @@ export const fileEncodingOptions = [
  * 按媒体类型呈现已读片段：Markdown 可切文档/源码，图片与 PDF 使用受限资源 URL，
  * 其他二进制仅提示下载。搜索命中强制采用源码显示，但不覆盖用户保存的显示偏好。
  * 阅读位置还绑定文件版本、页偏移和编码，正文未 ready 时不恢复或写入滚动位置。
+ * EN: Render loaded fragments according to media type. Markdown can switch document/source mode; images and PDFs use restricted resource URLs; other binaries offer download only. Search hits force source mode without overwriting the saved preference. Position is also bound to file version, page offset, and encoding; do not restore or save it before content is ready.
  */
 export function FileContentView({
   file,
@@ -36,7 +41,10 @@ export function FileContentView({
 }) {
   const client = useSurfaceClient();
   const savedKey = JSON.stringify(['content-view', checkpointKey, file.path]);
-  // 文档／源码模式与换行选项按文件保存，滚动位置还区分页、版本和编码。
+  /**
+   * 文档／源码模式与换行选项按文件保存，滚动位置还区分页、版本和编码。
+   * EN: Save document/source mode and wrapping per file; distinguish scroll positions by page, version, and encoding as well.
+   */
   const saved = checkpointKey
     ? readingCheckpoint<{ mode: 'document' | 'source'; wrap: boolean }>(client, savedKey)
     : undefined;
@@ -45,13 +53,20 @@ export function FileContentView({
   const scrollKey = JSON.stringify([savedKey, file.page?.version, file.page?.offset, file.encoding, mode]);
   const documentScroll = useReadingScroll(client, scrollKey, !!checkpointKey && readingReady);
   const sourceScroll = useReadingScroll<HTMLPreElement>(client, scrollKey, !!checkpointKey && readingReady);
+  /**
+   * 源码显示模式或换行偏好变化时按阅读键保存检查点，跨文件偏好由独立键隔离。
+   * EN: Persists source-display mode and wrap preferences by reading key, isolating different files with separate keys.
+   */
   useLayoutEffect(() => {
     if (checkpointKey) saveReadingCheckpoint(client, savedKey, { mode, wrap });
   }, [client, checkpointKey, savedKey, mode, wrap]);
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const highlighted = useRef<HTMLElement>(null);
   const scrolledHighlight = useRef('');
-  // 搜索给出的是 UTF-8 字节区间，先扣除首页 BOM 再转换成 JavaScript 字符索引。
+  /**
+   * 搜索给出的是 UTF-8 字节区间，先扣除首页 BOM 再转换成 JavaScript 字符索引。
+   * EN: Search ranges are UTF-8 byte offsets. Subtract a first-page BOM before converting them into JavaScript string indexes.
+   */
   const range = useMemo(() => {
     if (
       !highlight ||
@@ -70,6 +85,10 @@ export function FileContentView({
       end: decoder.decode(bytes.subarray(0, highlight.endOffset - file.page.offset - bom)).length,
     };
   }, [file.text, file.page?.offset, file.page?.endOffset, file.encoding, file.encodingSource, highlight]);
+  /**
+   * 行高亮请求或范围变化后定位目标行，在布局完成后滚动和标记；重复渲染不重放相同定位。
+   * EN: Locates the requested line after highlight/range changes and layout completion, applying scrolling/marking without replaying identical requests on ordinary renders.
+   */
   useLayoutEffect(() => {
     const key = JSON.stringify([highlight?.requestId, file.page?.offset]);
     if (range && highlighted.current && scrolledHighlight.current !== key) {
@@ -225,6 +244,7 @@ export function FileContentView({
 /**
  * 高亮服务端已定位到片段开头的行范围，不为全文每行创建 DOM 节点。
  * requestId 保证同一定位只滚动一次；文字变化但请求不变不会反复夺走用户阅读位置。
+ * EN: Highlight the line range that the server has located at the fragment start, rather than creating DOM nodes for every line in the whole file. requestId permits one scroll per navigation; text updates under the same request must not repeatedly take the reader's position.
  */
 export function SourceText({
   text,
@@ -260,6 +280,10 @@ export function SourceText({
       end = newline + 1;
     }
   }
+  /**
+   * 请求ID或源码文本变化后重新完成行定位，使分页正文加载完成后仍能响应先前目标。
+   * EN: Reapplies line location after request-ID or source-text changes so a target can resolve after paginated text arrives.
+   */
   useLayoutEffect(() => {
     if (requestId && target.current && handled.current !== requestId) {
       handled.current = requestId;

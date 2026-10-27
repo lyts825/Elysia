@@ -1,5 +1,12 @@
-/* 读取和匹配回复回执，并生成回执载荷。 */
-/** Native message receipts share the existing per-run send key with terminal receipts. */
+/**
+ * 读取和匹配回复回执，并生成回执载荷。
+ * 校验回复确认回执并与待发送输入逐字段匹配，生成可重试的精确载荷；相似文本不等同于同一提交。
+ * EN: Validates reply receipts and reconstructs their payloads. Validates reply receipts, matches them field-by-field to pending input, and builds exact retry payloads; similar text is not considered the same submission.
+ */
+/**
+ * 原生消息回执与终端回执共用按运行保存的发送键。
+ * EN: Native message receipts share the existing per-run send key with terminal receipts.
+ */
 export type ReplyReceipt = {
   version: 1;
   targetRunId: string;
@@ -10,7 +17,10 @@ export type ReplyReceipt = {
   outcome?: 'not-sent';
 };
 
-/** 严格检查版本、正文、命令 ID 和期望版本，无法核验时不产生可重发回执。 */
+/**
+ * 严格检查版本、正文、命令 ID 和期望版本，无法核验时不产生可重发回执。
+ * EN: Strictly validate version/text/command ID/expected revision; unverifiable data cannot become a resendable receipt.
+ */
 export function readReplyReceipt(value: string | boolean | undefined): ReplyReceipt | null {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : null;
@@ -43,7 +53,10 @@ export function readReplyReceipt(value: string | boolean | undefined): ReplyRece
   }
 }
 
-/** 区分无回执与不可读取的回执，后者须保留原记录以供核对。 */
+/**
+ * 区分无回执与不可读取的回执，后者须保留原记录以供核对。
+ * EN: Distinguish absent from unreadable receipts, preserving unreadable originals for review.
+ */
 export function inspectReplyReceipt(value: string | boolean | undefined, targetRunId: string) {
   if (value === undefined || value === '') return { status: 'empty' as const };
   const receipt = readReplyReceipt(value);
@@ -55,7 +68,10 @@ export function inspectReplyReceipt(value: string | boolean | undefined, targetR
   return { status: 'ready' as const, receipt };
 }
 
-/** 仅当任务、正文和发送意图均一致且结果未标记为未发送时，复用回执。 */
+/**
+ * 仅当任务、正文和发送意图均一致且结果未标记为未发送时，复用回执。
+ * EN: Reuse only matching task/text/send intent whose result is not marked unsent.
+ */
 export function matchesReplyReceipt(
   receipt: ReplyReceipt | null,
   targetRunId: string,
@@ -71,7 +87,10 @@ export function matchesReplyReceipt(
   );
 }
 
-/** 原样重建同一次发送负载；不能刷新 expectedRevision 或重新生成 commandId 后称为原请求重试。 */
+/**
+ * 原样重建同一次发送负载；不能刷新 expectedRevision 或重新生成 commandId 后称为原请求重试。
+ * EN: Reconstruct the exact original send payload; changing expectedRevision or commandId is not retrying the same request.
+ */
 export const replyReceiptPayload = (receipt: ReplyReceipt) => ({
   commandId: receipt.commandId,
   expectedRevision: receipt.expectedRevision,

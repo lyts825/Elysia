@@ -1,5 +1,11 @@
-/* 定义 detail-read-notice 对应界面的样式与布局。 */
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 详情读取提示：分层展示读取覆盖、来源、结果和错误，较长证据保留独立阅读区。字段布局给标签最小宽度并允许内容列收缩，避免长标识造成整体横向溢出。
+ * EN: Detail-read notices: separates coverage, provenance, results, and errors with dedicated reading regions for long evidence. Field grids reserve label width while allowing content to shrink, containing long identifiers.
+ */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .detail-read-stack {
   flex-shrink: 0;
   min-width: 0;
@@ -63,7 +69,10 @@
   gap: var(--space-3);
   margin: var(--space-3) 0;
 }
-/* 为左侧标签保留最小宽度，右侧内容列可在窄容器中收缩。 */
+/*
+ * 为左侧标签保留最小宽度，右侧内容列可在窄容器中收缩。
+ * EN: Reserves a minimum label width while allowing the right content column to shrink in narrow containers.
+ */
 .detail-read-coverage > div {
   display: grid;
   grid-template-columns: minmax(3rem, 0.25fr) minmax(0, 1fr);

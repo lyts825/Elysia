@@ -1,4 +1,7 @@
-/* 定义 peer-review 对应界面的样式与布局。 */
+/*
+ * 同行复核配置与结果：排列启用选项、模型候选、数量摘要及复核记录。计数网格自适应宽度，长记录在有界区域滚动，使配置选择与复核证据同时可访问。
+ * EN: Peer-review setup/results: arranges enable options, model candidates, count summaries, and review records. Adaptive counts and bounded record scrolling keep configuration and evidence accessible.
+ */
 .peer-review-setup,
 .peer-review-panel {
   min-width: 0;
@@ -43,7 +46,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
+/*
+ * 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。
+ * EN: Column count follows container width, targeting a 10rem minimum per column without exceeding a narrower container.
+ */
 .peer-review-settings {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
 }
@@ -75,7 +81,10 @@
   border-radius: var(--radius-control);
   background: var(--surface);
 }
-/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
+/*
+ * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
+ * EN: Scrolls overflowing content within this region and prevents scroll chaining to the outer surface.
+ */
 .peer-review-reading {
   max-height: min(24rem, 50dvh);
   overflow: auto;

@@ -1,4 +1,8 @@
-/** 管理订阅服务及其状态。 */
+/**
+ * 管理订阅服务及其状态。
+ * 串行管理 OAuth/OIDC、加密保险库与旋转令牌，并提供账号取消/额度封锁；秘密不返渲染层，模型正文和预算仍归请求执行层。
+ * EN: Manages subscription authentication and account state. Serializes OAuth/OIDC, encrypted vault and token rotation with account cancellation/quota blocking; secrets stay backend while request layers own bodies/budgets.
+ */
 import { createServer, type Server } from 'node:http';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
@@ -10,6 +14,10 @@ const issuer = 'https://auth.openai.com';
 const resource = 'https://api.openai.com/v1';
 const scopes = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 const permission = 'chatgpt.tokens.use.direct';
+/**
+ * 生成 32 字节密码学随机值并以 Base64URL 编码，用于 OAuth state、nonce 或 PKCE 材料。
+ * EN: Generates 32 cryptographically random bytes as Base64URL for OAuth state, nonce or PKCE material.
+ */
 const random = () => randomBytes(32).toString('base64url');
 const Credentials = z.object({
   id: z.string(),
@@ -43,8 +51,10 @@ interface Attempt {
   abort: AbortController;
 }
 
-/** OAuth secrets stay in the backend and the OS-encrypted desktop vault. */
-/** 管理订阅登录、凭据和模型目录；关闭时取消登录与在途请求。 */
+/**
+ * OAuth 密钥仅保留在后端和由操作系统加密的桌面保险库中。 管理订阅登录、凭据和模型目录；关闭时取消登录与在途请求。
+ * EN: OAuth secrets stay in the backend and the OS-encrypted desktop vault. Manages subscription login, credentials and catalogs, cancelling login and in-flight requests on close.
+ */
 export class SubscriptionService {
   private data?: VaultData;
   private loading?: Promise<void>;
@@ -57,24 +67,42 @@ export class SubscriptionService {
   private usageBlocked = new Set<string>();
   private closed = false;
   private vaultDirty = false;
+  /**
+   * 绑定可选桌面保险库和可注入 fetch；构造时不读令牌或发授权请求。
+   * EN: Binds optional desktop vault and injectable fetch without reading tokens or sending auth requests at construction.
+   */
   constructor(
     private desktop?: DesktopServices,
     private request: typeof fetch = fetch,
   ) {}
 
-  /** 串行处理登录、刷新和退出，避免两个请求并发使用同一轮换 refresh token。 */
+  /**
+   * 串行处理登录、刷新和退出，避免两个请求并发使用同一轮换 refresh token。
+   * EN: Serializes login, refresh and logout to prevent concurrent reuse of rotating refresh tokens.
+   */
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
     const result = this.queue.then(action);
     this.queue = result.catch(() => {});
     return result;
   }
+  /**
+   * 先更新内存并标记未落盘，再写系统保险库，成功才清除 dirty；轮换后的令牌即使落盘失败也不能退回旧值。
+   * EN: Updates memory/dirty state before OS-vault persistence and clears dirty only on success; rotated tokens never revert to old values after write failure.
+   */
   private async save(data: VaultData) {
-    // Retain rotated tokens in memory even if the disk write fails. Never reuse the old refresh token.
+    /**
+     * 即使磁盘写入失败也在内存保留轮换后的令牌，不能重用旧 refresh token。
+     * EN: Retain rotated tokens in memory even if the disk write fails. Never reuse the old refresh token.
+     */
     this.data = data;
     this.vaultDirty = true;
     await this.desktop!.request('vault-write', data);
     this.vaultDirty = false;
   }
+  /**
+   * 要求桌面能力并合并首次保险库加载，校验已存数据或建立新的主机身份；同一实例复用加载承诺。
+   * EN: Requires desktop capability and coalesces initial vault loading, validating saved data or creating a host identity; the instance reuses that promise.
+   */
   private async load() {
     invariant(this.desktop, 'DESKTOP_REQUIRED', 'ChatGPT 订阅登录需要从 Elysia 桌面入口启动');
     return (this.loading ??= (async () => {
@@ -83,15 +111,27 @@ export class SubscriptionService {
       else await this.save({ version: 1, hostId: 'urn:uuid:' + randomUUID(), accounts: [] });
     })());
   }
+  /**
+   * 从当前内存保险库按 ID 取账号，不存在则要求重新登录，不自动选择其他账号。
+   * EN: Finds an account by ID in the loaded vault or requests login without choosing another account.
+   */
   private account(id: string) {
     const account = this.data?.accounts.find((a) => a.id === id);
     invariant(account, 'CHATGPT_ACCOUNT', '找不到订阅账号，请在模型设置中登录');
     return account;
   }
+  /**
+   * 以相同 ID 替换单账号并保存完整保险库，其他账号资料保持原顺序。
+   * EN: Replaces one account by ID and persists the vault while retaining other accounts' order.
+   */
   private async replace(account: Account) {
     const others = this.data!.accounts.filter((a) => a.id !== account.id);
     await this.save({ ...this.data!, accounts: [...others, account] });
   }
+  /**
+   * 使用禁止重定向且带 20 秒/调用方取消的授权 HTTP 请求，完整读取文本后检查大小并解析；失败只公开安全代码、状态和请求 ID。
+   * EN: Makes auth HTTP requests with redirects disabled and caller/20-second cancellation, checks size after reading text and parses JSON; failures expose only safe codes/status/request IDs.
+   */
   private async json(url: string, init: RequestInit = {}) {
     let response: Response;
     try {
@@ -126,7 +166,10 @@ export class SubscriptionService {
     }
     return body;
   }
-  /** OIDC discovery 必须来自固定签发者和精确端点，再建立仅支持指定算法的身份验证。 */
+  /**
+   * OIDC discovery 必须来自固定签发者和精确端点，再建立仅支持指定算法的身份验证。
+   * EN: Requires discovery from the pinned issuer and exact endpoints before constructing algorithm-restricted identity verification.
+   */
   private async metadata() {
     if (this.discovery) return this.discovery;
     const doc = await this.json(issuer + '/.well-known/openid-configuration');
@@ -151,7 +194,10 @@ export class SubscriptionService {
     });
     return (this.discovery = doc);
   }
-  /** 核验签名、issuer、audience、时效与可选 nonce，拒绝登录返回到不同客户端或账号。 */
+  /**
+   * 核验签名、issuer、audience、时效与可选 nonce，拒绝登录返回到不同客户端或账号。
+   * EN: Checks signature, issuer, audience, lifetime and optional nonce to reject responses for a different client or account.
+   */
   private async identity(token: string, clientId: string, nonce?: string) {
     await this.metadata();
     try {
@@ -178,6 +224,10 @@ export class SubscriptionService {
       throw new AppError('OIDC_IDENTITY', 'OpenAI 登录身份校验失败，请重新登录');
     }
   }
+  /**
+   * 校验 Bearer 令牌响应及正有效期，计算到期/最早刷新时刻；刷新响应省略轮换字段时才保留旧值。
+   * EN: Validates Bearer responses/positive lifetime and computes expiry/earliest refresh, retaining old rotation fields only when omitted.
+   */
   private tokens(body: any, previous?: Account) {
     invariant(
       typeof body.access_token === 'string' &&
@@ -204,6 +254,10 @@ export class SubscriptionService {
       scopes: granted,
     };
   }
+  /**
+   * 返回公开账号摘要与当前登录尝试，不返回令牌；无桌面能力显示不可用，connected 仅依据已存凭据时效/刷新可能性。
+   * EN: Returns public account/login-attempt summaries without tokens; absent desktop is unavailable and connected reflects stored expiry/refresh possibility only.
+   */
   async status() {
     if (!this.desktop)
       return { available: false, accounts: [], attempt: null, message: '请从桌面入口使用订阅登录' };
@@ -229,6 +283,10 @@ export class SubscriptionService {
         : null,
     };
   }
+  /**
+   * 从内存检查账号权限、令牌和保险库落盘状态及退出锁，不在线验证认证是否仍有效。
+   * EN: Checks cached permissions/tokens, persisted-vault state and sign-out lock without online authentication verification.
+   */
   configured(id?: string | null) {
     const account = this.data?.accounts.find((a) => a.id === id);
     return (
@@ -239,9 +297,17 @@ export class SubscriptionService {
       !this.signingOut.has(account.id)
     );
   }
+  /**
+   * 把登录启动放入账号串行队列，避免与刷新或退出同时改写凭据。
+   * EN: Serializes login startup with credential refresh/logout to prevent concurrent token mutation.
+   */
   async start(accountId?: string, consent = false) {
     return this.exclusive(() => this.startLogin(accountId, consent));
   }
+  /**
+   * 读取受信发现配置后建立仅回环监听的 OAuth 回调服务，生成一次性 state/nonce/PKCE 并通过桌面打开登录页；回调严格核对方法、路径、Host、时效及 state，消费后再异步换码。
+   * EN: Loads trusted discovery, creates a loopback OAuth callback server and one-use state/nonce/PKCE, then opens login via desktop. Callback validates method/path/Host/expiry/state before consumption and async exchange.
+   */
   private async startLogin(accountId?: string, consent = false) {
     await this.load();
     await this.metadata();
@@ -277,7 +343,10 @@ export class SubscriptionService {
         response.writeHead(400).end('登录回调无效。请返回 Elysia 重新登录。');
         return;
       }
-      attempt.status = 'exchanging'; // Consume once, before any asynchronous work.
+      attempt.status = 'exchanging'; /**
+       * 在任何异步工作之前，一次性消费该值。
+       * EN: Consume once, before any asynchronous work.
+       */
       clearTimeout(attempt.timer);
       void this.exclusive(() => this.complete(attempt, url))
         .then(() => {
@@ -345,8 +414,15 @@ export class SubscriptionService {
       this.cancel();
       throw error;
     }
-    return { id: attempt.id }; // Never return authorization URLs with retained ID tokens to the renderer.
+    return { id: attempt.id }; /**
+     * 不得向渲染进程返回保留 ID token 的授权 URL。
+     * EN: Never return authorization URLs with retained ID tokens to the renderer.
+     */
   }
+  /**
+   * 校验回调客户端及授权码，以 PKCE 换令牌并验证 OIDC 身份，再核对可选既有账号并持久保存；仅当前有效尝试可完成，取消和失败不冒充登录成功。
+   * EN: Validates callback client/code, exchanges with PKCE, verifies OIDC identity and optional existing account before persistence. Only the current valid attempt completes; cancellation/failure never becomes login success.
+   */
   private async complete(attempt: Attempt, url: URL) {
     invariant(
       !url.searchParams.has('error'),
@@ -401,6 +477,10 @@ export class SubscriptionService {
       ? '已连接 ChatGPT 订阅，请选择模型并保存验证'
       : '已登录，但未授权使用 ChatGPT 订阅';
   }
+  /**
+   * 对 pending/exchanging 尝试标记取消、中止请求并关闭回环服务及连接；已结束尝试保持原结果。
+   * EN: Marks pending/exchanging attempts cancelled, aborts requests and closes loopback server/connections while preserving settled attempts.
+   */
   cancel() {
     const attempt = this.pending;
     if (attempt && ['pending', 'exchanging'].includes(attempt.status)) {
@@ -412,9 +492,8 @@ export class SubscriptionService {
     }
   }
   /**
-   * 在串行区取得可用访问令牌，临近过期且允许刷新时轮换凭据并持久化。
-   * 返回账号级取消信号与额度封锁回调；退出或额度受限立即阻止后续模型调用，
-   * 刷新明确失效时清除旧凭据，不能继续重用已轮换或已撤销的 refresh token。
+   * 在串行区取得可用访问令牌，临近过期且允许刷新时轮换凭据并持久化。 返回账号级取消信号与额度封锁回调；退出或额度受限立即阻止后续模型调用， 刷新明确失效时清除旧凭据，不能继续重用已轮换或已撤销的 refresh token。
+   * EN: Obtains usable access tokens inside the serialized section and rotates/persists near-expiry credentials when allowed. Returns account cancellation and quota blocking callbacks; logout/quota blocks later calls, and invalid refresh credentials are cleared rather than reused.
    */
   async credential(id: string) {
     await this.load();
@@ -466,12 +545,20 @@ export class SubscriptionService {
       return {
         token: account.accessToken!,
         signal: this.controllers.get(id)!.signal,
+        /**
+         * 在本进程封锁指定账号后续模型调用，直到用户显式请求重试额度。
+         * EN: Blocks subsequent model calls for this account in-process until explicit usage retry.
+         */
         onUsageLimit: () => {
           this.usageBlocked.add(id);
         },
       };
     });
   }
+  /**
+   * 取得可用账号凭据后读取订阅目录，仅公开可列出且具有有效 slug 的型号，不返回授权头或原始账号正文。
+   * EN: Obtains valid credentials and reads subscription models, exposing only list-visible string slugs without auth headers/account bodies.
+   */
   async models(id: string) {
     const credential = await this.credential(id);
     const body = await this.json(resource + '/models', {
@@ -483,6 +570,10 @@ export class SubscriptionService {
       .filter((m: any) => m.visibility === 'list' && typeof m.slug === 'string')
       .map((m: any) => ({ id: m.slug, name: typeof m.display_name === 'string' ? m.display_name : m.slug }));
   }
+  /**
+   * 先中止账号在途请求，再保存已清除访问/刷新/身份令牌的账号；持久化失败保留错误和内存新状态。
+   * EN: Aborts account requests before saving cleared access/refresh/ID tokens; persistence errors retain the new memory state and propagate.
+   */
   private async clear(account: Account) {
     this.controllers.get(account.id)?.abort();
     this.controllers.delete(account.id);
@@ -494,15 +585,26 @@ export class SubscriptionService {
       expiresAt: 0,
     });
   }
+  /**
+   * 加载保险库后在串行区保存用户已阅读欢迎信息的标记，不修改其他账号字段。
+   * EN: Loads the vault then serially persists the welcomed marker without changing other account fields.
+   */
   async welcome(id: string) {
     await this.load();
     await this.exclusive(() => this.replace({ ...this.account(id), welcomed: true }));
   }
+  /**
+   * 确认账号存在后解除本进程额度封锁，不宣称远端额度已经恢复。
+   * EN: Confirms account existence and clears the local quota block without claiming remote quota recovery.
+   */
   retryUsage(id: string) {
     this.account(id);
     this.usageBlocked.delete(id);
   }
-  /** 先中止该账号在途调用，再尝试远端撤销并清除本机凭据；远端失败单独报告而不阻止本机退出。 */
+  /**
+   * 先中止该账号在途调用，再尝试远端撤销并清除本机凭据；远端失败单独报告而不阻止本机退出。
+   * EN: Aborts account requests first, then attempts remote revocation and clears local credentials; remote failure is reported separately without preventing local logout.
+   */
   async logout(id: string) {
     await this.load();
     this.signingOut.add(id);
@@ -531,12 +633,18 @@ export class SubscriptionService {
                 revoked = response.status === 200;
                 if (revoked || response.status < 500) break;
               } catch {
-                /* Retry transient transport failures while the refresh token is available. */
+                /**
+                 * 仍有刷新令牌时，允许重试临时传输失败。
+                 * EN: Retry transient transport failures while the refresh token is available.
+                 */
               }
               if (tries === 0) await new Promise((resolve) => setTimeout(resolve, 750));
             }
           } catch {
-            /* The local sign-out still completes if remote revocation is unavailable. */
+            /**
+             * 即使远端撤销不可用，本地退出仍应完成。
+             * EN: The local sign-out still completes if remote revocation is unavailable.
+             */
           }
         }
         await this.clear(account);
@@ -551,7 +659,10 @@ export class SubscriptionService {
       this.signingOut.delete(id);
     }
   }
-  /** 禁止新工作、取消登录和账号请求，等待凭据串行队列收束后再由宿主释放桌面服务。 */
+  /**
+   * 禁止新工作、取消登录和账号请求，等待凭据串行队列收束后再由宿主释放桌面服务。
+   * EN: Rejects new work, cancels login/account requests and waits for the credential queue before the host releases desktop services.
+   */
   async close() {
     this.closed = true;
     this.cancel();

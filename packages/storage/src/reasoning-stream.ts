@@ -1,4 +1,10 @@
-// 管理推理内容的持久化分块与读取。
+/**
+ * 管理推理内容的持久化分块与读取。
+ * EN: Persist reasoning-display chunks and provide bounded reads.
+ *
+ * 将持续增长的推理展示文本拆为可读分块，按游标和预算回查；这里保存展示历史，不决定模型执行或工具授权。
+ * EN: Chunk growing reasoning-display text for cursor-based bounded retrieval; this stores display history and does not decide model execution or tool authority.
+ */
 import type { DatabaseSync } from 'node:sqlite';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { AppError } from '../../contracts/src/index.js';
@@ -24,13 +30,25 @@ type State = {
   pending: number;
 };
 type Chunk = { chunk_index: number; characters: number; content: Uint8Array };
-/** 展示缓存损坏使用统一可重试错误，提醒保留权威原文，不能把缺失内容当作空推理。 */
+/**
+ * 展示缓存损坏使用统一可重试错误，提醒保留权威原文，不能把缺失内容当作空推理。
+ * EN: Report corrupt display caches through a uniform retryable error while preserving authoritative
+ * originals; missing text is not empty reasoning.
+ */
 function corrupt(): never {
   throw new AppError('REASONING_UNAVAILABLE', '思考文本暂时无法读取，原始记录已保留。', true, null, 422);
 }
-/** 推理内容的可选展示缓存；供应商重放和请求计费不依赖此缓存。 */
+/**
+ * 推理内容的可选展示缓存；供应商重放和请求计费不依赖此缓存。
+ * EN: Maintain an optional reasoning-display cache independent of provider replay and request
+ * accounting.
+ */
 export class ReasoningStreams {
-  /** 建立展示元数据和压缩块；received_characters 跟踪接收量，characters 仅跟踪保留展示量。 */
+  /**
+   * 建立展示元数据和压缩块；received_characters 跟踪接收量，characters 仅跟踪保留展示量。
+   * EN: Create display metadata and compressed chunks. received_characters tracks received input,
+   * while characters tracks retained display content.
+   */
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS reasoning_streams_v1(
       request_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
@@ -50,7 +68,11 @@ export class ReasoningStreams {
       chunk_index INTEGER NOT NULL,characters INTEGER NOT NULL,
       content BLOB NOT NULL,PRIMARY KEY(request_id,chunk_index));`);
   }
-  /** 同时读取请求状态与缓存归属，供元数据核验和追加资格检查，避免只相信缓存自身的状态。 */
+  /**
+   * 同时读取请求状态与缓存归属，供元数据核验和追加资格检查，避免只相信缓存自身的状态。
+   * EN: Read request status together with cache ownership for validation and append eligibility
+   * instead of trusting cache state alone.
+   */
   private state(requestId: string): State | undefined {
     return this.db
       .prepare(
@@ -59,7 +81,10 @@ export class ReasoningStreams {
       )
       .get(requestId) as State | undefined;
   }
-  /** 读取展示长度和状态，并核验缓存与所属请求的关联。 */
+  /**
+   * 读取展示长度和状态，并核验缓存与所属请求的关联。
+   * EN: Read display length and state while validating its association with the request.
+   */
   metadata(requestId: string): ReasoningDisplay | undefined {
     const state = this.state(requestId);
     if (!state || !state.characters) return;
@@ -87,12 +112,17 @@ export class ReasoningStreams {
     return {
       kind: state.kind,
       characters: state.characters,
-      // A failed final cache write may leave only a prefix of the completed public text.
+      // 最终缓存写入失败时，已完成的公开文本可能只留下一个前缀。
+      // EN: A failed final cache write may leave only a prefix of the completed public text.
       truncated: Boolean(state.truncated) || (completed && !state.complete),
       status: completed ? 'complete' : state.request_status === 'RESERVED' ? 'streaming' : 'interrupted',
     };
   }
-  /** 有界解压单块并核对实际字符数，防止压缩膨胀或块头与正文不一致。 */
+  /**
+   * 有界解压单块并核对实际字符数，防止压缩膨胀或块头与正文不一致。
+   * EN: Decompress one bounded chunk and validate its actual character count to detect expansion
+   * overflow or inconsistent metadata.
+   */
   private decode(row: Chunk): string {
     let text: unknown;
     try {
@@ -112,6 +142,9 @@ export class ReasoningStreams {
   /**
    * 在 Store 事务中追加片段。offset 对应已接收字符数，返回值仅包含本次提交供展示的前缀。
    * 展示容量耗尽后仍记录接收长度；跨片段的代理对暂存，避免截断半个字符。
+   * EN: Append within a Store transaction. offset counts received characters, but the return value
+   * contains only the newly committed display prefix. Continue tracking received length after display
+   * capacity is exhausted, retaining cross-fragment surrogate pairs until complete.
    */
   append(
     requestId: string,
@@ -171,7 +204,11 @@ export class ReasoningStreams {
       .run(state.characters + retained.length, offset + text.length, Number(truncated), pending, requestId);
     return { text: retained, offset: state.characters };
   }
-  /** 用供应商最终公开文本重建展示缓存，原始消息保持不变。 */
+  /**
+   * 用供应商最终公开文本重建展示缓存，原始消息保持不变。
+   * EN: Rebuild the display cache from final public provider text while leaving the original message
+   * untouched.
+   */
   complete(requestId: string, text: string) {
     this.db.prepare('DELETE FROM reasoning_streams_v1 WHERE request_id=?').run(requestId);
     if (!text.length) return;
@@ -200,7 +237,11 @@ export class ReasoningStreams {
         );
     }
   }
-  /** 分页读取完整字符，返回下一页偏移；缺块、损坏或字符中间的偏移会报错。 */
+  /**
+   * 分页读取完整字符，返回下一页偏移；缺块、损坏或字符中间的偏移会报错。
+   * EN: Page complete characters and return the next offset; reject missing chunks, corruption, or
+   * offsets inside a character.
+   */
   page(requestId: string, offset: number, limit: number) {
     if (
       !Number.isInteger(offset) ||

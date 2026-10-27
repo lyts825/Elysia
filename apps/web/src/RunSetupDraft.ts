@@ -1,4 +1,8 @@
-/* 读取和写入任务设置草稿。 */
+/**
+ * 读取和写入任务设置草稿。
+ * 定义启动表单可持久化的本地格式并集中读写校验，保留模型、权限、预算和要求；不是服务端运行实例。
+ * EN: Restores and serializes run setup drafts. Defines persisted local launch-form data with centralized read/write validation for model, permissions, budget, and requirements; it is separate from a server run instance.
+ */
 import type {
   ToolReviewPolicy,
   CommandBackendPolicy,
@@ -31,7 +35,10 @@ export type RunSetupDraft = {
   commandBackend?: CommandBackendPolicy;
 };
 
-// 缓存允许保留尚未完成的输入，所以字段类型校验比执行配置宽松；恢复成功不等于可创建运行。
+/**
+ * 缓存允许保留尚未完成的输入，所以字段类型校验比执行配置宽松；恢复成功不等于可创建运行。
+ * EN: Draft shape accepts incomplete input more broadly than execution schema; successful recovery is not permission to create a run.
+ */
 const draftShape = z.object({
   planMode: z.boolean(),
   executionKind: z.enum(['native', 'docker-agent']),
@@ -78,6 +85,7 @@ const draftShape = z.object({
 /**
  * 读取版本 1 的完整表单缓存，空值表示没有草稿；超长、非法 JSON 或未知版本明确抛错。
  * 调用方应保留无法读取的原文，不能用空草稿静默覆盖。可执行范围由表单提交前再次校验。
+ * EN: Read the complete version-one form cache. Empty input means absent draft; oversized/invalid JSON/unknown version throws. Preserve unreadable originals rather than silently replacing them; creation revalidates execution scope.
  */
 export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {
   if (raw === undefined || raw === '') return;
@@ -89,7 +97,10 @@ export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {
     throw Error('创建配置草稿格式或版本无法读取，原文仍保留。');
   }
 }
-/** 序列化前保留原表单，超出保存上限时明确失败而不生成截断草稿。 */
+/**
+ * 序列化前保留原表单，超出保存上限时明确失败而不生成截断草稿。
+ * EN: Serialize the complete form and fail explicitly beyond capacity, never creating a truncated draft.
+ */
 export function writeRunSetupDraft(draft: RunSetupDraft) {
   const raw = JSON.stringify({ version: 1, draft });
   if (raw.length > 200000) throw Error('创建配置草稿超过本机保存上限，请缩短输入；当前表单仍保留。');

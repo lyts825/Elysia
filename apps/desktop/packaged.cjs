@@ -1,8 +1,19 @@
-// 验证打包内容并定位桌面发行版的构建资源。
+/**
+ * 验证打包内容并定位桌面发行版的构建资源。
+ * EN: Verify distribution contents and locate the build resources required by the desktop
+ * application.
+ *
+ * 根据包内清单定位并检查资源，区分发行运行环境与源码启动；检查失败交给启动流程报告，不把未经核验的路径视为有效构建。
+ * EN: Locate and validate manifest-listed resources for packaged execution; startup reports failures rather than accepting unchecked paths as a valid build.
+ */
 const fs = require('node:fs');
 const path = require('node:path');
 const { sha256File } = require('./file-hash.cjs');
-/** 清单路径必须是目录内的普通文件，不能通过路径片段或符号链接越界。 */
+/**
+ * 清单路径必须是目录内的普通文件，不能通过路径片段或符号链接越界。
+ * EN: Manifest entries must resolve to ordinary files inside the distribution directory; reject
+ * escaping path segments and symbolic links.
+ */
 const relativeFile = (directory, relative) => {
   if (
     typeof relative !== 'string' ||
@@ -23,6 +34,9 @@ const relativeFile = (directory, relative) => {
 /**
  * 核验清单、关键文件的大小和摘要以及应用版本。full 为 true 时还遍历整个发行目录，
  * 拒绝清单外文件和符号链接，并校验清单列出的全部文件。
+ * EN: Verify the manifest, critical file sizes and digests, and application version. With full=true,
+ * also traverse the entire distribution, reject unlisted files and links, and verify every listed
+ * file.
  */
 function verifyDistribution(appRoot, full = false) {
   const directory = path.resolve(appRoot, '../..');
@@ -59,6 +73,8 @@ function verifyDistribution(appRoot, full = false) {
     if (!Object.hasOwn(manifest.files, relative)) throw new Error('分发包清单缺少必要文件：' + relative);
   if (full) {
     // 全量核验还检查“磁盘上多出来”的文件，不能只验证清单列出的那些路径。
+    // EN: Full verification also checks files present on disk but absent from the manifest; validating
+    // listed paths alone is insufficient.
     const pending = [directory];
     while (pending.length) {
       for (const entry of fs.readdirSync(pending.pop(), { withFileTypes: true })) {
@@ -78,6 +94,8 @@ function verifyDistribution(appRoot, full = false) {
   }
   for (const relative of full ? Object.keys(manifest.files) : critical) {
     // 正常启动只核验关键入口以控制开销；打包验收选择 full，遍历全部摘要。
+    // EN: Normal startup verifies critical entry points to limit overhead; packaging validation uses
+    // full mode to check all digests.
     const entry = manifest.files[relative];
     if (
       !entry ||
@@ -94,7 +112,11 @@ function verifyDistribution(appRoot, full = false) {
   if (appPackage.version !== manifest.version) throw new Error('分发包应用版本不一致');
   return manifest;
 }
-/** 核验当前发行包后返回桌面启动所需的服务端、前端和 Node 路径。 */
+/**
+ * 核验当前发行包后返回桌面启动所需的服务端、前端和 Node 路径。
+ * EN: Verify the current distribution, then return the backend, frontend, and Node runtime paths
+ * used for desktop startup.
+ */
 function packagedBuild(appRoot) {
   const manifest = verifyDistribution(appRoot);
   if (process.versions.electron && process.versions.electron !== manifest.electronVersion)
@@ -114,6 +136,8 @@ function packagedBuild(appRoot) {
 module.exports = { packagedBuild, verifyDistribution };
 if (require.main === module) {
   // 独立运行使用包内 Node 做全量验证，stdout 仅在全部通过后输出 verified=true。
+  // EN: Standalone execution performs full verification with the bundled Node runtime; stdout reports
+  // verified=true only after all checks pass.
   try {
     const manifest = verifyDistribution(path.resolve(__dirname, '../..'), true);
     if (process.version !== manifest.nodeVersion) throw new Error('核验进程与包内 Node 版本不一致');

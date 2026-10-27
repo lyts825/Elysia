@@ -1,4 +1,8 @@
-/* 展示和管理项目交付清单。 */
+/**
+ * 展示和管理项目交付清单。
+ * 从当前产物候选生成冻结交付清单并浏览历史、详情与保存包入口；分页和选择均绑定项目、运行或清单版本，过期数据不可直接提交。
+ * EN: Prepares and browses frozen project manifests. Builds frozen delivery manifests from current artifact candidates and browses history/details/archive controls; pages and selections are revision-bound and stale data cannot be submitted directly.
+ */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBoard,
@@ -17,6 +21,7 @@ import './project-manifests.css';
 /**
  * 为一个交付项分页挑选产物元数据。候选页绑定当前候选运行及修订；读取失败、取消
  * 或候选变化时保留已选 ID，要求用户刷新工作台后再核对，不能以旧页继续扩充选择。
+ * EN: Page artifact metadata per item and current candidate run/revision. Failure/cancel/candidate change retains selected IDs but requires board refresh/review before adding candidates from an old page.
  */
 function ArtifactSelection({
   item,
@@ -32,8 +37,15 @@ function ArtifactSelection({
   const { api } = useSurfaceClient();
   const selectionId = useId();
   type Position = { before: string; trail: string[] };
+  /**
+   * 返回新的产物候选首页位置，避免多个分页实例共享返回轨迹。
+   * EN: Returns a fresh first-page position for artifact candidates so pagination instances do not share a return trail.
+   */
   const firstPage = (): Position => ({ before: '', trail: [] });
-  // 产物候选页绑定当前执行及版本，执行变化后不能复用旧页选择。
+  /**
+   * 产物候选页绑定当前执行及版本，执行变化后不能复用旧页选择。
+   * EN: Candidate pages are bound to current run/version; changed run invalidates old page selection.
+   */
   const owner = `${item.current?.runId}:${item.current?.runRevision}`;
   const [open, setOpen] = useState(false);
   const [display, setDisplay] = useState<{ owner: string; page: SourceOptions; position: Position }>();
@@ -53,6 +65,10 @@ function ArtifactSelection({
     const controller = new AbortController();
     currentRead.current = controller;
     const target = intent?.owner === owner ? intent.position : firstPage();
+    /**
+     * 确认候选页请求仍是当前控制器且未取消，旧运行或旧页回执不再发布。
+     * EN: Confirms the candidate-page request is current and not aborted, preventing updates from an old run or page.
+     */
     const active = () => currentRead.current === controller && !controller.signal.aborted;
     setRead({ status: 'loading', error: '' });
     void api<SourceOptions>(
@@ -82,11 +98,18 @@ function ArtifactSelection({
       if (currentRead.current === controller) currentRead.current = undefined;
     };
   }, [api, item.current?.runId, item.current?.runRevision, owner, open, intent]);
-  /** 新分页意图取消旧请求，但可见页要等新页校验成功后才替换。 */
+  /**
+   * 新分页意图取消旧请求，但可见页要等新页校验成功后才替换。
+   * EN: Cancel previous paging intent but replace visible page only after successful validation.
+   */
   const request = (target: Position) => {
     currentRead.current?.abort();
     setIntent((previous) => ({ owner, position: target, attempt: (previous?.attempt ?? 0) + 1 }));
   };
+  /**
+   * 取消产物候选读取并解除当前控制器，保留已显示选择并标记取消状态。
+   * EN: Cancels candidate loading and detaches its controller while retaining visible selections and marking the read cancelled.
+   */
   const cancel = () => {
     currentRead.current?.abort();
     currentRead.current = undefined;
@@ -250,6 +273,7 @@ function ArtifactSelection({
  * 准备冻结清单、浏览冻结历史并读取清单详情。准备内容保存在项目工作台草稿中，
  * 历史页和详情分别校验项目、清单 ID 与哈希；下载只使用已核对详情并在选择变化时取消。
  * readiness 将冻结阻塞项映射到实际修复入口，而不是仅显示不可提交状态。
+ * EN: Prepare frozen manifests in workbench draft; browse history/details with project/manifest/hash validation. Download verified details only and cancel on selection changes. readiness maps blockers to actionable repair targets.
  */
 export function ProjectManifests({
   board,
@@ -277,6 +301,10 @@ export function ProjectManifests({
   const { api, apiBytes } = useSurfaceClient();
   const manifestId = useId();
   type Position = { before: string; trail: string[] };
+  /**
+   * 创建交付清单历史首页状态，清空游标和返回轨迹。
+   * EN: Creates the initial manifest-history page state with no cursor or return trail.
+   */
   const firstPage = (): Position => ({ before: '', trail: [] });
   const [display, setDisplay] = useState<{ page: ProjectDeliveryManifestList; position: Position }>();
   const [intent, setIntent] = useState<{ projectId: string; position: Position; attempt: number }>();
@@ -311,7 +339,10 @@ export function ProjectManifests({
     (!draft.selectedManifestHash || readDetail.manifest.hash === draft.selectedManifestHash)
       ? readDetail
       : undefined;
-  /** 保存清单身份及冻结哈希，并让后续详情读取将焦点移到详情区域。 */
+  /**
+   * 保存清单身份及冻结哈希，并让后续详情读取将焦点移到详情区域。
+   * EN: Save manifest identity/hash and move focus into its loaded details.
+   */
   const selectManifest = (manifestId: string, manifestHash: string) => {
     scrollToDetail.current = true;
     change((value) => ({ ...value, selectedManifest: manifestId, selectedManifestHash: manifestHash }));
@@ -321,6 +352,10 @@ export function ProjectManifests({
     const controller = new AbortController();
     listRequest.current = controller;
     const target = intent?.projectId === board.projectId ? intent.position : firstPage();
+    /**
+     * 只允许仍为当前且未取消的清单列表请求更新界面，隔离快速翻页的旧响应。
+     * EN: Allows only the current non-aborted manifest-list request to update the view, isolating obsolete responses during rapid navigation.
+     */
     const active = () => listRequest.current === controller && !controller.signal.aborted;
     setListRead({ status: 'loading', error: '' });
     void api<ProjectDeliveryManifestList>(
@@ -348,7 +383,10 @@ export function ProjectManifests({
       if (listRequest.current === controller) listRequest.current = undefined;
     };
   }, [api, base, board.projectId, intent]);
-  /** 分页意图属于当前项目；成功前继续展示上一页，错误不会伪造新页游标。 */
+  /**
+   * 分页意图属于当前项目；成功前继续展示上一页，错误不会伪造新页游标。
+   * EN: Bind paging intent to project; retain old visible page until success and never fabricate its new cursor on error.
+   */
   const requestHistory = (target: Position) => {
     listRequest.current?.abort();
     setIntent((previous) => ({
@@ -357,6 +395,10 @@ export function ProjectManifests({
       attempt: (previous?.attempt ?? 0) + 1,
     }));
   };
+  /**
+   * 取消清单历史读取并标记取消；保持已读页位置供显式重试或核对。
+   * EN: Cancels manifest-history loading and marks it cancelled while retaining the loaded page position for explicit retry or inspection.
+   */
   const cancelHistory = () => {
     listRequest.current?.abort();
     listRequest.current = undefined;
@@ -414,7 +456,10 @@ export function ProjectManifests({
   const readiness = manifest
     ? projectManifestReadiness(board, manifest, { busy, unavailable })
     : { canFreeze: false, blockers: [] };
-  /** 将冻结前置条件定位到计划、交付项、复核、标题或对应勾选控件。 */
+  /**
+   * 将冻结前置条件定位到计划、交付项、复核、标题或对应勾选控件。
+   * EN: Locate prerequisites in plan/item/review/title or relevant checkbox.
+   */
   const goToBlocker = (blocker: ProjectManifestBlocker) => {
     if (blocker.target === 'plan') return onEditPlan();
     if (blocker.target === 'refresh') return onRefreshBoard();
@@ -436,6 +481,7 @@ export function ProjectManifests({
   /**
    * 同时只下载一个已核对清单；项目或选择变化会中止请求，迟到的字节不触发下载。
    * JSON 和 Markdown 都由服务端按冻结清单导出，浏览器只负责创建下载链接。
+   * EN: Download one verified manifest at a time. Project/selection changes abort; late bytes cannot download. Server exports frozen JSON/Markdown; browser only creates links.
    */
   const download = async (format: 'json' | 'markdown') => {
     if (!detail || downloadRequest.current) return;
