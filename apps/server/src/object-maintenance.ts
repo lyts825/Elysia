@@ -1,3 +1,4 @@
+/** 规划并执行对象存储的完整性检查和清理。 */
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';

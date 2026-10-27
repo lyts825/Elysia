@@ -1,3 +1,4 @@
+// 协调桌面进程与启动构建过程的握手。
 // This handshake is entered only after Electron has acquired its native single-instance lock.
 function waitForLaunchBuild(channel, enabled) {
   if (!enabled) return Promise.resolve(undefined);
@@ -6,6 +7,7 @@ function waitForLaunchBuild(channel, enabled) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error, value) => {
+      // 构建结果、断连和超时可能竞争；只处理第一次完成并移除监听器。
       if (settled) return;
       settled = true;
       clearTimeout(timeout);

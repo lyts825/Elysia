@@ -1,3 +1,4 @@
+/* 管理项目计划离开页面时的导航保护。 */
 import type { PlanImportLifecycle } from './ProjectPlanTransfer';
 
 export type ProjectPlanNavigationLifecycle = PlanImportLifecycle & { projectId: string };

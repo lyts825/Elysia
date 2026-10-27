@@ -1,3 +1,4 @@
+/** 汇总任务中心数据并注册查询接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, type Entity } from '../../../packages/contracts/src/index.js';

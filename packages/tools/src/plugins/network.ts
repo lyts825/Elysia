@@ -1,3 +1,4 @@
+// 注册通过网络获取内容的工具。
 import { z } from 'zod';
 
 import { defineTool, type ToolServices, type ToolInvocation, type ToolContribution } from '../tool-plugin.js';

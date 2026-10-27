@@ -1,3 +1,4 @@
+/* 处理阅读进度检查点及其状态。 */
 import { useLayoutEffect, useRef } from 'react';
 import type { SurfaceClient } from './api';
 

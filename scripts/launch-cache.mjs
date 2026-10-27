@@ -1,3 +1,4 @@
+// 提供启动构建缓存的命令行管理入口。
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import cache from './launch-cache.cjs';

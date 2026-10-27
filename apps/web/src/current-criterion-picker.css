@@ -1,3 +1,4 @@
+/* 定义 current-criterion-picker 对应界面的样式与布局。 */
 .current-criterion-picker .current-criterion-selection {
   margin: 0 0 var(--space-3);
   color: var(--secondary);

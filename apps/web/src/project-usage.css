@@ -1,3 +1,4 @@
+/* 定义 project-usage 对应界面的样式与布局。 */
 .project-usage-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));

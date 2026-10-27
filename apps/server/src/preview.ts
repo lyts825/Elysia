@@ -1,3 +1,4 @@
+/** 管理工作区内容的预览服务。 */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -28,6 +29,7 @@ const sensitive = (segment: string) =>
   /^\.env(?:\.|$)/i.test(segment) ||
   /\.(?:pem|key|p12|pfx)$/i.test(segment);
 function normalized(input: string) {
+  // 预览仅接受工作区内的普通相对路径，并排除敏感文件和内部目录。
   invariant(
     typeof input === 'string' && input.length > 0 && input.length <= 1000,
     'PREVIEW_PATH',

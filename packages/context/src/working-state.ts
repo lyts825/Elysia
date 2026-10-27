@@ -1,3 +1,4 @@
+// 校验和管理任务工作状态检查点及其上下文。
 import { Evidence, AppError, type Message, type Run, type Task } from '../../contracts/src/index.js';
 import type {
   ApprovedTaskWorkingState,

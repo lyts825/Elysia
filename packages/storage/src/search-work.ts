@@ -1,3 +1,4 @@
+// 跟踪搜索读取工作量并响应取消请求。
 import { AppError } from '../../contracts/src/index.js';
 
 export function searchCancelled(signal?: AbortSignal) {

@@ -1,3 +1,4 @@
+/** 协调终端数据的备份、恢复和维护操作。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as fs from 'node:fs';

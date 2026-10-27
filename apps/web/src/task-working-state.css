@@ -1,3 +1,4 @@
+/* 定义 task-working-state 对应界面的样式与布局。 */
 .task-working-state {
   margin-top: var(--space-5);
   padding-top: var(--space-4);

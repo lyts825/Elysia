@@ -1,3 +1,4 @@
+/** 组装服务端使用的模型服务商插件。 */
 import type { ProviderConfig } from '../../../packages/contracts/src/index.js';
 import {
   NativeProvider,

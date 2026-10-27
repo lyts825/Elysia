@@ -1,3 +1,4 @@
+// 收集编译模型上下文所需的运行、任务和资源快照。
 import { readFileSync } from 'node:fs';
 import { builtinResourcePath } from './resources.js';
 import {

@@ -1,3 +1,4 @@
+/* 提供运行设置弹窗。 */
 import { ExecutionPolicySetup, executionPolicyIssue } from './ExecutionPolicySetup';
 import type {
   ToolReviewPolicy,

@@ -1,3 +1,4 @@
+/** 管理容器中终端 CLI 的安装和能力状态。 */
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { AgentTerminalProfile, AppError, invariant } from '../../contracts/src/index.js';

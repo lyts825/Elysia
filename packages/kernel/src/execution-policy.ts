@@ -1,3 +1,4 @@
+// 在运行创建时校验并冻结执行策略。
 import { ToolReviewPolicy, CommandBackendPolicy } from '../../contracts/src/execution-policy.js';
 import { invariant, type Contract, type ProviderConfig, type Run } from '../../contracts/src/index.js';
 import type { KernelStore } from './ports.js';

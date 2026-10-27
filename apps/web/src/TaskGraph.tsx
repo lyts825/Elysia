@@ -1,3 +1,4 @@
+/* 展示任务及其依赖关系。 */
 import { useId } from 'react';
 import type { Run, Task } from '../../../packages/contracts/src/index';
 import { Icon } from './Icon';

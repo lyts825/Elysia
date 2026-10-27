@@ -1,3 +1,4 @@
+// 注册工作区文件与命令相关工具。
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

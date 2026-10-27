@@ -1,3 +1,4 @@
+/** 管理服务商凭据的读取和保存。 */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { invariant, type ProviderConfig } from '../../../packages/contracts/src/index.js';

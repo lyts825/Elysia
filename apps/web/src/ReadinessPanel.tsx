@@ -1,3 +1,4 @@
+/* 展示应用准备状态及引导操作。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
   ReadinessSnapshot,

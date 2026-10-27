@@ -1,3 +1,4 @@
+// 模型请求、工具定义及提供方适配器的共享契约。
 import { AppError, inspectToolCalls, type ToolCall, type Usage, type Message } from './index.js';
 
 export interface ToolDefinition {

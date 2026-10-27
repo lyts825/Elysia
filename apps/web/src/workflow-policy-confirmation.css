@@ -1,3 +1,4 @@
+/* 定义 workflow-policy-confirmation 对应界面的样式与布局。 */
 .review-model-policy,
 .review-policy-confirmation {
   display: grid;

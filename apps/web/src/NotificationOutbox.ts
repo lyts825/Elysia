@@ -1,3 +1,4 @@
+/* 管理待发送通知及其发送健康状态。 */
 import type { TaskCenterItem } from '../../../packages/contracts/src/task-center';
 
 export type NotificationHealth = { pending: number; failed: number; lastFailureAt?: number };

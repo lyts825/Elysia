@@ -1,3 +1,4 @@
+/* 展示单条交付评审记录。 */
 import type { ReactNode } from 'react';
 import type { DeliveryReviewHistoryDetail } from '../../../packages/contracts/src/workflow';
 import { DeliveryChanges } from './DeliveryChanges';

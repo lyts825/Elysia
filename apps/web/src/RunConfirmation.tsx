@@ -1,3 +1,4 @@
+/* 确认运行相关操作。 */
 import type { NativeProjectDefaults } from '../../../packages/contracts/src/workflow';
 import type { RunSetupDraft } from './RunSetupModal';
 import { requirementLines } from './TaskRequirements';

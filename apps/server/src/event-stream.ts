@@ -1,3 +1,4 @@
+/** 限制事件流缓冲区并编码事件帧。 */
 import type { ServerResponse } from 'node:http';
 
 export const eventStreamBufferLimit = 256 * 1024;
@@ -17,6 +18,7 @@ export class BoundedEventStream {
       this.blocked = false;
       clearTimeout(this.timeout);
       if (this.droppedDelta) {
+        // 背压期间丢弃增量后，通知客户端重新读取完整运行状态。
         this.droppedDelta = false;
         this.write('event: run.updated\ndata: ' + JSON.stringify({ runId }) + '\n\n');
       }

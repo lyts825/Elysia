@@ -1,3 +1,4 @@
+/* 加载计划对齐功能并展示其状态。 */
 import { Component, useEffect, useId, useState, type ComponentType, type ReactNode, type Ref } from 'react';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './features/plan-alignment/types';
 import entryUrl from 'virtual:elysia-plan-alignment';

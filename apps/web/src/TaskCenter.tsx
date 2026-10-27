@@ -1,3 +1,4 @@
+/* 展示任务中心及其任务状态。 */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';

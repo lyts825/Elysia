@@ -1,3 +1,4 @@
+/* 筛选和整理对话时间线中的消息。 */
 import type { Message } from '../../../packages/contracts/src/index';
 
 export function isInboxUserMessage(message: Message): boolean {

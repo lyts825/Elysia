@@ -1,3 +1,4 @@
+/* 管理对话历史的检查点与读取状态。 */
 import type { SurfaceClient } from './api';
 import type { HistoryAnchor } from './HistoryScroll';
 

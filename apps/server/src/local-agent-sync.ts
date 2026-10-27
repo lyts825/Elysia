@@ -1,3 +1,4 @@
+/** 校验并同步本地代理配置。 */
 import { constants } from 'node:fs';
 import { lstat, realpath, opendir, open } from 'node:fs/promises';
 import path from 'node:path';

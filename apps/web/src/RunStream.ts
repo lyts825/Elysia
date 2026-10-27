@@ -1,3 +1,4 @@
+/* 按任务和请求合并增量响应，并跟踪实时推理显示。 */
 import type { Message, RequestRecord } from '../../../packages/contracts/src/index';
 import {
   REASONING_DISPLAY_MAX_CHARS,
@@ -38,6 +39,7 @@ export class RunStream {
   }
   private merge(partial: TextStream) {
     const missing: TextStream['chunks'] = [];
+    // 片段可能乱序或重发：保留缺口后的片段，只追加尚未收到的后缀。
     for (const chunk of partial.chunks.sort((a, b) => a.offset - b.offset)) {
       if (chunk.offset > partial.text.length) missing.push(chunk);
       else if (chunk.offset + chunk.text.length > partial.text.length)
@@ -64,6 +66,7 @@ export class RunStream {
     if (live) partial.reasoningActive = true;
     const text = value.text.slice(0, REASONING_DISPLAY_MAX_CHARS - value.offset);
     const overlap = Math.min(text.length, Math.max(0, reasoning.text.length - value.offset));
+    // 重叠数据必须一致，否则调用方需要重新读取可靠的持久化内容。
     if (overlap && reasoning.text.slice(value.offset, value.offset + overlap) !== text.slice(0, overlap))
       return false;
     const prior = reasoning.chunks.find((chunk) => chunk.offset === value.offset);
@@ -136,6 +139,7 @@ export class RunStream {
         partial?.requestId === request.id &&
         partial.text.length > (typeof text === 'string' ? text.length : 0)
       )
+        // 不让落后的服务端快照覆盖已经收到的实时内容。
         continue;
       const next: PartialResponse = {
         requestId: request.id,

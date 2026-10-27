@@ -1,3 +1,4 @@
+/* 定义 codex-connection 对应界面的样式与布局。 */
 .codex-connection {
   min-width: 0;
   gap: var(--space-3);

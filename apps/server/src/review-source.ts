@@ -1,3 +1,4 @@
+/** 捕获交付审阅使用的来源快照。 */
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import {
   ReviewSourceNote,

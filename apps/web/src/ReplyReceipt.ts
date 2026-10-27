@@ -1,3 +1,4 @@
+/* 读取和匹配回复回执，并生成回执载荷。 */
 /** Native message receipts share the existing per-run send key with terminal receipts. */
 export type ReplyReceipt = {
   version: 1;

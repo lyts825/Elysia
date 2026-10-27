@@ -1,3 +1,4 @@
+/* 管理启动阶段使用的本地偏好设置。 */
 import { useEffect, useSyncExternalStore } from 'react';
 import { markStartupStage } from './StartupDiagnostics';
 import './desktop';

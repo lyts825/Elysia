@@ -1,3 +1,4 @@
+// 配置前端开发代理、构建输出及计划对齐模块入口。
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';

@@ -1,3 +1,4 @@
+/** 按工具错误代码提供恢复信息。 */
 export interface ToolRecovery {
   kind:
     | 'arguments'

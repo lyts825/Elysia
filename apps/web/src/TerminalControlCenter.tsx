@@ -1,3 +1,4 @@
+/* 组织终端任务控制与相关操作。 */
 import { Activity, useEffect, useId, useRef, useState } from 'react';
 import {
   SurfaceTerminalSettings,

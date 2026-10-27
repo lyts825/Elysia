@@ -1,3 +1,4 @@
+/* 展示交付内容读取进度。 */
 import { useId } from 'react';
 import { ApiError, type SurfaceClient } from './api';
 import './delivery-read-progress.css';

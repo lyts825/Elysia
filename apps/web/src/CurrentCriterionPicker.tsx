@@ -1,3 +1,4 @@
+/* 选择当前交付验收标准。 */
 import { useEffect, useId, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';

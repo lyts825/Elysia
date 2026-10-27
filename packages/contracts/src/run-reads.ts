@@ -1,3 +1,4 @@
+// 运行详情读取、覆盖情况及分页投影的契约。
 export type ProjectionReadIssue = {
   code: 'READ_MODEL_UNAVAILABLE';
   message: string;

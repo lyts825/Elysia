@@ -1,3 +1,4 @@
+/* 管理工作区及其选择。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Project, ProjectSpace, RunListItem, RecordPage } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';

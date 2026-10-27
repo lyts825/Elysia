@@ -1,3 +1,4 @@
+/** 注册项目交付数据预热任务。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, type Run } from '../../../packages/contracts/src/index.js';

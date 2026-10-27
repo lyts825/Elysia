@@ -1,3 +1,4 @@
+// 项目记忆、能力选择和快照的约束与数据契约。
 import { z } from 'zod';
 import type { LocalAgentItem } from './local-integrations.js';
 

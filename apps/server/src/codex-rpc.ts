@@ -1,3 +1,4 @@
+/** 封装 Codex 进程发现和 RPC 通信。 */
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';

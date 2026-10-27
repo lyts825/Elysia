@@ -1,3 +1,4 @@
+/** 缓存项目使用量快照并提供分页读取。 */
 import type { ProjectUsageRun, ProjectUsageSummary } from '../../../packages/contracts/src/project-usage.js';
 
 export type UsageSnapshot = {

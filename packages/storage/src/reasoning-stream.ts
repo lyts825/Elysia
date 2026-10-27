@@ -1,3 +1,4 @@
+// 管理推理内容的持久化分块与读取。
 import type { DatabaseSync } from 'node:sqlite';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { AppError } from '../../contracts/src/index.js';

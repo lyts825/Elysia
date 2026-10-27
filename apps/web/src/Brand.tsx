@@ -1,3 +1,4 @@
+/* 渲染品牌图标、标记及工作区和交付空状态插图。 */
 import appIcon from '../../../assets/brand/app-icon.svg';
 import mark from '../../../assets/brand/mark.svg';
 import workspace from '../../../assets/brand/workspace-empty.svg';

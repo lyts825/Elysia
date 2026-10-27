@@ -1,3 +1,4 @@
+// 解析并冻结项目角色的模型路由选择。
 import { AppError, invariant, type ProviderConfig, type Run } from '../../contracts/src/index.js';
 import {
   ROLE_ROUTING_PROVIDER,

@@ -1,3 +1,4 @@
+/** 读取运行记录、任务和相关数据并注册接口。 */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {

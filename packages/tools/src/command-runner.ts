@@ -1,3 +1,4 @@
+// 封装命令执行请求及 Docker 命令参数构造。
 import path from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { AppError, invariant } from '../../contracts/src/index.js';

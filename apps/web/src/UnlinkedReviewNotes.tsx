@@ -1,3 +1,4 @@
+/* 展示尚未关联的评审备注。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import type { ReviewDraft } from './ReviewDraft';

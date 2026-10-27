@@ -1,3 +1,4 @@
+/* 展示项目交付包及相关操作。 */
 import { useEffect, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBundlePlan,

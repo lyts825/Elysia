@@ -1,3 +1,4 @@
+// 将桌面服务连接到窗口，并处理对应的进程间调用。
 const { dialog, ipcMain, safeStorage, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');

@@ -1,3 +1,4 @@
+/* 定义、读取和校验复核来源及其备注。 */
 import { z } from 'zod';
 import {
   ReviewSourceNote,

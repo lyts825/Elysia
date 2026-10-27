@@ -1,3 +1,4 @@
+/* 展示产物文件内容，并支持终端日志上下文。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { FilePageControls, formatFileBytes } from './FilePageControls';
 import { FileContentView, fileEncodingOptions } from './FileContentView';

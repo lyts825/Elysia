@@ -1,3 +1,4 @@
+/** 启动并协调对象维护工作线程。 */
 import { Worker } from 'node:worker_threads';
 import { inspectObjectAudit } from './object-maintenance-audit.js';
 export { inspectObjectAudit } from './object-maintenance-audit.js';

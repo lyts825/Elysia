@@ -1,3 +1,4 @@
+/* 展示记录历史。 */
 import { useEffect, useState, type ReactNode } from 'react';
 import type { RecordPage, ProjectionReadCoverage } from '../../../packages/contracts/src/run-reads';
 import { useSurfaceClient } from './SurfaceClientContext';

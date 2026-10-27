@@ -1,3 +1,4 @@
+/* 按字段合并项目草稿、当前状态和原始基线，并记录冲突。 */
 import type { ProjectBoardEdit, ProjectLaunchContent, ProjectPlanSnapshot } from './ProjectBoardDraft';
 
 export type MergeChoice = 'current' | 'mine';
@@ -33,6 +34,7 @@ export const launchLabels = {
 function merger(choices: MergeChoices, unknownBaseline: boolean) {
   const differences: ProjectDraftDifference[] = [];
   function field<T extends Value>(key: string, label: string, original: T, current: T, mine: T): T {
+    // 双方均修改同一字段或缺少基线时，需要用户选择冲突结果。
     const conflict =
       !same(current, mine) && (unknownBaseline || (!same(original, current) && !same(original, mine)));
     const choice = conflict ? choices[key] : same(original, mine) ? 'current' : 'mine';

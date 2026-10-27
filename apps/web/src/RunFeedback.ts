@@ -1,3 +1,4 @@
+/* 处理运行反馈的数据和状态。 */
 import type { Event, Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 import type { CurrentQuestion, RunCurrentQuestions } from '../../../packages/contracts/src/run-reads';
 import { detailReadReason, type DetailReadState } from './DetailReadState';

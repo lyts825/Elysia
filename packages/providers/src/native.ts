@@ -1,3 +1,4 @@
+// 实现原生模型协议请求、响应和流事件转换。
 // Native protocol implementation; adapter selection belongs to the provider plugin registry.
 import {
   UsageSchema,
@@ -39,6 +40,7 @@ export function normalizeUsage(
     cacheWrite === null ? null : numeric(raw.input_tokens_details?.cache_write_tokens) !== null;
   let cost: number | null = null;
   const prices = config.prices;
+  // 费用只在所需令牌分类和价格均可用时计算，避免将未知用量当作零。
   if (
     prices &&
     uncachedInput !== null &&

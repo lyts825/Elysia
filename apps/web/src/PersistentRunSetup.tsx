@@ -1,3 +1,4 @@
+/* 提供持久化运行的设置界面。 */
 import { useEffect, useState, type ComponentProps } from 'react';
 import { Modal } from './Modal';
 import { RunModal } from './RunSetupModal';

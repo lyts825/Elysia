@@ -1,3 +1,4 @@
+/* 处理任务通知及通知状态。 */
 import { useEffect, useState } from 'react';
 import type { SurfaceClient } from './api';
 import type { TaskCenterChanges, TaskCenterItem } from '../../../packages/contracts/src/task-center';

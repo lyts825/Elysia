@@ -1,3 +1,4 @@
+// 识别官方 DeepSeek 路由及其模型兼容问题。
 import type { ProviderConfig } from '../../contracts/src/index.js';
 
 /** Scope official API policy to the route, never to a third-party model name. */

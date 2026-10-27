@@ -1,3 +1,4 @@
+/* 读取和整理交付复核草稿及候选项。 */
 import type {
   DeliveryReview,
   DeliveryUserReview,

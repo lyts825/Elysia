@@ -1,3 +1,4 @@
+/* 按名称渲染界面图标。 */
 import type React from 'react';
 import { BrandGlyph } from './Brand';
 

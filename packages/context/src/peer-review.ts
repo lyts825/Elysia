@@ -1,3 +1,4 @@
+// 为评审角色选择候选内容并构建评审上下文。
 import type { Run, Task } from '../../contracts/src/index.js';
 
 /** Peer scores are withheld from judges; only the coordinator sees the completed feedback. */

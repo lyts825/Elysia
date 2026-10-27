@@ -1,3 +1,4 @@
+/** 读取并解析 API 服务商的模型目录。 */
 import { z } from 'zod';
 import { AppError, invariant, type ProviderConfig } from '../../../packages/contracts/src/index.js';
 import { providerBaseUrl } from '../../../packages/providers/src/index.js';

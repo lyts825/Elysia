@@ -1,3 +1,4 @@
+/* 限制运行与消息历史窗口，并合并分页结果。 */
 import type { Message, RunListItem } from '../../../packages/contracts/src/index';
 
 export const runHistoryPageSize = 30;

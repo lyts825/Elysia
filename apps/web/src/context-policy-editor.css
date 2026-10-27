@@ -1,3 +1,4 @@
+/* 定义 context-policy-editor 对应界面的样式与布局。 */
 .context-allocation-metrics {
   display: flex;
   flex-wrap: wrap;

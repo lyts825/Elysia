@@ -1,3 +1,4 @@
+/* 定义 model-picker 对应界面的样式与布局。 */
 .model-selection-editor {
   display: grid;
   gap: var(--space-2);

@@ -1,9 +1,11 @@
+// 为本地资源和 MCP 工具目录提供有界分页。
 import { invariant } from '../../contracts/src/index.js';
 import { hash } from '../../storage/src/index.js';
 import type { McpInspection, McpTool } from './mcp-client.js';
 export const MCP_CATALOGUE_BYTES = 16000;
 const MCP_INLINE_SCHEMA_BYTES = 6000;
 export function unicodeBoundary(value: string, offset: number) {
+  // 分页不能把 UTF-16 代理对拆开，否则下一页会出现损坏的字符。
   const end = Math.min(offset, value.length);
   return end > 0 &&
     value.charCodeAt(end - 1) >= 0xd800 &&
@@ -50,6 +52,7 @@ export function localCataloguePage(
       name: clipCatalogueText(item.name, 64),
       ...(item.description ? { description: clipCatalogueText(item.description, 160) } : {}),
     });
+    // 结果进入历史时还会再编码一次，按两层 JSON 的字节数预留空间。
     if (Buffer.byteLength(JSON.stringify(JSON.stringify(page())), 'utf8') <= byteBudget * 0.75) continue;
     if (entries.length === 1) {
       delete entries[0].description;

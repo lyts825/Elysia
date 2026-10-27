@@ -1,3 +1,4 @@
+/* 定义 subscription-settings 对应界面的样式与布局。 */
 .subscription-settings {
   gap: var(--space-3);
   min-width: 0;

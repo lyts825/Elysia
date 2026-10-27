@@ -1,3 +1,4 @@
+/** 解析终端执行所需的连接配置。 */
 import {
   AgentTerminalProfile,
   AppError,

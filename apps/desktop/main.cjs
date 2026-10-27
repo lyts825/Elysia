@@ -1,3 +1,4 @@
+// 启动 Electron 主进程并协调桌面窗口与本地服务。
 const { app, BrowserWindow, dialog, Menu } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');

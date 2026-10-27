@@ -1,3 +1,4 @@
+/** 管理订阅服务及其状态。 */
 import { createServer, type Server } from 'node:http';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';

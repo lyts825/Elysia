@@ -1,3 +1,4 @@
+/* 定义 surface-switcher 对应界面的样式与布局。 */
 .surface-trigger {
   display: inline-flex;
   align-items: center;

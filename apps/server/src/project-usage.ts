@@ -1,3 +1,4 @@
+/** 汇总项目使用量并注册查询接口。 */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, Status, type Project, type RequestRecord } from '../../../packages/contracts/src/index.js';

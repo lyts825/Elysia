@@ -1,3 +1,4 @@
+// 渲染启动视觉内容并向桌面端记录启动阶段。
 (() => {
   const visual = document.getElementById('visual'),
     skip = document.getElementById('skip');

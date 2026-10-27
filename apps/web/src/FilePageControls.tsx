@@ -1,3 +1,4 @@
+/* 提供文件内容分页控制和字节数格式化。 */
 import { useEffect, useId, useState } from 'react';
 import type { TextFilePage } from '../../../packages/contracts/src/files';
 import { Icon } from './Icon';

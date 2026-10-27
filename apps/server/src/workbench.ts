@@ -1,3 +1,4 @@
+/** 汇总工作台范围内的数据并注册接口。 */
 import type { FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';

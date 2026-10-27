@@ -1,3 +1,4 @@
+// 根据工具和参数计算工具调用的审核决策。
 import type { Attempt, Task, ToolCall } from '../../contracts/src/index.js';
 import type { ToolReviewDecision, ToolReviewReceipt } from '../../contracts/src/execution-policy.js';
 

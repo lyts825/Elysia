@@ -1,3 +1,4 @@
+// 实现 MCP 连接、权限检查、工具发现及调用。
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';

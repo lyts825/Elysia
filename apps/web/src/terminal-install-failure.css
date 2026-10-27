@@ -1,3 +1,4 @@
+/* 定义 terminal-install-failure 对应界面的样式与布局。 */
 .terminal-install-failure-target {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));

@@ -1,3 +1,4 @@
+/* 定义 workbench-persistence 对应界面的样式与布局。 */
 .cache-protection-state {
   display: block;
   margin: var(--space-1) 0;

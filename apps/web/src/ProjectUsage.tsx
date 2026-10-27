@@ -1,3 +1,4 @@
+/* 展示项目请求和用量信息。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectUsageSummary, ProjectUsageTotals } from '../../../packages/contracts/src/project-usage';
 import { useSurfaceClient } from './SurfaceClientContext';

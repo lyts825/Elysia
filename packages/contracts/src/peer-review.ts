@@ -1,3 +1,4 @@
+// 同行评审策略、提交与轮次状态的共享契约。
 import { z } from 'zod';
 import type { Evidence, ProviderConfig } from './index.js';
 

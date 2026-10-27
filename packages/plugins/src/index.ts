@@ -1,3 +1,4 @@
+// 定义插件清单、贡献及注册表的共享机制。
 import { AppError, invariant } from '../../contracts/src/index.js';
 
 export const PLUGIN_API_VERSION = 1;

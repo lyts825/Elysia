@@ -1,3 +1,4 @@
+/* 提供消息输入区的模型选择控件。 */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import type { ContextProjection, ProviderConfig } from '../../../packages/contracts/src/index';

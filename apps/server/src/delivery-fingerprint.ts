@@ -1,3 +1,4 @@
+/** 根据运行和交付物元数据计算交付指纹。 */
 import type { Run, Task } from '../../../packages/contracts/src/index.js';
 import type { DeliveryArtifactMetadata } from '../../../packages/contracts/src/workflow.js';
 import { hash, stable, type Store } from '../../../packages/storage/src/index.js';

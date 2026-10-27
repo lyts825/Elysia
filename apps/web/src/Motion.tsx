@@ -1,3 +1,4 @@
+/* 提供动画过渡、存在状态及减少动态效果的辅助能力。 */
 import {
   createContext,
   useCallback,

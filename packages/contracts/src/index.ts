@@ -1,3 +1,4 @@
+// 汇总核心领域模型、校验规则和公共契约。
 import { ToolReviewPolicy, CommandBackendPolicy, type ToolReviewReceipt } from './execution-policy.js';
 import { z } from 'zod';
 import { TerminalConnectionBinding } from './terminal-control.js';
@@ -9,7 +10,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.22.2';
+export const VERSION = '1.22.3';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';

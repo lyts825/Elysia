@@ -1,3 +1,4 @@
+/* 提供终端任务之间的通信界面。 */
 import { useEffect, useRef, useState } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type {

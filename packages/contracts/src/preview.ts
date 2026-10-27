@@ -1,3 +1,4 @@
+// 项目文件预览快照及资源读取问题的契约。
 export type PreviewResourceIssue = {
   path?: string;
   reason: 'missing' | 'too-large' | 'unreadable' | 'restricted' | 'not-file';

@@ -1,3 +1,4 @@
+/* 展示和管理工作台草稿的保存状态。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import type { WorkbenchCache, WorkbenchSnapshot, WorkbenchInspection } from './WorkbenchCache';

@@ -1,3 +1,4 @@
+/* 展示任务恢复相关操作。 */
 import { useId } from 'react';
 import type { Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 import { modelTaskCanContinue, taskResumeReason } from './ModelSwitchGuards';

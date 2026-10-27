@@ -1,3 +1,4 @@
+/** 汇总交付审阅数据并提供读取服务。 */
 import type { Run, Task } from '../../../packages/contracts/src/index.js';
 import type {
   DeliveryReviewStatus,

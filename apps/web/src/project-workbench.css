@@ -1,3 +1,4 @@
+/* 定义 project-workbench 对应界面的样式与布局。 */
 .project-workbench {
   flex: 1;
   min-height: 0;

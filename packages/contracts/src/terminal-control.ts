@@ -1,3 +1,4 @@
+// 终端应用、连接与控制配置的校验和契约。
 import { z } from 'zod';
 
 export const TerminalAppId = z.enum(['codex', 'dsh', 'claude', 'gemini', 'custom']);

@@ -1,3 +1,4 @@
+/* 展示应用启动过渡及视觉效果。 */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   readStartupMedia,

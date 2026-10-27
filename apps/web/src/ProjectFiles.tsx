@@ -1,3 +1,4 @@
+/* 展示项目文件。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { FilePageControls, formatFileBytes } from './FilePageControls';

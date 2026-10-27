@@ -1,3 +1,4 @@
+/* 判断任务是否可以继续以及模型切换的限制。 */
 import type { Operation, RequestRecord, Run, Task } from '../../../packages/contracts/src/index';
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 

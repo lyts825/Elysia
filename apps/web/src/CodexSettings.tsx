@@ -1,3 +1,4 @@
+/* 配置 Codex 连接及相关设置。 */
 import { useEffect, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';

@@ -1,3 +1,4 @@
+// 持久保存执行暂停及恢复问题，避免损坏记录导致任务继续运行。
 import type { DatabaseSync } from 'node:sqlite';
 import { AppError, Status, type Entity } from '../../contracts/src/index.js';
 import type { ExecutionHold } from '../../contracts/src/run-reads.js';

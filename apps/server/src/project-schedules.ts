@@ -1,3 +1,4 @@
+/** 管理项目计划任务及其调度。 */
 import { freezeExecutionPolicy } from '../../../packages/kernel/src/execution-policy.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';

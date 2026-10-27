@@ -1,3 +1,4 @@
+/* 定义 local-agent-settings 对应界面的样式与布局。 */
 .local-capability-summary {
   display: flex;
   flex-wrap: wrap;

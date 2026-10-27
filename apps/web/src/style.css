@@ -1,3 +1,4 @@
+/* 定义应用使用的全局基础样式。 */
 @import './design-tokens.css';
 
 :root {

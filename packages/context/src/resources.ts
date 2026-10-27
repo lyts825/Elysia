@@ -1,3 +1,4 @@
+// 解析内置提示和技能资源所在路径。
 import path from 'node:path';
 
 // Packaged launches pin built-in instructions to the same immutable build as the server and UI.

@@ -1,3 +1,4 @@
+/* 展示交付状态及相关信息。 */
 import { useEffect, useRef, useState } from 'react';
 import type { DeliveryReviewSummary } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';

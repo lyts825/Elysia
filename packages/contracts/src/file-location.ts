@@ -1,3 +1,4 @@
+// 文本定位请求及扫描结果的数据契约。
 import type { ResolvedTextEncoding, TextFileEncoding } from './files.js';
 
 export type FileLocationOptions = {

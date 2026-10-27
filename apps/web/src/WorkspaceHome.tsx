@@ -1,3 +1,4 @@
+/* 展示工作区首页。 */
 import type { AgentTerminalProfile, Project } from '../../../packages/contracts/src/index';
 import { useId, type ReactNode } from 'react';
 import type { SelectableProvider } from './ModelPicker';

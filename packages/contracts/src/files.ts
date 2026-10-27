@@ -1,3 +1,4 @@
+// 文本文件编码、分页与文件读取相关的数据契约。
 export const textFileEncodings = ['auto', 'utf-8', 'utf-16le', 'utf-16be', 'gb18030'] as const;
 export type TextFileEncoding = (typeof textFileEncodings)[number];
 export type ResolvedTextEncoding = Exclude<TextFileEncoding, 'auto'>;

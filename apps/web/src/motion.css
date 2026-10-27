@@ -1,3 +1,4 @@
+/* 定义界面共用的动态效果及相关样式。 */
 button {
   transition:
     background-color var(--motion-fast),

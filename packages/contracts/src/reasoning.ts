@@ -1,3 +1,4 @@
+// 供应商显式返回的推理展示与增量事件契约。
 /** Only text explicitly returned for display by a provider; never opaque native state. */
 export type ReasoningKind = 'reasoning_content' | 'summary';
 export type ReasoningDisplay = {

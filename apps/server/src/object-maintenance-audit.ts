@@ -1,3 +1,4 @@
+/** 校验并读取对象维护审计数据。 */
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { hash, stable } from '../../../packages/storage/src/index.js';

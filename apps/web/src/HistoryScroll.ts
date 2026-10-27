@@ -1,3 +1,4 @@
+/* 捕获和恢复历史列表的滚动锚点。 */
 export type HistoryAnchor = { id: string; offset: number };
 
 /** One bounded viewport index; text updates do not invalidate its anchor nodes. */

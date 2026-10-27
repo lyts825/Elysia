@@ -1,3 +1,4 @@
+/** 管理 Docker 代理的执行、终端会话和状态投影。 */
 import type { Store } from '../../storage/src/index.js';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';

@@ -1,3 +1,4 @@
+/** 注册项目智能信息相关接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {

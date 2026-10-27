@@ -1,3 +1,4 @@
+/** 汇总项目交付看板并注册交付操作接口。 */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {

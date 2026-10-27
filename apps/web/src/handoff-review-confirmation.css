@@ -1,3 +1,4 @@
+/* 定义 handoff-review-confirmation 对应界面的样式与布局。 */
 .handoff-confirmation {
   display: grid;
   gap: var(--space-3);

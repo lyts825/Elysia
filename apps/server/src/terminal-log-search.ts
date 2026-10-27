@@ -1,3 +1,4 @@
+/** 注册终端日志搜索接口。 */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import {

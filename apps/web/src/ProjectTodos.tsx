@@ -1,3 +1,4 @@
+/* 从项目交付项生成并展示待办。 */
 import type {
   ProjectDeliveryBoard,
   ProjectDeliveryItem,

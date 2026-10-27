@@ -1,3 +1,4 @@
+/* 管理订阅相关设置。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSurfaceClient } from './SurfaceClientContext';
 import { manageUsage } from './desktop';

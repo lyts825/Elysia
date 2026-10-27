@@ -1,4 +1,5 @@
 Option Explicit
+' 隐藏启动窗口并保存启动日志，失败时显示日志位置。
 Dim shell, fs, root, code
 Set shell = CreateObject("WScript.Shell")
 Set fs = CreateObject("Scripting.FileSystemObject")

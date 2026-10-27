@@ -1,3 +1,4 @@
+// 检查消息序列中工具调用与结果的配对关系。
 import type { Message, ToolCall } from './index.js';
 
 export interface ToolCallOccurrence {
@@ -12,6 +13,7 @@ export function inspectToolCalls(messages: readonly Message[]) {
   const waiting = new Map<string, ToolCallOccurrence>();
   let error: { code: string; message: string } | null = null;
   for (const message of messages) {
+    // 下一条非工具消息出现前，当前响应中的所有调用都必须收到结果。
     if (message.role !== 'tool' && waiting.size) {
       error = { code: 'TOOL_PAIR_INCOMPLETE', message: '工具调用尚未配对，不能编译下一次请求' };
       break;

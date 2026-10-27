@@ -1,3 +1,4 @@
+/* 生成任务中心分类和条目的显示信息。 */
 import type { TaskCenterCategory, TaskCenterItem } from '../../../packages/contracts/src/task-center';
 
 export const taskCenterCategoryLabels: Record<TaskCenterCategory, string> = {

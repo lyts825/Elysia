@@ -1,3 +1,4 @@
+/** 读取交付状态、运行谱系和修订历史并注册接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';

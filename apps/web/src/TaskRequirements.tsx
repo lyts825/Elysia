@@ -1,3 +1,4 @@
+/* 编辑并校验任务交付物和验收标准。 */
 export const requirementLines = (value: string) =>
   value
     .split('\n')

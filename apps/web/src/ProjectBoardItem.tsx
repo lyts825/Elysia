@@ -1,3 +1,4 @@
+/* 展示项目看板中的交付项及准备状态。 */
 import { useEffect, useId, useState } from 'react';
 import type {
   ProjectDeliveryBoard,

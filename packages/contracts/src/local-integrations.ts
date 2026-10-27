@@ -1,3 +1,4 @@
+// 本地代理、技能、记忆及 MCP 配置的数据契约。
 export type LocalAgentKind = 'codex' | 'claude' | 'dsh';
 export type LocalItemKind = 'memory' | 'skill' | 'mcp';
 export interface LocalMcpConfig {

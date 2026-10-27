@@ -1,3 +1,4 @@
+// 将任务快照、历史和工具编译为模型上下文。
 import { contextWindowBudget } from '../../contracts/src/context-window.js';
 import {
   type ContextRuntimeMetrics,
@@ -76,6 +77,7 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
     tools.map((tool) => tool.name),
     snapshot.environment,
   );
+  // 目录占用输入预算的一小部分，余量留给任务、历史及运行时内容。
   const catalogueBudgetTokens = Math.floor(
     Math.min(2048, Math.max(0, inputBudgetTokens - runtimeReserveTokens) * 0.08),
   );

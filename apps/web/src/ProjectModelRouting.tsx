@@ -1,3 +1,4 @@
+/* 配置项目角色的模型路由。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import { RoleRoutingPolicy, type RoleRoutingView } from '../../../packages/contracts/src/model-routing';

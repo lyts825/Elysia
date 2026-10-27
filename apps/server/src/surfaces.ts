@@ -1,3 +1,4 @@
+/** 创建不同工作界面的服务和访问认证。 */
 import { randomBytes } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';

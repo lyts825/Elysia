@@ -1,3 +1,4 @@
+/* 定义 project-files 对应界面的样式与布局。 */
 .project-files {
   flex: 1;
   min-height: 0;

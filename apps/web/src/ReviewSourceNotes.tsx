@@ -1,3 +1,4 @@
+/* 展示评审来源及其备注。 */
 import type { ReviewSourceNote } from '../../../packages/contracts/src/workflow';
 import { useId, useState } from 'react';
 import { reviewNoteKey } from './ReviewSourceState';

@@ -1,3 +1,4 @@
+// 分页读取详情事件，并限制单次读取的规模。
 import { gunzipSync } from 'node:zlib';
 import type { Event } from '../../contracts/src/index.js';
 import type { EventPreviewCoverage } from '../../contracts/src/run-reads.js';

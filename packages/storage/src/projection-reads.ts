@@ -1,3 +1,4 @@
+// 读取业务表投影，并向调用者报告无法安全读取的记录。
 import { AppError, Status, type Entity } from '../../contracts/src/index.js';
 import type { ProjectionReadCoverage, ProjectionReadIssue } from '../../contracts/src/run-reads.js';
 import type { Store } from './index.js';

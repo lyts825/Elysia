@@ -1,3 +1,4 @@
+/* 展示终端连接检查及结果。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   TerminalConnectionProbeResult,

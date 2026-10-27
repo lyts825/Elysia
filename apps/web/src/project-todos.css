@@ -1,3 +1,4 @@
+/* 定义 project-todos 对应界面的样式与布局。 */
 .project-todo-heading {
   display: flex;
   align-items: baseline;

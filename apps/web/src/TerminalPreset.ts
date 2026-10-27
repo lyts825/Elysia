@@ -1,3 +1,4 @@
+/* 生成终端代理配置的预设值。 */
 import type { AgentTerminalProfile } from '../../../packages/contracts/src/index';
 export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): AgentTerminalProfile {
   const choices = {

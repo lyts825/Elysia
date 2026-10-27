@@ -1,3 +1,4 @@
+// 将文件内容安全地发布为存储对象，并核对文件状态。
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -15,6 +16,7 @@ const byteVersion = (stat: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bi
   `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`;
 async function plain(filename: string, directory = false) {
   const stat = await fs.lstat(filename, { bigint: true });
+  // 不跟随符号链接，并要求解析后的路径仍与传入路径一致。
   if (
     stat.isSymbolicLink() ||
     !(directory ? stat.isDirectory() : stat.isFile()) ||
@@ -117,6 +119,7 @@ export async function publishFileObject(
     signal?.throwIfAborted();
     await plain(root, true);
     await plain(parent, true);
+    // 硬链接不会覆盖已有对象；即使目标已存在，也必须重新核对内容。
     await fs.link(temporary, target).catch((error) => {
       if (error.code !== 'EEXIST') throw error;
     });

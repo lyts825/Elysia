@@ -1,3 +1,4 @@
+/* 校验和管理产物修订选择草稿。 */
 import { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import {

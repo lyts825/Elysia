@@ -1,3 +1,4 @@
+// 调用本地验收入口；缺少验收材料时明确返回失败。
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 const entry = '.local-tests/verify.ts';

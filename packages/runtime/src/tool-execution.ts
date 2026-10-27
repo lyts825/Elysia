@@ -1,3 +1,4 @@
+/** 执行工具调用并重放待处理调用。 */
 import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
@@ -91,6 +92,7 @@ export class ToolExecutionService {
       if (owners.size === 1) assistantMessageId = [...owners][0];
     }
     const outcomes: { call: ToolCall; result: unknown }[] = [];
+    // 只有所有调用都明确允许并行时才并发；否则保留原顺序及其副作用。
     if (calls.some((c) => this.gateway.toolPolicy(c.name)?.serial !== false)) {
       for (const call of calls) {
         const result = await this.tool(task, attempt, call, signal, assistantMessageId);
@@ -103,6 +105,7 @@ export class ToolExecutionService {
       const results = await Promise.allSettled(
         calls.map((call) => this.tool(task, attempt, call, signal, assistantMessageId)),
       );
+      // 即使并发完成顺序不同，也按模型给出的顺序写入结果。
       for (let i = 0; i < calls.length; i++) {
         const r = results[i];
         if (r.status === 'fulfilled') {

@@ -1,3 +1,4 @@
+/* 记录和读取应用启动阶段的诊断状态。 */
 import './desktop';
 
 export const startupStages = [

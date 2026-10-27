@@ -1,3 +1,4 @@
+// 汇总内置工具插件并生成工具集合。
 import { capabilities } from '../plugin-services.js';
 import { PluginRegistry } from '../../../plugins/src/index.js';
 import { invariant } from '../../../contracts/src/index.js';

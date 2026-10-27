@@ -1,3 +1,4 @@
+/* 定义 review-feedback-selection 对应界面的样式与布局。 */
 .review-feedback-selection .review-feedback-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 4rem), 1fr));

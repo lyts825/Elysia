@@ -1,3 +1,4 @@
+/** 管理终端设置、配置和相关接口。 */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';

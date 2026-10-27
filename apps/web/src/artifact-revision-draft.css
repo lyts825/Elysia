@@ -1,3 +1,4 @@
+/* 定义 artifact-revision-draft 对应界面的样式与布局。 */
 .revision-draft-editor {
   display: grid;
   gap: var(--space-3);

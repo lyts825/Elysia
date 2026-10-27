@@ -1,3 +1,4 @@
+// 管理子进程执行及传递给子进程的环境变量。
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { AppError } from '../../contracts/src/index.js';

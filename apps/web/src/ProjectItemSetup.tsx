@@ -1,3 +1,4 @@
+/* 配置项目交付项。 */
 import { useId, useRef, useState } from 'react';
 import type { ContextPolicy } from '../../../packages/contracts/src/index';
 import { RunModal } from './RunSetupModal';

@@ -1,3 +1,4 @@
+/** 在工作线程中执行对象维护任务。 */
 import { parentPort, workerData } from 'node:worker_threads';
 import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
 import { objectAuditHeader } from './object-maintenance-audit.js';
@@ -48,6 +49,7 @@ try {
   const options = {
     cancelled: () => Atomics.load(cancellation, OBJECT_CANCEL_FLAG) !== 0,
     beforePreflight: () => {
+      // 进入清理保护阶段前与取消操作原子竞争，避免清理途中被强制终止。
       if (
         Atomics.compareExchange(cancellation, OBJECT_CLEANUP_GATE, OBJECT_READ_ONLY, OBJECT_PROTECTED) ===
         OBJECT_TERMINATING

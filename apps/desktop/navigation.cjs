@@ -1,3 +1,4 @@
+// 限制桌面窗口和子框架可访问的本地导航目标。
 function allowedLocalNavigation(url, currentUrl, origin, main) {
   try {
     const target = new URL(url);
@@ -17,6 +18,7 @@ function allowedLocalNavigation(url, currentUrl, origin, main) {
     if (target.origin !== origin) return false;
     if (main) return target.pathname === '/';
     const terminal = new URL(currentUrl).searchParams.get('surface') === 'terminal';
+    // 终端和原生界面使用不同路由前缀，不能借子框架跨入口访问资源。
     const prefix = terminal ? '/terminal' : '';
     const pathname = prefix
       ? target.pathname.startsWith(prefix + '/')

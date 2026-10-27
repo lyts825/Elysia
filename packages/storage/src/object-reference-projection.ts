@@ -1,3 +1,4 @@
+// 维护存储对象引用的投影，供引用查询和维护使用。
 import type { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 

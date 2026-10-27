@@ -1,3 +1,4 @@
+/** 组装服务端使用的内核实例。 */
 import { Kernel } from '../../../packages/kernel/src/index.js';
 import type { Store } from '../../../packages/storage/src/index.js';
 import { freezeProjectCapabilities } from '../../../packages/context/src/project-intelligence.js';

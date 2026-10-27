@@ -1,3 +1,4 @@
+/* 确认交接内容的复核操作。 */
 import { useId } from 'react';
 import './handoff-review-confirmation.css';
 

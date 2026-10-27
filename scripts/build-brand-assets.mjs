@@ -1,3 +1,4 @@
+// 通过 Electron 启动品牌资源渲染流程。
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';

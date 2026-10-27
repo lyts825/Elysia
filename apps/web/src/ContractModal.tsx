@@ -1,3 +1,4 @@
+/* 在弹窗中展示任务契约。 */
 import { useId, useState } from 'react';
 import type { Contract } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';

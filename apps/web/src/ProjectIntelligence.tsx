@@ -1,3 +1,4 @@
+/* 管理项目记忆及能力配置。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type {

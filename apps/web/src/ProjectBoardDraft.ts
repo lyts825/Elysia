@@ -1,3 +1,4 @@
+/* 定义项目看板草稿，处理读取、写入和看板快照转换。 */
 import { z } from 'zod';
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import type { WorkbenchCache } from './WorkbenchCache';

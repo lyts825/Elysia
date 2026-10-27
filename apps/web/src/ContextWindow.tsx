@@ -1,3 +1,4 @@
+/* 展示上下文窗口用量、预算及详情。 */
 import { useState, type CSSProperties } from 'react';
 import type { ContextPolicy, ContextProjection, ProviderConfig } from '../../../packages/contracts/src/index';
 import { minimumContextWindowTokens } from '../../../packages/contracts/src/index';

@@ -1,3 +1,4 @@
+/* 展示和管理项目交付清单。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   ProjectDeliveryBoard,

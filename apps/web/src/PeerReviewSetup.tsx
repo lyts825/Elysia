@@ -1,3 +1,4 @@
+/* 配置并校验同行评审。 */
 import { useId } from 'react';
 import type { PeerReviewPolicy } from '../../../packages/contracts/src/peer-review';
 import type { SelectableProvider } from './ModelPicker';

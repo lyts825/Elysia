@@ -1,3 +1,4 @@
+/** 定义终端应用目录和连接兼容性检查。 */
 import { AgentTerminalProfile, invariant } from '../../../packages/contracts/src/index.js';
 import {
   TerminalAppId,

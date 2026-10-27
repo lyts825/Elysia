@@ -1,3 +1,4 @@
+// 项目交付归档及其读取结果的数据契约。
 import type { RecordPage } from './run-reads.js';
 
 /** A durable ZIP retained by this local project; saving is separate from acceptance and backup. */

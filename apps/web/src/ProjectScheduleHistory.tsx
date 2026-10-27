@@ -1,3 +1,4 @@
+/* 展示项目定时运行的历史记录。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProjectScheduleHistory as HistoryPage } from '../../../packages/contracts/src/project-schedules';
 import { executionLabel } from './ProjectRunList';

@@ -1,3 +1,4 @@
+/** 记录执行通道准备状态并协调并发准备。 */
 import type { ExecutionAdmission } from './execution-plugins.js';
 
 type PreparationReason = 'execution-preparing' | 'execution-unavailable';

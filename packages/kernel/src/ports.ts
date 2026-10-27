@@ -1,3 +1,4 @@
+// 定义核心领域依赖的存储和恢复接口。
 import type { Entity, Event, Message } from '../../contracts/src/index.js';
 import type { Table, RequestLedgerRow } from '../../contracts/src/persistence.js';
 import type { ExecutionHold } from '../../contracts/src/run-reads.js';

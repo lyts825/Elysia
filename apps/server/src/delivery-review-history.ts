@@ -1,3 +1,4 @@
+/** 保存交付审阅基线、快照与变更历史。 */
 import { AppError, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import { z } from 'zod';
 import type {

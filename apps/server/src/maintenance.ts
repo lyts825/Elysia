@@ -1,3 +1,4 @@
+/** 提供数据备份、恢复等维护服务。 */
 import {
   Store,
   dataDirectory,

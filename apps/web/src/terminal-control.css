@@ -1,3 +1,4 @@
+/* 定义 terminal-control 对应界面的样式与布局。 */
 .terminal-control-center.modal {
   width: min(1060px, calc(100vw - 40px));
 }

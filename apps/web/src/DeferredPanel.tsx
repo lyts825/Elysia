@@ -1,3 +1,4 @@
+/* 按需加载面板组件并处理加载状态。 */
 import React, { Component, Suspense, useId, type ComponentType, type ReactNode } from 'react';
 import './deferred-panel.css';
 

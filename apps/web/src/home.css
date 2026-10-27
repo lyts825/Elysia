@@ -1,3 +1,4 @@
+/* 定义 home 对应界面的样式与布局。 */
 .welcome {
   flex: 1;
   min-height: 0;

@@ -1,3 +1,4 @@
+/* 展示运行与修订之间的关联。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type { RunLineage, RunRevisions } from '../../../packages/contracts/src/workflow';

@@ -1,3 +1,4 @@
+/* 定义 providers 对应界面的样式与布局。 */
 .modal.provider-center {
   width: min(1080px, calc(100vw - 40px));
   max-height: calc(100dvh - 40px);

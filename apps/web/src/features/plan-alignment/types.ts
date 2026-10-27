@@ -1,3 +1,4 @@
+/* 定义计划对齐功能使用的数据类型。 */
 import type { Agent, Run, Task, TaskSpec, ContextPolicy } from '../../../../../packages/contracts/src/index';
 import type { ModelChoice, SelectableProvider } from '../../ModelPicker';
 

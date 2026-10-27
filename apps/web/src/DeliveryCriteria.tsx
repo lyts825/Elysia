@@ -1,3 +1,4 @@
+/* 展示和处理交付验收标准。 */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryCriterion,

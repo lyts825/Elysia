@@ -1,3 +1,4 @@
+/** 启动时检查存储版本、准备升级并打开存储。 */
 import {
   existsSync,
   lstatSync,

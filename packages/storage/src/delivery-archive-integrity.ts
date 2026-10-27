@@ -1,3 +1,4 @@
+// 核验交付归档所引用对象及本地路径的完整性。
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';

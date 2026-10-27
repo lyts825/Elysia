@@ -1,3 +1,4 @@
+/* 定义 terminal-communication 对应界面的样式与布局。 */
 .terminal-communication {
   margin-top: var(--space-4);
   padding-top: var(--space-4);

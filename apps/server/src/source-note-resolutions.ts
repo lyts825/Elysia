@@ -1,3 +1,4 @@
+/** 读取和更新来源备注的处理状态。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';

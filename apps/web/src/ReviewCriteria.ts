@@ -1,3 +1,4 @@
+/* 读取交付复核所需的验收标准。 */
 import type { DeliveryCriterion, DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { ApiError, type SurfaceClient } from './api';
 import type { ReviewNote } from './ReviewDraft';

@@ -1,3 +1,4 @@
+/* 定义 sessions 对应界面的样式与布局。 */
 .session-navigation {
   flex: 1;
   min-width: 0;

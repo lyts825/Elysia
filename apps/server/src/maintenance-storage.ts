@@ -1,3 +1,4 @@
+/** 管理维护操作的存储快照、锁和恢复安装。 */
 import {
   Store,
   acquireLock,
@@ -336,6 +337,7 @@ export function recoverPreparedInstall(directory: string) {
       if (typeof journal.originals[surface + '/' + name] !== 'boolean')
         throw new Error('维护恢复原始清单不完整');
   }
+  // 安装未提交时用归档回滚；已提交时只清理日志和暂存目录。
   if (journal.phase === 'installing') {
     for (const surface of journal.surfaces) {
       for (const name of fileNames) {
@@ -383,6 +385,7 @@ export function installPrepared(directory: string, stage: string, surfaces: Surf
     surfaces,
     originals,
   };
+  // 先持久化恢复日志，再移动任何原文件，保证中断后可恢复。
   saveJournal(directory, journal);
   try {
     for (const surface of surfaces) {

@@ -1,3 +1,4 @@
+/* 定义 delivery-status-card 对应界面的样式与布局。 */
 .delivery-status-panel .delivery-status-review {
   display: grid;
   gap: var(--space-2);

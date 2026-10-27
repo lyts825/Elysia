@@ -1,3 +1,4 @@
+// 注册 MCP 工具发现与调用入口。
 import { z } from 'zod';
 import { type Run } from '../../../contracts/src/index.js';
 

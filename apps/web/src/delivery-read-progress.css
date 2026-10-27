@@ -1,3 +1,4 @@
+/* 定义 delivery-read-progress 对应界面的样式与布局。 */
 .delivery-read-progress {
   display: grid;
   gap: var(--space-2);

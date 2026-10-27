@@ -1,3 +1,4 @@
+/* 展示详情读取状态及提示。 */
 import { detailReadReason, type DetailReadState } from './DetailReadState';
 import { useId, useState } from 'react';
 import type { RunStopCurrentResult } from '../../../packages/contracts/src/run-reads';

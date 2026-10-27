@@ -1,3 +1,4 @@
+/* 读取和写入任务设置草稿。 */
 import type {
   ToolReviewPolicy,
   CommandBackendPolicy,

@@ -1,3 +1,4 @@
+/* 协调重复读取、取消过期请求并限制读取时间。 */
 /** One read per selection. Repeated refreshes share work; a new selection cancels the old one. */
 export class ReadCoordinator {
   private pending?: {
@@ -8,6 +9,7 @@ export class ReadCoordinator {
   };
   run<T>(key: string, read: (signal: AbortSignal) => Promise<T>, trailing = false): Promise<T> {
     if (this.pending?.key === key) {
+      // 同一对象的读取共享当前请求；需要尾随刷新时只保留最后一次操作。
       if (trailing) this.pending.again = read;
       return this.pending.promise as Promise<T>;
     }

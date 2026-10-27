@@ -1,3 +1,4 @@
+/* 管理终端数据及清理操作。 */
 import { useEffect, useRef, useState } from 'react';
 import type { Run, RunListItem } from '../../../packages/contracts/src/index';
 import type {

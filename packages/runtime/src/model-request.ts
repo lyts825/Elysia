@@ -1,3 +1,4 @@
+/** 执行模型请求并发布上下文运行指标。 */
 import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {

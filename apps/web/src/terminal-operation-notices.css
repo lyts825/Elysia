@@ -1,3 +1,4 @@
+/* 定义 terminal-operation-notices 对应界面的样式与布局。 */
 .terminal-operation-heading {
   display: flex;
   flex-wrap: wrap;

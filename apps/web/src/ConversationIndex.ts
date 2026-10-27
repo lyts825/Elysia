@@ -1,3 +1,4 @@
+/* 为对话消息和工具调用构建索引及查找键。 */
 import type { Agent, Message, Operation, RequestRecord, Task } from '../../../packages/contracts/src/index';
 
 function firstBy<T>(values: readonly T[] | undefined, key: (value: T) => string | undefined) {

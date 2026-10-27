@@ -1,3 +1,4 @@
+// 通过 Electron 预加载桥向页面暴露桌面能力。
 const { contextBridge, ipcRenderer } = require('electron');
 // Only the trusted top-level workbench receives native capabilities.
 if (process.isMainFrame) {

@@ -1,3 +1,4 @@
+/* 展示项目文件及相关预览。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from './api';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';

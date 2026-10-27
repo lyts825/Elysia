@@ -1,3 +1,4 @@
+/** 定义对象维护工作线程使用的控制状态。 */
 // Cancellation and cleanup protection share an atomic gate, so the parent never
 // terminates a worker that has started object preflight or deletion.
 export const OBJECT_CANCEL_FLAG = 0;

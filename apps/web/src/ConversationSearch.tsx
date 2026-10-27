@@ -1,3 +1,4 @@
+/* 提供对话内容搜索界面。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center';
 import { Icon } from './Icon';

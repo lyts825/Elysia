@@ -1,3 +1,4 @@
+/* 定义并读取任务继续执行时使用的草稿。 */
 export type ContinuationDraft = {
   text: string;
   mode: 'resume' | 'new-session';

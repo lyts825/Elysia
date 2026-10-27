@@ -1,3 +1,4 @@
+/* 展示模型返回的推理内容。 */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import './reasoning.css';

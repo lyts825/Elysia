@@ -1,3 +1,4 @@
+/* 展示终端任务的运行状态。 */
 import { useEffect, useState } from 'react';
 import type { Task } from '../../../packages/contracts/src/index';
 import type {

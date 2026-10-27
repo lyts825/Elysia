@@ -1,3 +1,4 @@
+/* 配置和校验工具评审及执行策略。 */
 import './peer-review.css';
 import { useId } from 'react';
 import { CommandBackendPolicy, ToolReviewPolicy } from '../../../packages/contracts/src/execution-policy';

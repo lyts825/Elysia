@@ -1,3 +1,4 @@
+/** 执行原生代理的单步循环，协调上下文、模型和工具。 */
 import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
@@ -43,6 +44,7 @@ export class NativeAgentLoop {
       this.kernel.wait(task, 'rate_limit');
       return;
     }
+    // 先取得执行权并重放未完成的工具调用，再编译新的模型上下文。
     let attempt = this.kernel.claim(task.id);
     task = await this.gateway.prepare(store.require('tasks', task.id), signal);
     await this.tools.replayPending(task, attempt, signal);
@@ -84,6 +86,7 @@ export class NativeAgentLoop {
     if (completed.calls.length)
       await this.tools.executeCalls(task, attempt, completed.calls, signal, assistantMessage.id);
     else if (store.require<Run>('runs', task.runId).kind === 'chat') {
+      // 聊天轮次没有工具调用时让出控制权，等待用户输入。
       store.tx(() => {
         this.kernel.wait(store.require<Task>('tasks', task.id), 'user');
         store.put('attempts', {
@@ -93,6 +96,7 @@ export class NativeAgentLoop {
         });
       });
     } else {
+      // 非聊天任务需要显式续行提示，才能继续推进未完成的目标。
       this.kernel.appendMessage(
         task,
         'user',

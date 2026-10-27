@@ -1,3 +1,4 @@
+/* 定义 project-model-routing 对应界面的样式与布局。 */
 .project-model-routing {
   container: project-model-routing / inline-size;
   font-size: var(--font-sm);

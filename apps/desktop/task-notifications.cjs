@@ -1,3 +1,4 @@
+// 为桌面窗口管理任务通知及其生命周期。
 const { Notification } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');

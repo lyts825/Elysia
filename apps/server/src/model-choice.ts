@@ -1,3 +1,4 @@
+/** 查询可用模型并解析模型选择。 */
 import { invariant, ModelChoice, type ProviderConfig } from '../../../packages/contracts/src/index.js';
 import type { Store } from '../../../packages/storage/src/index.js';
 import type { CodexSubscription } from './codex-subscription.js';

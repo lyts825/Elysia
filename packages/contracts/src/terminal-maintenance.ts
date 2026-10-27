@@ -1,3 +1,4 @@
+// 终端资源占用与清理操作的数据约束。
 import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

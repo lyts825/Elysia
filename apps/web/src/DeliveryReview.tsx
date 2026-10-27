@@ -1,3 +1,4 @@
+/* 展示和处理交付评审。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DeliveryReview as Delivery, SourceArtifact } from '../../../packages/contracts/src/workflow';
 import type { Artifact, Operation } from '../../../packages/contracts/src/index';

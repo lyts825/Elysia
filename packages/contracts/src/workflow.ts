@@ -1,3 +1,4 @@
+// 项目工作流、运行来源和交付评审的契约。
 import { z } from 'zod';
 import { Budget, ContextPolicy, ModelChoice } from './index.js';
 import type { RecordPage } from './run-reads.js';

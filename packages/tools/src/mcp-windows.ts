@@ -1,3 +1,4 @@
+// 在 Windows 上启动 MCP 子进程并管理其运行环境。
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { AppError } from '../../contracts/src/index.js';

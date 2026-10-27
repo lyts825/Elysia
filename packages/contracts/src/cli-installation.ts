@@ -1,3 +1,4 @@
+// 终端 CLI 安装失败分类及对应修复指引。
 export type TerminalCliInstallRepair = 'check' | 'version' | 'template' | 'retry';
 export type TerminalCliInstallFailure = {
   code: string;

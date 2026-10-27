@@ -1,3 +1,4 @@
+// 协调领域状态、运行生命周期与持久化操作的核心入口。
 import { freezeExecutionPolicy } from './execution-policy.js';
 import {
   UsageSchema,
@@ -500,6 +501,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   }
   checkGraph(tasks: { id: string; deps: string[] }[]) {
     const graph = new Map(tasks.map((t) => [t.id, t.deps]));
+    // active 是当前递归路径，visited 是已验证的子图；前者用于检测循环依赖。
     const visited = new Set<string>(),
       active = new Set<string>();
     const visit = (key: string) => {

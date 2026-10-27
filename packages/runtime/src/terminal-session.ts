@@ -1,3 +1,4 @@
+/** 定义和读写终端会话及其状态。 */
 import { z } from 'zod';
 import type { AgentTerminalProfile, Run, Task } from '../../contracts/src/index.js';
 import { hash, stable, type Store } from '../../storage/src/index.js';

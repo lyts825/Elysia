@@ -1,3 +1,4 @@
+// 比较连续请求的结构变化，不推断供应商缓存原因。
 import { stable } from '../../contracts/src/identity.js';
 export function requestDifference(
   previous: Record<string, unknown> | undefined,

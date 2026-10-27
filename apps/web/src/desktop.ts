@@ -1,3 +1,4 @@
+/* 定义浏览器界面与桌面宿主之间可用的桥接能力。 */
 declare global {
   interface Window {
     elysia?: {

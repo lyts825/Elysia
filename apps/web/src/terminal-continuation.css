@@ -1,3 +1,4 @@
+/* 定义 terminal-continuation 对应界面的样式与布局。 */
 .terminal-continuation {
   min-width: 0;
   margin-top: var(--space-3);

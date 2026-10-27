@@ -1,3 +1,4 @@
+/* 展示原始评审内容。 */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DeliveryReviewHistoryDetail, ReviewSourceNote } from '../../../packages/contracts/src/workflow';

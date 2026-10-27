@@ -1,3 +1,4 @@
+// 渲染并生成桌面应用所需的品牌图标资源。
 const { app, BrowserWindow } = require('electron');
 const { readFile, writeFile } = require('node:fs/promises');
 const path = require('node:path');

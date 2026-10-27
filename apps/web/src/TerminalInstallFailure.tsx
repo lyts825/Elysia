@@ -1,3 +1,4 @@
+/* 展示终端安装失败信息及修复指引。 */
 import { useId } from 'react';
 import type { TerminalCliInstallationJob } from '../../../packages/contracts/src/index';
 import {

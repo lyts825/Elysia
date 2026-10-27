@@ -1,3 +1,4 @@
+/* 展示评审模型选择及约束。 */
 import { useId, useState } from 'react';
 import { Modal } from './Modal';
 import './workflow-policy-confirmation.css';

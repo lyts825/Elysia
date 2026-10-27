@@ -1,3 +1,4 @@
+/* 定义 artifact-changes 对应界面的样式与布局。 */
 .artifact-changes {
   color: var(--text);
   background: var(--surface);

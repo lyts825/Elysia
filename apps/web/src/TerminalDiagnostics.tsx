@@ -1,3 +1,4 @@
+/* 展示终端诊断及修复选项。 */
 import { useEffect, useRef, useState } from 'react';
 import type { TerminalProfileDiagnostics } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';

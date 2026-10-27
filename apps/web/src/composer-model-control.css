@@ -1,3 +1,4 @@
+/* 定义 composer-model-control 对应界面的样式与布局。 */
 .composer-model-control {
   display: inline-flex;
   align-items: center;

@@ -1,3 +1,4 @@
+/* 定义 task-graph 对应界面的样式与布局。 */
 .task-graph {
   min-width: 0;
   padding: var(--space-3);

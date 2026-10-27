@@ -1,3 +1,4 @@
+/* 定义 delivery-changes 对应界面的样式与布局。 */
 .delivery-comparison-summary {
   min-width: 0;
   padding: var(--space-3);

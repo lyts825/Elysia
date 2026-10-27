@@ -1,3 +1,4 @@
+// 注册知识资源发现和读取工具。
 import { z } from 'zod';
 import { invariant, type Run } from '../../../contracts/src/index.js';
 import { localCataloguePage } from '../catalogue.js';

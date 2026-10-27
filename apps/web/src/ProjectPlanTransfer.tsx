@@ -1,3 +1,4 @@
+/* 提供项目计划的导入和导出操作。 */
 import { useEffect, useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { PROJECT_BOARD_DRAFT_LIMIT, type ProjectBoardEdit } from './ProjectBoardDraft';
 import {

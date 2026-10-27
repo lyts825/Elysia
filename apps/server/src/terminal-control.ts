@@ -1,3 +1,4 @@
+/** 管理终端控制服务及相关接口。 */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';

@@ -1,3 +1,4 @@
+// 收集运行时和应用文件，组装 Windows 发行包。
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {

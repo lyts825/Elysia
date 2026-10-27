@@ -1,3 +1,4 @@
+/* 定义 terminal-profile-form 对应界面的样式与布局。 */
 .terminal-profile-form {
   display: grid;
   gap: var(--space-4);

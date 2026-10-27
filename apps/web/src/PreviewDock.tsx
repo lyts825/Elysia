@@ -1,3 +1,4 @@
+/* 提供预览停靠区域。 */
 import { Activity, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Artifact } from '../../../packages/contracts/src/index';
 import { ArtifactFilePreview, type TerminalLogContext } from './ArtifactFilePreview';

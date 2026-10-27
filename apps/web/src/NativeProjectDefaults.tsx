@@ -1,3 +1,4 @@
+/* 编辑原生项目的默认运行配置。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   NativeProjectDefaults,

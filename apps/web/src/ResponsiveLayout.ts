@@ -1,3 +1,4 @@
+/* 提供视口匹配和抽屉焦点管理的 React Hook。 */
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { useCallback, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from 'react';
 

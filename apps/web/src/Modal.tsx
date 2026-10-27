@@ -1,3 +1,4 @@
+/* 提供通用弹窗及其错误提示上下文。 */
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { createContext, useContext, useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';

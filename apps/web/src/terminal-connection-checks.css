@@ -1,3 +1,4 @@
+/* 定义 terminal-connection-checks 对应界面的样式与布局。 */
 .terminal-connection-checks {
   display: grid;
   gap: var(--space-3);

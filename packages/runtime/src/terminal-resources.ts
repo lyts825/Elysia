@@ -1,3 +1,4 @@
+/** 管理终端执行所需的资源池。 */
 import { AppError } from '../../contracts/src/index.js';
 import {
   terminalResourceRequirement,

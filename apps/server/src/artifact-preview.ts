@@ -1,3 +1,4 @@
+/** 提供交付物预览及相关读取服务。 */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';

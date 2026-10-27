@@ -1,3 +1,4 @@
+// 协调工具调用、权限检查、执行和结果处理。
 import { pluginServices } from './plugin-services.js';
 import { reviewToolRules, type ReviewModel } from './tool-review.js';
 import type { ToolReviewReceipt } from '../../contracts/src/execution-policy.js';

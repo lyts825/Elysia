@@ -1,3 +1,4 @@
+/* 定义 project-usage-details 对应界面的样式与布局。 */
 .project-usage-meta {
   display: flex;
   flex-wrap: wrap;

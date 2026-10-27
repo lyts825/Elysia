@@ -1,3 +1,4 @@
+// 任务公开终端记录的搜索结果与分页契约。
 /** Search only the public transcript artifact belonging to the selected task. */
 export interface TerminalLogMatch {
   offset: number;

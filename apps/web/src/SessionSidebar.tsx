@@ -1,3 +1,4 @@
+/* 展示会话侧栏并管理会话选择。 */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {

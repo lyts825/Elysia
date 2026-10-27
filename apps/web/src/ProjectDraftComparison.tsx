@@ -1,3 +1,4 @@
+/* 比较项目草稿与当前内容。 */
 import { differenceText, type MergeChoice, type ProjectDraftDifference } from './ProjectDraftMerge';
 import './project-draft-comparison.css';
 

@@ -1,3 +1,4 @@
+// 按限制读取任务当前待答问题，区分不可用记录与正常结果。
 import { gunzipSync } from 'node:zlib';
 import type { Run, Task } from '../../contracts/src/index.js';
 import type { RunCurrentQuestions } from '../../contracts/src/run-reads.js';

@@ -1,3 +1,4 @@
+/* 编辑应用启动设置。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { StartupVisual, startupColors } from './StartupTransition';

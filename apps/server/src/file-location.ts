@@ -1,3 +1,4 @@
+/** 解析并定位工作区中的文件。 */
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { AppError, invariant } from '../../../packages/contracts/src/index.js';

@@ -1,3 +1,4 @@
+// 维护交付产物的元数据读取、序列化与一致性检查。
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { Artifact } from '../../contracts/src/index.js';
 import type { DeliveryArtifactMetadata } from '../../contracts/src/workflow.js';

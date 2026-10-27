@@ -1,3 +1,4 @@
+/* 解析任务中心条目对应的导航目标。 */
 import type { TaskCenterCategory } from '../../../packages/contracts/src/task-center';
 import { detailReadReason } from './DetailReadState';
 import { getRunFeedback } from './RunFeedback';

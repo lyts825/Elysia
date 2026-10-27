@@ -1,3 +1,4 @@
+/** 定义并管理运行时执行插件。 */
 import { AppError, type Run, type Task } from '../../contracts/src/index.js';
 import type { RuntimeQueueEntry, RuntimeQueueReason } from '../../contracts/src/terminal-runtime.js';
 import { PluginRegistry, type PluginContributions } from '../../plugins/src/index.js';

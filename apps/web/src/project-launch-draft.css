@@ -1,3 +1,4 @@
+/* 定义 project-launch-draft 对应界面的样式与布局。 */
 .project-launch-draft {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);

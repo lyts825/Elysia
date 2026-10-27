@@ -1,3 +1,4 @@
+// 按层压缩上下文历史，同时保留原始记录供恢复。
 import type { Message } from '../../contracts/src/index.js';
 import type { ApprovedTaskWorkingState } from '../../contracts/src/working-state.js';
 import { stable } from '../../contracts/src/identity.js';
@@ -14,6 +15,7 @@ export function headTail(text: string, head: number, tail: number, marker: strin
   return points.slice(0, head).join('') + marker + (tail ? points.slice(-tail).join('') : '');
 }
 
+// 调用及其连续结果构成不可拆分的块；未闭合的块必须保留在最近历史中。
 function blocks(messages: Message[]) {
   const result: { start: number; end: number; closed: boolean }[] = [];
   for (let start = 0; start < messages.length; ) {

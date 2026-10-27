@@ -1,3 +1,4 @@
+/* 定义 contract-modal 对应界面的样式与布局。 */
 .contract-editor-modal .contract-editor-state {
   display: flex;
   flex-wrap: wrap;

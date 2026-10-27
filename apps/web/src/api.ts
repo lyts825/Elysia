@@ -1,3 +1,4 @@
+/* 封装各界面与本地服务通信的客户端、错误处理和请求能力。 */
 import type { WorkspaceSurface } from '../../../packages/contracts/src/index';
 import { ReadDeadline } from './ReadCoordinator';
 

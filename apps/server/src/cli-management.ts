@@ -1,3 +1,4 @@
+/** 管理终端 CLI 的安装状态及相关接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AgentTerminalProfile, AppError, Command, invariant } from '../../../packages/contracts/src/index.js';

@@ -1,3 +1,4 @@
+/* 展示交付产物的变更及相关操作。 */
 import { useEffect, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChangePage,

@@ -1,3 +1,4 @@
+/** 捕获运行来源和交付证据并注册工作流接口。 */
 import type { FastifyInstance } from 'fastify';
 import { statSync } from 'node:fs';
 import path from 'node:path';

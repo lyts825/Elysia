@@ -1,3 +1,4 @@
+/* 提供 useReviewSource React Hook 使用的状态与处理逻辑。 */
 import { useEffect, useState } from 'react';
 import type { DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';

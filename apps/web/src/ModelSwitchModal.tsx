@@ -1,3 +1,4 @@
+/* 提供任务模型切换的弹窗。 */
 import { useId, useState } from 'react';
 import type { Agent, Task } from '../../../packages/contracts/src/index';
 import { Modal } from './Modal';

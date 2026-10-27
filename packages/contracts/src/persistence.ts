@@ -1,3 +1,4 @@
+// 持久化记录和请求账本的数据结构。
 import type { RequestRecord } from './index.js';
 
 export type RequestLedgerRow = Pick<

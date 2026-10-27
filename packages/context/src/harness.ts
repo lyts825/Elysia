@@ -1,3 +1,4 @@
+// 定义原生执行提示和传输指导的版本化策略。
 import type { Run, Task } from '../../contracts/src/index.js';
 
 export const PROMPT_VERSION = '10';

@@ -1,3 +1,4 @@
+/* 管理模型供应商连接与配置。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';

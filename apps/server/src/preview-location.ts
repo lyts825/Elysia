@@ -1,3 +1,4 @@
+/** 注册预览位置相关接口。 */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { textFileEncodings } from '../../../packages/contracts/src/files.js';

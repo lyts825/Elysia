@@ -1,3 +1,4 @@
+/* 在消息输入区选择模型。 */
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';

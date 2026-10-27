@@ -1,3 +1,4 @@
+/* 定义 preview-dock 对应界面的样式与布局。 */
 .preview-dock {
   display: flex;
   flex-direction: column;

@@ -1,3 +1,4 @@
+// 向工具插件提供受限服务及能力访问入口。
 import { loadSkill, listSkills, loadSkillFile } from '../../context/src/skills.js';
 import {
   listLocalMemories,

@@ -1,3 +1,4 @@
+/** 将终端服务适配为运行时执行插件。 */
 import type { Run } from '../../contracts/src/index.js';
 import type { DockerAgentService } from './docker-agent.js';
 import type { ExecutionPlugin } from './execution-plugins.js';

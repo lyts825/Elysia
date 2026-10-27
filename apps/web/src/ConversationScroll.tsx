@@ -1,3 +1,4 @@
+/* 管理对话列表的滚动行为。 */
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import {

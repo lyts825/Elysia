@@ -1,3 +1,4 @@
+// 管理构建缓存占用、租约及可清理性检查。
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');

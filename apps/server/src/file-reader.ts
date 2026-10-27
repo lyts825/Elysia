@@ -1,3 +1,4 @@
+/** 检查、分页读取和流式传输文件。 */
 import { constants, promises as fs, type Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { createHash } from 'node:crypto';

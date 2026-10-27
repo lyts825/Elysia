@@ -1,3 +1,4 @@
+// 任务中心分类、条目和读取结果的契约。
 import type { Run, Message } from './index.js';
 import type { RecordPage, ProjectionReadCoverage, ProjectionReadIssue, ExecutionHold } from './run-reads.js';
 import type { DeliveryReviewIssue, DeliveryReviewStatus } from './workflow.js';

@@ -1,3 +1,4 @@
+/* 切换可用的界面视图。 */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSurfaceClient, useSurfaceRoot } from './SurfaceClientContext';

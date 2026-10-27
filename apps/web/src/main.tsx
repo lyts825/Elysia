@@ -1,3 +1,4 @@
+/* Web 界面的入口：挂载应用并引入全局样式。 */
 import { ToolReviewPanel } from './ToolReviewPanel';
 import React, { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';

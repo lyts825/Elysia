@@ -1,3 +1,4 @@
+/* 渲染 Markdown 文档并处理本地链接。 */
 import { Children, isValidElement, memo, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

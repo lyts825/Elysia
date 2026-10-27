@@ -1,3 +1,4 @@
+/** 维护终端备份的索引。 */
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
 import type { Dir } from 'node:fs';

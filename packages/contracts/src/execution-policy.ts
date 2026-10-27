@@ -1,3 +1,4 @@
+// 工具评审与命令执行后端的共享配置约束。
 import { z } from 'zod';
 
 export const ToolReviewPolicy = z.discriminatedUnion('mode', [

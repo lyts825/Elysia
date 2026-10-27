@@ -1,3 +1,4 @@
+/* 展示和管理任务工作状态检查点。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import { z } from 'zod';
 import type { TaskWorkingStateView } from '../../../packages/contracts/src/working-state';

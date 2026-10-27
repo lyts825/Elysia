@@ -1,3 +1,4 @@
+/* 检查项目清单是否满足准备条件并汇总阻碍项。 */
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import type { ProjectBoardDraft } from './ProjectBoardDraft';
 import { projectTodo } from './ProjectTodos';

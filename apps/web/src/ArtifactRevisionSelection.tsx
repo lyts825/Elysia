@@ -1,3 +1,4 @@
+/* 展示并选择需要修订的产物变更。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryArtifactChange,

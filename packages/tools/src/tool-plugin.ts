@@ -1,3 +1,4 @@
+// 定义工具插件的调用、策略和注册契约。
 import { z } from 'zod';
 import type { Task, Attempt, Operation } from '../../contracts/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';

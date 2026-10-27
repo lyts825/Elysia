@@ -1,3 +1,4 @@
+/* 定义 run-revision-links 对应界面的样式与布局。 */
 .run-revision-links {
   min-width: 0;
   background: var(--surface);

@@ -1,3 +1,4 @@
+/* 定义 project-manifests 对应界面的样式与布局。 */
 .project-manifests,
 .project-manifests :is(section, article, fieldset, .project-section-heading > div) {
   min-width: 0;

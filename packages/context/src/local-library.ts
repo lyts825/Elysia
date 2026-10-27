@@ -1,3 +1,4 @@
+// 管理导入的本地代理能力及其按作用域读取。
 import { AppError } from '../../contracts/src/index.js';
 import type {
   LocalAgentItem,

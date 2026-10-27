@@ -1,3 +1,4 @@
+// 管理项目记忆、能力配置及其快照。
 import { z } from 'zod';
 import { AppError, invariant, type Project } from '../../contracts/src/index.js';
 import {

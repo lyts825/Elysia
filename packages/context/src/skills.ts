@@ -1,3 +1,4 @@
+// 发现和加载内置及本地技能内容。
 import { readFileSync, realpathSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';

@@ -1,3 +1,4 @@
+/* 定义 context-window 对应界面的样式与布局。 */
 .context-policy-editor {
   display: grid;
   gap: var(--space-2);

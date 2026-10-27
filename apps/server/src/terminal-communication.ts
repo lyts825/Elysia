@@ -1,3 +1,4 @@
+/** 管理终端通信并注册相关接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {

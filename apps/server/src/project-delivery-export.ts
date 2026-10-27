@@ -1,3 +1,4 @@
+/** 将项目交付清单导出为 Markdown。 */
 import type { ProjectDeliveryManifest } from '../../../packages/contracts/src/project-delivery.js';
 
 /** User-authored text stays literal: no embedded HTML, links or Markdown control structure. */

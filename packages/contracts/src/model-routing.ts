@@ -1,3 +1,4 @@
+// 项目角色到模型配置的路由策略和决策契约。
 import { z } from 'zod';
 import type { ProviderConfig } from './index.js';
 

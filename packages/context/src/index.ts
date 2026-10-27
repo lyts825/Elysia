@@ -1,3 +1,4 @@
+// 提供上下文编译、快照和技能加载的公共入口。
 import {
   AppError,
   ContextRuntimeMetrics,

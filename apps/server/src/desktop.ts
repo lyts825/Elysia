@@ -1,3 +1,4 @@
+/** 定义并获取桌面环境提供的服务。 */
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../../../packages/contracts/src/index.js';
 

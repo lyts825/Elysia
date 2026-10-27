@@ -1,3 +1,4 @@
+/* 编辑项目交付项启动草稿。 */
 import { useId, useState } from 'react';
 import type { ProjectDeliveryBoard } from '../../../packages/contracts/src/project-delivery';
 import { itemLaunchContent, type ProjectBoardDraft, type ProjectLaunchContent } from './ProjectBoardDraft';

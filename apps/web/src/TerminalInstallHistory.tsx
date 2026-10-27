@@ -1,3 +1,4 @@
+/* 展示终端安装历史及运行进度。 */
 import { useEffect, useRef, useState } from 'react';
 import type {
   SurfaceTerminalSettings,

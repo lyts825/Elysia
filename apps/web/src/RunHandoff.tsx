@@ -1,3 +1,4 @@
+/* 展示并处理运行交接内容。 */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ContextPolicy, Project, Run } from '../../../packages/contracts/src/index';
 import {

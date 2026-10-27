@@ -1,3 +1,4 @@
+// 协调同行评审轮次、提交和状态转换。
 import {
   PeerReviewPolicy,
   PeerReviewSubmission,

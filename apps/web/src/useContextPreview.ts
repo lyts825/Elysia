@@ -1,3 +1,4 @@
+/* 提供 useContextPreview React Hook 使用的状态与处理逻辑。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ContextRuntimeMetrics,

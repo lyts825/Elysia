@@ -1,3 +1,4 @@
+/* 选择需要处理的评审反馈。 */
 import { useId } from 'react';
 import type { DeliveryReview, ReviewSourceNote } from '../../../packages/contracts/src/workflow';
 import { readLocalReviewDraft, reviewCandidates, type ReviewCandidate } from './ReviewDraft';

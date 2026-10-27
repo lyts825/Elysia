@@ -1,3 +1,4 @@
+// 定义 SQLite 存储入口、事务及业务对象持久化操作。
 import { DatabaseSync } from 'node:sqlite';
 import { id, now, hash, stable } from '../../contracts/src/identity.js';
 export { id, now, hash, stable } from '../../contracts/src/identity.js';

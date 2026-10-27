@@ -1,3 +1,4 @@
+/* 定义 run-setup 对应界面的样式与布局。 */
 .run-setup-modal .form-body {
   scroll-padding-block: var(--space-4);
 }

@@ -1,3 +1,4 @@
+/* 提供项目草稿备份相关界面。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WorkbenchCache } from './WorkbenchCache';
 import { projectBoardKey } from './ProjectBoardDraft';

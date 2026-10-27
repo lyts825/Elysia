@@ -1,3 +1,4 @@
+/** 为共享任务历史构建终端配置的兼容描述符。 */
 import { ProviderConfig, type AgentTerminalProfile } from '../../../packages/contracts/src/index.js';
 
 /** Compatibility descriptor for shared task history; this is never an API connection. */

@@ -1,3 +1,4 @@
+/* 配置终端任务的继续执行。 */
 import { useEffect, useRef, useState } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type { TerminalCommunicationPage } from '../../../packages/contracts/src/terminal-communication';

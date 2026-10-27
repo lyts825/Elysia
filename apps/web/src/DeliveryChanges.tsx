@@ -1,3 +1,4 @@
+/* 展示交付内容的变更摘要。 */
 import type { DeliveryChangeSummary } from '../../../packages/contracts/src/workflow';
 import './delivery-changes.css';
 

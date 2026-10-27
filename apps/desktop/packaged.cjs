@@ -1,3 +1,4 @@
+// 验证打包内容并定位桌面发行版的构建资源。
 const fs = require('node:fs');
 const path = require('node:path');
 const { sha256File } = require('./file-hash.cjs');

@@ -1,3 +1,4 @@
+/** 注册模型路由配置接口。 */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {

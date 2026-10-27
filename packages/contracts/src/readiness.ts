@@ -1,3 +1,4 @@
+// 应用准备状态及可执行引导操作的契约。
 import { z } from 'zod';
 
 export const ReadinessAction = z

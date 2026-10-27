@@ -1,3 +1,4 @@
+/** 在本地端口启动监听。 */
 import type { FastifyInstance } from 'fastify';
 
 /** The OS reserves the fallback port atomically, with no probe/bind race. */

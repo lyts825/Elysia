@@ -1,3 +1,4 @@
+// 校验并保存启动页配置及媒体资源。
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');

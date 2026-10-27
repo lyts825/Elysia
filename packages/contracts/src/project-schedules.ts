@@ -1,3 +1,4 @@
+// 项目定时运行的限制、配置及记录契约。
 import { z } from 'zod';
 import type { ContextPolicy, Contract, Limits, ProviderConfig, Status } from './index.js';
 

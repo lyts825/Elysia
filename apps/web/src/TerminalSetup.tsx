@@ -1,3 +1,4 @@
+/* 配置终端任务的启动选项。 */
 import { useId, useRef, useState } from 'react';
 import {
   AgentTerminalProfile,

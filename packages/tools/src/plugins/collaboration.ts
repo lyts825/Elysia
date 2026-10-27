@@ -1,3 +1,4 @@
+// 注册代理协作相关工具，并通过提供的服务执行操作。
 import { z } from 'zod';
 import {
   TaskSpec,

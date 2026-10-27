@@ -1,3 +1,4 @@
+/** 探测终端连接并整理失败结果。 */
 import { z } from 'zod';
 import {
   TerminalConnectionBinding,

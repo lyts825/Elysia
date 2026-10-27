@@ -1,3 +1,4 @@
+/* 定义 execution-config 对应界面的样式与布局。 */
 .execution-config-modal > form > .form-body {
   display: grid;
   gap: var(--space-5);

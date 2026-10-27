@@ -1,3 +1,4 @@
+// 任务工作状态检查点及其批准记录的契约。
 import type { Contract, Evidence, Status, TaskSpec } from './index.js';
 
 /** A reviewable checkpoint, never a new permission grant or an inferred replacement of instructions. */

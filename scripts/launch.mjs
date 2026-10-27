@@ -1,3 +1,4 @@
+// 协调应用启动、构建及桌面进程。
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';

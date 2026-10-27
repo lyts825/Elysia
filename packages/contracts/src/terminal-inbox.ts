@@ -1,3 +1,4 @@
+// 终端收件箱消息及处理结果的数据契约。
 import type { Entity } from './index.js';
 
 export interface TerminalInboxPeer {

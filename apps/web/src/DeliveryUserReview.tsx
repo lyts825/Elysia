@@ -1,3 +1,4 @@
+/* 收集用户对交付内容的复核意见。 */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   DeliveryCriterion,

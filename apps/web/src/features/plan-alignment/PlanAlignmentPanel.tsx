@@ -1,3 +1,4 @@
+/* 展示和处理计划对齐信息。 */
 import { Icon } from '../../Icon';
 import { ModelPicker } from '../../ModelPicker';
 import {

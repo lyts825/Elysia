@@ -1,3 +1,4 @@
+// 终端任务间通信草稿及消息操作的契约。
 import { z } from 'zod';
 import type { TerminalInboxResolution } from './terminal-inbox.js';
 

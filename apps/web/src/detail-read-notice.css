@@ -1,3 +1,4 @@
+/* 定义 detail-read-notice 对应界面的样式与布局。 */
 .detail-read-stack {
   flex-shrink: 0;
   min-width: 0;

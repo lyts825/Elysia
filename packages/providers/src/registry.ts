@@ -1,3 +1,4 @@
+// 按协议与认证方式注册并选择供应商适配器。
 import { AppError, type ProviderConfig } from '../../contracts/src/index.js';
 import { PluginRegistry, type PluginContributions } from '../../plugins/src/index.js';
 import { NativeProvider, type ProviderAdapter } from './native.js';

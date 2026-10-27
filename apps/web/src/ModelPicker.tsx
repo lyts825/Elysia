@@ -1,3 +1,4 @@
+/* 提供模型选择及默认选项处理。 */
 import { useEffect, useId, useState } from 'react';
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 import type { SurfaceClient } from './api';

@@ -1,3 +1,4 @@
+/* 管理终端相关设置。 */
 import { useEffect, useRef, useState } from 'react';
 import { SurfaceTerminalSettings, type AgentTerminalProfile } from '../../../packages/contracts/src/index';
 import { ApiError } from './api';

@@ -1,3 +1,4 @@
+/* 展示和处理工具操作评审。 */
 import './peer-review.css';
 import type { Run } from '../../../packages/contracts/src/index';
 import { ToolReviewDecision } from '../../../packages/contracts/src/execution-policy';

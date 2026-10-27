@@ -1,3 +1,4 @@
+/** 汇总运行环境就绪状态并提供查询接口。 */
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import {

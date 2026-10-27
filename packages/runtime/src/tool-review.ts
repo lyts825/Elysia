@@ -1,3 +1,4 @@
+/** 审核工具调用并处理执行决策。 */
 import { readFileSync } from 'node:fs';
 import { AppError, invariant, type Agent, type RequestRecord, type Run } from '../../contracts/src/index.js';
 import { ToolReviewDecision, type ToolReviewReceipt } from '../../contracts/src/execution-policy.js';

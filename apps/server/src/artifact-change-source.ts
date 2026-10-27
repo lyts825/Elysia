@@ -1,3 +1,4 @@
+/** 捕获运行来源中的交付物变更。 */
 import { invariant, type Run, type Task } from '../../../packages/contracts/src/index.js';
 import {
   artifactChangeTextByteLength,

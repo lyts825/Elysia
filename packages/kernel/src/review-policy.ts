@@ -1,3 +1,4 @@
+// 在保存或预留模型时校验评审模型的独立性。
 import { invariant, type Agent, type RequestRecord, type Run, type Task } from '../../contracts/src/index.js';
 import { reviewModelConflict, type ReviewModelAssignment } from '../../contracts/src/review-policy.js';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';

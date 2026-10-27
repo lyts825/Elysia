@@ -1,3 +1,4 @@
+/* 读取并展示任务推理内容。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReasoningDisplay, ReasoningPage } from '../../../packages/contracts/src/reasoning';
 import {

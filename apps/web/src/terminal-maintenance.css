@@ -1,3 +1,4 @@
+/* 定义 terminal-maintenance 对应界面的样式与布局。 */
 .terminal-data-maintenance {
   min-width: 0;
   color: var(--secondary);

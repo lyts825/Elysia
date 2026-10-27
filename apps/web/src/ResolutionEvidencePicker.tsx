@@ -1,3 +1,4 @@
+/* 选择用于处理问题的交付证据。 */
 import { useEffect, useId, useState } from 'react';
 import type {
   DeliveryEvidence,

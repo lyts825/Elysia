@@ -1,3 +1,4 @@
+/** 提供任务上下文预览的读取服务和接口。 */
 import { contextWindowBudget } from '../../../packages/contracts/src/context-window.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';

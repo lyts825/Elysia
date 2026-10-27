@@ -1,3 +1,4 @@
+/** 构建和校验项目交付包。 */
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';

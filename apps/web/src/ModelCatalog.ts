@@ -1,3 +1,4 @@
+/* 处理模型目录、文本能力和默认模型选择。 */
 import type { ProviderConfig } from '../../../packages/contracts/src/index';
 
 export type CatalogModel = {

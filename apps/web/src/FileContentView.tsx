@@ -1,3 +1,4 @@
+/* 展示文件文本内容及编码选项。 */
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownDocument } from './MarkdownDocument';
 import type { FilePreviewContent } from './useFilePage';

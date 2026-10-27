@@ -1,3 +1,4 @@
+/** 组装原生执行器及其运行时依赖。 */
 import { ToolCallReviewer } from './tool-review.js';
 import type { Store } from '../../storage/src/index.js';
 import {

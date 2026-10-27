@@ -1,3 +1,4 @@
+/** 预热交付物元数据并管理异步读取任务。 */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, invariant, type Run } from '../../../packages/contracts/src/index.js';

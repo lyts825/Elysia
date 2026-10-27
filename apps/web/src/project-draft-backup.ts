@@ -1,3 +1,4 @@
+/* 创建、校验与恢复项目草稿备份，并保护恢复前的草稿。 */
 import { z } from 'zod';
 import type { WorkspaceSurface } from '../../../packages/contracts/src/index';
 import { readProjectBoardBackupDraft, type ProjectBoardDraft } from './ProjectBoardDraft';

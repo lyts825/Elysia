@@ -1,3 +1,4 @@
+/* 展示终端任务恢复操作。 */
 import { useId } from 'react';
 import './terminal-recovery.css';
 

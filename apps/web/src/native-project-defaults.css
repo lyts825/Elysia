@@ -1,3 +1,4 @@
+/* 定义 native-project-defaults 对应界面的样式与布局。 */
 .native-project-defaults {
   min-width: 0;
   color: var(--text);

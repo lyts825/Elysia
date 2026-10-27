@@ -1,3 +1,4 @@
+/** 创建服务端并组装路由和依赖。 */
 import { RunApplicationService } from './run-application.js';
 import Fastify, { type FastifyRequest, type FastifyReply, type FastifyInstance } from 'fastify';
 import staticFiles from '@fastify/static';

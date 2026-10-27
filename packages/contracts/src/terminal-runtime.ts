@@ -1,3 +1,4 @@
+// 终端任务运行阶段、活动和资源预设的契约。
 export type TerminalRuntimePhase =
   | 'preparing'
   | 'starting'

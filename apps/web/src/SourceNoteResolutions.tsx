@@ -1,3 +1,4 @@
+/* 处理来源备注及其解决状态。 */
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   DeliveryCriterion,

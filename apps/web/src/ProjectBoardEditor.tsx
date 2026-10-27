@@ -1,3 +1,4 @@
+/* 编辑项目看板并生成保存载荷。 */
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   ProjectDeliveryBoardInput,

@@ -1,3 +1,4 @@
+/* 描述详情读取状态并生成人可读的原因。 */
 import type {
   RunDetailCoverage,
   ExecutionHold,

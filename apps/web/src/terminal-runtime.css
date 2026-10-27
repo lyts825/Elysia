@@ -1,3 +1,4 @@
+/* 定义 terminal-runtime 对应界面的样式与布局。 */
 .terminal-activity.terminal-runtime {
   min-width: 0;
   overflow-wrap: anywhere;

@@ -1,3 +1,4 @@
+/* 定义 project-run-list 对应界面的样式与布局。 */
 .project-run-pagination {
   display: grid;
   gap: var(--space-2);

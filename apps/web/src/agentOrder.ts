@@ -1,3 +1,4 @@
+/* 提供代理显示顺序相关的处理逻辑。 */
 import type { Agent } from '../../../packages/contracts/src/index';
 
 /** Keep siblings in their creation order while placing each child after its own parent. */

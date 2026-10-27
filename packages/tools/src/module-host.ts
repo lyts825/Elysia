@@ -1,3 +1,4 @@
+// 管理计划对齐模块的加载与生命周期。
 import { AppError, invariant, type Task } from '../../contracts/src/index.js';
 import type { ToolDefinition } from '../../context/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';

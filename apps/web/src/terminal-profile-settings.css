@@ -1,3 +1,4 @@
+/* 定义 terminal-profile-settings 对应界面的样式与布局。 */
 .terminal-template-summary {
   display: flex;
   flex-wrap: wrap;

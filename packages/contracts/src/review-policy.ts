@@ -1,3 +1,4 @@
+// 识别评审模型与执行模型之间的身份冲突。
 export interface ReviewModelAssignment {
   key: string;
   title: string;

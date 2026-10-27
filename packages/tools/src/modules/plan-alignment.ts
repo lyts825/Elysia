@@ -1,3 +1,4 @@
+// 提供计划提案模块，并在释放后拒绝继续使用。
 import { z } from 'zod';
 import { Contract, Plan, invariant } from '../../../contracts/src/index.js';
 import {

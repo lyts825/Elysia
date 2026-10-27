@@ -1,3 +1,4 @@
+// 计算上下文窗口与运行时预留的共享预算。
 import { CONTEXT_SAFETY_TOKENS, effectiveContextWindowTokens, type Agent } from './index.js';
 
 /** Shared by compilation and bounded UI projections. Values are estimates, not tokenizer counts. */

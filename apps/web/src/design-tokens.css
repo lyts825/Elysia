@@ -1,3 +1,4 @@
+/* 定义界面共用的颜色、间距和其他设计变量。 */
 /* Shared by both execution surfaces and every feature module. */
 :root {
   color-scheme: light;

@@ -1,3 +1,4 @@
+/* 定义 artifact-file-preview 对应界面的样式与布局。 */
 .artifact-preview-content {
   flex: 1;
   min-width: 0;

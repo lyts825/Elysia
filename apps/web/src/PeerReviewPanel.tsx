@@ -1,3 +1,4 @@
+/* 展示运行中的同行评审信息。 */
 import { useId } from 'react';
 import type { Run } from '../../../packages/contracts/src/index';
 import type { PeerReviewRound } from '../../../packages/contracts/src/peer-review';

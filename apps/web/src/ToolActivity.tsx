@@ -1,3 +1,4 @@
+/* 展示工具调用及其活动信息。 */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Message, Operation, Task, ToolCall } from '../../../packages/contracts/src/index';
 import { useSurfaceClient } from './SurfaceClientContext';

@@ -1,3 +1,4 @@
+/* 格式化上下文窗口大小和上下文策略的显示文本。 */
 import {
   CONTEXT_MAX_WINDOW_TOKENS,
   CONTEXT_TOKEN_UNIT,

@@ -1,3 +1,4 @@
+/** 管理项目交付归档及其摘要。 */
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

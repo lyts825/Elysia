@@ -1,3 +1,4 @@
+/** 管理 Codex 订阅连接及模型信息。 */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';

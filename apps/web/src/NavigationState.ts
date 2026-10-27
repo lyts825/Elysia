@@ -1,3 +1,4 @@
+/* 保存、读取并解析工作区导航状态。 */
 import type { Project, ProjectSpace, Run } from '../../../packages/contracts/src/index';
 import { defaultSurfaceClient, type SurfaceClient } from './api';
 

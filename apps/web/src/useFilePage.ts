@@ -1,3 +1,4 @@
+/* 提供 useFilePage React Hook 使用的状态与处理逻辑。 */
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from './api';
 import { useSurfaceClient } from './SurfaceClientContext';

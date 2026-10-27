@@ -1,3 +1,4 @@
+/* 编辑并校验上下文窗口策略。 */
 import { useId, useState } from 'react';
 import {
   CONTEXT_MAX_WINDOW_TOKENS,

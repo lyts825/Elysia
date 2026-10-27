@@ -1,3 +1,4 @@
+/** 保存并读取项目交付打包任务。 */
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

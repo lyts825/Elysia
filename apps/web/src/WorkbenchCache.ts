@@ -1,3 +1,4 @@
+/* 管理工作台草稿缓存、服务端同步与本地恢复。 */
 import { ApiError, defaultSurfaceClient, type SurfaceClient } from './api';
 
 export type CacheEntry = { value: string | boolean; revision: number };

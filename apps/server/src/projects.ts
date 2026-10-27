@@ -1,3 +1,4 @@
+/** 检查项目目录并读取项目文件资源。 */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { AppError, invariant, type Project } from '../../../packages/contracts/src/index.js';

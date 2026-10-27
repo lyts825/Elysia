@@ -1,3 +1,4 @@
+/* 定义 terminal-recovery 对应界面的样式与布局。 */
 .terminal-recovery-panel {
   display: grid;
   gap: var(--space-3);

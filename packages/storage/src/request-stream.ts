@@ -1,3 +1,4 @@
+// 将请求流内容分块存储，并限制单条流的大小。
 import type { DatabaseSync } from 'node:sqlite';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { AppError } from '../../contracts/src/index.js';
@@ -70,6 +71,7 @@ export class RequestStreams {
   /** Caller holds the Store transaction; no event may be emitted until it commits. */
   append(requestId: string, text: string, expectedOffset: number) {
     const stream = this.state(requestId);
+    // 偏移必须与已提交长度一致，避免并发追加覆盖或重复写入。
     if (stream.characters !== expectedOffset)
       throw new AppError('REQUEST_STREAM_OFFSET', '模型流偏移发生冲突，已保留此前正文');
     if (text.length > REQUEST_STREAM_MAX_CHARS - stream.characters)
@@ -85,6 +87,7 @@ export class RequestStreams {
     if (!text.length) return;
     let index = stream.chunk_count;
     let prefix = '';
+    // 只重写未满的尾块，其余已提交分块保持不变。
     if (index) {
       const tail = this.db
         .prepare(

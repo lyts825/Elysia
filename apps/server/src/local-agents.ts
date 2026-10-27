@@ -1,3 +1,4 @@
+/** 注册本地代理管理接口。 */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Command } from '../../../packages/contracts/src/index.js';

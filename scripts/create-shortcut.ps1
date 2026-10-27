@@ -1,4 +1,5 @@
 param([string]$Destination = [Environment]::GetFolderPath('Desktop'))
+# 为当前项目创建桌面快捷方式；已有同名快捷方式属于其他程序时保留原文件。
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $entry = Join-Path $projectRoot 'Start-Elysia.vbs'

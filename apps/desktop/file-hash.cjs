@@ -1,3 +1,4 @@
+// 计算文件的 SHA-256 摘要，供桌面端完整性检查使用。
 const fs = require('node:fs');
 const { createHash } = require('node:crypto');
 let sharedBuffer;

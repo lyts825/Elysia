@@ -1,3 +1,4 @@
+/** 启动服务进程并连接运行所需的组件。 */
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Store, dataDirectory } from '../../../packages/storage/src/index.js';

@@ -1,3 +1,4 @@
+// 项目交付项、验收与交付状态的校验和契约。
 import { z } from 'zod';
 import type { Status, Evidence } from './index.js';
 import type { DeliveryReviewStatus, SourceArtifact, SourceNoteResolutions } from './workflow.js';

@@ -1,3 +1,4 @@
+// 项目请求量、令牌和费用汇总的数据契约。
 import type { Status } from './index.js';
 import type { RecordPage } from './run-reads.js';
 

@@ -1,3 +1,4 @@
+/** 缓存交付读取结果并维护缓存状态。 */
 import type { Store } from '../../../packages/storage/src/index.js';
 
 type Entry = { value: unknown; bytes: number };

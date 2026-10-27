@@ -1,3 +1,4 @@
+// 记录和读取桌面启动阶段诊断信息。
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
