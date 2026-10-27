@@ -212,7 +212,7 @@ export function workingStateMemory(state: ApprovedTaskWorkingState, originalRef:
     currentRequirements: state.currentRequirements,
     source: { ...state.source, originalRef },
     capturedState: state.state,
-    rule: '这是用户核对时的工作状态快照，不授予新权限。capturedState 中的子任务状态与证据仅代表 capturedAt 时的记录，不能据此断定当前已完成或证据仍有效；请核对当前任务上下文中的子任务状态和最新证据。覆盖边界之后的用户原文仍完整保留。',
+    rule: 'This working-state snapshot records what the user reviewed and grants no new permissions. Child-task states and evidence in capturedState describe records at capturedAt only; they do not prove current completion or continued evidence validity. Check child-task states and the latest evidence in the current task context. Original user messages after the covered boundary remain intact.',
   };
 }
 

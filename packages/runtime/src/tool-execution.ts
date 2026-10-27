@@ -235,7 +235,7 @@ export class ToolExecutionService {
         this.kernel.appendMessage(
           task,
           'user',
-          `运行提醒：${repeated.tool} 已重复产生确定性错误 ${repeated.code}，相关状态没有进展。按最新 recovery 修正原因或改用已开放能力；相同条件下继续调用将暂停该分支。下列任务仅供核对归属，等待只能使用直属子任务 ID：` +
+          `Runtime notice: ${repeated.tool} has repeatedly returned the deterministic error ${repeated.code} without relevant state progress. Follow the latest recovery guidance to address the cause or use another available capability. Further calls under the same conditions will pause this branch. The tasks below are provided only to check ownership; wait using direct-child task IDs only: ` +
             stable(
               store
                 .all<Task>('tasks', task.runId)

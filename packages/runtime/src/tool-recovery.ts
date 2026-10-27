@@ -24,37 +24,37 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   if (code === 'TOOL_ARGUMENTS')
     return advice(
       'arguments',
-      `对照 ${tool} 的当前参数 schema 和错误信息修正参数，在下一步用完整 JSON 重新调用；不要改写同一条已记录调用的参数，也不要为可自行修正的参数向用户索要确认。`,
+      `Correct the arguments using the current ${tool} parameter schema and error details, then issue a complete JSON call in the next step. Do not alter arguments of the same recorded call or request user confirmation for arguments you can fix yourself.`,
     );
   if (code === 'TOOL_CALL_CONFLICT')
     return advice(
       'arguments',
-      '同一条已记录的工具调用不能改名或改参数。先核对其真实结果，需要修正时在下一次模型响应中发起完整调用；不能把旧结果当作新动作的完成证据。',
+      'A recorded tool call cannot change its name or arguments. Inspect its actual result first, then issue a complete call in the next model response if a correction is needed. An old result does not prove completion of a new action.',
     );
   if (['FILE_CONFLICT', 'PATCH_AMBIGUOUS'].includes(code))
     return advice(
       'conflict',
-      '用可用的 read 重新读取目标文件及真实哈希，核对现有修改后重新构造写入或唯一原文补丁；不要沿用过期哈希或覆盖其他修改。',
+      'Use read when available to reread the target file and actual hash. Inspect existing changes before rebuilding the write or unique-text patch. Do not reuse stale hashes or overwrite other changes.',
     );
   if (code === 'REVIEW_MODEL_CONFLICT')
     return advice(
       'dependency',
-      '审计模型与执行模型冲突。按当前角色配置选择不同型号，连接、账号或思考强度不同不能消除冲突；历史已使用型号也参与校验。保留合同 allowSameModelReview，只有用户在合同界面明确确认才能开启同模型审计。无其他可用模型时说明所需配置，不自行开启例外或反复重试。',
+      'The review model conflicts with an execution model. Select a different model under the current role configuration. A different connection, account, or reasoning effort does not resolve this conflict; previously used models also count. Preserve allowSameModelReview in the contract. Only explicit user confirmation in the contract interface can enable same-model review. If no other model is available, explain the configuration needed without enabling an exception yourself or repeatedly retrying.',
     );
   if (code.startsWith('PEER_REVIEW_'))
     return advice(
       'evidence',
-      '核对当前 peerReview、候选编号和原错误。评分须逐项覆盖标准，引用本项真实证据；执行模型应按失败意见修订后再提交，不能重复索取评分。已冻结的模型、轮次与门槛不能修改；候选失效应等待新候选，轮次耗尽则保留意见并说明需新建任务继续。',
+      'Check the current peerReview state, candidate ID, and original error. Scores must cover every criterion and cite actual evidence for that item. Execution models must revise based on failure feedback before resubmitting, not repeatedly request scores. Frozen models, rounds, and thresholds cannot change. Wait for a new candidate if the previous one is invalid; if rounds are exhausted, preserve feedback and explain that continuing requires a new task.',
     );
   if (['PATH_ESCAPE', 'WRITE_SCOPE', 'EXEC_SCOPE', 'PATH_DENIED', 'ARTIFACT_SCOPE'].includes(code))
     return advice(
       'scope',
-      '核对当前任务目录、合同允许路径和产物归属，改用授权范围内的目标。范围外的结果确属必要时说明具体路径缺口；继续完成范围内的工作，不重复同一越界调用。',
+      'Check the current task directory, contract-authorized paths, and artifact ownership, then use a target within scope. If an out-of-scope result is essential, identify the specific path authorization gap. Continue in-scope work without repeating the same out-of-scope call.',
     );
   if (code === 'URL_PRIVATE')
     return advice(
       'scope',
-      'fetch_url 不支持私网或保留地址，该限制不能靠补充同意或新任务的 URL 列表解除。改用已提供的本地资料或公开来源，必要时说明所需资料；继续其他已授权工作，不重复同一抓取。',
+      'fetch_url does not support private or reserved addresses. Follow-up consent or a URL list in a new task cannot remove this restriction. Use supplied local material or a public source, and explain what information is needed when necessary. Continue other authorized work without repeating the same fetch.',
     );
   if (
     [
@@ -69,7 +69,7 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   )
     return advice(
       'permission',
-      '按当前阶段、角色和 availableTools 改用可用能力继续。若缺少的读写、命令或精确 URL 授权确属必需，报告具体缺口；原任务的权限不能靠回复“同意”扩大，可在新任务配置所需最小权限。规划阶段则按现有计划接受流程处理，不把一次拒绝扩大为整项任务无法执行。',
+      'Continue with capabilities available for the current phase, role, and availableTools. If missing read, write, command, or exact-URL authorization is essential, report the specific gap. A reply of agreement cannot expand the original task permissions; a new task can configure the minimum required permissions. During planning, follow the existing plan-acceptance workflow. One denied call does not make the entire task impossible.',
     );
   if (
     [
@@ -83,7 +83,7 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   )
     return advice(
       'evidence',
-      '按本任务 acceptanceCriteria 和从 0 开始的 criterion 核对缺失项。file 使用可读路径及实际哈希；artifact 只能引用本任务或已完成直属子任务的产物；command 必须是本任务成功 exec 的 operationId。按当前角色补足真实证据，不能清空真实未完成项、放宽验收或把他人结果伪造成自己的操作。',
+      "Check missing items against the acceptanceCriteria for this task and zero-based criterion indexes. file evidence requires a readable path and actual hash. artifact evidence must belong to this task or a completed direct child. command evidence must use the operationId of a successful exec call in this task. Obtain real evidence within your current role; do not erase genuine unfinished work, relax acceptance criteria, or present someone else's results as your own operations.",
     );
   if (
     [
@@ -100,20 +100,20 @@ export function toolRecovery(code: string, tool: string, toolNames: string[]): T
   )
     return advice(
       'dependency',
-      '核对当前身份和 children，等待只使用实际直属子任务 ID。不要重复委派已有任务；不能继续拆分时自行完成本任务范围内可做的工作，必需子任务尚未完成则按实际状态等待或报告阻塞。',
+      'Check your current identity and children. Wait only on actual direct-child task IDs. Do not delegate existing work again. If further decomposition is unavailable, do what you can within this task scope. For unfinished required children, wait or report a blocker according to their actual state.',
     );
   if (['OPERATION_UNCERTAIN', 'MCP_CALL_UNCERTAIN', 'INTEGRATION_CONFLICT'].includes(code))
     return advice(
       'verification',
-      '原操作可能已产生副作用，保留现有产物并按核验流程检查结果；不要自动重放该操作或用新调用绕过待核验状态。',
+      'The original operation may already have caused side effects. Preserve existing artifacts and inspect the result through the verification workflow. Do not automatically replay the operation or issue a new call to bypass pending verification.',
     );
   if (['TASK_STOPPED', 'STOPPED', 'RUN_ARCHIVED'].includes(code))
     return advice(
       'state',
-      '当前任务已停止或归档，保留已有产物与错误记录，等待用户通过对应入口显式恢复；不要把执行指导或补充消息当作恢复授权。',
+      'The task is stopped or archived. Preserve existing artifacts and error records, and wait for the user to explicitly resume it through the appropriate interface. Execution guidance and follow-up messages do not authorize resumption.',
     );
   return advice(
     'inspect',
-    '依据原错误检查具体原因及当前状态，能确定结果的可逆问题自行修复；结果未知的副作用先核验。继续其他不依赖该失败的已授权工作，不盲目重复相同调用。',
+    'Inspect the specific cause and current state using the original error. Fix reversible problems yourself when the outcome can be established; verify unknown side effects first. Continue other authorized work that does not depend on this failure, without blindly repeating the same call.',
   );
 }

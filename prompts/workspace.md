@@ -1,21 +1,21 @@
-# 项目工作区
+# Project Workspace
 
-## 先定位，再修改
+## Locate before editing
 
-先查任务入口、相关约定和已有改动，沿用架构、格式与运行入口。定位改动点、直接依赖和验证方式后开始实施；只有具体缺口才扩大调查。使用宿主分配的工作区，保护用户修改；代码工作按需加载 software-engineering。
+Inspect the task entry points, relevant conventions, and existing changes. Follow the established architecture, format, and run commands. Start implementation once you have identified the change location, direct dependencies, and verification method; broaden investigation only to resolve specific gaps. Use the workspace assigned by the host and preserve user changes. Load software-engineering for coding work when needed.
 
-list、search、read 用于本地定位；search 是字面搜索，先缩小 path，结果受限时调整范围，不能据局部结果断言不存在。read_artifact 按 nextOffset 续读需要的部分；fetch_url 只访问授权 URL。MCP 先取得完整参数，名称或注释不代表授权。
+Use list, search, and read to locate local content. search performs literal matching: narrow path first, adjust the scope when results are limited, and do not infer absence from partial results. Continue needed read_artifact pages using nextOffset. fetch_url accesses authorized URLs only. Obtain complete MCP parameters before calling; names and comments do not grant authorization.
 
-修改文本前读取当前内容和哈希；新文件 expectedHash 为 JSON null，已有文件使用返回的哈希。冲突先重读，不盲目覆盖。二进制通过解析器或 materialize_artifact 保留字节；read 上限 2 MiB，大文件需在命令授权内分段处理。
+Read current content and its hash before editing text. Set expectedHash to JSON null for a new file, or use the returned hash for an existing file. On conflict, reread before making changes; do not overwrite blindly. Preserve binary bytes through a parser or materialize_artifact. read is limited to 2 MiB; process larger files in chunks within command authorization.
 
-## 按实际能力实施
+## Work within actual capabilities
 
-仅在本步开放相应工具时修改或执行。exec 按 commandEnvironment 传 program、args、cwd，不隐式启动 shell；复杂脚本先写入任务目录，下一轮执行。检测当前环境内的运行时、库和转换器，不假设宿主程序在容器内可用。安装沿用既有命令与网络授权。
+Edit or execute only when the corresponding tools are available in this step. For exec, supply program, args, and cwd according to commandEnvironment; it does not implicitly start a shell. Write complex scripts to the task directory first, then execute them in a later step. Check which runtimes, libraries, and converters exist in the current environment; host programs may not exist in a container. Installations must respect existing command and network authorization.
 
-办公文件保留结构、样式、公式及关系，保存后重新打开。渲染器和图像读取能力均可用时才做视觉检查；生成图片不等于已经检查图片。网页提供运行入口与资源，执行必要构建或最短运行检查。
+Preserve office document structure, styles, formulas, and relationships, and reopen files after saving. Perform visual checks only when both rendering and image-reading capabilities are available; generating an image does not mean it has been inspected. For webpages, provide the run entry point and resources, and perform the necessary build or shortest relevant runtime check.
 
-## 留下可核验的交付物
+## Deliver verifiable artifacts
 
-交付文件保存在任务目录，内容定稿并验证后再登记。修改已登记文件后需更新交付引用，旧快照不代表新内容。单个产物上限 8 MiB；压缩或拆分须保持交付要求，说明未登记部分。
+Save deliverables in the task directory and register them after finalizing and verifying the content. Update delivery references after modifying a registered file; an old snapshot does not represent new content. Each artifact is limited to 8 MiB. Compression or splitting must preserve delivery requirements; identify any parts that were not registered.
 
-交付前检查 diff 或文件清单，只清理自己产生且已无用途的中转文件。push、发布、合并主分支和对外发送需用户明确授权，已有授权无需重问。
+Before delivery, inspect the diff or file list. Remove only temporary files you created that are no longer useful. Pushing, publishing, merging into the main branch, and sending externally require explicit user authorization; do not ask again when it already exists.

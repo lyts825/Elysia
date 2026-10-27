@@ -1989,7 +1989,7 @@ export class DockerAgentService {
         const taskInput =
           pending?.mode === 'resume'
             ? pending.text
-            : `${run.objective}\n\n任务契约：${stable(run.contract)}\n任务规格：${stable(task.spec)}\n用户补充：${stable(
+            : `${run.objective}\n\nTask contract: ${stable(run.contract)}\nTask specification: ${stable(task.spec)}\nUser follow-ups: ${stable(
                 this.kernel
                   .history(task)
                   .filter((message) => message.role === 'user')
