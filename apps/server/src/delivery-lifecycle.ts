@@ -44,6 +44,7 @@ function revision(expected: number, actual: number) {
     );
 }
 
+/** 根据当前交付指纹判断用户复核是否过期，并返回变更摘要。 */
 export function deliveryUserState(
   store: Store,
   run: Run,
@@ -63,6 +64,7 @@ export function deliveryUserState(
     changeSummary: reviewId ? deliveryChanges(store, run.id, reviewId, baseline) : null,
   };
 }
+/** 沿来源链读取原生运行祖先，限制深度并检测循环。 */
 export function runLineage(store: Store, runId: string): RunLineage {
   let current: Run | undefined = nativeRun(store, runId);
   const ancestors: RunLineage['ancestors'] = [];
@@ -92,6 +94,7 @@ export function runLineage(store: Store, runId: string): RunLineage {
   }
   return { runId, ancestors, hasMore: !!current?.source && ancestors.length === 20, cycleDetected };
 }
+/** 分页读取从指定原生运行派生的修订任务。 */
 export function runRevisions(store: Store, runId: string, before?: string): RunRevisions {
   nativeRun(store, runId);
   const page = store.runRevisions(runId, 20, before);

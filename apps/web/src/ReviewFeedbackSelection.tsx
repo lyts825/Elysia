@@ -14,6 +14,7 @@ import { ReviewHistory } from './ReviewHistory';
 import './handoff-selection.css';
 import './review-feedback-selection.css';
 
+/** 汇总已保存与本机反馈，并让调用方决定哪些备注加入后续任务。 */
 export function ReviewFeedbackSelection({
   runId,
   value,

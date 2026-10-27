@@ -2,6 +2,7 @@
 .readiness-modal {
   width: min(680px, calc(100vw - 24px));
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .readiness-body {
   overflow-y: auto;
   padding: var(--space-5) var(--space-6);
@@ -127,11 +128,13 @@
   font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .readiness-modal .readiness-record-reading:focus-visible,
 .readiness-modal .readiness-error:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* 窄屏减少准备状态正文及列表项的内边距。 */
 @media (max-width: 480px) {
   .readiness-body {
     padding: var(--space-4);

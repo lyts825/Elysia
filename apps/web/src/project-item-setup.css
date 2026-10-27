@@ -9,6 +9,7 @@
   margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .project-item-setup-reading {
   min-width: 0;
   max-height: min(14rem, 42dvh);
@@ -25,6 +26,7 @@
   margin: var(--space-1) 0 var(--space-3);
   font-weight: 600;
 }
+/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .project-item-setup-versions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

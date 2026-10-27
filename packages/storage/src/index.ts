@@ -1566,6 +1566,10 @@ export class Store {
       this.collectObjects();
     });
   }
+  /**
+   * 删除指定运行及其任务、事件、关联命令和本地草稿索引。数据库内清理在事务中完成；
+   * 旧版流文件在提交后按受限路径删除，其他运行仍引用的对象由引用投影保留。
+   */
   deleteRun(runId: string) {
     const run = this.get<any>('runs', runId);
     if (!run) return;
@@ -1649,6 +1653,7 @@ export class Store {
         rmSync(file);
     }
   }
+  /** 投影仅用于缩小候选范围，删除前仍检查命令正文或运行引用。 */
   private deleteCommands(identifiers: Set<string>, runId?: string) {
     const candidates = this.objectReferences?.commandCandidates(identifiers, runId);
     const rows = candidates
@@ -1662,6 +1667,7 @@ export class Store {
         this.db.prepare('DELETE FROM commands WHERE id=?').run(row.id);
     }
   }
+  /** 从所有存活引用计算保留集合后回收无引用对象；投影无法核验时由底层检查阻止回收。 */
   private collectObjects() {
     const retained = this.objectReferences?.roots() ?? new Set<string>();
     const library = this.db.prepare("SELECT value FROM storage_meta WHERE key='local-agents:v1'").get() as

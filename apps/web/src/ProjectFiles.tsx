@@ -7,6 +7,7 @@ import { useFilePage } from './useFilePage';
 import './project-files.css';
 
 export function ProjectFiles({ projectId }: { projectId: string }) {
+  // 选择状态绑定项目 ID；切换项目时从根目录重新开始。
   const fileListId = useId();
   const [selection, setSelection] = useState({
     projectId,

@@ -11,6 +11,7 @@ import { stable, type Store } from '../../../packages/storage/src/index.js';
 import { deliveryArtifactChanges, savedReviewSnapshot } from './delivery-review-history.js';
 
 /** Only server-derived, version-pinned comparison metadata can become a source instruction. */
+/** 校验所选产物差异的数量、文本大小及交付版本，并捕获修订来源。 */
 export function captureArtifactChanges(store: Store, run: Run, selection: RunSourceSelection) {
   const selected = selection.artifactChanges ?? [];
   if (!selected.length) return {};

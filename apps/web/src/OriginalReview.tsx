@@ -25,6 +25,7 @@ export function OriginalReview({
   const [reading, setReading] = useState(true),
     [retry, setRetry] = useState(0);
   useEffect(() => {
+    // 按来源复核 ID 读取原始记录；组件关闭或切换时取消旧读取。
     const controller = new AbortController();
     setReading(true);
     setError('');

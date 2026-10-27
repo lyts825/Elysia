@@ -12,6 +12,7 @@ import { ProjectPlanTransfer, type PlanImportLifecycle } from './ProjectPlanTran
 import type { ProjectPlanTransfer as PlanFile, ProjectPlanImportPreflight } from './project-plan-transfer';
 import './project-board-editor.css';
 
+/** 将多行文本转换为条目数组，并携带基线版本供服务端检测并发编辑。 */
 export function boardEditPayload(edit: ProjectBoardEdit) {
   return {
     expectedRevision: edit.basedOn,

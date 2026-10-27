@@ -24,6 +24,7 @@
   font-weight: 400;
   line-height: var(--leading-body);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .run-revision-list {
   max-height: min(26rem, 55dvh);
   overflow: auto;
@@ -38,6 +39,7 @@
   margin: 0;
   list-style: none;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .run-revision-item {
   min-width: 0;
   padding: var(--space-3);

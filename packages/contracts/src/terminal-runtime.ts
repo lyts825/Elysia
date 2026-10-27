@@ -19,6 +19,7 @@ export interface TerminalTaskRuntime {
   lastPublicActivityAt?: number;
   revision: number;
 }
+// 队列原因区分并发、依赖和终端资源等限制，供状态展示使用。
 export type RuntimeQueueReason =
   | 'ready'
   | 'global-concurrency'

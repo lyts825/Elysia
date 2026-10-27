@@ -10,6 +10,7 @@ import './project-model-routing.css';
 const routingPayload = z
   .object({ expectedRevision: z.number().int().nonnegative(), policy: RoleRoutingPolicy })
   .strict();
+// 草稿保留期望版本与可选待处理命令，供并发冲突和未知结果核对。
 export const routingDraftShape = routingPayload
   .extend({ pending: routingPayload.extend({ commandId: z.string().uuid() }).optional() })
   .strict();

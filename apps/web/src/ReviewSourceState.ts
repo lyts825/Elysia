@@ -32,7 +32,9 @@ export const normalizeReviewNote = (note: ReviewSourceNote): ReviewSourceNote =>
   criterionText: note.criterionText,
   note: note.note,
 });
+/** 以固定字段顺序生成键，缺省的 reviewId 统一为 null。 */
 export const reviewNoteKey = (note: ReviewSourceNote) => JSON.stringify(normalizeReviewNote(note));
+/** 缺省数据创建空状态；格式无效返回 undefined，调用方可保留原始内容。 */
 export function readReviewSource(raw: unknown): ReviewSourceState | undefined {
   if (raw === undefined || raw === null) return emptyReviewSource();
   const result = shape.safeParse(raw);
@@ -43,6 +45,7 @@ export function readReviewSource(raw: unknown): ReviewSourceState | undefined {
     added: result.data.added.map(normalizeReviewNote),
   };
 }
+/** 同时检查条数、正文和标准快照字节数；超限时提示减少选择，不截断原文。 */
 export function reviewNotesIssue(notes: ReviewSourceNote[]) {
   if (notes.length > 40) return '最多带入 40 条复核备注，请减少选择。';
   if (notes.some((note) => !ReviewSourceNote.safeParse(note).success))

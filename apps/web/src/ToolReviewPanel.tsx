@@ -14,6 +14,7 @@ export function ToolReviewPanel({
     backend = run.contract.commandBackend;
   if ((!policy || policy.mode === 'off') && backend?.kind !== 'docker') return null;
   const receipts = events
+    // 只展示可解析的审核回执和最近十条，避免将无效事件当作审核结论。
     .filter((e) => e.type === 'tool.reviewed')
     .flatMap((e) => {
       const parsed = ToolReviewDecision.safeParse(

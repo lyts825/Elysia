@@ -16,6 +16,7 @@ import type { Store } from '../../storage/src/index.js';
 import type { ToolReviewInput } from '../../tools/src/tool-review.js';
 
 /** A bounded, tool-free request. Usage belongs to the same task and ancestor budgets. */
+/** 使用冻结的审核模型评估工具调用；审核请求受预算和输出限制约束。 */
 export class ToolCallReviewer {
   constructor(
     private kernel: Kernel<Store>,

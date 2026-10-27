@@ -35,6 +35,7 @@
   background: var(--warning-bg);
   border-color: var(--warning-border);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .source-resolution-reading {
   max-height: min(14rem, 42dvh);
   min-width: 0;
@@ -140,6 +141,7 @@
   border-radius: var(--radius-control);
   line-height: var(--leading-body);
 }
+/* 窄屏减少备注区域留白，并将处理操作纵向排列。 */
 @media (max-width: 480px) {
   .source-note-resolutions {
     padding: var(--space-3);

@@ -23,6 +23,7 @@ export function HandoffReviewConfirmation({
 }) {
   const explanationId = useId();
   const hasPending = !!pending || !!pendingDifferences;
+  // 没有任何复核备注或差异时无需确认范围。
   if (!added && !pending && !addedDifferences && !pendingDifferences) return null;
   return (
     <section className="workflow-source handoff-confirmation" aria-label="确认复核备注范围">

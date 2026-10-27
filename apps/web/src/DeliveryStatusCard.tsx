@@ -23,6 +23,7 @@ export function DeliveryStatusCard({
     [retry, setRetry] = useState(0);
   const retrySummary = useRef(false);
   const value = snapshot?.version === version ? snapshot.value : undefined;
+  // 只显示当前版本对应的摘要；切换运行或版本会取消旧读取。
   const readIssue = value?.reviewIssue?.message || error;
   useEffect(() => {
     const controller = new AbortController();

@@ -11,6 +11,7 @@ export function ProjectDraftComparison({
   choose: (key: string, choice: MergeChoice) => void;
   busy: boolean;
 }) {
+  // 显示基线、当前值和本机值；冲突选择交由父组件保存。
   return (
     <div className="project-draft-differences">
       {!differences.length && <p>内容未发生变化，可核对后沿用当前计划版本。</p>}

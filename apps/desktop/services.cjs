@@ -6,6 +6,10 @@ const { pathToFileURL } = require('node:url');
 const { createStartupStore } = require('./startup.cjs');
 const { createTaskNotifications } = require('./task-notifications.cjs');
 
+/**
+ * 注册桌面 IPC 服务并返回凭据操作处理函数。普通操作只接受当前窗口主框架的本地根页面；
+ * 启动页仅获准读取启动资源和上报有限阶段，不获得保存设置等完整能力。
+ */
 function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
   const startup = createStartupStore(directory);
   const notifications = createTaskNotifications(window, directory);
@@ -91,6 +95,7 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
     trusted(event);
     await shell.openExternal('https://chatgpt.com/settings/usage');
   });
+  // 凭据操作使用系统安全存储；终端 API 密钥与原生入口分目录保存。
   return async (message) => {
     const file = path.join(
       directory,
@@ -135,6 +140,7 @@ function attachServices(window, directory, getOrigin, { diagnostics } = {}) {
       const json = JSON.stringify(message.value);
       if (json.length > 2 * 1024 * 1024) throw new Error('凭据数据超过限制');
       await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      // 先写加密临时文件再替换目标，避免直接覆盖已有凭据。
       const temporary = file + '.tmp';
       await fs.writeFile(temporary, safeStorage.encryptString(json), { mode: 0o600 });
       await fs.rename(temporary, file);

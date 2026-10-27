@@ -102,6 +102,7 @@
   gap: var(--space-3);
   margin: var(--space-4) 0;
 }
+/* 三列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .schedule-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -211,6 +212,7 @@
 .schedule-template {
   margin: var(--space-4) 0;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .schedule-template pre {
   max-height: 360px;
   overflow: auto;
@@ -245,6 +247,7 @@
 .schedule-delete .text-button {
   color: var(--danger);
 }
+/* 窄屏调整定时任务统计列，将各指标内容横向排列。 */
 @media (max-width: 480px) {
   .schedule-metrics {
     grid-template-columns: 1fr;
@@ -263,6 +266,7 @@
     grid-template-columns: 1fr;
   }
 }
+/* 较窄窗口减少定时面板的内边距并调整配置字段网格。 */
 @media (max-width: 720px) {
   .project-schedules {
     padding: var(--space-4);

@@ -20,9 +20,11 @@ const phases: Record<string, string> = {
   verify: '验证 CLI',
   complete: '完成',
 };
+/** 将安装阶段转换为展示文案；未知阶段保留原始值。 */
 export function installationPhase(job: TerminalCliInstallationJob) {
   return phases[job.phase || 'queued'] || job.phase || '安装中';
 }
+/** 显示当前安装阶段的经过时间，并在卸载时清理计时器。 */
 export function InstallationElapsed({ job }: { job: TerminalCliInstallationJob }) {
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
@@ -36,6 +38,10 @@ export function InstallationElapsed({ job }: { job: TerminalCliInstallationJob }
     </small>
   );
 }
+/**
+ * 分页展示指定应用的安装记录，允许用户选择模板并处理安装结果。
+ * 历史面板展开时才读取；读取失败时保留上次结果及其来源页码。
+ */
 export function TerminalInstallHistory({
   appId,
   settings,
@@ -66,6 +72,7 @@ export function TerminalInstallHistory({
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!open) return;
+    // 应用、页游标或刷新键变化时撤销旧读取，避免旧响应覆盖当前页。
     const controller = new AbortController();
     active.current = controller;
     setError('');

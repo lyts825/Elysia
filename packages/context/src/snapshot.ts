@@ -24,6 +24,7 @@ import { peerReviewCandidate } from './peer-review.js';
 import type { ToolDefinition } from '../../contracts/src/model.js';
 
 /** Capture external state once. The compiler receives no database or filesystem handles. */
+// 汇集本次编译所需的任务、代理、历史与资源，让后续纯编译不访问存储或文件系统。
 export function collectContextSnapshot(store: Store, task: Task, definitions: ToolDefinition[]) {
   const run = store.require<Run>('runs', task.runId),
     agent = store.require<Agent>('agents', task.agentId);

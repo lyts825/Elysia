@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 import './home.css';
 import './workspace-home.css';
 
+/** 展示当前项目的输入和模型选择；草稿及启动动作由父组件持有。 */
 export function WorkspaceHome({
   project,
   providers,

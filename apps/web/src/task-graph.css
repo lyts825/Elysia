@@ -41,6 +41,7 @@
   font-size: var(--font-sm);
   line-height: var(--leading-ui);
 }
+/* 完成状态使用成功色，便于与其他任务状态区分。 */
 .graph-status[data-status='done'] {
   color: var(--success);
   background: var(--success-bg);
@@ -98,6 +99,7 @@
   color: var(--text);
   font-size: var(--font-sm);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .graph-task-title,
 .graph-dependency-reading {
   max-height: min(10rem, 40dvh);

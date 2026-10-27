@@ -80,6 +80,7 @@ function headingSlug(text: string) {
 
 // Opaque continuations bind a bounded scanner state to one file version and query.
 // No document contents leave this service other than the existing paged reader.
+/** 按文件及作用域定位锚点，保留有期限的扫描游标供后续请求续读。 */
 export class FileLocator {
   private cursors = new Map<string, Scan>();
   async locate(filename: string, scope: string, options: FileLocationOptions): Promise<FileLocation> {

@@ -118,6 +118,7 @@ function add(totals: ProjectUsageTotals, row?: Ledger) {
 type RunRow = { id: string; position: number; data: string };
 
 /** Read-only project accounting; derived legacy metadata may warm without modifying request bodies. */
+/** 读取和缓存项目用量汇总，服务关闭时释放缓存和关闭钩子。 */
 export class ProjectUsageReads {
   private identity = id();
   private projections;
@@ -454,6 +455,7 @@ function readSignal(request: FastifyRequest, reply: FastifyReply) {
     },
   };
 }
+/** 注册项目用量查询，并在服务关闭时释放读取器。 */
 export function registerProjectUsage(app: FastifyInstance, store: Store) {
   const reads = new ProjectUsageReads(store);
   app.addHook('onClose', () => reads.close());

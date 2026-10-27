@@ -27,6 +27,10 @@ export class BoundedEventStream {
   get available() {
     return !this.closed && !this.blocked && !this.stream.destroyed;
   }
+  /**
+   * 写入已编码的事件帧。超过单帧或缓冲上限时断开连接；背压时返回 false。
+   * delta 为真时记录丢失的增量，恢复后提示客户端重新读取完整状态。
+   */
   write(frame: string, delta = false) {
     if (!this.available) {
       if (delta) this.droppedDelta = true;
@@ -53,6 +57,7 @@ export class BoundedEventStream {
   }
 }
 
+/** 使用序号作为 SSE 事件 ID；过大的正文降级为提示客户端回读的更新事件。 */
 export function eventFrame(event: { seq: number; type: string; runId: string }) {
   const frame = `id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
   if (Buffer.byteLength(frame) <= eventStreamFrameLimit) return frame;

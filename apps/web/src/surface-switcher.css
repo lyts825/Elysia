@@ -16,6 +16,7 @@
   text-align: left;
   line-height: var(--leading-heading);
 }
+/* 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。 */
 .surface-trigger:hover,
 .surface-trigger[aria-expanded='true'] {
   background: var(--surface-hover);
@@ -35,6 +36,7 @@
   width: 25px;
   height: 25px;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .surface-menu {
   position: fixed;
   z-index: 220;

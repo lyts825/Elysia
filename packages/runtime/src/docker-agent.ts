@@ -72,6 +72,7 @@ export interface DockerCommandResult {
 export interface DockerTransport {
   run(args: string[], options: DockerCommandOptions): Promise<DockerCommandResult>;
 }
+/** 通过子进程执行 Docker 命令，传入明确参数和受控环境。 */
 export class DockerCliTransport implements DockerTransport {
   constructor(private binary = 'docker') {}
   run(args: string[], options: DockerCommandOptions): Promise<DockerCommandResult> {
@@ -169,6 +170,7 @@ export const defaultAgentCommand = (agent: AgentTerminalProfile['agent']): strin
 };
 
 /** Persist only public text and coarse tool activity, never private thinking or raw vendor stderr. */
+/** 将终端输出解析并投影为可展示的文本。 */
 export class TerminalProjection {
   private pending = '';
   private redactionPending = '';
@@ -383,6 +385,7 @@ export interface DockerAgentCheck {
 }
 
 /** External agent execution beside the native API loop; scheduling remains in NativeExecutor. */
+/** 管理终端容器、会话、执行恢复和工作区交付状态。 */
 export class DockerAgentService {
   private closed = false;
   private transport: DockerTransport;
@@ -788,6 +791,7 @@ export class DockerAgentService {
       throw new AppError('TERMINAL_WORKSPACE_CHECK', '工作区正在变化，请等待文件写入完成后重试');
     }
   }
+  /** 检查 Docker 引擎、镜像和 CLI 状态；可选配置和取消信号约束检测。 */
   async check(
     raw?: AgentTerminalProfile,
     signal?: AbortSignal,
@@ -1009,6 +1013,7 @@ export class DockerAgentService {
       if (temporary) await fs.rm(temporary, { force: true }).catch(() => {});
     }
   }
+  /** 停止指定运行的活动终端；提供任务 ID 时覆盖该任务及后代。 */
   async interrupt(runId: string, taskId?: string) {
     const tasks = taskId
       ? new Set(this.kernel.descendants(this.store.require<Task>('tasks', taskId)).map((task) => task.id))
@@ -1049,6 +1054,7 @@ export class DockerAgentService {
       if (error.code !== 'ENOENT') throw error;
     }
   }
+  /** 启动时核查历史终端状态和已知环境文件，恢复或清理未完成操作。 */
   async recover() {
     // Known environment files need cleanup even after a terminal operation completed.
     // Enumerate actual folders and small SQL ownership metadata, not every historical body.
@@ -1459,6 +1465,7 @@ export class DockerAgentService {
     );
     return digest.digest('hex');
   }
+  /** 读取续接能力并再次校验运行版本，生成终端会话可用性视图。 */
   async sessionView(runId: string): Promise<TerminalSessionView> {
     const revision = this.store.require<Run>('runs', runId).revision;
     try {
@@ -1494,6 +1501,7 @@ export class DockerAgentService {
       };
     }
   }
+  /** 校验续接模式、文本、消息及版本，准备后续提交会话的操作。 */
   async prepareContinuation(
     runId: string,
     expectedRevision: number,
@@ -2211,6 +2219,7 @@ export class DockerAgentService {
       }
     }
   }
+  /** 校验运行版本及待处理消息，准备终端交付验收操作。 */
   async prepareAcceptance(runId: string, expectedRevision: number): Promise<() => unknown> {
     const run = this.store.require<Run>('runs', runId);
     invariant(run.revision === expectedRevision, 'REVISION_CONFLICT', '对话已更新，请刷新后再验收');
@@ -2365,6 +2374,7 @@ export class DockerAgentService {
   async accept(runId: string, expectedRevision: number) {
     return (await this.prepareAcceptance(runId, expectedRevision))();
   }
+  /** 校验运行版本及核验参数，准备对指定操作结果的核验。 */
   async prepareVerification(
     runId: string,
     expectedRevision: number,

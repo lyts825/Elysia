@@ -15,6 +15,7 @@ import { NativeExecutor } from '../../../packages/runtime/src/index.js';
 import { projectDeliveryArchiveSummary } from './project-delivery-archive.js';
 
 const mutation = Command.extend({ expectedRevision: z.number().int().nonnegative() });
+/** 注册项目、运行和空间的管理操作；写入检查版本并协调执行器及事件流。 */
 export function registerManagement(
   app: FastifyInstance,
   store: Store,

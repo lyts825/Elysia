@@ -4,6 +4,7 @@ import type { DockerAgentService } from './docker-agent.js';
 import type { ExecutionPlugin } from './execution-plugins.js';
 
 /** All terminal-specific capacity and lifetime rules live beside the terminal implementation. */
+/** 将 Docker 终端接入执行器，委托步骤、中断、释放及资源准入。 */
 export function terminalExecutionPlugin(terminal: DockerAgentService): ExecutionPlugin {
   const preset = (run: Run) =>
     run.execution?.kind === 'docker-agent' ? run.execution.profile.resourcePreset : undefined;

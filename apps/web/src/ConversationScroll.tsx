@@ -97,6 +97,7 @@ export function ConversationScroll({
     queuedSync.current = false;
     // Native scrolling establishes a new reading position; never restore the
     // preceding frame's anchor over the user's movement.
+    // 跟随最新消息时贴底；用户查看历史时恢复可见锚点，避免内容插入造成跳动。
     if (scrolled.current) scrolled.current = false;
     else if (following.current) node.scrollTop = node.scrollHeight;
     else if (restoreHistoryAnchor(node, anchor.current, index.current)) restoring.current = false;
@@ -134,6 +135,7 @@ export function ConversationScroll({
     return () => observer.disconnect();
   }, []);
   const requestOlder = () => {
+    // 只在可见且接近顶部时请求一次旧页，并记录插入前的尺寸用于回退定位。
     const node = viewport.current;
     if (
       !onLoadOlder ||

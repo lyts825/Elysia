@@ -443,6 +443,7 @@ function checkedObject(directory: string, ref: string, scan: Scan): Candidate | 
 }
 
 // Call only while holding both service locks. The CLI acquires them before reaching here.
+/** 扫描所选数据入口并构造对象清理计划；扫描过程支持取消和进度报告。 */
 export function createObjectCleanupPlan(
   directory: string,
   selection: Selection,
@@ -533,6 +534,7 @@ export function createObjectCleanupPlan(
 
 // A plan is an explicit selection, not authority to delete arbitrary paths. Recheck all
 // selected objects and the complete live reference set before the first unlink.
+/** 重新校验清理计划后处理候选对象；取消不会回滚已删除的对象。 */
 export function executeObjectCleanup(
   directory: string,
   supplied: unknown,

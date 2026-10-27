@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import cache from './launch-cache.cjs';
 
+// list 与 preview 均只读；参数校验后输出缓存检查结果，不执行清理。
 const [action, ...args] = process.argv.slice(2);
 if (!['list', 'preview'].includes(action))
   throw new Error(

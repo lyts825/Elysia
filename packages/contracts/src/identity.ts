@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
 // 对对象键排序并忽略未定义的属性，使等价对象产生相同的摘要输入。
+// 数组保留顺序，数组中的 undefined 会表示为 null；此函数适用于可 JSON 序列化的数据。
 export function stable(value: unknown): string {
   if (value === undefined) return 'null';
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';

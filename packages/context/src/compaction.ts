@@ -9,6 +9,7 @@ export const COMPACTION_TRIGGER = 0.75;
 export const COMPACTION_TARGET = 0.6;
 
 /** Unicode code points, not UTF-16 offsets. Omitted content remains in the original history. */
+// 按 Unicode 码点保留头尾；原文短于保留长度时直接返回，不插入标记。
 export function headTail(text: string, head: number, tail: number, marker: string): string {
   const points = Array.from(text);
   if (points.length <= head + tail) return text;
@@ -176,6 +177,7 @@ export type CompactionResult = {
 };
 
 /** Closed call/result groups are atomic. No source message or native item is edited in storage. */
+// 先检查配对与预算，再保留最近完整交互并裁剪旧工具结果；必要时生成可回查摘要。
 export function compactHistory(
   history: Message[],
   options: {

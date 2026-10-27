@@ -2,6 +2,7 @@
 .file-content-view {
   min-width: 0;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .file-content-info {
   min-width: 0;
   margin-bottom: var(--space-2);
@@ -13,6 +14,7 @@
   color: var(--secondary);
   line-height: var(--leading-body);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .file-content-info-reading {
   display: grid;
   gap: var(--space-3);
@@ -205,6 +207,7 @@
   min-height: 30px;
   font-size: var(--font-sm);
 }
+/* 窄屏减少文档容器和文件标签的内边距。 */
 @media (max-width: 560px) {
   .file-document-scroll {
     padding: var(--space-3);

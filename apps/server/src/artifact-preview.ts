@@ -149,6 +149,7 @@ class CompressedReader {
   }
 }
 
+/** 管理产物预览的对象验证与读取；关闭时取消服务生命周期并释放活动快照。 */
 export class ArtifactPreviewService {
   private verified = new Map<string, true>();
   private pending = new Map<string, Promise<void>>();

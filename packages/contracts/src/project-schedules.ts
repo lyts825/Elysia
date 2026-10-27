@@ -14,6 +14,7 @@ export const PROJECT_SCHEDULE_LIMITS = {
   sourcePage: 50,
 } as const;
 
+// 任务模板限定运行方式、间隔、次数与截止时间；默认先走评审模式。
 export const ProjectScheduleSettings = z
   .object({
     name: z.string().trim().min(1).max(160),

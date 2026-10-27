@@ -24,6 +24,7 @@
 .criterion-picker-option .workflow-note-choice {
   margin: 0 0 var(--space-2);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .review-link-reading {
   max-height: min(14rem, 42dvh);
   overflow: auto;

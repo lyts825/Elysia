@@ -126,6 +126,10 @@ const appProfile = (settings: SurfaceTerminalSettings, appId: TerminalAppId) =>
   settings.profiles.find((profile) => profile.id === settings.defaultProfileId && profile.agent === appId) ||
   settings.profiles.find((profile) => profile.agent === appId);
 
+/**
+ * 组织终端应用、连接、项目偏好、模板及维护页面。
+ * 各区域独立读取；连接、项目和模板草稿分别跟踪未保存状态。
+ */
 export function TerminalControlCenter({
   initial,
   initialTab = 'apps',
@@ -228,6 +232,10 @@ export function TerminalControlCenter({
   );
   const panelId = useId(),
     tabPrefix = useId();
+  /**
+   * 读取一个独立区域并维护其加载和错误状态；同一区域的新请求会取消旧请求。
+   * 更新项目偏好时保留已修改的本地草稿，避免刷新覆盖用户输入。
+   */
   async function readRegion(region: ReadRegion, signal?: AbortSignal) {
     readControllers.current[region]?.abort();
     const controller = new AbortController();
@@ -289,6 +297,7 @@ export function TerminalControlCenter({
       if (readControllers.current[region] === controller) delete readControllers.current[region];
     }
   }
+  /** 并发读取各区域；单个区域失败不阻止其他区域显示。 */
   async function load(signal?: AbortSignal) {
     const values = await Promise.allSettled(readRegions.map((region) => readRegion(region, signal)));
     const prefs = values[2];
@@ -327,6 +336,7 @@ export function TerminalControlCenter({
       clearTimeout(timer);
     };
   }, [running, api]);
+  /** 防止重复提交，并统一向上报告操作中的忙碌状态和错误。 */
   async function perform(action: () => Promise<unknown>) {
     if (submitting.current) return;
     submitting.current = true;
@@ -376,6 +386,7 @@ export function TerminalControlCenter({
     setDeleting(null);
     setPending(null);
   }
+  /** 切换连接时先检查未保存的连接草稿；有修改则等待用户处理。 */
   function selectConnection(next: ConnectionDraft, focusEditor = false) {
     if (busy) return;
     setInitialFocus(undefined);
@@ -448,6 +459,7 @@ export function TerminalControlCenter({
     } else
       selectTab(target.kind === 'template' ? 'templates' : target.kind === 'project' ? 'project' : 'apps');
   }
+  /** 目标修复完成后返回来源页面，触发该模板的重新检查。 */
   function finishRepair(kind: TerminalDiagnosticRepair['kind'], connectionId?: string) {
     if (
       !repairTarget ||

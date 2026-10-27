@@ -32,6 +32,7 @@ const searchQuery = z.object({
 });
 const edgeText = (bytes: Buffer) => bytes.toString('utf8').replace(/^\uFFFD+|\uFFFD+$/g, '');
 
+/** 注册终端日志搜索接口；校验关键词、游标及产物归属，并限制扫描字节数。 */
 export function registerTerminalLogSearchRoutes(
   app: FastifyInstance,
   store: Store,

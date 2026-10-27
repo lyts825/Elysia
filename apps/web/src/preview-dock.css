@@ -121,6 +121,7 @@
   flex: 1;
   border: 0;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .preview-dock-artifacts {
   overflow: auto;
 }
@@ -169,6 +170,7 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--font-sm);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .preview-dock .preview-dock-selection-scope {
   flex: none;
   margin: 0;
@@ -222,6 +224,7 @@
 .preview-dock-read-error:focus-visible {
   outline-offset: -2px;
 }
+/* 短窗口让预览容器滚动，并调整嵌入工作区的高度和溢出行为。 */
 @media (max-height: 560px) {
   .preview-dock {
     overflow-y: auto;

@@ -32,6 +32,7 @@ export function ProjectDeliveryBundle({
   onSaved?: () => void;
 }) {
   const { api, apiUrl } = useSurfaceClient();
+  // 打包计划、任务进度和下载状态绑定当前不可变清单。
   const [plan, setPlan] = useState<ProjectDeliveryBundlePlan>();
   const [working, setWorking] = useState<'check' | 'download' | null>(null);
   const [error, setError] = useState('');

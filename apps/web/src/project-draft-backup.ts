@@ -43,6 +43,7 @@ export function createProjectDraftBackup(
   current: ProjectDraftBackupBinding,
   createdAt = new Date().toISOString(),
 ): { file: ProjectDraftBackupFile; raw: string } {
+  // 先确认工作台身份及草稿可读，再生成带来源身份的完整备份文件。
   const owner = requireBinding(current);
   readProjectBoardBackupDraft(draftRaw);
   const file = shape.parse({
@@ -58,6 +59,7 @@ export function readProjectDraftBackup(
   raw: string,
   current: ProjectDraftBackupBinding,
 ): ProjectDraftBackupPreview {
+  // 完整恢复必须匹配项目、入口和工作台数据范围；跨项目复用走计划导入。
   const owner = requireBinding(current);
   if (new TextEncoder().encode(raw).byteLength > PROJECT_DRAFT_BACKUP_FILE_LIMIT)
     throw Error('备份文件超过 640 KiB，当前原稿未改动。');
@@ -84,6 +86,7 @@ export function decodeProjectDraftBackup(
   bytes: ArrayBuffer,
   current: ProjectDraftBackupBinding,
 ): ProjectDraftBackupPreview {
+  // 严格解码，避免将非法字节替换成字符后误认为备份完整。
   if (bytes.byteLength > PROJECT_DRAFT_BACKUP_FILE_LIMIT)
     throw Error('备份文件超过 640 KiB，当前原稿未改动。');
   let raw: string;
@@ -123,6 +126,7 @@ export function protectProjectDraftBeforeRestore(
   } catch {
     throw Error('无法读取当前浏览器的恢复前备份，未恢复草稿。原输入和预览已保留。');
   }
+  // 与预览时看到的副本比较，防止另一个窗口的更新被静默覆盖。
   if (latest !== expectedProtection)
     throw Error('恢复前备份已被另一窗口修改，请重新核对。当前草稿和预览已保留。');
   if (latest !== null) {
@@ -137,6 +141,7 @@ export function protectProjectDraftBeforeRestore(
   }
   try {
     storage.setItem(key, next.raw);
+    // 浏览器存储写入后回读，确认完整原稿确实可用，才允许后续恢复。
     if (storage.getItem(key) !== next.raw) throw Error('备份读取核验不一致');
   } catch {
     throw Error('当前浏览器无法完整保留原稿，可能空间不足或存储不可用；未恢复草稿。原输入和预览已保留。');
@@ -171,6 +176,7 @@ export async function restoreProjectDraftWithProtection({
   onCritical?: () => void;
 }): Promise<string> {
   if (!locks?.request) throw Error('当前浏览器不支持安全的备份恢复锁，未恢复草稿；仍可导出或预览备份。');
+  // 独占锁覆盖身份复核、原稿备份与应用；再次读取草稿以发现等待期间的修改。
   return locks.request(projectDraftProtectionKey(current) + ':restore', { mode: 'exclusive', signal }, () => {
     assertActive();
     onCritical?.();
@@ -208,6 +214,7 @@ export async function deleteProjectDraftProtection({
   onCritical?: () => void;
 }): Promise<void> {
   if (!locks?.request) throw Error('当前浏览器不支持安全的副本管理锁，未删除恢复前副本。');
+  // 删除与恢复使用同一把锁，并核对用户确认过的副本仍是最新内容。
   const key = projectDraftProtectionKey(current);
   return locks.request(key + ':restore', { mode: 'exclusive', signal }, () => {
     assertActive();

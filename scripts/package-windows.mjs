@@ -19,6 +19,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { buildLaunch } from './launch-build.mjs';
 
+// 离线打包只使用当前 Windows x64 环境、锁定依赖及精确 Node 版本的许可证。
 const root = fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(import.meta.url);
 const { sha256File } = require('../apps/desktop/file-hash.cjs');
@@ -85,6 +86,7 @@ for (const [filename, bytes] of runtimeInputs)
   if (!readFileSync(path.join(root, filename)).equals(bytes))
     throw new Error('构建期间桌面运行文件发生变化，请重试打包：' + filename);
 const externals = new Set();
+/** 稳定顺序遍历普通文件；链接和特殊文件拒绝进入发行包。 */
 function walk(directory, visit) {
   for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
     a.name.localeCompare(b.name, 'en'),
@@ -119,6 +121,7 @@ for (const name of externals)
 // Resolve the installed dependency graph first; do not flatten distinct versions or copy development dependencies.
 const graph = new Map(),
   defaults = new Map();
+/** 按依赖所属目录的解析顺序定位安装包，可选依赖缺失时返回 null。 */
 function resolvePackage(name, from, optional = false) {
   const resolver = createRequire(path.join(from, 'package.json'));
   for (const directory of resolver.resolve.paths(name) || []) {
@@ -128,6 +131,7 @@ function resolvePackage(name, from, optional = false) {
   if (optional) return null;
   throw new Error('缺少生产依赖：' + name);
 }
+/** 构建实际生产依赖图，按目录缓存节点以保留同名不同版本。 */
 function collect(directory) {
   if (graph.has(directory)) return graph.get(directory);
   const manifest = json(path.join(directory, 'package.json'));
@@ -158,6 +162,7 @@ const destination = path.join(output, name),
 if (existsSync(destination) || existsSync(zip)) throw new Error('分发目标已存在，拒绝覆盖：' + destination);
 const stage = path.join(output, '.building-' + randomUUID());
 mkdirSync(stage);
+/** 复制普通目录和文件，遇到链接或特殊文件时中止打包。 */
 function copyTree(source, target, include = () => true) {
   mkdirSync(target, { recursive: true });
   for (const entry of readdirSync(source, { withFileTypes: true })) {
@@ -203,6 +208,7 @@ try {
   copyFileSync(nodeLicense, path.join(app, 'runtime/LICENSE-Node.txt'));
   const copied = [],
     rootModules = path.join(app, 'node_modules');
+  /** 将依赖图物化为可解析的目录树，校验许可证并拒绝无法物化的循环。 */
   function materialize(entry, target, inherited, ancestors = new Set()) {
     if (ancestors.has(entry.directory)) throw new Error('生产依赖存在无法物化的循环：' + entry.manifest.name);
     const nextAncestors = new Set(ancestors).add(entry.directory);

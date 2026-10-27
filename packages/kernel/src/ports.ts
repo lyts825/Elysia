@@ -19,6 +19,7 @@ export interface UnitOfWork {
   /** Synchronous only: state and events commit together; external work stays outside. */
   tx<T>(work: () => T): T;
 }
+// 实体读取与写入由存储实现；expectedRevision 可用于并发冲突检查。
 export interface EntityRepository {
   get<T>(table: Table, key: string): T | undefined;
   require<T>(table: Table, key: string): T;

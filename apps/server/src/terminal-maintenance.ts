@@ -431,6 +431,7 @@ function copyFileChecked(sourceRoot: string, destinationRoot: string, entry: Fil
     fail('快照复制时源文件变化');
 }
 
+/** 管理终端数据扫描、清理计划以及备份和恢复预览。 */
 export class TerminalMaintenance {
   private plans = new Map<string, InternalPlan>();
   private scans = new Map<
@@ -459,6 +460,7 @@ export class TerminalMaintenance {
       async (backupId, options) => this.historyView(await this.readBackupAsync(backupId, options)),
     );
   }
+  /** 启动异步维护扫描；限制同时运行的扫描数量并返回任务状态。 */
   startScan(input: unknown) {
     if (this.closed) fail('维护服务已停止');
     const body = TerminalMaintenanceScanInput.parse(input);
@@ -1179,6 +1181,7 @@ export class TerminalMaintenance {
       fail('维护计划已失效，请重新预览', 'TERMINAL_MAINTENANCE_STALE');
     return { body, plan };
   }
+  /** 扫描终端数据并生成清理候选计划；读取期间响应取消信号。 */
   async cleanupPlan(options: ScanOptions = {}) {
     const scan = await this.inventoryAsync(options);
     const items: TerminalMaintenancePlan['items'] = [];
@@ -1480,6 +1483,7 @@ export class TerminalMaintenance {
     this.plans.set(view.id, { view, retry: entry });
     return view;
   }
+  /** 使用命令 ID 重试已记录的清理，避免重复执行同一请求。 */
   retryCleanup(retryId: string, input: unknown) {
     z.string().uuid().parse(retryId);
     const parsed = TerminalMaintenanceApply.parse(input),
@@ -1510,6 +1514,7 @@ export class TerminalMaintenance {
       message: pending ? '暂存内容仍未移除，记录已保留；请排除文件占用后重新预览' : '暂存清理已完成',
     };
   }
+  /** 验证并执行清理计划，使用隔离位置和日志跟踪文件处理。 */
   cleanup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input);
     const moved: { from: string; to: string }[] = [];
@@ -1675,6 +1680,7 @@ export class TerminalMaintenance {
       excludedCount: backup.excluded.length,
     });
   }
+  /** 按查询条件分页读取终端备份历史。 */
   async backupPage(input: unknown, options: ScanOptions = {}) {
     return this.backupIndex.page(input, options);
   }
@@ -1845,6 +1851,7 @@ export class TerminalMaintenance {
         .map((op) => [op.id, op.revision, op.status]),
     };
   }
+  /** 验证备份当前可删除性并生成删除预览，保留引用核验信息。 */
   async deleteBackupPlan(input: unknown, options: ScanOptions = {}) {
     const { backupId } = z.object({ backupId: z.string().uuid() }).strict().parse(input),
       backup = await this.readBackupAsync(backupId, options);
@@ -1898,6 +1905,7 @@ export class TerminalMaintenance {
     )
       fail('快照目录含未知、缺失或变更文件，保留全部内容');
   }
+  /** 验证删除计划后处理备份文件，并记录可恢复的清理状态。 */
   deleteBackup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input),
       payload = { route: 'terminal-maintenance/backup-delete', body: parsed };
@@ -1980,6 +1988,7 @@ export class TerminalMaintenance {
         : '选定快照已删除；当前会话和工作区未变更',
     };
   }
+  /** 检查终端未在运行，并按预期版本生成备份预览。 */
   async backupPlan(input: unknown, options: ScanOptions = {}) {
     const body = z
       .object({ runId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
@@ -2027,6 +2036,7 @@ export class TerminalMaintenance {
     this.plans.set(view.id, { view, snapshot, workspace: workspace.files, excluded: workspace.excluded });
     return view;
   }
+  /** 验证备份计划并执行备份；已记录的命令通过命令账本重放。 */
   async createBackup(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input);
     const replay = this.store.db.prepare('SELECT id FROM commands WHERE id=?').get(parsed.commandId);
@@ -2111,6 +2121,7 @@ export class TerminalMaintenance {
       throw error;
     }
   }
+  /** 读取指定备份并生成恢复预览；预览期间登记读取者。 */
   async restorePlan(input: unknown, options: ScanOptions = {}) {
     const body = z
         .object({ backupId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() })
@@ -2263,6 +2274,7 @@ export class TerminalMaintenance {
         options.progress?.({ filesVisited: 1 });
       }
   }
+  /** 验证恢复计划后在运行守卫内恢复，命令 ID 用于处理重放。 */
   async restore(input: unknown) {
     const parsed = TerminalMaintenanceApply.parse(input),
       payload = { route: 'terminal-maintenance/restore', body: parsed };

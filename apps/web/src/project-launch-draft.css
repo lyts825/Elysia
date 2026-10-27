@@ -29,6 +29,7 @@
   font-size: var(--font-sm);
   line-height: var(--leading-ui);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .project-launch-reading {
   min-width: 0;
   max-height: min(14rem, 42dvh);
@@ -45,6 +46,7 @@
   margin: var(--space-1) 0 var(--space-3);
   font-weight: 600;
 }
+/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
 .project-launch-versions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -91,6 +93,7 @@
   overflow-wrap: anywhere;
   scroll-margin-block: var(--space-3);
 }
+/* 窄屏减小草稿内边距，并将操作按钮纵向排列。 */
 @media (max-width: 480px) {
   .project-launch-draft {
     padding: var(--space-3);

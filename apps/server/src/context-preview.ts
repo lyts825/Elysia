@@ -18,6 +18,7 @@ const legacyBytes = 65536;
 type Candidate = { seq: number; payload: string; compressed_bytes: number | null; footer: Uint8Array | null };
 
 /** Counts and frozen bindings only. Configuration permission remains an explicit full read. */
+/** 从运行和代理记录构造上下文快照，限制代理必须属于指定运行。 */
 export class ContextPreviewReads {
   constructor(private store: Store) {}
   snapshot(runId: string, agentId?: string): ContextSnapshot {
@@ -138,6 +139,7 @@ export class ContextPreviewReads {
     };
   }
 }
+/** 注册上下文预览路由，并校验运行和可选代理 ID。 */
 export function registerContextPreview(app: FastifyInstance, store: Store) {
   const reads = new ContextPreviewReads(store);
   app.get('/api/runs/:id/context-preview', (request) => {

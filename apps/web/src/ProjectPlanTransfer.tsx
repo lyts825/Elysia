@@ -11,6 +11,7 @@ import {
 import './project-plan-transfer.css';
 export type PlanImportLifecycle = { hasPending: () => boolean; discard: () => void };
 
+/** 在应用前预览并检查计划文件，离开页面时由生命周期接口保护待处理预览。 */
 export function ProjectPlanTransfer({
   projectId,
   edit,

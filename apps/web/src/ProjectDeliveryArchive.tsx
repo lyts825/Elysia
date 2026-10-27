@@ -27,6 +27,7 @@ const archiveQuery = (archive: Archive) =>
   '&expectedObjectHash=' +
   encodeURIComponent(archive.objectHash);
 async function downloadArchive(bytes: Uint8Array, archive: Archive, signal?: AbortSignal) {
+  // 下载前先检查声明长度和 ZIP 文件头，后续再核对内容摘要。
   if (
     bytes.length !== archive.size ||
     bytes.length < 4 ||

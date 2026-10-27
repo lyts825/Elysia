@@ -9,6 +9,7 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import { ProjectRunList, reviewLabels, executionLabel } from './ProjectRunList';
 import './project-board-item.css';
+// 就绪状态映射为可核对的原因；状态值本身仍由服务端提供。
 export const readinessLabels: Record<ProjectDeliveryReadiness, string> = {
   unlinked: '尚未关联执行',
   unconfirmed: '待确认符合项目标准',

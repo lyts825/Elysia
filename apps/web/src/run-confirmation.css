@@ -10,6 +10,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 为左侧标签预留最小宽度，右侧内容使用剩余空间。 */
 .run-review-confirmation .run-review-fields > div {
   display: grid;
   grid-template-columns: minmax(4.5rem, 0.35fr) minmax(0, 1fr);
@@ -22,6 +23,7 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .run-review-confirmation .run-review-fields dd {
   margin: 0;
   font-size: var(--font-sm);

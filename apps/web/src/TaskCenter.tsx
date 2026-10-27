@@ -18,6 +18,7 @@ import {
 import './task-center.css';
 
 export type TaskCenterState = {
+  // 筛选条件与分页轨迹由父组件持有，关闭面板后仍可恢复。
   filter: 'all' | TaskCenterCategory;
   before: string;
   trail: string[];

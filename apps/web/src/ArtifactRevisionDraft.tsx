@@ -30,6 +30,7 @@ const entryShape = z.object({
   }),
 });
 export type ArtifactRevisionEntry = z.infer<typeof entryShape>;
+/** 缺省值视为空草稿，格式错误返回 undefined；选择条数有界。 */
 export function readArtifactRevision(raw: unknown): ArtifactRevisionEntry[] | undefined {
   if (raw === undefined) return [];
   const result = z.array(entryShape).max(40).safeParse(raw);
@@ -37,6 +38,7 @@ export function readArtifactRevision(raw: unknown): ArtifactRevisionEntry[] | un
 }
 export const artifactRevisionKey = (entry: Pick<ArtifactRevisionEntry, 'reviewId' | 'change'>) =>
   `${entry.reviewId}:${entry.change.artifactId}`;
+/** 只检查已选差异的要求、数量及编码体积，超限时保留原文供调整。 */
 export function artifactRevisionIssue(entries: ArtifactRevisionEntry[]) {
   const selected = entries.filter((entry) => entry.added);
   if (selected.length > 20) return '最多带入 20 项差异，请减少选择。';

@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 const directory = path.join(root, 'assets', 'brand');
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
+/** 将不同尺寸的 PNG 帧写入 ICO 目录与数据区；256 像素在目录中用 0 表示。 */
 function ico(frames) {
   const header = Buffer.alloc(6 + 16 * frames.length);
   header.writeUInt16LE(1, 2);
@@ -37,6 +38,7 @@ app.whenReady().then(async () => {
     await window.loadURL(
       'data:text/html,<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:"><canvas></canvas>',
     );
+    // 同一 SVG 生成 512 像素 PNG 和多个 ICO 帧，保持桌面图标一致。
     const frames = [];
     for (const size of [...sizes, 512]) {
       const data = await window.webContents.executeJavaScript(`(async () => {

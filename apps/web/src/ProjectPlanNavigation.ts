@@ -25,6 +25,7 @@ export class ProjectPlanNavigationGuard {
     private changed: (pending: PendingProjectPlanLeave | null) => void,
   ) {}
   begin() {
+    // 新导航意图使旧的确认请求失效，避免异步回调跳转到过期目标。
     this.intent++;
     this.pending = null;
     this.changed(null);
@@ -41,6 +42,7 @@ export class ProjectPlanNavigationGuard {
     if (!this.current(intent)) return false;
     const source = this.context(),
       owner = this.lifecycle();
+    // 仅拦截当前项目的待处理导入；普通导航及明确绕过的动作立即执行。
     if (
       !options.bypass &&
       options.leaving !== false &&
@@ -64,6 +66,7 @@ export class ProjectPlanNavigationGuard {
       context = this.context(),
       owner = this.lifecycle();
     if (!pending || !this.current(pending.intent)) return false;
+    // 确认前复核项目、运行、空间和界面代次，避免丢弃另一页面的新预览。
     if (
       context.projectId !== pending.source.projectId ||
       context.runId !== pending.source.runId ||

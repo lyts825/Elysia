@@ -114,6 +114,7 @@ function sendFileResource(reply: FastifyReply, resource: FileResource) {
 }
 const restrictedResourcePolicy =
   "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+/** 构造内置供应商的初始配置；实际凭据由后续连接流程提供。 */
 export function defaultProviders(): ProviderConfig[] {
   return [
     {
@@ -155,6 +156,7 @@ export function defaultProviders(): ProviderConfig[] {
     },
   ];
 }
+/** 装配本地 Fastify 服务、执行器、供应商和各业务路由。 */
 export function createServer(
   store: Store,
   options: {

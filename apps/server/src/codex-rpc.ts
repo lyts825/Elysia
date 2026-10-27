@@ -47,6 +47,7 @@ export const codexConfig: Record<string, string | boolean | number | string[]> =
   notify: [],
 };
 
+/** 从显式路径、系统 PATH 或 Windows 桌面安装目录查找 Codex，并校验版本。 */
 export async function findCodex(): Promise<{ binary: string; version: string }> {
   const explicit = process.env.ELYSIA_CODEX_BINARY;
   const candidates: string[] = explicit ? [path.resolve(explicit)] : [];
@@ -95,6 +96,7 @@ export async function findCodex(): Promise<{ binary: string; version: string }> 
   );
 }
 
+/** 维护 Codex 子进程 RPC 会话，按请求 ID 管理等待响应和超时。 */
 export class CodexRpc extends EventEmitter {
   private child: ChildProcessWithoutNullStreams;
   private pending = new Map<
@@ -204,6 +206,7 @@ export class CodexRpc extends EventEmitter {
   }
 }
 
+/** 清理错误文本中的凭据样式和服务地址，并限制返回长度。 */
 export function cleanError(value: unknown) {
   return String(value || 'Codex 请求失败')
     .replace(/(?:Bearer\s+|sk-)[\w.\-]+/gi, '[redacted]')

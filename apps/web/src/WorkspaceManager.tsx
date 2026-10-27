@@ -9,6 +9,7 @@ import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './
 import './workspace-manager.css';
 
 function ManagementOrigin({ label, values }: { label: string; values: [string, string | number][] }) {
+  // 管理操作前展示实体归属和版本，便于用户确认操作目标。
   return (
     <details className="workspace-manager-origin">
       <summary>完整归属与版本</summary>

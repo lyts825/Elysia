@@ -16,6 +16,7 @@ import { DeliveryReadProgress, prepareDeliveryRead, type DeliveryWarmProgress } 
 import './workflow.css';
 import './delivery-overview.css';
 const FilePreview = deferredPanel(
+  // 产物预览按需加载，不阻塞交付主体与复核意见显示。
   () => import('./ArtifactFilePreview').then((m) => m.ArtifactFilePreview),
   '产物预览',
 );

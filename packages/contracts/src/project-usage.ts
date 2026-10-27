@@ -2,6 +2,7 @@
 import type { Status } from './index.js';
 import type { RecordPage } from './run-reads.js';
 
+// 用量缺失分别计数；完整性字段用于提示汇总是否覆盖了全部请求。
 export interface ProjectUsageTotals {
   requestCount: number;
   readableCount: number;

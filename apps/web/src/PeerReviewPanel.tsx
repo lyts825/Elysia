@@ -19,6 +19,7 @@ export function PeerReviewPanel({ run }: { run: Run }) {
   if (!policy) return null;
   const rounds = run.peerReview?.rounds ?? [];
   const latest = rounds.at(-1);
+  // 最近一轮只有合同版本仍匹配且未标记过期时，才作为当前评审展示。
   const current =
     latest && latest.candidate.contractVersion === run.contract.version && latest.status !== 'stale';
   const confirmed = run.status === 'DONE' && current && latest.status === 'passed';

@@ -43,6 +43,7 @@ type Attempt = {
   userCode?: string;
 };
 
+/** 管理本地及订阅会话、登录状态和模型推理请求；关闭时终止在途连接。 */
 export class CodexSubscription {
   private sessions = new Map<Source, Promise<CodexRpc>>();
   private connections = new Map<Source, Connection>();

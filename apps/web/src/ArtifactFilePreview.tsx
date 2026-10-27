@@ -27,6 +27,7 @@ export function ArtifactFilePreview({
   const client = useSurfaceClient(),
     { api } = client;
   const savedKey = JSON.stringify(['artifact', checkpointKey, id]);
+  // 文件编码和分页位置按产物与检查点隔离，重新打开时可恢复阅读状态。
   const [encoding, setEncoding] = useState(
     () => readingCheckpoint<{ encoding: string }>(client, savedKey)?.encoding || 'auto',
   );

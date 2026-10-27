@@ -15,6 +15,7 @@ export { ProviderError, type ProviderAdapter, type ProviderEvent } from '../../c
 function numeric(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
+// 将供应商用量字段统一为共享格式；输入或价格不足时保留未知费用。
 export function normalizeUsage(
   kind: string,
   raw: any,
@@ -69,6 +70,7 @@ export function normalizeUsage(
     cacheWriteIncludedInInput: writeIncluded,
   });
 }
+// 逐块解码 UTF-8 并按空行切分 SSE；取消、大小限制和最终读取器释放均在此处理。
 export async function* sseData(body: ReadableStream<Uint8Array>, signal: AbortSignal): AsyncGenerator<any> {
   const reader = body.getReader(),
     decoder = new TextDecoder();
@@ -149,6 +151,7 @@ function failureUsage(kind: string, raw: unknown, config: ProviderConfig, ttft: 
     return null;
   }
 }
+// 移除已包含的协议端点后缀，便于后续统一拼接请求路径。
 export function providerBaseUrl(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): string {
   const url = new URL(provider.baseUrl);
   url.pathname = url.pathname
@@ -156,6 +159,7 @@ export function providerBaseUrl(provider: Pick<ProviderConfig, 'kind' | 'baseUrl
     .replace(provider.kind === 'deepseek' ? /\/chat\/completions$/ : /\/responses$/, '');
   return url.toString().replace(/\/$/, '');
 }
+// 优先重放供应商原生助手条目；其他消息按文本、工具调用和结果映射为协议项。
 function openaiInput(m: Message): unknown[] {
   if (m.role === 'tool') return [{ type: 'function_call_output', call_id: m.callId, output: m.text }];
   if (m.role === 'assistant' && m.providerKind === 'openai' && m.native?.length) return m.native;
@@ -164,6 +168,7 @@ function openaiInput(m: Message): unknown[] {
     items.push({ type: 'function_call', call_id: c.id, name: c.name, arguments: c.arguments });
   return items;
 }
+// 根据冻结配置编译请求，并将供应商流转换为共享的文本、工具与用量事件。
 export class NativeProvider implements ProviderAdapter {
   capabilities = { streaming: true, tools: true, nativeReplay: true };
   constructor(

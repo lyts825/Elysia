@@ -2,6 +2,7 @@
 import { ProviderConfig, type AgentTerminalProfile } from '../../../packages/contracts/src/index.js';
 
 /** Compatibility descriptor for shared task history; this is never an API connection. */
+/** 将终端配置转换为共享历史使用的兼容模型描述；地址和凭据字段不用于 API 连接。 */
 export function terminalBinding(profile: AgentTerminalProfile): ProviderConfig {
   return {
     ...ProviderConfig.parse({

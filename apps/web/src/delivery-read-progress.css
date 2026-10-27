@@ -15,6 +15,7 @@
 .delivery-read-progress > p {
   margin: 0;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .delivery-read-title {
   margin: 0;
   max-height: min(8rem, 25dvh);
@@ -25,6 +26,7 @@
   font-size: var(--font-md);
   line-height: var(--leading-heading);
 }
+/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
 .delivery-read-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));

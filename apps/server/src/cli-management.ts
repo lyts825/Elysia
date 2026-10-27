@@ -18,6 +18,7 @@ const version = z
   .max(80)
   .regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$/);
 type Manager = Pick<DockerCliManager, 'check' | 'install'>;
+/** 管理终端 CLI 检测和安装任务，并跟踪可取消的在途操作。 */
 export class TerminalCliManagement {
   private closed = false;
   private readonly checks = new Set<AbortController>();
@@ -133,6 +134,7 @@ export class TerminalCliManagement {
     const { connection: _binding, connectionId: _selection, ...safe } = profile;
     return { profile: AgentTerminalProfile.parse(safe), profileId: selected?.id ?? null };
   }
+  /** 检查指定应用和可选配置；服务关闭时拒绝新检测。 */
   async check(appId: TerminalAppId, profileId?: string) {
     invariant(!this.closed, 'TERMINAL_CLI_CLOSED', '服务正在退出，请稍后重试');
     const controller = new AbortController();

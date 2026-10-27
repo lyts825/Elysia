@@ -7,6 +7,7 @@ export interface TerminalInboxPeer {
   agent?: string;
 }
 
+// 处理记录保留动作、说明、时间和来源任务，便于回查。
 export interface TerminalInboxResolution {
   kind: 'dismissed' | 'withdrawn';
   note: string;

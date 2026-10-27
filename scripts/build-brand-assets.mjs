@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const environment = { ...process.env };
+// 资源渲染需要真正的 Electron 窗口环境，不能继承 Node 模式。
 delete environment.ELECTRON_RUN_AS_NODE;
 const child = spawn(
   require('electron'),

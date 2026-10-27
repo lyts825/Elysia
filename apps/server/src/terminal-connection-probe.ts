@@ -63,6 +63,7 @@ function httpFailure(status: number, operation: 'check' | 'models'): Outcome {
               : ['TERMINAL_API_REQUEST', '服务未接受请求，请检查协议、模型和 API 地址'];
   return { status: 'failed', code, message: `HTTP ${status}：${advice}`, httpStatus: status };
 }
+/** 把探测错误转换为安全的状态和错误码，不透传可能含凭据的原始错误。 */
 export function terminalProbeFailure(error: unknown, signal: AbortSignal): Outcome {
   if (error instanceof ProbeFailure) return error.outcome;
   if (signal.aborted)
@@ -316,6 +317,7 @@ async function models(
     truncated,
   };
 }
+/** 验证连接与凭据后执行连接检查或模型目录查询；请求和读取受信号约束。 */
 export async function terminalConnectionProbe(
   rawBinding: TerminalConnectionBinding,
   credential: string,

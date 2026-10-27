@@ -24,6 +24,7 @@ const supported = {
 };
 
 /** Build from the frozen binding and its exact credential reference, never a live provider record. */
+/** 校验 CLI 与 API 协议及凭据，再生成运行终端所需的连接配置。 */
 export function terminalConnectionConfiguration(
   rawProfile: AgentTerminalProfile,
   rawBinding: TerminalConnectionBinding,

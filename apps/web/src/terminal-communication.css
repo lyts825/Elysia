@@ -23,6 +23,7 @@
 .terminal-communication h4 {
   font-size: var(--font-md);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .terminal-communication .inline-warning {
   min-width: 0;
   max-width: 100%;
@@ -31,6 +32,7 @@
   overflow-wrap: anywhere;
   line-height: var(--leading-body);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .terminal-communication > summary:focus-visible,
 .terminal-communication .inline-warning:focus-visible,
 .terminal-communication-empty:focus-visible,
@@ -259,6 +261,7 @@
   font-size: var(--font-sm);
   line-height: var(--leading-body);
 }
+/* 窄屏允许对端搜索换行，并调整消息时间的占位。 */
 @media (max-width: 560px) {
   .terminal-peer-search {
     flex-wrap: wrap;

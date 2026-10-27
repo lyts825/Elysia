@@ -18,6 +18,7 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .context-allocation-metrics dd {
   margin: var(--space-1) 0 0;
   color: var(--text);

@@ -44,6 +44,7 @@ export type ProjectPlanTransfer = z.infer<typeof shape>;
 const validationId = '00000000-0000-4000-8000-000000000000';
 
 function validate(value: unknown): ProjectPlanTransfer {
+  // 先校验传输格式，再用真实的交付计划输入规则检查每一项。
   const result = shape.safeParse(value);
   if (!result.success)
     throw Error('计划文件格式、版本或内容不符合要求。仅接受 version 1，最多 40 个交付项；不允许额外字段。');
@@ -72,6 +73,7 @@ export function readProjectPlanTransfer(raw: string): ProjectPlanTransfer {
 }
 
 export function exportProjectPlan(edit: ProjectBoardEdit): string {
+  // 导出可复用的计划内容，不携带项目内交付项 ID 或历史记录。
   const file = validate({
     format: 'elysia.project-plan',
     version: 1,
@@ -100,6 +102,7 @@ export function importProjectPlan(
   original: ProjectBoardEdit,
   assignId: () => string = () => crypto.randomUUID(),
 ): ProjectBoardEdit {
+  // 每个导入项分配新 ID；保留原编辑基线，以便保存时继续检测冲突。
   return {
     ...original,
     goal: file.plan.goal,
@@ -119,6 +122,7 @@ export function projectPlanImportDraft(
   file: ProjectPlanTransfer,
   assignId?: () => string,
 ): ProjectBoardDraft {
+  // 单次导入只保留一份撤销原稿，避免后续导入覆盖尚未处理的备份。
   if (!draft.edit) throw Error('项目计划草稿已变化，请重新核对后应用。原输入和导入预览已保留。');
   if (draft.planImportUndo)
     throw Error('已有导入前原稿备份，请先恢复原稿或成功保存项目计划，再导入另一份计划。');
@@ -137,6 +141,7 @@ export function projectPlanImportPreflight(
   draft: ProjectBoardDraft,
   file: ProjectPlanTransfer,
 ): ProjectPlanImportPreflight {
+  // 使用正式保存的序列化规则检查导入后容量，但不写入存储。
   try {
     // New IDs are always 36 characters. Preview neither allocates real IDs nor writes the cache.
     const { value, raw } = prepareProjectBoardDraft(projectPlanImportDraft(draft, file, () => validationId));

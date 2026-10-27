@@ -24,6 +24,7 @@ interface Options {
   signal?: AbortSignal;
 }
 /** Small nonsecret read index. Full session/workspace manifests are loaded only when changed or selected. */
+/** 维护终端备份历史索引，关联所有者和磁盘快照状态。 */
 export class TerminalBackupIndex {
   constructor(
     private store: Store,
@@ -87,6 +88,7 @@ export class TerminalBackupIndex {
   isDeleted(id: string) {
     return this.entry(id)?.status === 'deleted';
   }
+  /** 扫描备份目录并更新索引；通过 options 检查取消及扫描约束。 */
   async refresh(options: Options = {}) {
     this.check(options);
     const root = await this.resolve(undefined, options);
@@ -151,6 +153,7 @@ export class TerminalBackupIndex {
       await turn();
     }
   }
+  /** 校验搜索条件和游标后分页读取备份历史。 */
   async page(input: unknown, options: Options = {}) {
     const query = z
       .object({

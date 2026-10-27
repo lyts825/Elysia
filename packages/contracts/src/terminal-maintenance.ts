@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const pathText = z.string().min(1).max(2000);
+// 占用统计需要区分完整、部分和未知，避免把缺失数据当成零。
 export const TerminalMaintenanceCoverage = z.enum(['complete', 'partial', 'unknown']);
 const occupancy = {
   coverage: TerminalMaintenanceCoverage.default('complete'),

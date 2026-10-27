@@ -10,6 +10,10 @@ import './surface.css';
 import './terminal-control.css';
 import './terminal-profile-settings.css';
 
+/**
+ * 编辑终端模板及默认选择。baseline 是提交时的版本基线，profiles 是本地草稿；
+ * 后台数据更新不会覆盖尚未保存的修改。
+ */
 export function TerminalSettings({
   initial,
   close,
@@ -96,6 +100,7 @@ export function TerminalSettings({
   const changed =
     JSON.stringify(profiles) !== JSON.stringify(baseline.profiles) ||
     defaultProfileId !== baseline.defaultProfileId;
+  /** 用服务端配置重置草稿与基线，并尽量保留当前选中模板。 */
   function adopt(next: SurfaceTerminalSettings) {
     setBaseline(structuredClone(next));
     setProfiles(structuredClone(next.profiles));
@@ -115,6 +120,7 @@ export function TerminalSettings({
     if (initial.revision >= latest.revision) setLatest(initial);
   }, [initial, latest.revision]);
   useEffect(() => {
+    // 只有本地没有改动时才自动采用较新的服务端配置。
     if (!changed && latest.revision !== baseline.revision) adopt(latest);
   }, [latest, baseline.revision, changed]);
   useEffect(() => dirtyChanged?.(changed), [changed, dirtyChanged]);

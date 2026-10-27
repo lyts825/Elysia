@@ -10,6 +10,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/* 列数随容器宽度变化；每列以 7rem 为目标下限，容器更窄时不超过容器宽度。 */
 .project-todos .project-todo-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
@@ -58,6 +59,7 @@
 .project-todo-row .project-todo-meta .project-readiness {
   margin: 0;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .project-todo-reading {
   max-height: min(9rem, 35dvh);
   overflow: auto;

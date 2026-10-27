@@ -1,6 +1,7 @@
 // 工具评审与命令执行后端的共享配置约束。
 import { z } from 'zod';
 
+// 审核按模式区分：关闭、仅规则或指定审核模型；严格模式拒绝未知字段。
 export const ToolReviewPolicy = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('off') }).strict(),
   z.object({ mode: z.literal('rules') }).strict(),

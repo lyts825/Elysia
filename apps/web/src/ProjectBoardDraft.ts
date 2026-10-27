@@ -72,6 +72,7 @@ const shape = z.object({
     .optional(),
 });
 const backupItem = item.strict();
+// 本地草稿可兼容扩展字段；导入备份必须严格校验，避免恢复时悄然丢失未知内容。
 const backupPlan = plan.strict().extend({ items: z.array(backupItem).max(40) });
 const backupEdit = edit.strict().extend({
   items: z.array(backupItem).max(40),
@@ -103,6 +104,7 @@ export const emptyBoardDraft = (): ProjectBoardDraft => ({
   editing: false,
 });
 export function readProjectBoardDraft(raw: unknown): ProjectBoardDraft {
+  // 空缓存使用默认值，损坏或超限则抛错并保留原始缓存，不能直接覆盖。
   if (raw === undefined || raw === '') return emptyBoardDraft();
   try {
     if (typeof raw !== 'string' || raw.length > PROJECT_BOARD_DRAFT_LIMIT) throw Error();
@@ -140,6 +142,7 @@ export function prepareProjectBoardDraft(draft: ProjectBoardDraft) {
       (JSON.stringify(value[b]?.baseline)?.length ?? 0) - (JSON.stringify(value[a]?.baseline)?.length ?? 0),
   );
   for (const key of baselines) {
+    // 空间不足时先移除体积最大的可选基线，并记录省略原因供后续冲突核对。
     const content = value[key];
     if (raw.length <= PROJECT_BOARD_DRAFT_LIMIT) break;
     if (!content?.baseline) continue;
@@ -155,6 +158,7 @@ export function writeProjectBoardDraft(
   projectId: string,
   update: (draft: ProjectBoardDraft) => ProjectBoardDraft,
 ) {
+  // 读取旧稿并完成校验及容量检查后才写入，失败不会覆盖先前内容。
   const { value, raw } = prepareProjectBoardDraft(
     update(readProjectBoardDraft(cache.get(projectBoardKey(projectId)))),
   );
@@ -174,6 +178,7 @@ export const boardSnapshot = (board: ProjectDeliveryBoard): ProjectPlanSnapshot 
     required,
   })),
 });
+/** 将服务端看板转换为可编辑副本，同时保留独立基线与版本用于冲突比较。 */
 export const boardToEdit = (board: ProjectDeliveryBoard): ProjectBoardEdit => {
   const baseline = boardSnapshot(board);
   return { basedOn: board.revision, ...structuredClone(baseline), baseline };

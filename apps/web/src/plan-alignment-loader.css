@@ -1,4 +1,5 @@
 /* 定义 plan-alignment-loader 对应界面的样式与布局。 */
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .plan-module-feedback {
   display: grid;
   justify-items: start;

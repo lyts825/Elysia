@@ -28,6 +28,7 @@ export function ComposerModelPicker({
   const [open, setOpen] = useState(false);
   const selected = providers.find((provider) => provider.id === value.providerId);
   const position = () => {
+    // 根据触发按钮上下空间定位浮层；窗口过小时限制宽高以保持可访问。
     if (!trigger.current || !panel.current) return;
     const anchor = trigger.current.getBoundingClientRect();
     const node = panel.current;

@@ -67,6 +67,7 @@ export const dataFormat = (version: number): DataFormat => ({
                   ? '0.25.0-preview.1'
                   : '0.24.0-preview.1',
 });
+/** 核对备份声明的数据格式和最低读取版本；旧备份按兼容规则处理。 */
 export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   if (!entry.dataFormat) {
     if (required || entry.schemaVersion >= 4) throw new Error('备份缺少数据格式及最低读取版本');
@@ -80,6 +81,7 @@ export function validateDataFormat(entry: SurfaceBackup, required: boolean) {
   )
     throw new Error('备份数据格式或最低读取版本不相容');
 }
+/** 用相对路径判断目标是否位于根目录内，allowRoot 控制是否允许根目录本身。 */
 export function isWithin(root: string, candidate: string, allowRoot = false) {
   const relative = path.relative(root, candidate);
   return (
@@ -90,6 +92,7 @@ export function isWithin(root: string, candidate: string, allowRoot = false) {
   );
 }
 
+/** 解析已存在的真实路径；尚不存在的部分从最近的现有祖先逐层还原。 */
 export function canonicalDestination(destination: string): string {
   if (existsSync(destination)) return realpathSync(destination);
   const parent = path.dirname(destination);
@@ -125,6 +128,7 @@ export function assertSurfacePath(root: string, surface: Surface) {
   }
 }
 
+/** 创建数据库快照，并按预期版本检查源数据。 */
 export async function snapshotDatabase(source: string, target: string, expectedVersion?: number) {
   if (!lstatSync(source).isFile() || lstatSync(source).isSymbolicLink())
     throw new Error('数据库不能是链接或特殊文件');

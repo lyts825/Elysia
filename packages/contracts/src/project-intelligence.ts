@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import type { LocalAgentItem } from './local-integrations.js';
 
+// 限制记忆和冻结快照的大小，避免能力配置无限增长。
 export const PROJECT_INTELLIGENCE_LIMITS = {
   memoryBytes: 16 * 1024,
   memoryCount: 100,
@@ -44,6 +45,7 @@ export interface CapturedLocalItem extends LocalAgentItem {
   content?: string;
   resources?: { path: string; text: string; hash: string; bytes: number }[];
 }
+// 能力快照记录任务创建时选中的项目资源，后续配置修改不能静默改变旧任务。
 export interface ProjectCapabilitySnapshot {
   version: 1;
   projectId: string;
@@ -67,6 +69,7 @@ export interface ProjectIntelligenceView {
   };
   limits: typeof PROJECT_INTELLIGENCE_LIMITS;
 }
+// 项目记忆内容通过 schema 限制字段和长度，版本元数据另行维护。
 export const ProjectMemoryContent = z
   .object({
     title: z.string().trim().min(1).max(160),

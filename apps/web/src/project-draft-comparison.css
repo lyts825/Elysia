@@ -54,6 +54,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 选中项使用强调边框和背景，与组件提供的选中状态一致。 */
 .project-difference-side[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);
@@ -73,6 +74,7 @@
   color: var(--accent);
   font-weight: 500;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-difference-content {
   max-height: clamp(10rem, 32vh, 18rem);
   overflow: auto;

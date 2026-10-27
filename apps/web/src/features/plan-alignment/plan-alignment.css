@@ -23,6 +23,7 @@
   font-size: var(--font-md);
   line-height: var(--leading-body);
 }
+/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .plan-contract-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -50,6 +51,7 @@
 .plan-task-evidence p {
   margin: var(--space-2) 0;
 }
+/* 窄屏缩小合同外边距，并将合同网格改为单列。 */
 @media (max-width: 600px) {
   .plan-contract {
     margin-inline: var(--space-3);

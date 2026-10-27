@@ -26,6 +26,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+/** 只对暂时性网络故障或服务端错误开放重试；会话和来源校验失败须重新建立环境。 */
 export function canRetryConnection(error: unknown) {
   return (
     error instanceof ApiError &&
@@ -39,6 +40,7 @@ export function canRetryConnection(error: unknown) {
 // A client belongs to one surface for its entire lifetime. Delayed callbacks and
 // pending draft writes keep their original destination during a UI switch.
 export function createSurfaceClient(surface: WorkspaceSurface) {
+  // 入口和存储键在客户端创建时固定，异步回调不会因切换页面改写另一个入口的草稿。
   const apiPrefix = surface === 'terminal' ? '/terminal/api' : '/api';
   const apiUrl = (path: string) => apiPrefix + path;
   const surfaceStorageKey = (key: string) => (surface === 'terminal' ? key + ':terminal' : key);
@@ -51,6 +53,7 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     signal?: AbortSignal,
   ): Promise<T> {
     const verb = method || (body ? 'POST' : 'GET');
+    // 自动超时只适用于读取；写入超时后的副作用可能未知，不能直接当作可重试失败。
     const deadline = verb === 'GET' ? new ReadDeadline(signal) : undefined;
     const request: RequestInit = {
       method: verb,
@@ -146,6 +149,7 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
   let bootstrapToken: string | null = null;
   let bootstrapRead = false;
   function initializeSession(options?: { retry?: boolean }) {
+    // 合并并发初始化；明确不可重试的失败会保留，直到调用方重新建立上下文。
     if (sessionPromise) return sessionPromise;
     if (sessionFailure && (!options?.retry || !canRetryConnection(sessionFailure)))
       return Promise.reject(sessionFailure);
@@ -153,6 +157,7 @@ export function createSurfaceClient(surface: WorkspaceSurface) {
     sessionPromise = (async () => {
       if (!bootstrapRead) {
         bootstrapRead = true;
+        // 启动令牌只读取一次，并立即从地址栏移除；可重试期间暂存在内存。
         const params = new URLSearchParams(location.hash.slice(1));
         bootstrapToken = params.get('bootstrap');
         if (bootstrapToken) history.replaceState(null, '', location.pathname + location.search);

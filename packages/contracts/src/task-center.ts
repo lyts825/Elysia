@@ -11,6 +11,7 @@ export type TaskCenterCategory =
   | 'failed'
   | 'paused'
   | 'unavailable';
+// 中心条目保留状态、分类和修订；读取失败或持久暂停可独立表达。
 export type TaskCenterItem = {
   id: string;
   title: string;

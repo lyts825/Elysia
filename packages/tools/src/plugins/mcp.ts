@@ -26,6 +26,10 @@ const schemas = {
     args: z.record(z.string(), z.unknown()).default({}),
   }),
 };
+/**
+ * 注册 MCP 服务目录、工具目录和工具调用。列出服务不连接进程；读取工具或调用时才
+ * 根据当前运行读取配置，并向客户端传递任务权限与取消信号。
+ */
 export function mcpTools(
   context: Pick<ToolServices, 'catalogueBudget' | 'mcp'> & {
     store: Pick<ToolServices['store'], 'require'>;

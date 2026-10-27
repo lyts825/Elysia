@@ -53,6 +53,7 @@ function assertRevision(expected: number, actual: number) {
       409,
     );
 }
+/** 构造初始终端配置，默认选中 Codex 预设。 */
 export function initialTerminalSettings(): SurfaceTerminalSettings {
   return SurfaceTerminalSettings.parse({
     revision: 0,
@@ -188,6 +189,7 @@ function cleanProjectPreferences(store: Store, settings: SurfaceTerminalSettings
       });
   }
 }
+/** 在事务中检查配置版本并保存终端配置和默认配置 ID。 */
 export function writeTerminalSettings(
   store: Store,
   input: { expectedRevision: number; profiles: AgentTerminalProfile[]; defaultProfileId: string },

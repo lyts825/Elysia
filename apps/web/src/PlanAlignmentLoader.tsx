@@ -9,11 +9,13 @@ type Panel = ComponentType<PlanAlignmentProps>;
 let pending: Promise<Panel> | undefined;
 let attempt = 0;
 function loadPanel(): Promise<Panel> {
+  // 仅从同源入口导入；并发请求共享 Promise，失败后改变 URL 以允许重试。
   const url = new URL(entryUrl, location.href);
   if (url.origin !== location.origin) return Promise.reject(new Error('计划模块来源无效'));
   if (attempt) url.searchParams.set('retry', String(attempt));
   return (pending ??= import(/* @vite-ignore */ url.href)
     .then((module) => {
+      // 动态模块必须匹配固定身份和接口版本，才交给页面渲染。
       if (
         module.manifest.id !== 'plan-alignment' ||
         module.manifest.apiVersion !== PLAN_ALIGNMENT_API_VERSION ||
@@ -76,6 +78,7 @@ export function PlanAlignmentLoader(props: PlanAlignmentProps & { anchorRef?: Re
   const [generation, setGeneration] = useState(0);
   const plan = props.detail.run.plan;
   useEffect(() => {
+    // 运行 ID、计划有无或运行类型变化后忽略旧结果；聊天及无计划的运行不加载面板。
     if (!plan || props.detail.run.kind === 'chat') return;
     let current = true;
     setFailed(false);

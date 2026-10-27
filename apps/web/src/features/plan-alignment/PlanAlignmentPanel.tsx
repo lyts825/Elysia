@@ -12,6 +12,7 @@ import { contextPolicyLabel } from '../../ContextWindow';
 import { PLAN_ALIGNMENT_API_VERSION, type PlanAlignmentProps } from './types';
 import { reviewModelConflict } from '../../../../../packages/contracts/src/review-policy';
 
+// 宿主加载器用此身份与接口版本确认动态模块兼容性。
 export const manifest = {
   id: 'plan-alignment',
   apiVersion: PLAN_ALIGNMENT_API_VERSION,
@@ -34,6 +35,7 @@ export function PlanAlignmentPanel({
 }: PlanAlignmentProps) {
   const { run } = detail;
   const plan = run.plan;
+  // 聊天和无计划的运行不显示分工；仅待接受的计划允许确认。
   if (!plan || run.kind === 'chat') return null;
   const ended = ['DONE', 'CANCELLED'].includes(run.status);
   const pending = run.reason === 'plan' && !ended && run.acceptedPlanVersion !== plan.version;

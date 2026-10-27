@@ -21,6 +21,7 @@ const cleanName = (name) =>
     .replace(/[\x00-\x1f]/g, '')
     .slice(0, 120);
 
+/** 检查媒体大小及 GIF、MP4 或 WebM 的文件头，不仅依赖文件扩展名。 */
 function verifyMedia(bytes, mime) {
   if (!bytes.length || bytes.length > MEDIA_LIMIT) throw new Error('动画文件须小于或等于 4 MiB');
   const valid =
@@ -31,6 +32,7 @@ function verifyMedia(bytes, mime) {
       bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])));
   if (!valid) throw new Error('仅支持 GIF、MP4 或 WebM 动画');
 }
+/** 校验媒体元数据，并移除文件名中的目录和控制字符。 */
 function normalizeMedia(value) {
   if (
     !value ||
@@ -48,6 +50,7 @@ function normalizeMedia(value) {
     throw new Error('动画文件信息无效');
   return { id: value.id, name: cleanName(value.name), mime: value.mime, size: value.size };
 }
+/** 验证启动配置版本、文字长度、颜色和媒体引用，返回规范化后的配置。 */
 function normalizeStartup(value) {
   if (
     !value ||
@@ -80,6 +83,7 @@ function normalizeStartup(value) {
   if (config.style === 'media' && !config.media) throw new Error('请先导入动画文件');
   return config;
 }
+/** 解码本地导入的 data URL，并核对规范 Base64、长度、摘要和媒体文件头。 */
 function decodeUpload(value) {
   const media = normalizeMedia(value?.media);
   if (typeof value.dataUrl !== 'string' || value.dataUrl.length > Math.ceil(MEDIA_LIMIT / 3) * 4 + 64)
@@ -110,6 +114,7 @@ function uploadFromBytes(name, mime, bytes) {
     dataUrl: `data:${mime};base64,${bytes.toString('base64')}`,
   };
 }
+/** 读取普通文件时限制实际读取字节数；拒绝符号链接和超过上限的内容。 */
 async function readBounded(file, limit) {
   const before = await fs.lstat(file);
   if (!before.isFile() || before.isSymbolicLink() || before.size > limit)
@@ -138,6 +143,10 @@ async function safeDirectory(directory) {
   const stat = await fs.lstat(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('启动偏好目录无效');
 }
+/**
+ * 管理桌面启动偏好及按摘要保存的媒体。读取会缓存结果，写入通过队列串行化，
+ * 供启动窗口和工作台在同一数据目录中共享配置。
+ */
 function createStartupStore(directory) {
   const parent = path.join(directory, 'desktop'),
     file = path.join(parent, 'startup-v2.json'),

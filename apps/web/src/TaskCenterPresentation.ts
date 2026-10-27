@@ -36,6 +36,7 @@ export function taskCenterPresentation(item: TaskCenterItem): {
   target: TaskCenterCategory | 'review';
   review: boolean;
 } {
+  // 读取异常与可复核状态优先显示；其余根据分类和等待原因生成动作提示。
   const status = item.readIssue
     ? taskCenterCategoryLabels.unavailable
     : item.status === 'CANCELLED'

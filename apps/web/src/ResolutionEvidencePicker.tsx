@@ -29,6 +29,7 @@ export function ResolutionEvidencePicker({
   const [busy, setBusy] = useState(true),
     [error, setError] = useState('');
   useEffect(() => {
+    // 根据当前交付和标准分页读取证据，依赖变化时取消旧请求。
     const controller = new AbortController();
     setBusy(true);
     setError('');

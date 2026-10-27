@@ -7,8 +7,10 @@ export function contextWindowBudget(agent: Agent) {
   const windowTokens = effectiveContextWindowTokens(agent);
   return {
     windowTokens,
+    // Codex 的估算使用更保守的倍率，并为运行时消息留出独立空间。
     factor: provider.authMode === 'codex' ? 2 : 1,
     runtimeReserveTokens: provider.authMode === 'codex' ? 16384 : 0,
+    // 输出配额和安全余量不计入可用于输入的预算。
     inputBudgetTokens: Math.max(0, windowTokens - provider.outputLimit - CONTEXT_SAFETY_TOKENS),
   };
 }

@@ -15,6 +15,7 @@ function list(label: string, values: string[]) {
   return `**${label}**\n\n${values.length ? values.map((v, i) => `**第 ${i + 1} 项**\n\n${literal(v)}`).join('\n\n') : '（无）'}`;
 }
 
+/** 将冻结交付清单转换为包含项目和清单信息的 Markdown。 */
 export function projectDeliveryMarkdown(manifest: ProjectDeliveryManifest) {
   const sections = [
     '# 项目冻结交付清单',

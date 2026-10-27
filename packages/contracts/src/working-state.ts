@@ -2,6 +2,7 @@
 import type { Contract, Evidence, Status, TaskSpec } from './index.js';
 
 /** A reviewable checkpoint, never a new permission grant or an inferred replacement of instructions. */
+// 检查点同时绑定来源修订、历史摘要和需求摘要，用于判断审核时的上下文是否变化。
 export interface TaskWorkingStateDraft {
   version: 1;
   revision: number;

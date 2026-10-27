@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { DeliveryReview } from '../../../packages/contracts/src/workflow';
 import { useSurfaceClient } from './SurfaceClientContext';
 
+/** 按运行及刷新条件读取交付来源；依赖变化时取消旧请求，避免过期结果覆盖新状态。 */
 export function useReviewSource(
   runId: string,
   enabled: boolean,

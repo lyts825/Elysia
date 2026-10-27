@@ -51,6 +51,7 @@ export function ConversationSearch({
   context.current = { runId, query: query.trim(), open };
   const panelId = useId();
   const read = async (before?: string | null, append = false, focusFeedback = false) => {
+    // 每次查询取消上一请求并递增序号，防止较慢的旧结果覆盖新查询。
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -73,6 +74,7 @@ export function ConversationSearch({
       loadedQuery.current = JSON.stringify([target.runId, target.query]);
       setResult((current) => {
         if (!append || !current) return page;
+        // 增量页按消息 ID 去重，显示窗口最多保留 60 条。
         const items = new Map(current.items.map((item) => [item.messageId, item]));
         for (const item of page.items) items.set(item.messageId, item);
         return { ...page, items: [...items.values()].slice(0, 60) };
@@ -115,6 +117,7 @@ export function ConversationSearch({
     setLoading(false);
     if (!open || disabled || !query.trim()) return;
     if (loadedQuery.current === key) return;
+    // 输入稳定 300 毫秒后再检索，关闭或切换查询时取消计时和请求。
     const timer = setTimeout(() => void read(), 300);
     return () => {
       clearTimeout(timer);

@@ -35,6 +35,7 @@ const storageKey = 'elysia:startup:v2',
 const mediaTypes = ['image/gif', 'video/mp4', 'video/webm'] as const;
 
 export function normalizeStartupMedia(value: unknown): StartupMedia {
+  // 限制媒体标识、名称、类型和大小，避免将不可信的缓存直接用于启动页。
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('动画文件信息无效');
   const media = value as Record<string, unknown>;
   if (
@@ -58,6 +59,7 @@ export function normalizeStartupMedia(value: unknown): StartupMedia {
   };
 }
 export function normalizeStartupPreferences(value: unknown): StartupPreferences {
+  // 接受版本 2 及有限的样式和颜色格式；媒体样式必须同时提供有效媒体信息。
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('启动偏好无效');
   const v = value as Record<string, unknown>;
   if (
@@ -89,6 +91,7 @@ export function normalizeStartupPreferences(value: unknown): StartupPreferences 
   return config;
 }
 function verifyBytes(bytes: Uint8Array, mime: StartupMedia['mime']) {
+  // 检查文件头与声明类型是否匹配，再执行大小上限检查。
   const text = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
   const valid =
     (mime === 'image/gif' && ['GIF87a', 'GIF89a'].includes(text(0, 6))) ||
@@ -98,6 +101,7 @@ function verifyBytes(bytes: Uint8Array, mime: StartupMedia['mime']) {
     throw new Error('仅支持不超过 4 MiB 的有效 GIF、MP4 或 WebM 动画');
 }
 async function digest(bytes: Uint8Array) {
+  // 媒体以内容摘要标识，便于后续核对资源是否一致。
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))]
     .map((value) => value.toString(16).padStart(2, '0'))
     .join('');

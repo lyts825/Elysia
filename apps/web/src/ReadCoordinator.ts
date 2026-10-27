@@ -7,6 +7,7 @@ export class ReadCoordinator {
     promise: Promise<unknown>;
     again?: (signal: AbortSignal) => Promise<unknown>;
   };
+  /** 同 key 共享在途读取；trailing 在当前读取成功后执行最后一次尾随刷新。 */
   run<T>(key: string, read: (signal: AbortSignal) => Promise<T>, trailing = false): Promise<T> {
     if (this.pending?.key === key) {
       // 同一对象的读取共享当前请求；需要尾随刷新时只保留最后一次操作。
@@ -40,12 +41,14 @@ export class ReadCoordinator {
     return entry.promise;
   }
   stop() {
+    // 新选择或组件卸载时取消旧读取，旧结果不再占用当前协调器。
     this.pending?.controller.abort();
     this.pending = undefined;
   }
 }
 
 export class ReadDeadline {
+  // 同时响应调用方取消和内部计时；expired 仅标识内部超时。
   readonly signal: AbortSignal;
   expired = false;
   private timer: ReturnType<typeof setTimeout>;

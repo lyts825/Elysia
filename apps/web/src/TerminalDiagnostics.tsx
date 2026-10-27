@@ -26,6 +26,10 @@ const stageLabels: Record<string, string> = {
   configuration: '配置',
   authentication: 'API 认证',
 };
+/**
+ * 按模板及可选项目检查配置来源与本地运行环境，并将修复目标交给上层导航。
+ * 配置变化时取消旧检查，外部 recheckRequest 可触发一次重新检查。
+ */
 export function TerminalDiagnostics({
   profileId,
   projectId,
@@ -64,6 +68,7 @@ export function TerminalDiagnostics({
     checkedRequest.current = recheckRequest;
     void check().finally(() => rechecked?.());
   }, [recheckRequest, disabled, busy]);
+  /** 先读取配置诊断，再检查运行环境；环境检查失败仍展示已取得的配置诊断。 */
   async function check() {
     if (disabled || busy) return;
     const request = new AbortController();
@@ -112,6 +117,7 @@ export function TerminalDiagnostics({
       ...(projectId ? { projectId } : {}),
     });
   }
+  /** 将已知配置问题映射到对应修复入口，其他问题回到模板设置。 */
   function issueKind(code: string): TerminalDiagnosticRepair['kind'] {
     if (code === 'TERMINAL_PROJECT_CONNECTION_FALLBACK') return 'project';
     if (['API_KEY_MISSING', 'TERMINAL_CREDENTIAL_MISSING'].includes(code) && result?.configuration.connection)

@@ -14,6 +14,7 @@ export interface ProjectDeliveryArchive {
   fileCount: number;
   savedAt: string;
 }
+// 指定清单可能尚无已保存归档，因此 archive 允许为 null。
 export interface ProjectDeliveryArchiveView {
   projectId: string;
   manifestId: string;

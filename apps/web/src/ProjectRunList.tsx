@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import { useSurfaceClient } from './SurfaceClientContext';
 import './project-run-list.css';
+/** 将执行状态转为界面文案；未知或缺失状态明确显示为未知。 */
 export const executionLabel = (status: string | null) =>
   ({
     DRAFT: '待开始',

@@ -22,6 +22,7 @@ export function ContractModal({
 }) {
   const id = useId();
   const [value, setValue] = useState(contract);
+  // 本地副本用于编辑；同模型评审例外须记录单独确认后再提交。
   const [reviewConfirmationPending, setReviewConfirmationPending] = useState(false);
   const [sameModelReviewConfirmed, setSameModelReviewConfirmed] = useState(false);
   const edited = JSON.stringify(value) !== JSON.stringify(contract);

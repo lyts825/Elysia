@@ -16,6 +16,7 @@ import './handoff-selection.css';
 import './artifact-revision-selection.css';
 
 function RevisionMetadata({ label, value }: { label: string; value: DeliveryArtifactChange['before'] }) {
+  // 展示修改前后的完整元数据；缺失版本保持空值，不推断文件内容。
   return (
     <section className="revision-selection-metadata">
       <h5>{label}</h5>

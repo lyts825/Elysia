@@ -88,6 +88,7 @@ export interface TerminalResumeCapability {
 }
 
 /** Explicit management actions only: no host CLI, credentials, workspace mounts or mutable image reuse. */
+/** 管理 Docker 中 CLI 的检测、能力记录、安装和资源容量检查。 */
 export class DockerCliManager {
   private busy = false;
   private readonly probes = new Map<string, TerminalCliStatus>();
@@ -322,6 +323,7 @@ export class DockerCliManager {
       probe.controller.abort(new AppError('TERMINAL_CLI_CLOSED', '终端检测服务正在退出'));
     await Promise.allSettled([...this.inFlight.values()].map((probe) => probe.promise));
   }
+  /** 刷新 Docker 资源容量；短时间内复用上次检查和在途请求。 */
   async refreshResourceCapacity(signal?: AbortSignal, force = false) {
     if (!this.options.resources) return;
     if (!force && Date.now() - this.capacityCheckedAt < 15000) return this.capacityProbe;

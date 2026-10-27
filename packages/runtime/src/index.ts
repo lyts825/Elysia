@@ -36,6 +36,7 @@ export interface NativeExecutorOptions {
   executionPlugins?: (gateway: ToolGateway) => readonly ExecutionPlugin[];
 }
 /** Compatibility facade. Scheduling, requests, tools and the loop have independent owners. */
+/** 装配调度、代理循环、工具网关和执行通道，并公开运行控制入口。 */
 export class NativeExecutor implements ExecutorAdapter {
   readonly capabilities = { recursive: true, recoverable: true };
   readonly gateway: ToolGateway;

@@ -6,6 +6,7 @@ import './peer-review.css';
 
 const modelIdentity = (model: string) => model.trim().toLowerCase();
 
+/** 评审模型须互不重复且不同于执行模型，并使用当前版本已验证的连接。 */
 export function peerReviewSetupIssue(
   value: PeerReviewPolicy | undefined,
   providers: SelectableProvider[],

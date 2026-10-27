@@ -17,6 +17,7 @@ const statuses: Record<string, string> = {
 };
 export function RunRevisionLinks({ runId, openRun }: { runId: string; openRun: (run: Run) => void }) {
   const { api } = useSurfaceClient();
+  // 原始来源与后续修订分开保存，列表分页及打开任务各自跟踪读取状态。
   const readingId = useId();
   const navigation = useRef<AbortController | null>(null);
   const [open, setOpen] = useState(false),

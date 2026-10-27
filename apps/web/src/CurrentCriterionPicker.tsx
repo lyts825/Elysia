@@ -26,6 +26,7 @@ export function CurrentCriterionPicker({
     [error, setError] = useState(''),
     [retry, setRetry] = useState(0);
   useEffect(() => {
+    // 首屏复用传入快照；翻页按根版本读取，并核对指纹后才更新选择列表。
     const controller = new AbortController();
     if (offset === initial.criteriaPage.offset && !retry) {
       setPage(initial);

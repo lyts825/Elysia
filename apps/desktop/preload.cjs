@@ -1,5 +1,6 @@
 // 通过 Electron 预加载桥向页面暴露桌面能力。
 const { contextBridge, ipcRenderer } = require('electron');
+// 暴露显式允许的 IPC 方法，不向页面暴露 Node 或 Electron 对象。
 // Only the trusted top-level workbench receives native capabilities.
 if (process.isMainFrame) {
   contextBridge.exposeInMainWorld('elysia', {

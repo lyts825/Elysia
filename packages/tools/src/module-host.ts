@@ -6,7 +6,7 @@ import { LazyPlugin } from '../../plugins/src/index.js';
 
 export const PLAN_ALIGNMENT_MODULE = { id: 'plan-alignment', version: '1' } as const;
 
-/** Only the existing kernel entry points are exposed to this trusted built-in module. */
+/** 仅向内置信任模块暴露内核的计划提出与接受入口。 */
 export interface PlanAlignmentContext {
   propose: Kernel['propose'];
   accept: Kernel['accept'];
@@ -27,7 +27,7 @@ export interface PlanAlignmentFactory {
 }
 export type PlanAlignmentLoader = () => Promise<PlanAlignmentFactory>;
 
-/** Fixed registration, lazy activation and one instance per gateway; no external code loading. */
+/** 固定注册内置模块；每个网关按需加载一个实例，不从外部加载代码。 */
 export class PlanAlignmentHost {
   private readonly plugin: LazyPlugin<PlanAlignmentContext, PlanAlignmentModule>;
   constructor(
@@ -57,6 +57,7 @@ export class PlanAlignmentHost {
   get loaded() {
     return this.plugin.loaded;
   }
+  /** 并发加载复用底层插件生命周期；关闭错误与可重试的加载失败分别报告。 */
   load(): Promise<PlanAlignmentModule> {
     return this.plugin.load().catch((error: unknown) => {
       if (error instanceof AppError && error.code === 'PLUGIN_DISPOSED')
@@ -68,6 +69,7 @@ export class PlanAlignmentHost {
       );
     });
   }
+  /** 释放已激活的模块，后续加载由插件生命周期拒绝。 */
   dispose(): Promise<void> {
     return this.plugin.dispose();
   }

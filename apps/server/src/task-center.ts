@@ -51,6 +51,7 @@ const waitReason = (alias: string) =>
   `COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))`;
 
 /** A small persistent current-state read model; historical bodies are warmed only on explicit access. */
+/** 读取任务中心投影和交付复核摘要，支持筛选、分页及增量查询。 */
 export class TaskCenterReads {
   private warming?: Promise<void>;
   private delivery: DeliveryReviewReads;
@@ -525,6 +526,7 @@ export class TaskCenterReads {
     });
   }
 }
+/** 注册任务中心查询接口，并校验筛选和分页参数。 */
 export function registerTaskCenter(app: FastifyInstance, store: Store) {
   const reads = new TaskCenterReads(store);
   app.get('/api/task-center', (request) =>

@@ -24,6 +24,7 @@ export interface SkillSummary {
   resourcePaths?: string[];
 }
 
+// 加载结果在目录元数据之外携带版本、完整指导正文和内容摘要。
 export interface LoadedSkill extends SkillSummary {
   version: string;
   instructions: string;
@@ -81,6 +82,7 @@ function readResource(id: string, relativePath: string) {
   };
 }
 
+// 解析严格 YAML frontmatter；拒绝重复键和别名，并保留规范化后的正文。
 export function parseSkillMetadata(source: string, id: string) {
   const normalized = source
     .replace(/^\uFEFF/, '')
@@ -172,11 +174,13 @@ function readSkill(id: string, metadataOnly = false): LoadedSkill {
 }
 
 /** Capture resources with the entrypoint, but never inject their bodies into skill discovery. */
+// 捕获技能入口和已注册参考资源，供任务能力快照使用。
 export function captureBuiltinSkill(id: string): CapturedSkill {
   const skill = readSkill(id);
   return { ...skill, resources: skill.resourcePaths!.map((resource) => readResource(id, resource)) };
 }
 
+// 参考文件按指定路径和偏移读取，具体权限与冻结范围由调用作用域决定。
 export function loadSkillFile(
   store: Store | undefined,
   id: string,
@@ -218,6 +222,7 @@ export function loadSkillFile(
   return pageLocalText({ id, contentHash: resource.hash }, resource.text, { ...options, path: normalized });
 }
 
+// 列出可用技能的目录信息；完整正文在选中后单独加载。
 export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary[] {
   const snapshot = capabilitySnapshot(scope);
   const builtin = snapshot
@@ -242,6 +247,7 @@ export function listSkills(store?: Store, scope?: CapabilityScope): SkillSummary
   ];
 }
 
+// 根据技能 ID 选择本地或内置来源；冻结作用域只能读取创建时已捕获的入口。
 export function loadSkill(id: string, store?: Store, scope?: CapabilityScope): LoadedSkill {
   if (id.startsWith('local:')) {
     if (!store) throw new AppError('SKILL_NOT_FOUND', `未注册的技能：${id}`);

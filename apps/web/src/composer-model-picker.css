@@ -38,10 +38,12 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
+/* 控件悬停或展开时共用背景，展开状态由 aria-expanded 表达。 */
 .composer-picker-trigger:hover:not(:disabled),
 .composer-picker-trigger[aria-expanded='true'] {
   background: var(--surface-hover);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .composer-picker-panel {
   position: fixed;
   inset: auto;

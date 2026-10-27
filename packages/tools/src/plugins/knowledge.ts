@@ -49,6 +49,10 @@ const schemas = {
     part: z.enum(['text', 'calls']).optional(),
   }),
 };
+/**
+ * 注册技能、记忆和历史上下文读取工具。资源范围由所属运行确定，项目记忆还要求项目 ID；
+ * 目录按当前任务的字节预算分页，返回的资料不自动成为执行指令。
+ */
 export function knowledgeTools(
   context: Pick<ToolServices, 'catalogueBudget'> & {
     store: Pick<ToolServices['store'], 'require'>;

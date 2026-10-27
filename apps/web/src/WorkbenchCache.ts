@@ -47,6 +47,7 @@ const preferenceKeys = new Set([
   'collapsed:pinned',
   'settings:selected-terminal-profile',
 ]);
+// 白名单限定可缓存的偏好和草稿键，避免将任意服务数据混入恢复存储。
 const validKey = (key: string) =>
   key.length <= 240 &&
   (preferenceKeys.has(key) ||
@@ -83,6 +84,7 @@ export class WorkbenchCache {
     private changed: (snapshot: WorkbenchSnapshot) => void,
     private client: SurfaceClient = defaultSurfaceClient,
   ) {
+    // 恢复副本按浏览器窗口隔离；无法稳定保存窗口标识时仍允许内存工作。
     this.recoverySlot = (() => {
       try {
         const saved = sessionStorage.getItem(client.surfaceStorageKey('elysia.workbench.window'));

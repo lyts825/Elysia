@@ -9,6 +9,7 @@ function healthKey(client: SurfaceClient) {
   return client.surfaceStorageKey('elysia.notification.health.v1:' + (client.workbenchScope() || 'pending'));
 }
 export function readNotificationHealth(client: SurfaceClient): NotificationHealth {
+  // 只恢复数量和失败时间，不持久化任务正文；损坏缓存回退到空状态。
   try {
     const raw = sessionStorage.getItem(healthKey(client));
     if (!raw || raw.length > 512) return { pending: 0, failed: 0 };
@@ -38,6 +39,7 @@ export function dismissTaskNotificationFailures(client: SurfaceClient) {
   );
 }
 export async function readTaskNotificationSettings(surface: Surface) {
+  // 桌面通知桥不可用时明确报告不可用，普通浏览器不会假定通知已开启。
   const settings = await window.elysia?.readTaskNotifications?.();
   return { enabled: settings?.[surface] === true, available: settings?.available === true };
 }

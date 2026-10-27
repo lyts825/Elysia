@@ -14,6 +14,7 @@ const actionLabels: Record<TerminalCliInstallRepair, string> = {
   template: '编辑镜像模板',
   retry: '定位重试入口',
 };
+/** 只为失败的安装任务显示诊断和修复操作；repair 负责导航，不自动重试安装。 */
 export function TerminalInstallFailure({
   job,
   disabled,
@@ -26,6 +27,7 @@ export function TerminalInstallFailure({
   const titleId = useId();
   const repairHelpId = useId();
   if (job.status !== 'failed') return null;
+  // 根据失败代码和消息生成修复类别；未失败的任务不显示此面板。
   const failure = terminalCliInstallFailure(job.code, job.message);
   return (
     <div className="terminal-install-failure" data-failure={failure.code}>

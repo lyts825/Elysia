@@ -18,6 +18,7 @@ export interface RunAction {
   switchMode?: 'apply' | 'resume';
 }
 /** Coordinates domain mutations and runtime boundaries; callers provide the command transaction. */
+/** 协调运行控制命令、内核状态和执行器操作。 */
 export class RunApplicationService {
   constructor(
     private readonly kernel: Kernel<Store>,
@@ -29,6 +30,7 @@ export class RunApplicationService {
       ([id, active]) => active.runId === runId && (!taskId || id === taskId),
     );
   }
+  /** 检查运行及模型切换条件后应用控制动作；后续异步操作由 afterAction 处理。 */
   apply(runId: string, body: RunAction, binding?: ProviderConfig) {
     const { kernel, executor } = this,
       store = kernel.store;

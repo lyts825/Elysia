@@ -8,6 +8,7 @@ import {
 } from '../module-host.js';
 
 const schema = z.object({ contract: Contract, plan: Plan });
+/** 以固定插件身份暴露计划提案；释放后 parse、propose 和 accept 均拒绝调用。 */
 const factory: PlanAlignmentFactory = {
   ...PLAN_ALIGNMENT_MODULE,
   apply(context) {

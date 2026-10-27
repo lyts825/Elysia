@@ -2,6 +2,7 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 const entry = '.local-tests/verify.ts';
+// 验收材料只保存在本地；缺失时返回非零状态，不能将其视为验收通过。
 if (!existsSync(entry)) {
   console.error(
     '缺少本地验收材料 .local-tests/verify.ts。按 docs/EXECUTION.md 第十一节准备用例；未执行验收。',

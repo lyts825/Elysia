@@ -44,6 +44,7 @@ let prior: StartupRecord[] | undefined;
 const recorded = new Set<string>();
 
 function cleanRecords(value: unknown): StartupRecord[] {
+  // 限制记录与阶段数量，丢弃格式不合法或耗时越界的缓存项。
   if (!Array.isArray(value)) return [];
   return value.slice(0, 20).flatMap((item) => {
     if (
@@ -107,6 +108,7 @@ export function markStartupStage(
   stage: StartupStage,
   options: { surface?: 'native' | 'terminal'; status?: StartupStageStatus } = {},
 ) {
+  // 同一阶段、入口与结果只记一次；桌面桥可用时由主进程保存，否则使用浏览器存储。
   const status = options.status || 'ok',
     key = `${stage}:${options.surface || ''}:${status}`;
   if (

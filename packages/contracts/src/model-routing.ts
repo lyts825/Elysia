@@ -5,6 +5,7 @@ import type { ProviderConfig } from './index.js';
 // @ cannot occur in a concrete ProviderConfig.id.
 export const ROLE_ROUTING_PROVIDER = '@project-default';
 export const RoutingRoles = ['worker', 'reviewer'] as const;
+// 路由可独立指定执行和评审连接；null 表示对应角色尚未配置。
 export const RoleRoutingPolicy = z
   .object({
     enabled: z.boolean(),

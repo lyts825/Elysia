@@ -8,6 +8,10 @@ function directory(filename, create = false) {
   const stat = fs.lstatSync(filename);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('启动缓存目录不能是链接或特殊文件');
 }
+/**
+ * 为指定摘要目录建立租约并记录桌面 PID。backend() 写入服务进程 PID，
+ * close() 持久记录正常退出；租约文件使用独占创建并在写入后同步到磁盘。
+ */
 function createBuildLease(buildDirectory) {
   const build = fs.realpathSync(buildDirectory),
     builds = path.dirname(build);
@@ -62,6 +66,7 @@ function createBuildLease(buildDirectory) {
   };
 }
 
+/** 进程不存在可判为 dead；权限不足等其他错误保持 unknown，避免误判。 */
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return 'unknown';
   try {
@@ -71,6 +76,7 @@ function alive(pid) {
     return error.code === 'ESRCH' ? 'dead' : 'unknown';
   }
 }
+/** 统计文件数和字节；链接、硬链接或读取失败使结果标记为不确定。 */
 function footprint(root) {
   let bytes = 0,
     files = 0,
@@ -103,6 +109,7 @@ function readJson(file, limit = 64 * 1024) {
     throw new Error('缓存元数据不可核验');
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
+/** 只在租约格式可核验、进程已退出且登记正常关闭时返回 closed。 */
 function leaseState(leaseRoot, build) {
   try {
     directory(leaseRoot);
@@ -132,6 +139,10 @@ function leaseState(leaseRoot, build) {
     return 'unknown';
   }
 }
+/**
+ * 只读检查缓存并保留最近 keep 个构建。占用、格式或租约不确定时保守保留；
+ * 即使给出 review-only 建议，也不会删除文件或授予删除权限。
+ */
 function inspectBuildCache(root, keep = 2) {
   if (!Number.isSafeInteger(keep) || keep < 1 || keep > 100) throw new Error('--keep 必须为 1 至 100');
   root = fs.realpathSync(root);

@@ -13,7 +13,11 @@ export interface ToolReviewInput {
 }
 export type ReviewModel = (input: ToolReviewInput, signal: AbortSignal) => Promise<ToolReviewReceipt>;
 
-/** A small deterministic filter, not a parser or a process sandbox. */
+/**
+ * 对 exec 的程序名与参数应用有限的确定性拦截规则。
+ * 规则允许只表示未命中已知模式；后续授权、路径限制及命令后端仍须执行检查。
+ * 该函数不是完整命令解析器，也不能代替进程隔离。
+ */
 export function reviewToolRules(name: string, args: Record<string, unknown>): ToolReviewDecision {
   if (name !== 'exec') return { decision: 'allow', reason: '继续执行已有工具授权与路径校验' };
   const program = String(args.program)

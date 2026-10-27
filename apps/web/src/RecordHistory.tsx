@@ -22,6 +22,7 @@ export function RecordHistory({
   render?: (record: any) => ReactNode;
 }) {
   const { api } = useSurfaceClient();
+  // 历史分页按运行、记录类型和版本管理；展开后才读取。
   const [page, setPage] = useState<HistoryPage | null>(null);
   const [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),

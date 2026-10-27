@@ -3,6 +3,7 @@ import type { DeliveryChangeSummary } from '../../../packages/contracts/src/work
 import './delivery-changes.css';
 
 export function DeliveryChanges({ value }: { value?: DeliveryChangeSummary | null }) {
+  // 未知比较结果保留原因；只有服务端确认一致时才显示未变化。
   if (!value) return null;
   if (value.status === 'unknown')
     return (

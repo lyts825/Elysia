@@ -21,6 +21,7 @@ export function conversationIndex(
     messages: Message[];
   } | null,
 ) {
+  // 操作按消息 ID 与调用 ID 组合索引，避免跨消息复用相同调用 ID 时串联。
   const operations = new Map<string, Operation>();
   const responses = new Map<string, Message>();
   const boundResponses = new Set<string>();
@@ -42,6 +43,7 @@ export function conversationIndex(
         calls.set(call.id, { owner: message, name: call.name });
       }
       for (const id of duplicate) calls.delete(id);
+      // 同一消息中重复的调用 ID 无法可靠配对，保留原始消息而不推断归属。
       pending.set(session, calls);
       continue;
     }

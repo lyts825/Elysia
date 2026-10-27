@@ -39,6 +39,7 @@
   cursor: pointer;
   color: var(--secondary);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .revision-selection-reading {
   min-width: 0;
   max-height: clamp(8rem, 35dvh, 20rem);
@@ -54,6 +55,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .revision-selection-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

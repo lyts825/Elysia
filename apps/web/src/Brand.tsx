@@ -4,6 +4,7 @@ import mark from '../../../assets/brand/mark.svg';
 import workspace from '../../../assets/brand/workspace-empty.svg';
 import delivery from '../../../assets/brand/delivery-empty.svg';
 
+/** 装饰性品牌图不重复提供无障碍名称；调用方可覆盖样式类。 */
 export function BrandIcon({ className = 'brand-mark' }: { className?: string }) {
   return (
     <img
@@ -28,6 +29,7 @@ export function BrandGlyph({ size = 18 }: { size?: number }) {
   );
 }
 
+/** 根据工作区或交付场景选择对应空状态插图。 */
 export function EmptyArtwork({ kind }: { kind: 'workspace' | 'delivery' }) {
   return (
     <img

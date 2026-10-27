@@ -1,4 +1,8 @@
 // 限制桌面窗口和子框架可访问的本地导航目标。
+/**
+ * 判断窗口导航是否允许：主框架只允许本地根路径，子框架只允许当前入口的预览和资源。
+ * 内置 PDF 阅读器的受限 stream URL 单独放行；解析失败或来源不符时拒绝。
+ */
 function allowedLocalNavigation(url, currentUrl, origin, main) {
   try {
     const target = new URL(url);

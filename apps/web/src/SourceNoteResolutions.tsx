@@ -15,6 +15,7 @@ import { z } from 'zod';
 import './source-note-resolutions.css';
 
 type RowDraft = {
+  // 保留来源哈希、交付指纹及版本，以便检测旧备注与当前记录是否仍匹配。
   sourceHash: string;
   fingerprint: string;
   revision: number;

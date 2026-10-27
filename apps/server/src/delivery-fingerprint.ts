@@ -5,6 +5,7 @@ import { hash, stable, type Store } from '../../../packages/storage/src/index.js
 import { cachedDeliveryRead } from './delivery-read-cache.js';
 import { serializeDeliveryArtifactMetadata } from '../../../packages/storage/src/artifact-delivery-metadata.js';
 
+/** 按运行读取交付产物元数据，复用交付读取缓存。 */
 export function deliveryArtifactRows(store: Store, runId: string) {
   return cachedDeliveryRead(store, `artifacts:${runId}`, () => store.artifactDeliveryMetadata(runId));
 }
@@ -27,6 +28,7 @@ export function deliveryArtifactMetadata(
   });
 }
 /** Reviews bind to delivery content, never to the review itself or unrelated run metadata. */
+/** 基于根任务要求、结果和产物生成交付指纹；产物按 ID 排序以保证稳定。 */
 export function deliveryFingerprintFromArtifacts(
   run: Pick<Run, 'id'>,
   root: Task,

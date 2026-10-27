@@ -28,6 +28,7 @@ export type ObjectWorkerResult = {
 };
 
 // The caller holds both service locks until this promise settles, including worker failure.
+/** 在工作线程中执行对象清理计划或清理操作，支持取消及进度回调。 */
 export function runObjectMaintenance(
   input: {
     directory: string;

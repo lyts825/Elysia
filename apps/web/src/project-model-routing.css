@@ -29,6 +29,7 @@
 .project-model-routing :is(button, select, input, .routing-reading) {
   scroll-margin-block: var(--space-3);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-model-routing .routing-reading {
   min-width: 0;
   max-height: min(18rem, 45dvh);
@@ -41,6 +42,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .project-model-routing .routing-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

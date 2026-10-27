@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import type { Evidence, ProviderConfig } from './index.js';
 
+// 每轮使用 1 至 3 个不同连接；分数阈值和轮数均受校验约束。
 export const PeerReviewPolicy = z
   .object({
     reviewerProviderIds: z.array(z.string().min(1)).min(1).max(3),

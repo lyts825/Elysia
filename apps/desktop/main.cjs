@@ -37,6 +37,7 @@ const logFile = packaged
   : path.join(root, '.elysia-runtime', 'desktop.log');
 mkdirSync(path.dirname(logFile), { recursive: true });
 const log = (text) => appendFileSync(logFile, new Date().toISOString() + ' ' + text + '\n');
+/** 只执行一次关闭流程：通知服务停止、尽力写完诊断并关闭构建租约。 */
 async function shutdown() {
   if (quitting) return;
   quitting = true;
@@ -57,6 +58,7 @@ async function shutdown() {
   }
   app.quit();
 }
+// 新实例未取得锁时通知启动器，已有窗口由 second-instance 事件激活。
 if (!app.requestSingleInstanceLock()) {
   if (process.send) process.send({ type: 'desktop-focused' }, () => app.quit());
   else app.quit();
@@ -98,6 +100,7 @@ if (!app.requestSingleInstanceLock()) {
         marks: launchMarks,
       });
       Menu.setApplicationMenu(null);
+      // 页面使用隔离上下文和沙箱；本机能力只能经 preload 暴露的接口访问。
       window = new BrowserWindow({
         title: 'Elysia',
         icon: iconPath,

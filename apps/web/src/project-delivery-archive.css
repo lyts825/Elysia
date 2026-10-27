@@ -23,6 +23,7 @@
   border-color: var(--danger-border);
   background: var(--danger-bg);
 }
+/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
 .archive-list-summary,
 .archive-facts {
   display: grid;
@@ -64,6 +65,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .archive-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;

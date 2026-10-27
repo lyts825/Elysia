@@ -14,6 +14,7 @@ export const terminalProtocols: Record<TerminalAppId, TerminalConnectionBinding[
   custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
 };
 const image = 'elysia-agents:0.13.0';
+/** 返回内置终端应用目录，包含 CLI 命令、协议和默认预设。 */
 export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
   return [
     {
@@ -121,6 +122,7 @@ export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
     },
   ];
 }
+/** 从目录生成默认启用的 Codex 和 DSH 终端配置。 */
 export function initialTerminalProfiles(): AgentTerminalProfile[] {
   return terminalAppCatalog()
     .filter((entry) => entry.id === 'dsh' || entry.id === 'codex')
@@ -129,6 +131,7 @@ export function initialTerminalProfiles(): AgentTerminalProfile[] {
 export function terminalAppForProfile(profile: AgentTerminalProfile): TerminalAppId {
   return TerminalAppId.parse(profile.agent);
 }
+/** 校验终端应用支持所选连接协议，避免绑定不兼容的连接。 */
 export function assertTerminalConnectionCompatible(
   profile: AgentTerminalProfile,
   connection: TerminalConnectionBinding,

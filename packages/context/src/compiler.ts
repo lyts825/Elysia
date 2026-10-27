@@ -49,6 +49,7 @@ function boundedLocalCatalogue(
 }
 export type ContextCompilation = { context: CompiledContext; objects: string[]; blocked: boolean };
 /** Deterministic projection. Persist returned objects before using context or reporting a limit. */
+// 只消费已采集快照；返回编译结果、待持久化对象和是否超出窗口的标记。
 export function compileContextSnapshot(snapshot: ContextSourceSnapshot): ContextCompilation {
   const {
     run,

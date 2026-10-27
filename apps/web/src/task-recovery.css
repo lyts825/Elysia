@@ -38,6 +38,7 @@
   background: var(--warning-bg);
   font-size: var(--font-sm);
 }
+/* 失败状态使用危险色，便于识别需要恢复的任务。 */
 .task-recovery-state[data-status='FAILED'] {
   color: var(--danger);
   border-color: var(--danger-border);
@@ -48,6 +49,7 @@
   border-color: var(--border);
   background: var(--surface);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .task-recovery-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;

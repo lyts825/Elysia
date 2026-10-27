@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Budget, ContextPolicy, ModelChoice } from './index.js';
 import type { RecordPage } from './run-reads.js';
 
+// 项目默认值只提供创建任务的初始配置，模型和上下文策略可缺省。
 export const NativeProjectDefaults = z
   .object({
     modelChoice: ModelChoice.optional(),
@@ -35,6 +36,7 @@ export const ArtifactChangeSelection = z
   })
   .strict();
 export type ArtifactChangeSelection = z.infer<typeof ArtifactChangeSelection>;
+// 需求长度按 UTF-8 字节计算，而不是 JavaScript 字符数。
 export function artifactChangeTextByteLength(items: readonly Pick<ArtifactChangeSelection, 'requirement'>[]) {
   const encoder = new TextEncoder();
   return items.reduce((total, item) => total + encoder.encode(item.requirement).length, 0);
@@ -62,6 +64,7 @@ export function reviewSourceTextByteLength(notes: readonly Pick<ReviewSourceNote
   const encoder = new TextEncoder();
   return notes.reduce((bytes, item) => bytes + encoder.encode(item.note).length, 0);
 }
+// 序列化完整备注并统一缺省 reviewId，再计算快照实际占用的 UTF-8 字节数。
 export function reviewSourceSnapshotByteLength(notes: readonly ReviewSourceNote[]): number {
   return new TextEncoder().encode(
     JSON.stringify(notes.map((note) => ({ ...note, reviewId: note.reviewId ?? null }))),
@@ -75,6 +78,7 @@ export function sourceTextByteLength(messages: readonly { text: string }[], feed
     encoder.encode(feedback.trim()).length,
   );
 }
+// 来源选择绑定运行的预期修订和明确选中的资料，避免自动引入整个历史。
 export const RunSourceSelection = z
   .object({
     runId: z.string().uuid(),
@@ -144,6 +148,7 @@ export const DeliveryReviewInput = z
       .max(40),
   })
   .strict();
+// 用户复核与运行状态独立；关联的指纹用于识别后续交付内容变化。
 export interface DeliveryUserReview {
   reviewId?: string;
   decision: 'accepted' | 'changes_requested';

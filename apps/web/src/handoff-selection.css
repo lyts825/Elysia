@@ -22,6 +22,7 @@
   width: auto;
   margin-top: var(--space-1);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .handoff-reading {
   min-width: 0;
   max-height: min(14rem, 45dvh);
@@ -68,6 +69,7 @@
   font-size: var(--font-md);
   font-weight: 600;
 }
+/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .handoff-version-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -113,6 +115,7 @@
   max-width: 100%;
   scroll-margin-block: var(--space-3);
 }
+/* 窄屏调整交接版本对照的列数和间距。 */
 @media (max-width: 480px) {
   .handoff-version-pair {
     grid-template-columns: minmax(0, 1fr);

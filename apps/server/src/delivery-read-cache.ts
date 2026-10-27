@@ -31,6 +31,7 @@ export function initializeDeliveryReadCache(store: Store) {
   }
 }
 
+/** 按存储实例和键缓存交付快照；数据库标记变化时清空缓存，最多保留 4 项和 16 MiB。 */
 /** A committed or uncommitted database change is visible in the same snapshot as this token.
  * A rollback restores its old token; a later write gets a fresh token, never a reused counter. */
 export function cachedDeliveryRead<T>(store: Store, key: string, read: () => T): T {

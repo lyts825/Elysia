@@ -25,6 +25,7 @@ import {
 } from './ReadingCheckpoint';
 import type { FileLocation } from '../../../packages/contracts/src/file-location';
 
+// 状态标签只负责显示，文件读取、分页和检查点分别由下方逻辑管理。
 const labels: Record<string, string> = {
   READY: '就绪',
   RUNNING: '执行中',

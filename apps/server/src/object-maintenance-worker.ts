@@ -26,6 +26,7 @@ const input = workerData as {
   report?: string;
   cancellation: SharedArrayBuffer;
 };
+// 父线程和工作线程通过共享内存协调取消，保护预检及删除期间的临界阶段。
 const cancellation = new Int32Array(input.cancellation);
 let report: number | undefined;
 const record = (value: unknown) => {

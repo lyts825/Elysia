@@ -32,6 +32,7 @@ export interface ReadinessPanelProps {
 }
 export function ReadinessPanel(props: ReadinessPanelProps) {
   const { surface } = useSurfaceClient();
+  // 入口或项目改变时重置内部快照，避免沿用另一范围的准备状态。
   return <ReadinessContent key={`${surface}:${props.projectId ?? ''}`} {...props} />;
 }
 function ReadinessContent({ projectId, close, repair }: ReadinessPanelProps) {

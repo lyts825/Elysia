@@ -314,6 +314,7 @@ export interface SchedulerHooks {
 }
 
 /** Owns only bounded task creation. Existing Kernel/executor own permissions, budgets and execution. */
+/** 管理项目定时任务的预览、创建与调度，保留来源运行及配置约束。 */
 export class ProjectScheduler {
   private timer?: NodeJS.Timeout;
   private running = false;
@@ -359,6 +360,7 @@ export class ProjectScheduler {
     }
     return result;
   }
+  /** 读取项目和来源运行，生成创建定时任务前可核对的预览。 */
   preview(projectId: string, sourceRunId: string): ProjectSchedulePreview {
     return this.store.tx(() => {
       const project = mutableProject(this.store, projectId, this.hooks.assertMutable);
@@ -588,6 +590,7 @@ export class ProjectScheduler {
       },
     };
   }
+  /** 基于预览创建定时任务；使用命令 ID、来源版本和捕获哈希校验请求。 */
   create(projectId: string, body: ProjectScheduleCreate, at = Date.now()) {
     const result = this.store.command(
       body.commandId,
@@ -641,6 +644,7 @@ export class ProjectScheduler {
     this.arm();
     return result;
   }
+  /** 按项目及定时任务版本更新设置，并通过命令账本处理重复请求。 */
   update(projectId: string, scheduleId: string, body: ProjectScheduleUpdate, at = Date.now()) {
     const result = this.store.command(
       body.commandId,
@@ -851,6 +855,7 @@ export class ProjectScheduler {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
+  /** 检查已启用计划的到期状态，在事务中重新读取并处理可调度的记录。 */
   tick(at = Date.now()) {
     for (const { projectId, schedules } of this.inventory()) {
       for (const record of schedules) {

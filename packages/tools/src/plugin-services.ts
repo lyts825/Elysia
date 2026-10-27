@@ -11,7 +11,10 @@ import { recallContext } from '../../context/src/index.js';
 import { submitPeerReview } from '../../kernel/src/peer-review.js';
 import type { ToolGateway } from './index.js';
 
-/** Concrete capability objects, never the gateway, kernel, database or client instances. */
+/**
+ * 构造冻结的能力对象，只暴露插件需要的绑定函数，不直接传递网关、内核或数据库实例。
+ * catalogueBudget 根据任务计算目录大小预算，避免固定目录挤占模型上下文。
+ */
 export function pluginServices(
   gateway: ToolGateway,
   catalogueBudget: (task: Parameters<ToolGateway['definitions']>[0]) => number,
@@ -71,6 +74,7 @@ export function pluginServices(
   });
 }
 type Tail<T extends unknown[]> = T extends [unknown, ...infer Rest] ? Rest : never;
+/** 从能力对象中选择指定成员并冻结结果，避免插件获得未声明的能力。 */
 export function capabilities<T extends object, K extends keyof T>(
   source: T,
   keys: readonly K[],

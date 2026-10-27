@@ -15,6 +15,7 @@ const validId = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
 const validCursor = (value: unknown) => value === undefined || value === null || validId(value);
 function checkpoint(value: unknown): ConversationHistoryCheckpoint | undefined {
+  // 浏览器缓存不是可信输入；失效、超前当前时间 60 秒以上或锚点不合法时不恢复。
   if (!value || typeof value !== 'object') return;
   const saved = value as ConversationHistoryCheckpoint;
   if (
@@ -57,6 +58,7 @@ export class ConversationHistoryState {
     return this.client.surfaceStorageKey(`elysia.conversation.history.v1:${this.scope}`);
   }
   bindScope(scope: string | undefined) {
+    // 先落盘旧作用域，再清空内存并读取新作用域，避免不同工作区共享阅读位置。
     if (this.stopped || !scope || !/^[a-f0-9]{64}$/.test(scope) || scope === this.scope) return;
     this.flush();
     this.scope = scope;
@@ -85,6 +87,7 @@ export class ConversationHistoryState {
     if (!next) return;
     this.entries.delete(runId);
     this.entries.set(runId, next);
+    // Map 按最近更新顺序淘汰旧记录，并合并短时间内的连续滚动写入。
     while (this.entries.size > maxRuns) this.entries.delete(this.entries.keys().next().value!);
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.flush(), 150);
@@ -106,6 +109,7 @@ export class ConversationHistoryState {
     }
   }
   stop() {
+    // 卸载时保存最后位置并解除全局监听，避免遗留计时器或监听器。
     this.flush();
     this.stopped = true;
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.pageHide);

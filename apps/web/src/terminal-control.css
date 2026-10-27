@@ -2,6 +2,7 @@
 .terminal-control-center.modal {
   width: min(1060px, calc(100vw - 40px));
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .terminal-control-tabs {
   display: flex;
   gap: var(--space-2);
@@ -20,6 +21,7 @@
   padding: var(--space-2) var(--space-4);
   font-weight: 600;
 }
+/* 当前选中的标签使用强调色，选中状态由 aria-selected 表达。 */
 .terminal-control-tabs button[aria-selected='true'] {
   color: var(--accent-strong);
   background: var(--accent-pale);
@@ -398,6 +400,7 @@
 .terminal-control-center .modal-footer > span {
   margin-right: auto;
 }
+/* 窄屏收紧终端控制中心、内容和标签的宽度与间距。 */
 @media (max-width: 760px) {
   .terminal-control-center.modal {
     width: calc(100vw - 20px);
@@ -464,6 +467,7 @@
     max-height: 12rem;
   }
 }
+/* 短窗口让控制中心整体滚动并固定标题，内容区不另设滚动容器。 */
 @media (max-height: 600px) {
   .terminal-control-center.modal {
     overflow-y: auto;
@@ -485,6 +489,7 @@
     overflow: visible;
   }
 }
+/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
 @media (prefers-reduced-motion: reduce) {
   .cli-visibility input,
   .cli-visibility input::after {
@@ -597,6 +602,7 @@
 .terminal-capabilities strong {
   font-weight: 600;
 }
+/* 窄屏减少终端确认区和次要按钮的内边距。 */
 @media (max-width: 760px) {
   .terminal-control-confirm {
     padding: var(--space-3) var(--space-4);

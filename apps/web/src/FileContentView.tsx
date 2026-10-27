@@ -31,6 +31,7 @@ export function FileContentView({
 }) {
   const client = useSurfaceClient();
   const savedKey = JSON.stringify(['content-view', checkpointKey, file.path]);
+  // 文档／源码模式与换行选项按文件保存，滚动位置还区分页、版本和编码。
   const saved = checkpointKey
     ? readingCheckpoint<{ mode: 'document' | 'source'; wrap: boolean }>(client, savedKey)
     : undefined;

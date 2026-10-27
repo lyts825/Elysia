@@ -1,4 +1,5 @@
 /* 定义 project-files 对应界面的样式与布局。 */
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-files {
   flex: 1;
   min-height: 0;
@@ -27,6 +28,7 @@
   flex: 1;
   min-width: 0;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .project-files-location code {
   display: block;
   font: var(--font-sm) / var(--leading-body) var(--font-mono);
@@ -184,6 +186,7 @@
 .project-file-empty p {
   margin: 0;
 }
+/* 窄屏缩小文件区域的内边距并调整文件列表高度。 */
 @media (max-width: 560px) {
   .project-files {
     padding: var(--space-3);

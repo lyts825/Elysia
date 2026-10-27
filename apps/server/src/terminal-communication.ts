@@ -32,6 +32,7 @@ const peer = (run: Run): TerminalPeer => ({
   agent: run.execution?.kind === 'docker-agent' ? run.execution.profile.agent : '',
 });
 
+/** 管理终端任务之间的消息、回执及需人工处理的消息状态。 */
 export class TerminalCommunication {
   constructor(
     private store: Store,
@@ -140,6 +141,7 @@ export class TerminalCommunication {
     };
   }
 
+  /** 校验消息版本和处理说明，在事务内记录人工处理结果。 */
   resolve(runId: string, messageId: string, expectedMessageRevision: number, note: string) {
     return this.store.tx(() => {
       const context = this.resolutionContext(runId, messageId);

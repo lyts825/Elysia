@@ -11,6 +11,7 @@ import { RoleRoutingPolicy, type RoleRoutingView } from '../../../packages/contr
 import { readRoleRouting, saveRoleRouting } from '../../../packages/kernel/src/model-routing.js';
 import type { Store } from '../../../packages/storage/src/index.js';
 
+/** 注册项目角色模型路由的读取和保存接口，变更前检查项目可写状态。 */
 export function registerModelRouting(
   app: FastifyInstance,
   store: Store,

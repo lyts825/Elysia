@@ -23,6 +23,7 @@ export class ToolExecutionService {
     readonly kernel: Kernel<Store>,
     readonly gateway: ToolGateway,
   ) {}
+  /** 执行单个工具调用；assistantMessageId 用于将调用绑定到产生它的助手消息。 */
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
     while (this.toolActive >= limit) {
@@ -74,6 +75,10 @@ export class ToolExecutionService {
       this.toolActive--;
     }
   }
+  /**
+   * 执行同一轮工具调用并按原始顺序保存结果，随后记录无进展失败和检查点。
+   * 仅当每个工具策略都显式允许并行时才并发执行。
+   */
   async executeCalls(
     task: Task,
     attempt: Attempt,
@@ -119,6 +124,10 @@ export class ToolExecutionService {
     this.observeToolFailures(task, outcomes, assistantMessageId);
     this.kernel.checkpoint(attempt.id);
   }
+  /**
+   * 根据工具、规范化参数和错误码识别重复的确定性失败。
+   * 进展指纹改变会重置计数；重复失败先通知模型，再在仍无进展时暂停分支。
+   */
   private observeToolFailures(
     task: Task,
     outcomes: { call: ToolCall; result: unknown }[],
@@ -252,6 +261,7 @@ export class ToolExecutionService {
       if (stopped && warnedBefore) this.kernel.wait(store.require<Task>('tasks', task.id), 'no_progress');
     });
   }
+  /** 从持久消息中找出尚未配对结果的调用，恢复前先校验调用序列。 */
   async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
     const sequence = inspectToolCalls(this.kernel.history(task));
     if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);

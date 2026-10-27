@@ -33,6 +33,7 @@ function PanelFeedback({ label, failed = false }: { label: string; failed?: bool
 }
 
 class PanelBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean }> {
+  // 将面板加载或渲染失败限制在局部边界，不中断外层会话。
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -44,6 +45,7 @@ class PanelBoundary extends Component<{ children: ReactNode; label: string }, { 
 }
 /** Optional panels load only when visible; a failed chunk leaves the conversation usable. */
 export function deferredPanel<P extends object>(load: () => Promise<ComponentType<P>>, label: string) {
+  // 缓存 React.lazy 包装器；面板显示前只展示加载状态。
   const View = React.lazy(async () => ({ default: await load() }));
   return function DeferredPanel(props: P) {
     return (

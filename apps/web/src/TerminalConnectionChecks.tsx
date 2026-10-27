@@ -8,6 +8,10 @@ import type {
 import { useSurfaceClient } from './SurfaceClientContext';
 import './terminal-connection-checks.css';
 
+/**
+ * 展示所选连接的验证状态与模型目录。enabled 为假时保留不可操作状态，
+ * chooseModel 只接收用户明确选中的模型 ID。
+ */
 export function TerminalConnectionChecks({
   connection,
   enabled,
@@ -35,6 +39,7 @@ export function TerminalConnectionChecks({
     }
   }, [error, errorRequest]);
   useEffect(() => {
+    // 连接或版本切换时取消旧请求，清空目录并读取当前版本的检查状态。
     controller.current?.abort();
     setHealth(connection.health);
     setCatalog(null);
@@ -67,6 +72,7 @@ export function TerminalConnectionChecks({
       controller.current?.abort();
     };
   }, [api, connection.id, connection.revision, enabled]);
+  /** 验证连接或读取目录；仅接受仍属于当前连接版本的结果。 */
   async function probe(kind: 'check' | 'models') {
     if (!enabled || busy) return;
     const request = new AbortController();

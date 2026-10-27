@@ -18,6 +18,7 @@ import {
 } from '../../../packages/context/src/project-intelligence.js';
 
 /** Register only in the native API. The terminal surface deliberately has no matching routes. */
+/** 仅为原生入口注册项目能力选择和记忆管理接口。 */
 export function registerProjectIntelligenceRoutes(
   app: FastifyInstance,
   store: Store,

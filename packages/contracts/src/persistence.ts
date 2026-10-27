@@ -1,6 +1,7 @@
 // 持久化记录和请求账本的数据结构。
 import type { RequestRecord } from './index.js';
 
+// 账本投影保留请求身份、预约和用量；旧记录的连接元数据可能缺失。
 export type RequestLedgerRow = Pick<
   RequestRecord,
   | 'purpose'

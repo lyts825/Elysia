@@ -15,6 +15,7 @@ export interface RoleRoutingRecord {
   policy: RoleRoutingPolicy;
 }
 export const routingKey = (projectId: string) => 'project-model-routing:v1:' + projectId;
+/** 读取持久化策略；无记录时使用关闭状态，损坏记录则明确拒绝。 */
 export function readRoleRouting(store: Store, projectId: string): RoleRoutingRecord {
   const value = store.metadata(routingKey(projectId));
   if (value === undefined)
@@ -32,6 +33,7 @@ export function readRoleRouting(store: Store, projectId: string): RoleRoutingRec
   }
 }
 export function routingProvider(store: Store, providerId: string) {
+  // 只接受当前修订已验证、且尚未归档的连接。
   const binding = store.require<ProviderConfig>('providers', providerId);
   invariant(
     !binding.archived && binding.checkedRevision === binding.revision,
@@ -40,6 +42,7 @@ export function routingProvider(store: Store, providerId: string) {
   );
   return binding;
 }
+/** 按创建任务时的策略冻结角色连接；不可用角色记录原因，不自动换用其他连接。 */
 export function freezeRoleRouting(store: Store, projectId: string): RoleRoutingSnapshot {
   const record = readRoleRouting(store, projectId);
   const bindings: RoleRoutingSnapshot['bindings'] = {};
@@ -56,6 +59,7 @@ export function freezeRoleRouting(store: Store, projectId: string): RoleRoutingS
     }
   return { ...record, bindings, unavailable };
 }
+/** 仅处理角色路由标记；显式模型选择保持原样。 */
 export function routeTask(store: Store, run: Run, raw: unknown) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { raw };
   const spec = raw as Record<string, unknown>;
@@ -71,6 +75,7 @@ export function routeTask(store: Store, run: Run, raw: unknown) {
     policy.unavailable?.[role] ?? '当前任务未冻结此角色的模型，请显式选择模型',
   );
   const current = routingProvider(store, binding.id);
+  // 连接在冻结之后变化时不能悄悄改用新配置。
   invariant(
     current.revision === binding.revision,
     'ROUTING_CHANGED',
@@ -94,6 +99,7 @@ export function routeTask(store: Store, run: Run, raw: unknown) {
     decision,
   };
 }
+/** 按期望修订保存；冲突时由调用方重新读取并核对输入。 */
 export function saveRoleRouting(store: Store, projectId: string, expectedRevision: number, raw: unknown) {
   const policy = RoleRoutingPolicy.parse(raw);
   const current = readRoleRouting(store, projectId);

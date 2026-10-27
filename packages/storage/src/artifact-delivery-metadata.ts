@@ -19,6 +19,7 @@ type MetadataRow = {
   expected_hash: string | null;
 };
 
+/** 从产物中抽取影响交付展示与校验的固定字段，不复制完整产物正文。 */
 export function artifactDeliveryMetadata(artifact: DeliveryArtifactMetadata): DeliveryArtifactMetadata {
   return {
     id: artifact.id,
@@ -44,6 +45,7 @@ export function serializeDeliveryArtifactMetadata(artifact: DeliveryArtifactMeta
   });
 }
 
+/** 逐字段比较交付元数据，避免将对象引用相等当作内容相等。 */
 export function equalDeliveryArtifactMetadata(a: DeliveryArtifactMetadata, b: DeliveryArtifactMetadata) {
   return (
     a.id === b.id &&
@@ -89,6 +91,7 @@ export class ArtifactDeliveryMetadataReads {
         SET run_id=(SELECT run_id FROM artifacts WHERE id=${key}) WHERE id=${key} AND EXISTS(SELECT 1 FROM artifacts WHERE id=${key});
       INSERT INTO artifact_delivery_metadata_dirty_v1 SELECT id,run_id FROM artifacts WHERE id=${key}
         AND NOT EXISTS(SELECT 1 FROM artifact_delivery_metadata_dirty_v1 WHERE id=${key});`;
+    // 正文和投影变化都使缓存失效或加入待修复队列，包括其他 SQLite 连接的写入。
     db.exec(`
       CREATE TABLE IF NOT EXISTS artifact_delivery_metadata_v1(
         id TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
@@ -132,6 +135,7 @@ export class ArtifactDeliveryMetadataReads {
         semantic_hash=excluded.semantic_hash,metadata_json=excluded.metadata_json`);
   }
 
+  /** 保存投影；只有字段通过校验时才将该产物从待修复队列移除。 */
   write(artifact: Artifact) {
     const metadata = serializeDeliveryArtifactMetadata(artifact);
     this.save.run(artifact.id, artifact.revision, hash(metadata), metadata);
@@ -139,6 +143,7 @@ export class ArtifactDeliveryMetadataReads {
       this.db.prepare('DELETE FROM artifact_delivery_metadata_dirty_v1 WHERE id=?').run(artifact.id);
   }
 
+  /** 按原始行顺序读取某次运行的产物；无效投影会从权威正文重建。 */
   read(runId: string): DeliveryArtifactRead[] {
     const rows = this.db
       .prepare(
@@ -160,7 +165,7 @@ export class ArtifactDeliveryMetadataReads {
     return rows.map((row) => this.readRow(row));
   }
 
-  /** Caller holds a short Store transaction. A bad body keeps its queue entry for repair. */
+  /** 调用方持有短事务；每批最多处理 64 条，正文无法读取时保留队列项供修复。 */
   warmBatch(runId: string, limit = 32): ArtifactDeliveryWarmBatchResult {
     if (!Number.isInteger(limit) || limit < 1 || limit > 64)
       throw new Error('Invalid metadata warm batch limit');
@@ -203,6 +208,7 @@ export class ArtifactDeliveryMetadataReads {
       }
     }
     if (!metadata) {
+      // 缓存哈希、字段或身份不可信时读取原始产物，不能直接返回缓存。
       const artifact = this.readBody(row.id);
       metadata = artifactDeliveryMetadata(artifact);
       if (artifact.runId !== row.run_id || !valid(metadata, row.id))

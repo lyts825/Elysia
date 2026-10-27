@@ -25,6 +25,7 @@ export function criterionSnapshot(note: { criterionText?: string | null }) {
 }
 const unknownText = (text: string) =>
   text === unknownCriterionText || /^第\s*\d+\s*项(?:（旧版本）)?$/.test(text);
+/** 读取有界本地草稿，兼容旧记录缺少标准标识的情况；无效内容返回 undefined。 */
 export function readLocalReviewDraft(raw: unknown): ReviewDraft | undefined {
   if (typeof raw !== 'string' || !raw || raw.length > 200000) return;
   try {
@@ -65,6 +66,7 @@ export function readLocalReviewDraft(raw: unknown): ReviewDraft | undefined {
     return;
   }
 }
+/** 优先保留本机未保存草稿，否则从服务端复核记录构建可编辑副本。 */
 export function readReviewDraft(raw: unknown, value: DeliveryReview): ReviewDraft {
   const local = readLocalReviewDraft(raw);
   if (local) return local;
@@ -99,6 +101,7 @@ export function reviewCandidates(
   fingerprint: string,
   reviewId: string | null = null,
 ): ReviewCandidate[] {
+  // 同时展示已保存和本机备注；按指纹标记过期，不把旧标准视为当前标准。
   const result: ReviewCandidate[] = [];
   const add = (
     origin: ReviewCandidate['origin'],
@@ -140,6 +143,7 @@ export function reviewCandidates(
     if (draft.fingerprint !== review?.fingerprint || draft.note !== review?.note)
       add('本机未保存', draft.fingerprint, '整体备注', '', draft.note, null, null);
     for (const item of draft.criteriaNotes) {
+      // 已保存内容完全相同时不重复列出；其他本机备注保留原始来源。
       if (
         draft.fingerprint === review?.fingerprint &&
         review.criteriaNotes.some((saved) => saved.index === item.index && saved.note === item.note)

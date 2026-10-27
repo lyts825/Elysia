@@ -19,6 +19,7 @@ function plainText(children: ReactNode): string {
 // Resolve within a document's project scope, including URL-encoded paths. Never hand
 // an absolute filesystem path or a traversal outside that scope to a preview API.
 export function markdownLocalPath(href: string, sourcePath = ''): string | null {
+  // 对解码后的路径再次检查协议与控制字符，逐段处理 .. 并拒绝越出项目范围。
   if (!href || /^(?:[a-z][\w+.-]*:|\/\/)/i.test(href)) return null;
   const hashAt = href.indexOf('#');
   const fragment = hashAt < 0 ? '' : href.slice(hashAt);
@@ -41,6 +42,7 @@ export function markdownLocalPath(href: string, sourcePath = ''): string | null 
 }
 
 function localImageUrl(src: string, sourcePath: string, resourceBase?: string | null) {
+  // 图片只允许映射到受支持的本地预览或项目资源路由，并逐段编码路径。
   if (!resourceBase || !markdownLocalPath(src, sourcePath)) return null;
   const scope = /^(?:\/terminal)?(\/preview\/[^/]+\/|\/api\/projects\/[^/]+\/resources\/)/.exec(
     resourceBase,

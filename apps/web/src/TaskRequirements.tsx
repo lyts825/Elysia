@@ -1,9 +1,11 @@
 /* 编辑并校验任务交付物和验收标准。 */
+/** 按行去除首尾空白和空项，供表单校验与提交载荷复用。 */
 export const requirementLines = (value: string) =>
   value
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+/** 必填时两组至少各一项；每组最多 40 项，每项最多 2000 字。 */
 export const validRequirements = (deliverables: string, criteria: string, required: boolean) =>
   [deliverables, criteria].every((value) => {
     const lines = requirementLines(value);

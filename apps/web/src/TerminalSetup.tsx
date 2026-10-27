@@ -11,6 +11,10 @@ import { terminalPreset } from './TerminalPreset';
 import './terminal-profile-form.css';
 export { terminalPreset } from './TerminalPreset';
 
+/**
+ * 编辑单个终端模板。value 为当前配置，change 向上提交修改；
+ * 命令文本单独保存，解析失败时显示错误并将命令配置置为空数组。
+ */
 export function TerminalSetup({
   value,
   change,
@@ -34,6 +38,7 @@ export function TerminalSetup({
   const commandField = useRef<HTMLTextAreaElement>(null),
     advancedFields = useRef<HTMLDetailsElement>(null);
   currentProfile.current = JSON.stringify(value);
+  /** 更新配置并清除旧检查结果，同时记录当前值用于识别过期的异步响应。 */
   function patch(next: Partial<AgentTerminalProfile>) {
     setStatus('');
     const profile = { ...value, ...next };
@@ -57,6 +62,7 @@ export function TerminalSetup({
               value={value.agent}
               disabled={disabled}
               onChange={(e) => {
+                // 切换 Agent 使用对应预设，同时保留模板 ID、镜像和资源规格。
                 const next = terminalPreset(e.target.value as AgentTerminalProfile['agent']);
                 const profile = {
                   ...next,

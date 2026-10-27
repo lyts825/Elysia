@@ -10,6 +10,7 @@ import { markStartupStage } from './StartupDiagnostics';
 import './Startup.css';
 
 function useReducedMotion() {
+  // 持续监听系统减少动态效果设置，卸载时移除监听。
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -21,6 +22,7 @@ function useReducedMotion() {
 }
 
 export function startupColors(config: StartupPreferences): CSSProperties {
+  // 根据背景亮度选择适合的前景颜色，并以 CSS 变量传给启动视觉。
   const rgb = [1, 3, 5].map((offset) => parseInt(config.background.slice(offset, offset + 2), 16) / 255);
   const luminance = rgb.reduce(
     (sum, value, index) =>

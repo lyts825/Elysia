@@ -22,6 +22,7 @@ export function RunConfirmation({
   adjust: () => void;
   disabled: boolean;
 }) {
+  // 比较表单与项目默认值，提醒用户核对实际创建配置中的差异。
   const differences = [
     JSON.stringify(value.choice) !== JSON.stringify(defaults.modelChoice) && '模型',
     value.planMode !== defaults.planMode && '计划模式',

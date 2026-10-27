@@ -19,6 +19,7 @@ export function projectManifestReadiness(
   state: { unavailable: boolean; busy: boolean },
 ) {
   const blockers: ProjectManifestBlocker[] = [];
+  // 项目状态未知时不能根据缓存推断冻结资格，先要求重新读取。
   if (state.unavailable)
     return {
       canFreeze: false,
@@ -48,6 +49,7 @@ export function projectManifestReadiness(
       target: board.items.length ? 'selection' : 'plan',
     });
   const selected = new Set(manifest.selected);
+  // 逐项检查选择是否仍存在、可交付且具备冻结所需的版本与复核依据。
   for (const itemId of selected) {
     const item = board.items.find((entry) => entry.id === itemId);
     if (!item) {
@@ -94,6 +96,7 @@ export function projectManifestReadiness(
       });
   }
   for (const item of board.items)
+    // 必需交付项即使未选中也要列为阻碍，不能被选择过滤掉。
     if (item.required && !selected.has(item.id))
       blockers.push({
         id: `required:${item.id}`,

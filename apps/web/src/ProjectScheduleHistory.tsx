@@ -19,6 +19,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : '�
 
 export function ProjectScheduleHistory(props: Props) {
   const { surface } = useSurfaceClient();
+  // 入口、项目或定时任务变化时重置分页状态。
   return <ScheduleHistory key={`${surface}:${props.projectId}:${props.scheduleId}`} {...props} />;
 }
 

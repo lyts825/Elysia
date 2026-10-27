@@ -107,6 +107,10 @@ public static class ElysiaMcpJob {
 }
 `;
 
+/**
+ * 创建带管道的 MCP 子进程。Windows 通过监督进程和 Job Object 管理进程树；
+ * 程序、参数和目录以 JSON 传递，避免拼接为 PowerShell 表达式。
+ */
 export function spawnMcpProcess(
   program: string,
   args: string[],

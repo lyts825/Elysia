@@ -14,6 +14,7 @@
   font-size: var(--font-lg);
   line-height: var(--leading-heading);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .run-setup-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;
@@ -22,6 +23,7 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
+/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
 .run-confirmation-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -51,6 +53,7 @@
   font-size: var(--font-sm);
   line-height: var(--leading-body);
 }
+/* 短窗口让设置弹窗整体滚动并固定标题，表单不再作为独立滚动区。 */
 @media (max-height: 600px) {
   .run-setup-modal {
     overflow-y: auto;

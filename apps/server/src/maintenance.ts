@@ -46,6 +46,7 @@ import {
 import { prepareStartupUpgrade } from './startup-storage.js';
 import { ObjectCleanupPlan } from './object-maintenance.js';
 import { inspectObjectAudit, runObjectMaintenance } from './object-maintenance-runner.js';
+// 维护命令由动作及可选入口、计划和报告参数组成；不经过常驻 HTTP 服务。
 const action = process.argv[2];
 const terminalActions = [
   'terminal-inspect',
@@ -102,6 +103,7 @@ if (
 if (terminalActions.includes(action) && hasSelection && selection !== 'terminal')
   throw new Error('terminal-* 维护操作只能用于 terminal 入口');
 
+/** 打开终端存储并执行所选维护命令，结束时释放网关等资源。 */
 async function terminalMaintenance(directory: string) {
   assertSurfacePath(directory, 'terminal');
   const target = surfaceDirectory(directory, 'terminal');

@@ -51,6 +51,7 @@ const revision = (value: unknown) => {
 // Recognize only our metadata keys. Arbitrary objects, content and API responses
 // cannot become persisted checkpoints through this generic in-memory interface.
 function kind(key: string, depth = 0): string | undefined {
+  // 按类型识别允许持久化的元数据键，并限制嵌套解析深度。
   if (depth > 3 || !text(key, 12000)) return;
   for (const suffix of [':task', ':target', ':source-scroll']) {
     if (key.endsWith(suffix)) {
@@ -253,6 +254,7 @@ function flush(store: CheckpointStore) {
 }
 let listening = false;
 function schedule(store: CheckpointStore) {
+  // 合并短时间内的滚动更新；页面隐藏或退出时立即写出待保存检查点。
   if (!store.storageKey || store.timer) return;
   if (!listening && typeof window !== 'undefined') {
     listening = true;
@@ -271,6 +273,7 @@ function schedule(store: CheckpointStore) {
 // Call only after this client's session has authenticated. A changed server/data
 // scope drops the old in-memory selection; storage is never imported beforehand.
 export function bindReadingCheckpointScope(client: SurfaceClient, scope: string | undefined): void {
+  // 仅认证后绑定作用域；切换入口或数据范围时先清空旧内存状态。
   const store = state(client);
   const checkedScope = text(scope, 256) && !!scope.trim() ? scope : undefined;
   if (store.bound && store.scope === checkedScope && store.surface === client.surface) return;
@@ -303,6 +306,7 @@ export function bindReadingCheckpointScope(client: SurfaceClient, scope: string 
   }
 }
 export function readingCheckpoint<T extends object>(client: SurfaceClient, key: string): T | undefined {
+  // 读取时将条目移到最近使用位置，使容量淘汰保留近期阅读位置。
   const store = state(client),
     value = store.values.get(key);
   if (value) {
@@ -312,6 +316,7 @@ export function readingCheckpoint<T extends object>(client: SurfaceClient, key: 
   return value as T | undefined;
 }
 export function saveReadingCheckpoint<T extends object>(client: SurfaceClient, key: string, value: T) {
+  // 已绑定的作用域只接受经过元数据校验的内容，避免把正文写入检查点。
   const store = state(client),
     checked = store.bound ? metadata(key, value) : value;
   if (!checked) return;
@@ -338,6 +343,7 @@ export function useReadingScroll<T extends HTMLElement = HTMLDivElement>(
   key: string,
   ready: boolean,
 ) {
+  // 视图准备好后恢复一次滚动位置，再允许滚动事件更新检查点。
   const ref = useRef<T>(null);
   const restored = useRef<{ client: SurfaceClient; key: string; node: T } | undefined>(undefined);
   useLayoutEffect(() => {

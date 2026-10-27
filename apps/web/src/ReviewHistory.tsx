@@ -19,6 +19,7 @@ export function ReviewHistory({
   renderNotes?: (value: DeliveryReviewHistoryDetail) => ReactNode;
 }) {
   const { api } = useSurfaceClient();
+  // 列表分页和单条详情分别读取；切换详情时取消先前的在途请求。
   const [open, setOpen] = useState(false),
     [before, setBefore] = useState(''),
     [trail, setTrail] = useState<string[]>([]),

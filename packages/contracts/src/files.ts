@@ -2,6 +2,7 @@
 export const textFileEncodings = ['auto', 'utf-8', 'utf-16le', 'utf-16be', 'gb18030'] as const;
 export type TextFileEncoding = (typeof textFileEncodings)[number];
 export type ResolvedTextEncoding = Exclude<TextFileEncoding, 'auto'>;
+// 分页同时记录请求偏移、实际字节范围和文件版本；nextOffset 为 null 表示结束。
 export type TextFilePage = {
   requestedOffset: number;
   offset: number;

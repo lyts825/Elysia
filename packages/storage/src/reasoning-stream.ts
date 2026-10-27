@@ -27,7 +27,7 @@ type Chunk = { chunk_index: number; characters: number; content: Uint8Array };
 function corrupt(): never {
   throw new AppError('REASONING_UNAVAILABLE', '思考文本暂时无法读取，原始记录已保留。', true, null, 422);
 }
-/** Optional display cache. Provider replay and request accounting never depend on its contents. */
+/** 推理内容的可选展示缓存；供应商重放和请求计费不依赖此缓存。 */
 export class ReasoningStreams {
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS reasoning_streams_v1(
@@ -56,6 +56,7 @@ export class ReasoningStreams {
       )
       .get(requestId) as State | undefined;
   }
+  /** 读取展示长度和状态，并核验缓存与所属请求的关联。 */
   metadata(requestId: string): ReasoningDisplay | undefined {
     const state = this.state(requestId);
     if (!state || !state.characters) return;
@@ -104,7 +105,10 @@ export class ReasoningStreams {
       corrupt();
     return text;
   }
-  /** Called in a Store transaction. Returns only the prefix committed for display. */
+  /**
+   * 在 Store 事务中追加片段。offset 对应已接收字符数，返回值仅包含本次提交供展示的前缀。
+   * 展示容量耗尽后仍记录接收长度；跨片段的代理对暂存，避免截断半个字符。
+   */
   append(
     requestId: string,
     text: string,
@@ -163,7 +167,7 @@ export class ReasoningStreams {
       .run(state.characters + retained.length, offset + text.length, Number(truncated), pending, requestId);
     return { text: retained, offset: state.characters };
   }
-  /** Final public provider text is canonical, while the original Message remains untouched. */
+  /** 用供应商最终公开文本重建展示缓存，原始消息保持不变。 */
   complete(requestId: string, text: string) {
     this.db.prepare('DELETE FROM reasoning_streams_v1 WHERE request_id=?').run(requestId);
     if (!text.length) return;
@@ -192,6 +196,7 @@ export class ReasoningStreams {
         );
     }
   }
+  /** 分页读取完整字符，返回下一页偏移；缺块、损坏或字符中间的偏移会报错。 */
   page(requestId: string, offset: number, limit: number) {
     if (
       !Number.isInteger(offset) ||

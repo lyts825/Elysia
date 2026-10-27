@@ -19,6 +19,7 @@ const excluded = (name: string) =>
   /\.(?:pem|key|p12|pfx)$/i.test(name);
 export const sameDirectory = (a: string, b: string) =>
   process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+/** 解析绝对路径并检查目录，通过 Git 探测仓库根目录和当前提交。 */
 export async function inspectFolder(input: string, processes: Processes) {
   invariant(path.isAbsolute(input), 'PROJECT_PATH', '请选择文件夹或填写绝对路径');
   const root = await fs.realpath(input);
@@ -84,6 +85,7 @@ async function projectFilename(store: Store, id: string, input: string) {
 }
 const projectResourceBase = (id: string, directory = '', prefix = '') =>
   `${prefix}/api/projects/${encodeURIComponent(id)}/resources/${directory ? directory.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/') + '/' : ''}`;
+/** 在项目范围内打开资源流，并在打开后再次核对路径。 */
 export async function projectResource(
   store: Store,
   id: string,
@@ -104,6 +106,7 @@ export async function projectResource(
   }
   return resource;
 }
+/** 读取项目目录或分页文本，目录列表排除符号链接及约定的忽略项。 */
 export async function projectFiles(
   store: Store,
   id: string,

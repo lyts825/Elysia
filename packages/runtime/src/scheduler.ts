@@ -57,6 +57,7 @@ export class ExecutionScheduler implements RunControl {
     readonly executionPlugins: ExecutionPlugins,
     private readonly services: SchedulerServices,
   ) {}
+  /** 启动定时调度；重复启动不创建第二个计时器。 */
   start() {
     if (this.closing) throw new AppError('EXECUTOR_DISPOSED', '执行器已释放');
     if (this.timer && !this.stopped) return;
@@ -78,6 +79,10 @@ export class ExecutionScheduler implements RunControl {
     this.kernel.store.recovery.release(runId);
     this.locallyStopped.delete(runId);
   }
+  /**
+   * 先保存持久停止标记，再取消当前执行与相关进程。
+   * interrupted 仅在所有停止动作成功时为真；部分失败仍保留调度暂停。
+   */
   async stopCurrent(runId: string): Promise<RunStopCurrentResult> {
     // Persist first: a failed write must never acknowledge a durable stop or abort work.
     this.kernel.store.recovery.hold(runId, 'user_stop');
@@ -116,6 +121,7 @@ export class ExecutionScheduler implements RunControl {
       else this.stoppingRuns.delete(runId);
     }
   }
+  /** 按全局、运行、依赖、通道和账号限制顺序给出第一个排队原因。 */
   private queueReason(task: Task, run: Run): RuntimeQueueReason {
     if (this.active.size >= 4) return 'global-concurrency';
     if ([...this.active.values()].filter((entry) => entry.runId === run.id).length >= run.limits.concurrency)
@@ -154,6 +160,7 @@ export class ExecutionScheduler implements RunControl {
       (left, right) => (this.dispatchOrder.get(left.id) ?? 0) - (this.dispatchOrder.get(right.id) ?? 0),
     );
   }
+  /** 返回队列和活动任务快照；可按运行过滤，revision 随整体状态变化递增。 */
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
     for (const task of this.orderedCandidates(
@@ -185,6 +192,7 @@ export class ExecutionScheduler implements RunControl {
       activeTaskIds: activeTaskIds.filter((key) => !runId || this.active.get(key)?.runId === runId),
     };
   }
+  /** 中断运行，或只中断指定任务及其后代，并等待进程取消完成。 */
   async interrupt(runId: string, taskId?: string) {
     const tasks = taskId
       ? new Set(this.kernel.descendants(this.kernel.store.require<Task>('tasks', taskId)).map((t) => t.id))
@@ -205,6 +213,7 @@ export class ExecutionScheduler implements RunControl {
     const error = stopped.find((result) => result.status === 'rejected');
     if (error?.status === 'rejected') throw error.reason;
   }
+  /** 停止新调度并共享关闭过程，重复调用返回同一 Promise。 */
   dispose(): Promise<void> {
     if (this.closing) return this.closing;
     this.stopped = true;
@@ -246,6 +255,7 @@ export class ExecutionScheduler implements RunControl {
     await settle([Promise.resolve().then(() => this.services.disposeTools())]);
     if (errors.length) throw new AggregateError(errors, '执行器退出未完全成功');
   }
+  /** 合并重叠的调度请求；一轮完成后允许下一轮重新读取状态。 */
   tick(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     return (this.ticking ??= Promise.resolve()
@@ -254,6 +264,10 @@ export class ExecutionScheduler implements RunControl {
         this.ticking = undefined;
       }));
   }
+  /**
+   * 处理待应用消息、限流恢复及时间预算，再并发准备本轮通道。
+   * 不需要准备资源的候选可立即派发；每个资源域就绪后再次检查候选。
+   */
   private async schedule() {
     if (this.stopped) return;
     try {
@@ -334,6 +348,7 @@ export class ExecutionScheduler implements RunControl {
       console.error('调度错误：', error instanceof Error ? error.message : error);
     }
   }
+  /** 派发前重新读取任务与运行状态，预约通道资源，并在步骤结束后释放。 */
   private dispatchReady(tasks: readonly Task[], dispatched: Set<string>) {
     for (const candidate of this.orderedCandidates(tasks)) {
       if (this.stopped || this.active.size >= 4) break;

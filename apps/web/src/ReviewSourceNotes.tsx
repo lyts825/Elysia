@@ -19,6 +19,7 @@ export function ReviewSourceNoteBody({
   compact?: boolean;
   showHeading?: boolean;
 }) {
+  // 来源、原标准和备注分别展示；未记录标准时不推断其内容。
   return (
     <div className="review-source-note-body">
       {showHeading && (

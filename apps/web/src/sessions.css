@@ -37,6 +37,7 @@
 .session-search input::placeholder {
   color: var(--muted);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .session-tree {
   overflow: auto;
   min-height: 0;
@@ -100,6 +101,7 @@
 .session-row.selected:hover {
   background: var(--surface-selected);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .session-navigation .history-item:focus-visible,
 .session-navigation .project-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -289,6 +291,7 @@
     opacity: 1;
   }
 }
+/* 窄屏调整会话导航和缓存状态的显示方式。 */
 @media (max-width: 760px) {
   .session-navigation,
   .cache-state {
@@ -423,6 +426,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* 短窗口让会话弹窗整体滚动，并固定标题及释放表单溢出约束。 */
 @media (max-height: 560px) {
   .session-dialog {
     overflow-y: auto;

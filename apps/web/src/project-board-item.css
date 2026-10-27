@@ -12,6 +12,7 @@
   overflow-wrap: anywhere;
   line-height: var(--leading-body);
 }
+/* 列数随容器宽度变化；每列以 16rem 为目标下限，容器更窄时不超过容器宽度。 */
 .project-board-item .project-item-requirements {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: var(--space-4);
@@ -31,6 +32,7 @@
   font-weight: 400;
   color: var(--muted);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .project-board-item .project-item-reading {
   max-height: min(16rem, 45dvh);
   overflow: auto;
@@ -65,6 +67,7 @@
     grid-template-columns: 1fr;
   }
 }
+/* 窄屏调整交付项状态网格的列数。 */
 @media (max-width: 480px) {
   .project-board-item .project-status-grid {
     grid-template-columns: 1fr;

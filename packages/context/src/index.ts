@@ -19,6 +19,7 @@ export { collectContextSnapshot, type ContextSourceSnapshot } from './snapshot.j
 export { compileContextSnapshot, type ContextCompilation } from './compiler.js';
 import { collectContextSnapshot } from './snapshot.js';
 import { compileContextSnapshot } from './compiler.js';
+// 一次采集并编译，然后在事务中保存引用对象；超预算时保留原始对象并报告限制。
 export function compileContext(store: Store, task: Task, definitions: ToolDefinition[]): CompiledContext {
   const result = compileContextSnapshot(collectContextSnapshot(store, task, definitions));
   store.tx(() => {
@@ -34,6 +35,7 @@ export function compileContext(store: Store, task: Task, definitions: ToolDefini
   return result.context;
 }
 /** Read only compression sources referenced by this agent's requests/events, never an arbitrary object. */
+// 根据上下文引用读取原始内容，供压缩后按需回查。
 export function recallContext(
   store: Store,
   task: Task,

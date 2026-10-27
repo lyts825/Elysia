@@ -45,6 +45,7 @@ import {
   type TerminalInboxPeer,
 } from '../../contracts/src/terminal-inbox.js';
 export type PlanModelAssignment = ModelChoice & { key: string; contextPolicy?: ContextPolicy };
+// 领域操作通过存储端口协调状态、权限、预算与事件；外部执行由运行时负责。
 export class Kernel<Storage extends KernelStore = KernelStore> {
   constructor(
     public store: Storage,
@@ -53,6 +54,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   event(runId: string, type: string, payload: unknown, taskId?: string, attemptId?: string) {
     return this.store.event(runId, type, payload, taskId, attemptId);
   }
+  // 原子更新任务和代理状态并发出事件；结束或切换模型时清理限流及依赖阻塞。
   updateTask(task: Task, status: Task['status'], extra: Partial<Task> = {}) {
     return this.store.tx(() => {
       const bindingChanged =
@@ -78,6 +80,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return next;
     });
   }
+  // 禁止改写已冻结的执行策略；合同变化时先使已有同行评审失效。
   updateRun(run: Run, extra: Partial<Run>) {
     return this.store.tx(() => {
       if (extra.contract)
@@ -99,6 +102,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return next;
     });
   }
+  // 只采用与当前代理、会话、窗口和策略一致的最新有效指标。
   contextMetrics(agent: Agent): ContextRuntimeMetrics | null {
     const event = this.store.latestEvent(agent.runId, agent.taskId, 'context.updated');
     const candidates = [
@@ -127,6 +131,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
     );
   }
+  // 请求或操作仍在执行、结果未知或工具配对未结束时，不允许调整窗口。
   contextConfigureReason(run: Run, task: Task): string | null {
     if (run.archived || (run.projectId && this.store.require<Project>('projects', run.projectId).archived))
       return '请先恢复归档的对话或项目';
@@ -227,6 +232,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return this.validateContextPolicy(provider, { mode, windowTokens: requested ?? manualInherited });
   }
+  // 用户调整窗口时在事务中核对运行和代理修订，并要求处于安全检查点。
   setContextPolicy(
     runId: string,
     agentId: string,
@@ -272,6 +278,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return this.contextSnapshot(run.id);
     });
   }
+  // 运行中的非评审代理只能为直属子代理分配托管窗口，手动窗口由用户调整。
   allocateContext(parent: Task, taskId: string, expectedRevision: number, windowTokens: number) {
     return this.store.tx(() => {
       parent = this.store.require<Task>('tasks', parent.id);
@@ -331,6 +338,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       };
     });
   }
+  // 根据合同、执行入口与连接创建运行及根任务，并冻结所需能力和策略。
   createRun(
     project: Project | null,
     objective: string,
@@ -468,6 +476,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return binding;
   }
+  // 聊天关闭工作区权限；规划和复核只读；执行还须有授权并接受当前计划。
   permissions(task: Task): Permissions {
     const run = this.store.require<Run>('runs', task.runId);
     if (run.kind === 'chat')
@@ -481,6 +490,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     );
     return run.contract.permissionProfile;
   }
+  // 从当前任务向上收集祖先，同时防止损坏的父子关系形成循环。
   ancestors(task: Task): Task[] {
     const result = [task];
     let current = task;
@@ -499,6 +509,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   dependencies(task: Task): string[] {
     return this.store.taskDependencies(task.id);
   }
+  // 验证所有依赖存在且图无环，避免调度进入无法完成的等待。
   checkGraph(tasks: { id: string; deps: string[] }[]) {
     const graph = new Map(tasks.map((t) => [t.id, t.deps]));
     // active 是当前递归路径，visited 是已验证的子图；前者用于检测循环依赖。
@@ -532,6 +543,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     }
     return graph;
   }
+  // 仅根代理在规划阶段提出计划；校验合同、策略和任务依赖后再记录。
   propose(task: Task, rawContract: unknown, rawPlan: unknown) {
     return this.store.tx(() => {
       const run = this.store.require<Run>('runs', task.runId);
@@ -845,6 +857,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return run;
     });
   }
+  // 在所属代理会话中分配顺序号，并为已保存消息发出完成事件。
   appendMessage(task: Task, role: Message['role'], text: string, extra: Partial<Message> = {}) {
     const agent = this.store.require<Agent>('agents', task.agentId);
     const ordinal = this.store.sessionMessageCount(task.runId, agent.sessionId) + 1;
@@ -861,6 +874,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     this.event(task.runId, 'message.completed', reasoningMessagePreview(message), task.id);
     return message;
   }
+  // 在事务中核对运行状态和依赖，复用或创建尝试并刷新租约。
   claim(taskId: string) {
     return this.store.tx(() => {
       const task = this.store.require<Task>('tasks', taskId),
@@ -910,6 +924,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return attempt;
     });
   }
+  // 保存消息数量、等待对象及未完成操作；活动尝试同时续租。
   checkpoint(attemptId: string) {
     return this.store.tx(() => {
       const a = this.store.require<Attempt>('attempts', attemptId),
@@ -940,6 +955,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     const agent = this.store.require<Agent>('agents', task.agentId);
     return this.store.sessionMessages(task.runId, agent.sessionId);
   }
+  // 校验等待对象属于同一运行且不是自身，再记录等待原因。
   wait(task: Task, reason: string, ids: string[] = []) {
     return this.store.tx(() => {
       for (const key of ids)
@@ -981,6 +997,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return { waiting: true, reason };
     });
   }
+  // 请求前为任务及其祖先核对累计预算；未知价格或不同币种不能用于受限费用预算。
   reserve(
     task: Task,
     attempt: Attempt,
@@ -1093,6 +1110,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return request;
     });
   }
+  // 完整用量结算，确定未执行的请求释放，其余缺失用量保持未知。
   settle(requestId: string, usage: Usage | null, error?: string, rejected = false) {
     if (usage) UsageSchema.parse(usage);
     return this.store.tx(() => {
@@ -1156,6 +1174,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       ].includes(task.waitReason ?? '');
     return { run, task, history, restartable };
   }
+  // 从可控的等待或失败检查点恢复任务；边界校验阻止跳过未知请求或操作。
   resumeTask(runId: string, taskId: string) {
     return this.store.tx(() => {
       const { run, task, restartable } = this.taskControlBoundary(runId, taskId);
@@ -1178,6 +1197,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       });
     });
   }
+  // 在安全检查点切换模型；模式区分只应用配置与继续运行。
   switchModel(runId: string, taskId: string, provider: ProviderConfig, mode: 'apply' | 'resume') {
     return this.store.tx(() => {
       let { run, task, history, restartable } = this.taskControlBoundary(runId, taskId);
@@ -1776,6 +1796,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       }
     });
   }
+  // 恢复持久记录中的执行状态；对不确定结果保留后续核验要求。
   recover(runId?: string) {
     const recovery = this.store.recovery;
     for (const key of recovery.candidates('requests', ['RESERVED'], runId))

@@ -43,6 +43,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
 .peer-review-settings {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
 }
@@ -74,6 +75,7 @@
   border-radius: var(--radius-control);
   background: var(--surface);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .peer-review-reading {
   max-height: min(24rem, 50dvh);
   overflow: auto;

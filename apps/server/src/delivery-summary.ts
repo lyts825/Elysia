@@ -26,6 +26,7 @@ const rootId = (alias: string) =>
   `COALESCE(json_extract(${alias ? alias + '.' : ''}data,'$.readModel.rootTaskId'),json_extract(${alias ? alias + '.' : ''}data,'$.rootTaskId'))`;
 
 /** Rebuildable index. Triggers invalidate inside the source write transaction; reads drain all dirty batches. */
+/** 维护交付复核摘要投影并协调预热，支持缓存查询和失败重试。 */
 export class DeliveryReviewReads {
   private warming?: Promise<void>;
   constructor(private store: Store) {

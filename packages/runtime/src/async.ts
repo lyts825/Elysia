@@ -1,4 +1,5 @@
 /** 提供支持取消的异步延迟。 */
+/** 等待指定毫秒；信号中止时清除计时器并以中止原因拒绝。 */
 export function delay(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     signal.throwIfAborted();

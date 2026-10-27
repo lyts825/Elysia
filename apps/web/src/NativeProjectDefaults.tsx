@@ -8,6 +8,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import './native-project-defaults.css';
 
 function DefaultsSummary({ value }: { value: NativeProjectDefaults }) {
+  // 逐项显示模型、上下文和预算，供保存前核对实际默认值。
   return (
     <dl className="native-defaults-facts">
       <div>

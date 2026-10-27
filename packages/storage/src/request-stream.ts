@@ -10,7 +10,7 @@ export const REQUEST_STREAM_MAX_CHARS = 8 * 1024 * 1024;
 type Stream = { characters: number; chunk_count: number };
 type Chunk = { chunk_index: number; characters: number; content: Uint8Array };
 
-/** Authoritative in-flight text, committed before display. Each write touches at most one old block. */
+/** 持久化请求中正在生成的权威正文；文本提交后才可展示，每次最多重写一个旧尾块。 */
 export class RequestStreams {
   constructor(private db: DatabaseSync) {
     db.exec(`
@@ -26,6 +26,7 @@ export class RequestStreams {
       );
     `);
   }
+  /** 创建空流记录；requestId 必须对应已存在的请求。 */
   start(requestId: string) {
     this.db.prepare('INSERT INTO request_streams_v1 VALUES(?,0,0)').run(requestId);
   }
@@ -49,6 +50,7 @@ export class RequestStreams {
     if (!stream) throw new AppError('REQUEST_STREAM_MISSING', '模型流正文缺失，请保留数据并检查备份');
     return stream;
   }
+  /** 按顺序解压并拼接所有分块，检查块序号、数量和字符总数。 */
   read(requestId: string): string {
     const stream = this.state(requestId);
     const parts: string[] = [];
@@ -68,7 +70,10 @@ export class RequestStreams {
       throw new AppError('REQUEST_STREAM_CORRUPT', '模型流正文长度不完整');
     return parts.join('');
   }
-  /** Caller holds the Store transaction; no event may be emitted until it commits. */
+  /**
+   * 在调用方持有的 Store 事务内追加正文。expectedOffset 必须等于已提交字符数，
+   * 单次请求正文上限为 8 Mi 个 UTF-16 字符；事务提交前不能发布新文本事件。
+   */
   append(requestId: string, text: string, expectedOffset: number) {
     const stream = this.state(requestId);
     // 偏移必须与已提交长度一致，避免并发追加覆盖或重复写入。
@@ -123,6 +128,7 @@ export class RequestStreams {
       )
       .run(requestId);
   }
+  /** 删除流及其级联分块。 */
   clear(requestId: string) {
     this.db.prepare('DELETE FROM request_streams_v1 WHERE request_id=?').run(requestId);
   }

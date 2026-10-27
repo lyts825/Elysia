@@ -25,6 +25,7 @@ async function plain(filename: string, directory = false) {
     throw invalid();
   return stat;
 }
+/** 流式核对目标字节、长度和文件身份；读取期间内容变化或调用取消时失败。 */
 async function verify(filename: string, expected: { hash: string; size: number }, signal?: AbortSignal) {
   const before = await plain(filename);
   const handle = await fs.open(filename, 'r');
@@ -57,7 +58,11 @@ async function verify(filename: string, expected: { hash: string; size: number }
   }
 }
 
-/** Publish verified raw bytes without replacing an existing content-addressed object. */
+/**
+ * 将来源文件按 expected.hash 发布为内容寻址对象，大小上限为 64 MiB。
+ * 先复制到独占临时文件并核验来源，再用硬链接发布；已有目标不会覆盖，仍需核验。
+ * 无论成功、失败或取消，都关闭句柄并清理本次临时文件。
+ */
 export async function publishFileObject(
   directory: string,
   source: string,

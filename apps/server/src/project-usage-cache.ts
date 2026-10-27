@@ -6,6 +6,7 @@ export type UsageSnapshot = {
   runs: { position: number; value: ProjectUsageRun }[];
 };
 /** Payload accounting is serialized bytes, not a claim about V8 heap or process RSS. */
+/** 按项目和版本缓存用量快照，并跟踪容量及命中情况。 */
 export class ProjectUsageCache {
   private entries = new Map<string, { version: string; bytes: number; value: UsageSnapshot }>();
   private bytes = 0;
@@ -52,6 +53,7 @@ export class ProjectUsageCache {
   }
 }
 
+/** 按运行 ID 游标从用量快照中读取一页；未知游标返回 undefined。 */
 export function usageSnapshotPage(snapshot: UsageSnapshot, before?: string): ProjectUsageSummary | undefined {
   const boundary = before ? snapshot.runs.findIndex((run) => run.value.runId === before) : -1;
   if (before && boundary < 0) return;

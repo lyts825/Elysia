@@ -5,6 +5,7 @@ import { useSurfaceClient } from './SurfaceClientContext';
 import { Icon } from './Icon';
 import './tool-activity.css';
 
+// 为工具协议名称提供显示标签，原始名称仍用于关联调用及结果。
 const toolNames: Record<string, string> = {
   load_skill: '加载技能',
   list_skills: '查找技能',

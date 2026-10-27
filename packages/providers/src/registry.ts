@@ -14,6 +14,7 @@ export class ProviderRegistry {
     this.plugins = new PluginRegistry(plugins);
   }
   adapter(binding: ProviderConfig): ProviderAdapter {
+    // 只有完全匹配的协议和认证方式才能创建适配器，不回退到其他连接。
     const key = `${binding.kind}:${binding.authMode ?? 'apiKey'}`;
     const create = this.plugins.get(key);
     if (!create) throw new AppError('PROVIDER_PLUGIN_MISSING', `未注册模型接入插件：${key}`);
@@ -25,6 +26,7 @@ export class ProviderRegistry {
   }
 }
 
+/** 注册两种 API 密钥接入；凭据由宿主按具体绑定提供。 */
 export function nativeProviderPlugins(
   credential?: (binding: ProviderConfig) => ProviderCredential | undefined,
 ): ProviderPlugin[] {

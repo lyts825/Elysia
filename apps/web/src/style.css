@@ -38,6 +38,7 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible,
@@ -279,6 +280,7 @@ a {
   font-variant-numeric: tabular-nums;
   font-size: var(--font-xs);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-list {
   flex: 0 1 auto;
   max-height: 27vh;
@@ -911,6 +913,7 @@ a {
   background: var(--danger);
   border-color: var(--danger);
 }
+/* 中等宽度允许运行工具栏与控制项换行，并减少标签留白。 */
 @media (max-width: 1050px) {
   .run-toolbar {
     flex-wrap: wrap;
@@ -923,6 +926,7 @@ a {
     padding: var(--space-2) var(--space-5);
   }
 }
+/* 窄屏隐藏空间选择器，并允许管理表单字段收缩。 */
 @media (max-width: 760px) {
   .space-selector {
     display: none;
@@ -1927,6 +1931,7 @@ a {
   padding: 3px 6px;
   border-radius: var(--radius-sm);
 }
+/* 较窄窗口收紧侧栏和顶部工具栏的宽度与内边距。 */
 @media (max-width: 1250px) {
   .sidebar {
     width: 244px;
@@ -1950,6 +1955,7 @@ a {
     justify-content: flex-start;
   }
 }
+/* 进一步收窄侧栏并减少详情内容留白。 */
 @media (max-width: 1050px) {
   .sidebar {
     width: 232px;
@@ -1973,6 +1979,7 @@ a {
     font-size: var(--font-xs);
   }
 }
+/* 窄屏将侧栏改为可开合的固定导航，并调整遮罩和内容区域。 */
 @media (max-width: 760px) {
   .sidebar {
     position: fixed;
@@ -2088,6 +2095,7 @@ a {
     max-width: none;
   }
 }
+/* 短窗口调整侧栏底部导航的尺寸、换行和缓存状态布局。 */
 @media (max-height: 600px) {
   .sidebar-bottom {
     display: flex;
@@ -2113,6 +2121,7 @@ a {
     width: 100%;
   }
 }
+/* 极短窗口减少侧栏、品牌区和新建按钮的垂直留白。 */
 @media (max-height: 480px) {
   .sidebar {
     padding-top: 10px;
@@ -2147,6 +2156,7 @@ a {
     min-height: 64px;
   }
 }
+/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2156,6 +2166,7 @@ a {
     scroll-behavior: auto !important;
   }
 }
+/* 遵循减少透明效果的系统偏好，调整此处的透明材质。 */
 @media (prefers-reduced-transparency: reduce) {
   .overlay {
     backdrop-filter: none !important;
@@ -2170,6 +2181,7 @@ a {
     min-width: var(--control-lg);
   }
 }
+/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
 @media (prefers-contrast: more) {
   .icon-button,
   .text-button {

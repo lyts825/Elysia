@@ -25,6 +25,7 @@ export type ReasoningPanelProps = {
 
 /** Only renders public text supplied by the caller; never reads provider-native payloads. */
 export function ReasoningPanel(props: ReasoningPanelProps) {
+  // 使用公开推理记录的稳定身份重建内部展开和滚动状态。
   return <ReasoningRecord key={props.identity} {...props} />;
 }
 

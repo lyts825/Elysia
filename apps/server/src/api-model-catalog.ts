@@ -28,6 +28,7 @@ const ModelCatalog = z
 export { officialDeepSeek } from '../../../packages/providers/src/deepseek.js';
 
 /** Preserve advertised capabilities; only the official API promises a non-thinking mode. */
+/** 校验服务商模型目录并整理可选模型及思考强度；目录格式无效时明确报错。 */
 export function parseApiModels(data: unknown, provider: ProviderConfig): AvailableModel[] {
   const result = ModelCatalog.safeParse((data as { data?: unknown } | null)?.data);
   invariant(result.success, 'MODEL_CATALOG', '模型目录格式无效；可检查端点或手动填写模型 ID');
@@ -156,6 +157,7 @@ function catalogNetworkFailure(error: unknown, signal: AbortSignal, stage: 'conn
 }
 
 /** Listing uses the verified credential without spending inference tokens. */
+/** 使用所选凭据请求未归档的服务商模型目录；限制请求时间并校验响应。 */
 export async function apiModels(
   provider: ProviderConfig,
   keys: Pick<ProviderKeys, 'credential'>,

@@ -1,6 +1,7 @@
 /* 定义浏览器界面与桌面宿主之间可用的桥接能力。 */
 declare global {
   interface Window {
+    // 桌面预加载脚本可提供该桥；普通浏览器没有 elysia 对象。
     elysia?: {
       chooseDirectory(): Promise<string | null>;
       openUsage(): Promise<void>;
@@ -35,6 +36,7 @@ declare global {
     };
   }
 }
+/** 桌面环境由宿主打开用量页；浏览器环境使用隔离的新标签。 */
 export function manageUsage() {
   if (window.elysia) void window.elysia.openUsage();
   else window.open('https://chatgpt.com/settings/usage', '_blank', 'noopener,noreferrer');

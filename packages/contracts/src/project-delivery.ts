@@ -7,6 +7,7 @@ import type { ProjectDeliveryArchive } from './project-delivery-archive.js';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const line = z.string().trim().min(1).max(2000);
+// 一项交付要求至少一条交付物和验收标准，并区分是否必需。
 export const ProjectDeliveryItemInput = z
   .object({
     id: z.string().uuid(),
@@ -81,6 +82,7 @@ export interface ProjectDeliveryItem extends ProjectDeliveryItemInput {
   readiness: ProjectDeliveryReadiness;
   current: ProjectDeliveryRunSummary | null;
 }
+// 项目看板保存交付范围、条目及汇总计数；revision 用于识别并发变化。
 export interface ProjectDeliveryBoard {
   projectId: string;
   revision: number;
@@ -98,6 +100,7 @@ export interface ProjectDeliveryAttempts {
   items: (ProjectDeliveryRunSummary & { linkedAt: string; current: boolean })[];
   page: RecordPage;
 }
+// 冻结交付时绑定条目、运行、根任务、审核及指纹的预期版本。
 export const ProjectDeliveryManifestInput = z
   .object({
     commandId: z.string().uuid(),
@@ -122,6 +125,7 @@ export const ProjectDeliveryManifestInput = z
       .max(40),
   })
   .strict();
+// 清单记录交付创建时的项目、条目与运行快照，供后续核对。
 export interface ProjectDeliveryManifest {
   version: 1;
   id: string;

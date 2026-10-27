@@ -282,6 +282,7 @@ function itemView(
   else if (!c || confirmationStale) readiness = 'unconfirmed';
   return { ...item, attemptCount, current, confirmationStale, readiness };
 }
+/** 读取项目交付板及各交付项关联运行的数量。 */
 export function projectDeliveryBoard(store: Store, projectId: string): ProjectDeliveryBoard {
   const record = boardRecord(store, projectId);
   const counts = store.db
@@ -349,6 +350,7 @@ function linkRun(
   saveBoard(store, record.project.id, record.revision, record.data);
 }
 /** Invoked only inside the existing create command: a failed board CAS rolls back the new Run too. */
+/** 在已有创建事务中将运行关联到项目交付项，并检查工作台版本。 */
 export function attachProjectDeliveryRun(store: Store, run: Run, binding: ProjectDeliveryBinding) {
   invariant(run.projectId, 'PROJECT_RUN_SCOPE', '项目交付项不能关联独立聊天');
   const record = boardRecord(store, run.projectId);
@@ -418,6 +420,7 @@ function manifestView(store: Store, manifest: ProjectDeliveryManifest): ProjectD
   });
   return { manifest, availability };
 }
+/** 注册项目交付板、冻结清单及相关归档和交付包服务。 */
 export function registerProjectDelivery(
   app: FastifyInstance,
   store: Store,

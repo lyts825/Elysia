@@ -141,6 +141,7 @@
 .startup-skip:active {
   transform: scale(0.97);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .startup-skip:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
@@ -190,6 +191,7 @@
 .startup-settings-toggle input {
   width: 1.1rem;
 }
+/* 启动样式预设默认分为四列，窄屏规则会将其缩为两列。 */
 .startup-styles {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -285,6 +287,7 @@
     transform: rotate(360deg);
   }
 }
+/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
 @media (prefers-reduced-motion: reduce) {
   .startup-visual *,
   .startup-skip {
@@ -292,6 +295,7 @@
     transition: none !important;
   }
 }
+/* 遵循更高对比度偏好，调整此处颜色、边框或透明度。 */
 @media (prefers-contrast: more) {
   .startup-caption,
   .startup-status,
@@ -299,6 +303,7 @@
     opacity: 1;
   }
 }
+/* 窄屏将启动样式预设从四列改为两列，并允许页脚换行。 */
 @media (max-width: 440px) {
   .startup-styles {
     grid-template-columns: repeat(2, 1fr);

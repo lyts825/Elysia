@@ -10,6 +10,7 @@ export async function readReviewCriteria(
   notes: ReviewNote[],
   signal: AbortSignal,
 ) {
+  // 只加载备注引用的页，避免为少量备注拉取全部验收标准。
   const criteria = new Map<number, DeliveryCriterion>(initial.criteria.map((item) => [item.index, item]));
   const { total, limit, offset: initialOffset } = initial.criteriaPage;
   const offsets = new Set(
@@ -27,6 +28,7 @@ export async function readReviewCriteria(
       signal,
     );
     signal.throwIfAborted();
+    // 每页必须属于同一运行、根版本和交付指纹，避免把新旧标准混在一起。
     if (
       next.runId !== initial.runId ||
       next.runRevision !== initial.runRevision ||

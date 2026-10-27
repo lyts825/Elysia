@@ -23,6 +23,7 @@ const start = (scope: string) => ({
   revision: 0,
 });
 
+/** 按文件、编码和刷新代次分页读取；可选检查点只恢复相同文件与编码的位置。 */
 export function useFilePage(endpoint: string, encoding: string, refresh: number, checkpointKey?: string) {
   const client = useSurfaceClient(),
     { api } = client;
@@ -52,6 +53,7 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number,
   const value = result.scope === scope ? result.value : undefined;
   const error = result.key === key ? result.error : undefined;
   useEffect(() => {
+    // 每次分页变更取消旧请求，只接收当前读取结果。
     let alive = true;
     const controller = new AbortController();
     request.current = controller;
@@ -75,6 +77,7 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number,
       .catch((error: unknown) => {
         if (!alive || controller.signal.aborted) return;
         if (error instanceof ApiError && error.code === 'FILE_CHANGED' && current.version) {
+          // 内容版本变化时清除旧偏移并回到开头，避免把不同版本的分页拼在一起。
           if (checkpointKey) forgetReadingCheckpoint(client, savedKey);
           setNotice({ scope, text: '文件已变化，已重新读取开头。' });
           setPosition({ ...start(scope), revision: current.revision + 1 });
@@ -98,6 +101,7 @@ export function useFilePage(endpoint: string, encoding: string, refresh: number,
     };
   }, [key, scope, endpoint, encoding, current.offset, current.version, current.revision]);
   const move = (offset: number, history: number[]) => {
+    // 读取尚未完成或偏移无效时不切页；历史最多保留 128 次跳转。
     if (loading || pending.current || !value?.page) return;
     const total = value.page.totalBytes;
     if (!Number.isSafeInteger(offset) || offset < 0 || offset >= total || offset === value.page.offset)

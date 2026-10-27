@@ -6,6 +6,7 @@
   min-width: 0;
 }
 
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .review-model-policy .field-help,
 .review-policy-confirmation p {
   margin: 0;
@@ -76,7 +77,9 @@
   font-size: var(--font-lg);
   font-weight: 600;
 }
+/* 短窗口让复核策略确认弹窗整体滚动，并固定标题。 */
 @media (max-height: 560px) {
+  /* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
   .review-policy-confirm-modal {
     overflow: auto;
     scroll-padding-block: var(--space-4);

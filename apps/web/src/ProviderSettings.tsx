@@ -18,6 +18,7 @@ import {
 } from './ModelCatalog';
 
 type Provider = ProviderConfig & { keyConfigured: boolean };
+// 有持久凭据或尚未配置密钥时显示存储凭据模式；否则说明使用环境变量。
 const credentialMode = (provider?: Provider) =>
   provider?.credentialId || !provider?.keyConfigured ? 'stored' : 'env';
 const presets = [

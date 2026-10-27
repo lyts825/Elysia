@@ -113,6 +113,7 @@ function setHash(retained: Row[]) {
 export function archiveSetHash(store: Store, projectId: string) {
   return setHash(rows(store, projectId));
 }
+/** 汇总项目已保存交付包数量、字节数和集合哈希。 */
 export function projectDeliveryArchiveSummary(
   store: Store,
   projectId: string,
@@ -122,6 +123,7 @@ export function projectDeliveryArchiveSummary(
   if (!Number.isSafeInteger(totalBytes)) throw unreadable();
   return { count: retained.length, totalBytes, setHash: setHash(retained) };
 }
+/** 按项目分页读取归档列表，并限制单页数量。 */
 export function readProjectArchives(
   store: Store,
   projectId: string,
@@ -163,6 +165,7 @@ export function readProjectArchives(
   };
 }
 
+/** 管理项目交付归档的保存及读取，写入前调用作用域守卫。 */
 export class ProjectDeliveryArchiveService {
   constructor(
     private store: Store,

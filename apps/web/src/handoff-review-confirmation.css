@@ -5,6 +5,7 @@
   min-width: 0;
 }
 
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .handoff-confirmation .field-help {
   margin: 0;
   overflow-wrap: anywhere;
@@ -31,6 +32,7 @@
   font-weight: 600;
 }
 
+/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
 .handoff-confirmation-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));

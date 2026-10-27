@@ -6,6 +6,7 @@ export type ContinuationDraft = {
   commandId?: string;
   expectedRevision?: number;
 };
+/** 从本地缓存恢复续接输入；限制文本和收件项数量，损坏时返回空白续接草稿。 */
 export function readContinuationDraft(value: string | boolean | undefined): ContinuationDraft {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : null;

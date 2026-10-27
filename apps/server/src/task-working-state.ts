@@ -25,6 +25,7 @@ import type { Store } from '../../../packages/storage/src/index.js';
 
 type Params = { runId: string; taskId: string };
 
+/** 注册任务工作状态读取、保存和批准接口，写入前检查可变性及执行记录。 */
 export function registerTaskWorkingStateRoutes(
   app: FastifyInstance,
   store: Store,

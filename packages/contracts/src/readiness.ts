@@ -17,6 +17,7 @@ export const ReadinessAction = z
   .strict();
 export type ReadinessAction = z.infer<typeof ReadinessAction>;
 
+// 每项检查携带独立状态和可选操作，不由此自动认定系统整体就绪。
 export const ReadinessCheck = z
   .object({
     id: z.string().min(1).max(200),

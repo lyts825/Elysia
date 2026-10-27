@@ -17,6 +17,7 @@ const safeText = (maximum: number) =>
     .min(1)
     .max(maximum)
     .regex(/^[^\u0000-\u001f\u007f]+$/);
+// API 地址只允许 HTTP(S)，禁止把凭据、查询参数或片段混入地址。
 export const TerminalApiBaseUrl = z
   .string()
   .trim()
@@ -28,6 +29,7 @@ export const TerminalApiBaseUrl = z
       ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash
     );
   }, 'API 地址须为 HTTP(S)，且不能包含账号、密钥、查询或片段');
+// 凭据按来源区分，配置保存引用信息而非把密钥放进 API 地址。
 export const TerminalCredential = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('environment'), env: z.string().regex(/^[A-Z][A-Z0-9_]{0,127}$/) }).strict(),
   z.object({ kind: z.literal('vault'), credentialRef: z.string().uuid() }).strict(),
@@ -80,6 +82,7 @@ export type TerminalConnectionProbeRequest = z.infer<typeof TerminalConnectionPr
 export const TerminalConnectionModel = z.object({ id: safeText(200), name: safeText(200) }).strict();
 export type TerminalConnectionModel = z.infer<typeof TerminalConnectionModel>;
 /** Explicit remote operations never return provider response text or credential values. */
+// 探测结果记录连接验证与模型目录数据，不能代替后续实际请求结果。
 export const TerminalConnectionProbeResult = z
   .object({
     connectionId: z.string().uuid(),

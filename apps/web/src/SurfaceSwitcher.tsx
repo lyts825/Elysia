@@ -34,6 +34,7 @@ export function SurfaceSwitcher({
     if (restore) trigger.current?.focus();
   };
   useLayoutEffect(() => {
+    // 菜单定位受视口边界约束，打开后将焦点移到当前入口。
     if (!open || !menu.current || !trigger.current) return;
     const rect = trigger.current.getBoundingClientRect();
     const node = menu.current;

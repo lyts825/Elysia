@@ -24,6 +24,7 @@ import {
 } from './ProjectBoardDraft';
 import { ProjectBoardEditor, boardEditPayload } from './ProjectBoardEditor';
 import { ProjectDraftBackup } from './ProjectDraftBackup';
+// 计划导入预览与导航保护共享生命周期，离开前可检查是否仍有待处理内容。
 import type { PlanImportLifecycle } from './ProjectPlanTransfer';
 import type { ProjectPlanNavigationLifecycle } from './ProjectPlanNavigation';
 import { projectPlanImportDraft, projectPlanImportPreflight } from './project-plan-transfer';
@@ -186,6 +187,7 @@ export function ProjectWorkbench({
         (draft?.filter === 'ready' ? item.readiness === 'ready' : item.readiness !== 'ready'),
     ) || [];
   const change = (update: (value: ProjectBoardDraft) => ProjectBoardDraft) => {
+    // 草稿只更新本地缓存；校验或容量失败时保留上次内容并显示错误。
     try {
       writeProjectBoardDraft(cache, project.id, update);
       setDraftError('');
@@ -196,6 +198,7 @@ export function ProjectWorkbench({
     }
   };
   const action = async (path: string, body: Record<string, unknown>, method = 'POST') => {
+    // 使用当前看板版本执行写入，结束后重新读取统一投影而不混用不同接口的返回值。
     if (!board || readError || writing.current || board.archived || !live.current) return false;
     writing.current = true;
     setBusy(true);
@@ -237,6 +240,7 @@ export function ProjectWorkbench({
     }
   };
   const prepare = (item: ProjectDeliveryItem) => {
+    // 已有创建草稿时不覆盖；新草稿冻结交付项和看板版本供后续核对。
     if (!board || !draft || readError) return;
     if (draft.launch) {
       actionIssueSource.current = null;

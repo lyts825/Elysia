@@ -13,6 +13,7 @@ export function assertReviewModelPolicy(
   ledger?: RequestLedgerRow[],
 ) {
   if (run.peerReview) {
+    // 候选执行模型不能占用独立评分模式冻结的评审型号。
     const frozenModels = new Set(
       run.peerReview.bindings.map((binding) => binding.model.trim().toLowerCase()),
     );
@@ -40,6 +41,7 @@ export function assertReviewModelPolicy(
       model: store.require<Agent>('agents', task.agentId).providerBinding.model,
     }));
   for (const request of ledger ?? store.requestLedger({ runId: run.id })) {
+    // 已释放请求和工具审核请求不作为普通执行／评审模型的历史分配。
     if (request.status === 'RELEASED' || request.purpose === 'tool-review') continue;
     // Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
     const original =

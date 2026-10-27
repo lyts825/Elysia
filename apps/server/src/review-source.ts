@@ -13,6 +13,7 @@ import { deliveryFingerprint } from './delivery-fingerprint.js';
 import { savedReviewSnapshot } from './delivery-review-history.js';
 
 /** Saved reviews are verified against their record; drafts remain explicitly user-supplied material. */
+/** 校验所选复核备注的数量和正文大小，构造可追溯的来源快照。 */
 export function captureReviewSource(store: Store, run: Run, selection: RunSourceSelection) {
   const notes = (selection.reviewNotes ?? []).map((note) => ({
     ...ReviewSourceNote.parse(note),

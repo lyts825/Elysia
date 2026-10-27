@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 const preference = matchMedia('(prefers-reduced-motion: reduce)');
+// 动画偏好作为外部状态订阅，系统设置变化时更新所有使用者。
 const subscribe = (notify: () => void) => {
   preference.addEventListener('change', notify);
   return () => preference.removeEventListener('change', notify);
@@ -22,6 +23,7 @@ export function useReducedMotion() {
   return useSyncExternalStore(subscribe, () => preference.matches);
 }
 const timing = (node: HTMLElement, exit = false): KeyframeAnimationOptions => {
+  // 优先读取 CSS 变量；未配置时使用入场和退场的默认时长。
   const css = getComputedStyle(node);
   const duration = css.getPropertyValue(exit ? '--motion-exit' : '--motion-enter').trim();
   return {

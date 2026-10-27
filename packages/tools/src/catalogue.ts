@@ -29,6 +29,10 @@ function clipCatalogueText(value: string, byteLimit: number) {
   }
   return text;
 }
+/**
+ * 过滤并分页本地目录，按 JSON 双重编码后的字节预算限制结果。
+ * 空间不足时可省略首条描述；连一条记录也容不下时明确报错，避免返回无法推进的游标。
+ */
 export function localCataloguePage(
   items: { id: string; name: string; description?: string }[],
   args: { query?: string; offset: number; limit: number },
@@ -69,6 +73,10 @@ export function localCataloguePage(
   );
   return page();
 }
+/**
+ * 在有限预算内分页 MCP 工具目录；指定 schemaTool 时单独分页其 JSON Schema，
+ * 返回摘要供调用方判断跨页期间内容是否变化。服务端资料标记为不可信。
+ */
 export function mcpCataloguePage(
   inspection: McpInspection,
   args: {

@@ -39,6 +39,10 @@ const reasonLabels: Record<string, string> = {
 };
 
 type PagePosition = { cursors: string[]; query?: string };
+/**
+ * 按路径、作用域和游标读取一页通信数据。刷新期间保留同作用域的旧结果，
+ * 请求取消或作用域改变时不把旧结果显示为新任务的数据。
+ */
 function useCommunicationRead<T>(
   path: string,
   scope: string,
@@ -111,6 +115,10 @@ function useCommunicationRead<T>(
   };
 }
 
+/**
+ * 展示终端之间的接收方和消息，提供发送、分页与人工处理入口。
+ * 草稿由调用方持有，运行或消息版本变化触发读取，不自动发送草稿。
+ */
 export function TerminalCommunication({
   run,
   disabled,
@@ -193,6 +201,7 @@ export function TerminalCommunication({
     refresh,
     { cursors: messageCursors },
   );
+  /** 记住触发刷新的焦点位置，以便结果到达后在用户未转移焦点时提示结果。 */
   function refreshRead(kind: 'messages' | 'peers') {
     readFeedback.current = { kind, refresh: refresh + 1, origin: document.activeElement };
     setRefresh((value) => value + 1);
@@ -271,6 +280,7 @@ export function TerminalCommunication({
   }, [resolutionDraft?.item.id]);
   useEffect(() => {
     if (!open) return;
+    // 仅在面板展开且页面可见时轮询，减少隐藏界面的读取。
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') setRefresh((value) => value + 1);
     }, 15000);

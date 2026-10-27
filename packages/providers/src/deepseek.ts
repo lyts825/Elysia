@@ -5,6 +5,7 @@ import type { ProviderConfig } from '../../contracts/src/index.js';
 export function officialDeepSeek(provider: Pick<ProviderConfig, 'kind' | 'baseUrl'>): boolean {
   try {
     const url = new URL(provider.baseUrl);
+    // 同时接受官方根路径、v1 路径和对应的补全端点。
     const path = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
     return (
       provider.kind === 'deepseek' && url.origin === 'https://api.deepseek.com' && ['', '/v1'].includes(path)
@@ -28,6 +29,7 @@ export function deepSeekModelReplacement(
 export function retiredDeepSeekModelIssue(
   provider: Pick<ProviderConfig, 'kind' | 'baseUrl' | 'model' | 'reasoningEffort'>,
 ): string {
+  // 仅提供提示，不在读取旧配置时自动迁移任务或模型。
   return deepSeekModelReplacement(provider)
     ? `DeepSeek 官方旧型号「${provider.model}」已停用，请将连接切换为 deepseek-flash，保存并重新验证。`
     : '';

@@ -80,6 +80,7 @@ button {
     opacity: 0.45;
   }
 }
+/* 遵循减少动态效果的系统偏好，限制此处动画或过渡。 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

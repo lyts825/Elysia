@@ -15,6 +15,7 @@ const states: Record<RecoveryTable, readonly string[]> = {
 };
 const object = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/** 创建持久暂停和不可读记录表；原记录修改或删除时清除对应问题标记。 */
 export function initializeExecutionRecovery(db: DatabaseSync) {
   db.exec(`CREATE TABLE IF NOT EXISTS execution_holds_v1(
     run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
@@ -44,7 +45,7 @@ class RecoveryReadError extends Error {
   }
 }
 
-/** Small authoritative holds survive process exit without rewriting unreadable business bodies. */
+/** 管理跨进程重启保留的执行暂停及恢复问题，不改写不可读的业务正文。 */
 export class ExecutionRecovery {
   constructor(private store: Store) {}
   get(runId: string): ExecutionHold | undefined {
@@ -65,6 +66,7 @@ export class ExecutionRecovery {
       }
     );
   }
+  /** 设置持久暂停；已有不可读原因时保留该原因，直到记录修复并显式恢复。 */
   hold(runId: string, reason: ExecutionHold['reason']) {
     this.store.db
       .prepare(
@@ -74,6 +76,7 @@ export class ExecutionRecovery {
       .run(runId, reason, new Date().toISOString());
     return this.get(runId)!;
   }
+  /** 先重新核验未完成执行记录，再解除暂停。 */
   release(runId: string) {
     this.assertReadable(runId);
     this.store.db.prepare('DELETE FROM execution_holds_v1 WHERE run_id=?').run(runId);
@@ -91,6 +94,7 @@ export class ExecutionRecovery {
     });
     return true;
   }
+  /** 读取记录并核验身份、版本、状态和所属关系；retry 允许重新检查已记录的问题。 */
   read<T extends Entity>(table: RecoveryTable, id: string, retry = false): T {
     return this.readRecord<T>(table, id, retry, true);
   }
@@ -175,7 +179,7 @@ export class ExecutionRecovery {
       }
     }
   }
-  /** Each recovery action rolls back independently; the issue and hold are recorded afterwards. */
+  /** 每条恢复操作独立回滚；失败后登记不可读问题并持久暂停所属运行。 */
   apply<T extends Entity>(table: RecoveryTable, id: string, work: (entity: T) => void, retry = false) {
     return this.store.tx(() => {
       this.store.db.exec('SAVEPOINT execution_recovery_item');
@@ -197,6 +201,7 @@ export class ExecutionRecovery {
       }
     });
   }
+  /** 查找指定状态的恢复候选；状态缺失也纳入核验，已登记问题暂不重复处理。 */
   candidates(table: RecoveryTable, statuses: readonly string[], runId?: string): string[] {
     if (!statuses.length) return [];
     const state = "COALESCE(json_extract(data,'$.status'),json_extract(data,'$.readModel.status'))";
@@ -211,6 +216,7 @@ export class ExecutionRecovery {
         .all(JSON.stringify(statuses), ...(runId ? [runId] : []), table) as { id: string }[]
     ).map((row) => row.id);
   }
+  /** 核验运行、已登记的问题和尚未结束的执行记录，不全面扫描历史记录。 */
   assertReadable(runId: string) {
     const issues = this.store.db
       .prepare('SELECT table_name,record_id FROM execution_recovery_issues_v1 WHERE run_id=?')

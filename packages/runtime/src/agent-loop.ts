@@ -27,6 +27,10 @@ export class NativeAgentLoop {
     private readonly control: RunControl,
     private readonly compiler: ContextCompiler,
   ) {}
+  /**
+   * 执行一次原生代理步骤：先恢复未配对的工具结果，再编译上下文并请求模型。
+   * 限流、任务状态变化或步骤上限会提前结束本步，后续由调度器重新判断。
+   */
   async step(task: Task, signal: AbortSignal) {
     const cooldown = task.rateLimit;
     const store = this.kernel.store;
@@ -56,6 +60,7 @@ export class NativeAgentLoop {
       return;
     }
     const definitions = await this.gateway.prepareDefinitions(task, signal);
+    // 准备工具期间任务可能被停止或修改，因此继续前重新读取持久状态。
     task = store.require<Task>('tasks', task.id);
     if (task.status !== 'RUNNING') return;
     run = store.require<Run>('runs', task.runId);

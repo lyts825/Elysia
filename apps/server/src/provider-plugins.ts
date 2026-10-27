@@ -9,6 +9,7 @@ import type { CodexSubscription } from './codex-subscription.js';
 import type { SubscriptionService } from './subscription.js';
 import type { ProviderKeys } from './provider-keys.js';
 
+/** 为 API 密钥、ChatGPT 订阅和 Codex 订阅装配匹配的供应商适配器。 */
 /** Server-owned account capabilities stay out of the runtime and of the terminal surface. */
 export function serverProviderPlugins(services: {
   codex: Pick<CodexSubscription, 'adapter'>;

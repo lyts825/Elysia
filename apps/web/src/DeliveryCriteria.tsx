@@ -18,6 +18,7 @@ const matches = (expected: Snapshot, actual: Snapshot) =>
 const changed = '交付记录已变化。已读内容保留，请重新读取后继续核对。';
 
 function usePageRead(snapshot: Snapshot, stale: () => void) {
+  // 分页读取与首屏绑定同一运行和根版本；不一致时保留已读页并提示刷新。
   const { api } = useSurfaceClient();
   const request = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);

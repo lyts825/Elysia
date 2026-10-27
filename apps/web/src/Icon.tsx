@@ -3,6 +3,7 @@ import type React from 'react';
 import { BrandGlyph } from './Brand';
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+  // 品牌标记使用专用组件，其余名称从统一的 SVG 路径表选择。
   if (name === 'spark') return <BrandGlyph size={size} />;
   const paths: Record<string, React.ReactNode> = {
     terminal: (

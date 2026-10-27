@@ -2,6 +2,10 @@
 import { useId } from 'react';
 import './terminal-recovery.css';
 
+/**
+ * 收集用户对中断操作的实际核验说明和结论。
+ * disabled 或说明为空时不能提交；submit 接收去除首尾空白后的说明。
+ */
 export function TerminalRecovery({
   disabled,
   note,
@@ -13,6 +17,7 @@ export function TerminalRecovery({
   changeNote: (value: string) => void;
   submit: (outcome: 'confirmed' | 'not_applied', note: string) => void;
 }) {
+  // 仅收集人工核验说明及结论；操作结果由 submit 交给上层处理。
   const noteHelpId = useId(),
     scopeHelpId = useId(),
     noteStateId = useId(),

@@ -16,6 +16,10 @@ type Session = {
 };
 import type { ContinuationDraft } from './ContinuationDraft';
 export { readContinuationDraft, type ContinuationDraft } from './ContinuationDraft';
+/**
+ * 检查终端会话的续接能力并选择待处理消息；正文、模式和选择保存在调用方草稿中。
+ * 会话或消息读取过期时保留草稿，但新请求需等待重新核对。
+ */
 export function TerminalContinuation({
   run,
   messageRevision = 0,
@@ -53,13 +57,16 @@ export function TerminalContinuation({
   current.current = draft;
   const inboxIds = draft.inboxIds ?? [];
   const visibleIds = new Set(pending?.items.map((item) => item.id));
+  // 只有读到了完整待处理列表，才能认定已选但未出现的消息已经失效。
   const staleIds =
     pendingReady && pending && !pending.page.hasMore ? inboxIds.filter((id) => !visibleIds.has(id)) : [];
   const staleSelection = staleIds.length > 0;
   const allSelectedIds = [...new Set([...inboxIds, ...(pending?.items.map((item) => item.id) ?? [])])];
+  // 编辑草稿后清除旧命令身份；未修改的待确认请求仍可用原身份重试。
   const change = (patch: Partial<ContinuationDraft>) =>
     changeDraft({ text, mode, inboxIds, ...patch, commandId: undefined, expectedRevision: undefined });
   useEffect(() => {
+    // 每次重新读取都绑定当前运行与消息版本，旧响应在取消后不会覆盖新状态。
     const controller = new AbortController();
     setPendingLoading(true);
     setPendingIssue('');

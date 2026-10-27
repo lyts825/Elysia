@@ -35,6 +35,7 @@ export function ModelSwitchModal({
       : defaultChoice(providers),
   );
   const [modelReady, setModelReady] = useState(false);
+  // 连接、模型或推理强度确实变化且模型校验通过后，才允许提交切换。
   const changed =
     choice.providerId !== agent.providerId ||
     choice.model !== binding.model ||

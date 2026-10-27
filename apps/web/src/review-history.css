@@ -4,6 +4,7 @@
   color: var(--text);
   background: var(--surface);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .review-history-list {
   max-height: min(26rem, 55dvh);
   overflow: auto;
@@ -47,6 +48,7 @@
 .review-record-notes > li {
   min-width: 0;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .review-record-reading,
 .review-history-error {
   max-height: min(16rem, 45dvh);

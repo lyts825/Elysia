@@ -2,6 +2,7 @@
 import { useSurfaceRoot } from './SurfaceClientContext';
 import { useCallback, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from 'react';
 
+/** 订阅媒体查询变化，视口改变时触发 React 更新并在卸载时移除监听。 */
 export function useViewportMatch(query: string) {
   const media = useMemo(() => matchMedia(query), [query]);
   return useSyncExternalStore(
@@ -18,6 +19,7 @@ export function useViewportMatch(query: string) {
 
 // Keep navigation mounted so searches, menus and drafts survive resizing.
 export function useDrawerFocus(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
+  // 抽屉打开时接管焦点；关闭后仅在原元素可用且没有其他遮罩时恢复焦点。
   const surfaceRoot = useSurfaceRoot();
   const closeRef = useRef(close);
   closeRef.current = close;
@@ -37,6 +39,7 @@ export function useDrawerFocus(ref: RefObject<HTMLElement | null>, open: boolean
         return;
       }
       if (event.key !== 'Tab') return;
+      // Tab 在当前抽屉的可见可用控件之间循环，不将焦点移到背景。
       const elements = [
         ...drawer.querySelectorAll<HTMLElement>(
           'button, input, select, textarea, a[href], summary, [tabindex="0"]',

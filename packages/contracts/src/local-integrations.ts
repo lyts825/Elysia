@@ -1,6 +1,7 @@
 // 本地代理、技能、记忆及 MCP 配置的数据契约。
 export type LocalAgentKind = 'codex' | 'claude' | 'dsh';
 export type LocalItemKind = 'memory' | 'skill' | 'mcp';
+// stdio 使用命令与环境变量名；HTTP 使用 URL 和请求头对应的环境变量名。
 export interface LocalMcpConfig {
   transport: 'stdio' | 'http';
   command?: string;

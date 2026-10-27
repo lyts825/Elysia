@@ -10,6 +10,7 @@ export type ReplyReceipt = {
   outcome?: 'not-sent';
 };
 
+/** 严格检查版本、正文、命令 ID 和期望版本，无法核验时不产生可重发回执。 */
 export function readReplyReceipt(value: string | boolean | undefined): ReplyReceipt | null {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : null;
@@ -42,6 +43,7 @@ export function readReplyReceipt(value: string | boolean | undefined): ReplyRece
   }
 }
 
+/** 区分无回执与不可读取的回执，后者须保留原记录以供核对。 */
 export function inspectReplyReceipt(value: string | boolean | undefined, targetRunId: string) {
   if (value === undefined || value === '') return { status: 'empty' as const };
   const receipt = readReplyReceipt(value);
@@ -53,6 +55,7 @@ export function inspectReplyReceipt(value: string | boolean | undefined, targetR
   return { status: 'ready' as const, receipt };
 }
 
+/** 仅当任务、正文和发送意图均一致且结果未标记为未发送时，复用回执。 */
 export function matchesReplyReceipt(
   receipt: ReplyReceipt | null,
   targetRunId: string,

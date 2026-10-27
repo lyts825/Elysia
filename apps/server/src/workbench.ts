@@ -148,11 +148,13 @@ function capacity(count: number, bytes: number) {
     );
 }
 
+/** 按规范化的数据目录计算工作台作用域，Windows 路径比较忽略大小写。 */
 export function workbenchScope(store: Store) {
   // Store.directory is already resolved with realpathSync, including directory links.
   const directory = path.normalize(path.resolve(store.directory));
   return hash(`workbench:v1:${process.platform === 'win32' ? directory.toLowerCase() : directory}`);
 }
+/** 注册工作台读取与保存接口，并维护相关索引失效触发器。 */
 export function registerWorkbench(app: FastifyInstance, store: Store) {
   const scope = workbenchScope(store);
   // Older application versions and management deletes invalidate the derived sizes too.

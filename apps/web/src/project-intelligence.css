@@ -137,6 +137,7 @@
   padding: 0;
   margin: var(--space-1) 0 0;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .intelligence-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
@@ -170,6 +171,7 @@
 .project-intelligence .intelligence-options > label:has(input:disabled) {
   cursor: default;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .project-intelligence .intelligence-options > label:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -352,6 +354,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* 窄屏缩小项目能力面板的留白，并调整选项网格。 */
 @media (max-width: 480px) {
   .project-intelligence {
     padding: var(--space-3);

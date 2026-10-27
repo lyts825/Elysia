@@ -15,6 +15,7 @@ export interface PluginContributions<T> {
 }
 
 function checkedManifest(manifest: PluginManifest): Readonly<PluginManifest> {
+  // 身份、版本和接口版本在注册或加载前校验；冻结副本避免调用方事后改写清单。
   invariant(
     manifest &&
       /^[a-z][a-z0-9.-]*$/.test(manifest.id) &&
@@ -42,6 +43,7 @@ export class PluginRegistry<T> {
         invariant(!ids.has(manifest.id), 'PLUGIN_DUPLICATE', `插件重复注册：${manifest.id}`);
         ids.add(manifest.id);
         const names = Object.keys(plugin.contributions);
+        // 贡献名在整个注册表内唯一，不能因插件顺序而覆盖已有实现。
         for (const name of names) {
           invariant(
             name.trim().length > 0 && plugin.contributions[name] !== undefined,
@@ -111,6 +113,7 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
     if (this.closed)
       return Promise.reject(new AppError('PLUGIN_DISPOSED', `插件已释放：${this.manifest.id}`));
     if (this.instance) return Promise.resolve(this.instance);
+    // 同一宿主的并发加载复用一个 Promise，避免重复创建实例。
     if (this.pending) return this.pending;
     const pending = (async () => {
       const factory = await this.loader();
@@ -127,6 +130,7 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
         this.checkOpen();
         this.validate(instance);
       } catch (error) {
+        // 创建完成后若关闭或校验失败，由激活流程释放实例；释放失败会阻止后续重试。
         try {
           await instance.dispose();
         } catch (cleanupError) {
@@ -154,6 +158,7 @@ export class LazyPlugin<Context, Instance extends PluginInstance> {
   }
 
   dispose(): Promise<void> {
+    // 多次关闭共享结果；先阻止新加载，再等待正在进行的激活收束。
     if (this.closing) return this.closing;
     this.closed = true;
     this.closing = (async () => {

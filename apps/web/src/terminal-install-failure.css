@@ -1,4 +1,5 @@
 /* 定义 terminal-install-failure 对应界面的样式与布局。 */
+/* 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。 */
 .terminal-install-failure-target {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -14,6 +15,7 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .terminal-install-failure-target dd {
   margin: 0;
   overflow-wrap: anywhere;

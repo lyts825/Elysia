@@ -20,6 +20,7 @@ const stages = [
 ];
 const statuses = ['ok', 'skipped', 'error'];
 const LIMIT = 64 * 1024;
+/** 只保留允许的阶段、状态和有界耗时，忽略无效输入。 */
 function cleanStage(value) {
   if (
     !value ||
@@ -39,6 +40,7 @@ function cleanStage(value) {
     ...(value.surface ? { surface: value.surface } : {}),
   };
 }
+/** 校验历史记录并限制阶段数，不直接信任磁盘上的 JSON。 */
 function cleanRecord(value) {
   if (
     !value ||
@@ -58,6 +60,10 @@ function cleanRecord(value) {
     stages: value.stages.slice(0, 32).map(cleanStage).filter(Boolean),
   };
 }
+/**
+ * 汇总本次启动阶段与最多 20 条历史记录。写入串行执行并通过临时文件替换，
+ * renderer 上报的时间转换为相对启动耗时；异常诊断数据不会阻止应用启动。
+ */
 function createStartupDiagnostics(directory, options = {}) {
   const now = performance.timeOrigin + performance.now();
   const requested = Number(options.startedAt);
@@ -111,6 +117,7 @@ function createStartupDiagnostics(directory, options = {}) {
       });
     writing.catch(() => {});
   }
+  // 同一阶段、入口和状态组合只记录一次，限制单次启动的记录数量。
   function record(value) {
     const normalized = cleanStage(value);
     if (!normalized) return false;

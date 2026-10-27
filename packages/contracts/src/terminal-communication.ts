@@ -15,6 +15,7 @@ export type TerminalCommunicationDraft = {
   expectedRevision?: number;
 };
 
+// 通信记录保留方向、对端和处理状态；未知或不可用的结果不得视为已送达。
 export type TerminalCommunicationItem = {
   id: string;
   revision: number;

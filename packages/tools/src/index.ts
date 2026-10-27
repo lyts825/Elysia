@@ -174,6 +174,10 @@ export class ToolGateway {
   get store() {
     return this.kernel.store;
   }
+  /**
+   * 核验中断后结果不明的操作：容器清理只记录停止结果；文件写入只有实际哈希等于
+   * 写入前或写入后证据时才判定结果，其他情况继续等待用户核验。
+   */
   async recoverOperations() {
     const containers: Operation[] = [];
     for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN']))
@@ -329,6 +333,10 @@ export class ToolGateway {
     }
     return names.map((name) => this.tools.require(name).definition());
   }
+  /**
+   * 将任务输入解析为实际路径并检查权限。读取可访问授权的项目源目录；写入必须同时
+   * 位于任务工作区和允许写入的路径内，原始路径与解析路径均禁止访问 .git。
+   */
   async path(task: Task, input: string, write = false) {
     const permission = this.kernel.permissions(task),
       project = this.store.require<Project>(
@@ -371,6 +379,7 @@ export class ToolGateway {
     }
     return real;
   }
+  /** 为项目任务准备工作区；已有基线时创建分离的 Git worktree，再保存任务状态。 */
   async prepare(task: Task, signal: AbortSignal) {
     if (this.store.require<Run>('runs', task.runId).kind === 'chat') return task;
     if (task.workspace) {
@@ -414,6 +423,7 @@ export class ToolGateway {
     this.kernel.wait(this.store.require<Task>('tasks', task.id), 'verification');
     throw new AppError('OPERATION_UNCERTAIN', message);
   }
+  /** 将工具调用绑定到唯一的已记录模型消息，防止同一调用 ID 被更换参数重用。 */
   private callSource(task: Task, call: ToolCall, assistantMessageId?: string) {
     const sequence = inspectToolCalls(this.kernel.history(task));
     if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
@@ -434,6 +444,7 @@ export class ToolGateway {
     );
     return source.message.id;
   }
+  /** 查找同一消息的既有操作；旧记录缺少消息 ID 时，必须依靠回执或请求证据唯一配对。 */
   private previousCall(task: Task, call: ToolCall, assistantMessageId: string) {
     const operations = this.store
       .all<Operation>('tool_operations', task.runId)
@@ -488,6 +499,10 @@ export class ToolGateway {
     if (current.length > 1) this.uncertainCall(task, '同一工具调用存在多条操作记录，请核验结果');
     return current[0];
   }
+  /**
+   * 校验授权、参数和调用来源后执行工具。已完成的同一调用复用结果，未确认的副作用
+   * 转入核验，避免因重试重复执行。具体事务、串行和审核策略由工具贡献声明。
+   */
   async call(
     task: Task,
     attempt: Attempt,

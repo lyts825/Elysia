@@ -127,6 +127,7 @@ function publicMessage(store: Store, messageId: string, runId: string): Message 
     return null;
   return value;
 }
+/** 读取指定原生运行的公开用户或助手消息，供来源选择预览。 */
 export function sourceMessage(store: Store, runId: string, messageId: string): SourceMessage {
   nativeRun(store, runId);
   const message = publicMessage(store, messageId, runId);
@@ -201,6 +202,7 @@ export function sourceOptions(
     artifactPage: artifacts.page,
   };
 }
+/** 核对来源运行版本，捕获选中的消息、复核备注和产物差异。 */
 export function captureRunSource(store: Store, selection: RunSourceSelection): RunSourceSnapshot {
   const source = nativeRun(store, selection.runId);
   assertRevision(selection.expectedRevision, source.revision);
@@ -273,6 +275,7 @@ export function captureRunSource(store: Store, selection: RunSourceSelection): R
   );
   return { ...snapshot, hash: hash(stable(snapshot)) };
 }
+/** 将来源快照保存为对象并关联到新运行的根任务。 */
 export function attachRunSource(store: Store, run: Run, source: RunSourceSnapshot) {
   const bundle = store.object(stable(source));
   store.put<Artifact>('artifacts', {

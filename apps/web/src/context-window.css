@@ -68,6 +68,7 @@
   color: var(--muted);
   opacity: 0.62;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .context-policy-editor :is(button, select, input):focus-visible,
 .context-meter:focus-visible,
 .context-window-details summary:focus-visible,
@@ -343,6 +344,7 @@
 .context-compact-setup[open] > summary {
   margin-bottom: var(--space-3);
 }
+/* 缩小窗口指标控件的高度与间距。 */
 @media (max-width: 760px) {
   .context-meter {
     min-height: var(--control-md);
@@ -357,6 +359,7 @@
     gap: var(--space-2);
   }
 }
+/* 压缩用量文字，并调整剩余容量区域的列布局。 */
 @media (max-width: 400px) {
   .context-usage-summary strong {
     font-size: var(--font-2xl);
@@ -375,7 +378,9 @@
     gap: var(--space-3);
   }
 }
+/* 短窗口将弹窗改为外层滚动，并固定标题以保留上下文。 */
 @media (max-height: 500px) {
+  /* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
   .modal.context-window-modal {
     overflow: auto;
     overscroll-behavior: contain;

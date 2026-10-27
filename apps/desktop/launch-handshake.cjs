@@ -1,5 +1,6 @@
 // 协调桌面进程与启动构建过程的握手。
 // This handshake is entered only after Electron has acquired its native single-instance lock.
+/** 请求启动器准备构建；禁用握手时返回空结果，超时、断连或无效构建均失败。 */
 function waitForLaunchBuild(channel, enabled) {
   if (!enabled) return Promise.resolve(undefined);
   if (!channel.send || !channel.connected)

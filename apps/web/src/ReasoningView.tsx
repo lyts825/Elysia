@@ -14,6 +14,7 @@ export const reasoningIdentity = (runId: string, requestId?: string, messageId?:
   JSON.stringify([runId, requestId ? 'request' : 'message', requestId || messageId]);
 
 function longerText(saved?: string, live?: string) {
+  // 只在实时文本扩展已保存前缀时替换，内容冲突时保留已读内容。
   if (live === undefined || !live.length) return saved;
   if (saved === undefined || live.startsWith(saved)) return live;
   return saved;

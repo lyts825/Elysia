@@ -55,6 +55,7 @@
   flex: none;
   margin-top: var(--space-1);
 }
+/* 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。 */
 .execution-config-budget {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
@@ -82,6 +83,7 @@
 .execution-config-budget dd {
   font-variant-numeric: tabular-nums;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .execution-config-read {
   max-height: min(12rem, 40dvh);
   overflow: auto;
@@ -128,6 +130,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+/* 短窗口由弹窗整体滚动并固定标题，避免表单被嵌套滚动区限制。 */
 @media (max-height: 560px) {
   .execution-config-modal,
   .execution-contract-policy .modal {

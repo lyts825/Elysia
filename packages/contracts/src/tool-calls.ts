@@ -8,6 +8,7 @@ export interface ToolCallOccurrence {
 }
 
 /** Provider call IDs are scoped to an assistant response, not to a task or attempt. */
+/** 返回遇到的调用、仍在等待的调用和首个配对错误；同一响应内的调用 ID 必须唯一。 */
 export function inspectToolCalls(messages: readonly Message[]) {
   const occurrences: ToolCallOccurrence[] = [];
   const waiting = new Map<string, ToolCallOccurrence>();
@@ -29,6 +30,7 @@ export function inspectToolCalls(messages: readonly Message[]) {
     }
     if (error) break;
     if (message.role === 'tool') {
+      // 仅接受当前尚未完成的调用 ID，已消费的结果不能再次配对。
       const occurrence = message.callId ? waiting.get(message.callId) : undefined;
       if (!occurrence) {
         error = { code: 'TOOL_PAIR_INVALID', message: '工具结果没有对应调用' };
@@ -41,6 +43,7 @@ export function inspectToolCalls(messages: readonly Message[]) {
   return { occurrences, pending: [...waiting.values()], error };
 }
 
+/** 判断消息序列是否没有错误且所有工具调用都已得到结果。 */
 export function toolCallsClosed(messages: readonly Message[]) {
   const sequence = inspectToolCalls(messages);
   return !sequence.error && sequence.pending.length === 0;

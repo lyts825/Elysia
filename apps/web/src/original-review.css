@@ -1,7 +1,9 @@
 /* 定义 original-review 对应界面的样式与布局。 */
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .original-review-modal .workflow-body {
   overflow-wrap: anywhere;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .original-review-snapshot,
 .original-review-error-reading {
   min-width: 0;

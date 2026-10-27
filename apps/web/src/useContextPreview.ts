@@ -11,6 +11,7 @@ import {
 import type { SurfaceClient } from './api';
 
 function validatedMetrics(agent: Agent, value: unknown) {
+  // 指标必须匹配当前代理、会话和冻结的模型窗口配置，旧事件不可覆盖新代理。
   const parsed = ContextRuntimeMetrics.safeParse(value);
   if (!parsed.success) return;
   const metrics = parsed.data,
@@ -35,6 +36,7 @@ function validatedMetrics(agent: Agent, value: unknown) {
   return metrics;
 }
 export function contextFromMetrics(agent: Agent, value: unknown): ContextProjection | undefined {
+  // 实时指标只生成展示投影；是否允许调整上下文仍需单独读取设置状态。
   const metrics = validatedMetrics(agent, value);
   if (!metrics) return;
   return {
@@ -93,6 +95,7 @@ export function useContextPreview(
     agent?.providerBinding,
   ]);
   const request = useCallback(async () => {
+    // 新请求取消旧请求并推进代次，以屏蔽延迟返回的过期结果。
     const target = selected.current;
     if (!target.enabled || !target.agent) return;
     controller.current?.abort();
@@ -120,6 +123,7 @@ export function useContextPreview(
         result.runId === target.runId ? result.agents.find((p) => p.agentId === target.agent!.id) : undefined;
       if (!incoming) throw Error('此执行通道尚未提供上下文用量。');
       setProjection((old) =>
+        // 请求期间收到更新的实时指标时，保留较新的显示值。
         old?.updatedAt &&
         ((incoming.updatedAt && Date.parse(old.updatedAt) > Date.parse(incoming.updatedAt)) ||
           (liveRevision.current !== liveAtRequest &&
@@ -146,6 +150,7 @@ export function useContextPreview(
     };
   }, [identity, enabled, request]);
   const update = useCallback((value: unknown) => {
+    // 只接纳当前代理且通过配置核验的实时指标，并按时间避免回退。
     const { agent, enabled } = selected.current;
     if (!enabled || !agent) return;
     const incoming = contextFromMetrics(agent, value);

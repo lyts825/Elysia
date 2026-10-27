@@ -6,6 +6,7 @@ import './project-usage.css';
 import './project-usage-details.css';
 
 function Costs({ value }: { value: ProjectUsageTotals }) {
+  // 分币种展示已知费用，同时保留费用未知或未结算的计数。
   return (
     <>
       {value.costs.length ? (

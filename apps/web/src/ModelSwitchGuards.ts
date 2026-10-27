@@ -8,6 +8,7 @@ type SwitchDetail = DetailReadState & {
   requests: RequestRecord[];
   operations: Operation[];
 };
+/** 判断任务状态是否属于界面允许尝试续接的范围，最终准入仍由服务端检查。 */
 export function modelTaskCanContinue(task: Task) {
   return (
     task.status === 'FAILED' ||
@@ -29,6 +30,7 @@ export function taskResumeReason(detail: SwitchDetail, archived: boolean, taskId
   return taskBoundaryReason(detail, archived, taskId, true);
 }
 function taskBoundaryReason(detail: SwitchDetail, archived: boolean, taskId: string, resume: boolean) {
+  // 切换和恢复共用执行边界：数据不完整、未知副作用或活动请求均先阻止操作。
   if (detailReadReason(detail)) return detailReadReason(detail);
   if (detail.run.execution?.kind === 'docker-agent') return '终端配置在创建时冻结，调整 Agent 请新建任务。';
   const task = detail.tasks.find((item) => item.id === taskId);

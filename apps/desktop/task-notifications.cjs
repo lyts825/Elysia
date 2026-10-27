@@ -11,6 +11,10 @@ const bodies = {
   UNCERTAIN: '任务状态需要核对。打开工作台查看详情。',
 };
 
+/**
+ * 按原生和终端入口分别保存通知偏好，并按任务版本去重。
+ * 通知只包含固定状态文案；点击后聚焦窗口并发送任务定位信息。
+ */
 function createTaskNotifications(window, directory) {
   const parent = path.join(directory, 'desktop'),
     file = path.join(parent, 'task-notifications.json');
@@ -42,6 +46,7 @@ function createTaskNotifications(window, directory) {
   const result = async () => ({ ...(await read()), available: supported() });
   return {
     read: result,
+    /** 串行保存单个入口的开关；启用时要求系统支持桌面通知。 */
     set(value) {
       if (!value || !['native', 'terminal'].includes(value.surface) || typeof value.enabled !== 'boolean')
         throw new Error('通知偏好无效');
@@ -68,6 +73,7 @@ function createTaskNotifications(window, directory) {
       writing = job;
       return job;
     },
+    /** 仅对已启用入口的新版本状态发送通知，并限制去重记录与活动通知数量。 */
     async notify(value) {
       if (
         !value ||

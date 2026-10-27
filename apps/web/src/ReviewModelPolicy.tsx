@@ -15,6 +15,7 @@ export function ReviewModelPolicy({
   pendingChanged: (pending: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  // 启用同模型例外需要单独确认；关闭选项可直接应用。
   const helpId = useId();
   const close = () => {
     setConfirming(false);

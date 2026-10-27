@@ -105,6 +105,7 @@ function reference(value: unknown) {
     .find(Boolean);
 }
 
+/** 验证导入的本地 MCP 配置及允许的字段，拒绝不符合结构的内容。 */
 export function validateLocalMcpConfig(value: unknown): LocalMcpConfig {
   const config = plain(value);
   const keys = new Set([
@@ -363,6 +364,7 @@ function conversationText(source: string, truncated: boolean) {
   return result.join('\n\n').slice(-MAX_FILE / 2);
 }
 
+/** 扫描和同步本地代理资源；扫描结果与当前本地库分别管理。 */
 export class LocalAgentSync {
   private scans = new Map<string, CachedScan>();
   constructor(
@@ -398,6 +400,7 @@ export class LocalAgentSync {
     if (importedLibrary(this.store).revision !== expected)
       throw new AppError('LOCAL_REVISION_CHANGED', '本机同步目录已更新，请刷新后重试', false, null, 409);
   }
+  /** 按所选来源扫描本地资源；可指定根目录并通过 signal 取消。 */
   async scan(kind: LocalAgentKind, requestedRoot?: string, signal?: AbortSignal): Promise<LocalAgentScan> {
     if (!['codex', 'claude', 'dsh'].includes(kind))
       throw new AppError('LOCAL_SOURCE_INVALID', '请选择 Codex、Claude Code 或 DeepSeek Harness');

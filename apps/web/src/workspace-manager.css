@@ -34,6 +34,7 @@
   color: var(--muted);
   cursor: pointer;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .workspace-manager-modal .workspace-manager-reading,
 .workspace-manager-modal .management-error {
   min-width: 0;
@@ -53,6 +54,7 @@
 .workspace-manager-modal .workspace-manager-reading dd {
   margin: var(--space-1) 0 var(--space-2);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .workspace-manager-modal .workspace-manager-reading:focus-visible,
 .workspace-manager-modal .management-error:focus-visible {
   outline: 2px solid var(--accent);
@@ -63,6 +65,7 @@
   color: var(--secondary);
   font-size: var(--font-sm);
 }
+/* 短窗口由工作区管理弹窗整体滚动，并释放内部内容区的高度约束。 */
 @media (max-height: 480px) {
   .workspace-manager-modal {
     overflow-y: auto;

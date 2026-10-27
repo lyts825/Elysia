@@ -41,6 +41,7 @@ export function DeliveryUserReview({
   const { api, mutation } = useSurfaceClient();
   const descriptionId = useId();
   const draft = useMemo(() => readReviewDraft(rawDraft, value), [rawDraft, value]);
+  // 本地草稿优先恢复，保存与旧备注重新关联分别跟踪进行状态。
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [busy, setBusy] = useState(false),

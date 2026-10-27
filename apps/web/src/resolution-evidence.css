@@ -18,6 +18,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .resolution-evidence-list {
   max-height: min(32rem, 60dvh);
   overflow: auto;
@@ -37,6 +38,7 @@
 .resolution-evidence-item .workflow-note-choice {
   margin: var(--space-2) 0;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .resolution-evidence-reading {
   max-height: min(12rem, 40dvh);
   overflow: auto;

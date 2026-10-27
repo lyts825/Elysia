@@ -28,6 +28,7 @@ const memoryShape = z
   })
   .strict();
 const pendingShape = z.discriminatedUnion('kind', [
+  // 持久化待处理操作及命令 ID，以便请求结果未知时保留核对依据。
   selectionShape.extend({ kind: z.literal('capability'), commandId: z.string().uuid() }),
   memoryShape.extend({ kind: z.literal('memory'), commandId: z.string().uuid() }),
   z
@@ -180,6 +181,7 @@ function IntelligenceEditor({
   }, [cache, key, draftAttempt]);
 
   async function read(kind: 'capabilities' | 'memories') {
+    // 能力和记忆分别取消及读取；结果必须属于当前项目。
     readers.current[kind]?.abort();
     const controller = new AbortController();
     readers.current[kind] = controller;
@@ -231,6 +233,7 @@ function IntelligenceEditor({
     parseError = errorText(issue);
   }
   function change(update: (value: Draft) => Draft) {
+    // 先校验并检查容量，再覆盖缓存；失败时保留原草稿。
     try {
       if (!loaded || !active.current) return false;
       const next = draftShape.parse(update(readDraft(cache.get(key))));
@@ -285,6 +288,7 @@ function IntelligenceEditor({
     change((value) => ({ ...value, selection: next }));
   }
   async function submit(request: Pending) {
+    // 发送前固定当前输入和请求；已有待核对请求只能使用同一内容继续。
     if (writing.current || archived || !active.current) return;
     if (
       !change((value) => {

@@ -3,6 +3,7 @@ import type { Agent } from '../../../packages/contracts/src/index';
 
 /** Keep siblings in their creation order while placing each child after its own parent. */
 export function agentOrder(agents: Agent[]): Agent[] {
+  // 按输入顺序收集兄弟节点，再深度优先放置子代理；孤儿和环也必须保留。
   const ids = new Set(agents.map((agent) => agent.id));
   const children = new Map<string, Agent[]>();
   for (const agent of agents) {

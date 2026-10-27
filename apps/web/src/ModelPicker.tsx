@@ -25,6 +25,7 @@ const catalogCaches = new WeakMap<
   Map<string, { time: number; promise: Promise<CatalogModel[]> }>
 >();
 function catalog(client: SurfaceClient, provider: SelectableProvider, fresh = false) {
+  // 按客户端、连接 ID 和配置版本共享 30 秒目录请求；失败时移除缓存以便重试。
   let catalogs = catalogCaches.get(client);
   if (!catalogs) {
     catalogs = new Map();
@@ -41,6 +42,7 @@ function catalog(client: SurfaceClient, provider: SelectableProvider, fresh = fa
   catalogs.set(key, { time: Date.now(), promise });
   return promise;
 }
+/** 优先使用指定连接，其次选择凭据已配置且当前版本通过检查的连接。 */
 export function defaultChoice(providers: SelectableProvider[], preferred?: string): ModelChoice {
   const provider =
     providers.find((p) => p.id === preferred) ||

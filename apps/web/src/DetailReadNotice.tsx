@@ -27,6 +27,7 @@ export function DetailReadNotice({
   const [clearing, setClearing] = useState(false);
   const explanationId = useId();
   const reason = detailReadReason(detail);
+  // 事件预览缺失和执行记录不可读分别提示，不把局部缺失当作运行结束。
   const preview = detail.eventPreviewCoverage;
   const executionNotice = !!reason || detail.localExecutionStopped;
   const executionTitle = reason

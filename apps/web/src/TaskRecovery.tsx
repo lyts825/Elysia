@@ -21,6 +21,7 @@ export function TaskRecovery({
   resume: (id: string) => void;
 }) {
   const reasonId = useId();
+  // 依赖失败先定位阻塞来源；其他可继续状态再根据读取和授权边界决定恢复入口。
   const canContinue = modelTaskCanContinue(task);
   const reason =
     taskResumeReason(detail, archived, task.id) ||

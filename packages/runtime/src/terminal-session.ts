@@ -63,12 +63,14 @@ export interface TerminalMaintenanceSnapshot {
   consistent: boolean;
 }
 const key = (taskId: string) => `terminal-session:${taskId}`;
+/** 按任务 ID 读取终端会话；记录不存在时返回 undefined，存在时校验结构。 */
 export function readTerminalSession(store: Store, taskId: string): TerminalSessionRecord | undefined {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key(taskId)) as
     | { value: string }
     | undefined;
   return row ? Session.parse(JSON.parse(row.value)) : undefined;
 }
+/** 校验会话结构并按任务 ID 写入存储元数据。 */
 export function writeTerminalSession(store: Store, record: TerminalSessionRecord) {
   store.db
     .prepare(
@@ -76,6 +78,7 @@ export function writeTerminalSession(store: Store, record: TerminalSessionRecord
     )
     .run(key(record.taskId), stable(Session.parse(record)));
 }
+/** 计算执行配置及任务授权快照的指纹，用于判断会话续接是否仍匹配。 */
 export function terminalSessionIdentity(run: Run, task: Task) {
   return {
     profileHash: hash(stable(run.execution?.kind === 'docker-agent' ? run.execution.profile : null)),

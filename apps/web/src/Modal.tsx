@@ -37,6 +37,7 @@ export function Modal({
   busyRef.current = busy;
   useLayoutEffect(() => {
     if (!present) return;
+    // 弹窗展示时使主内容和侧栏不可交互，关闭时恢复它们原本的 inert 状态。
     const previous = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     const shell = (surfaceRoot?.current || document).querySelector<HTMLElement>('.main');
@@ -55,6 +56,7 @@ export function Modal({
         if (!busyRef.current) closeRef.current();
       }
       if (event.key !== 'Tab') return;
+      // 仅顶层弹窗处理键盘导航，Tab 循环在可见且可操作的控件之间。
       const elements = [
         ...dialog.querySelectorAll<HTMLElement>(
           'button, input, select, textarea, a[href], summary, [tabindex="0"]',

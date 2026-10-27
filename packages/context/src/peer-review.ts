@@ -2,6 +2,7 @@
 import type { Run, Task } from '../../contracts/src/index.js';
 
 /** Peer scores are withheld from judges; only the coordinator sees the completed feedback. */
+// 只为当前轮次、当前候选的指定评审任务返回候选内容。
 export function peerReviewCandidate(run: Run, task: Task) {
   const round = run.peerReview?.rounds.at(-1);
   return task.peerReview &&
@@ -12,6 +13,7 @@ export function peerReviewCandidate(run: Run, task: Task) {
     : undefined;
 }
 
+// 评审任务取得独立检查指引；协调任务可读取当前轮次状态。
 export function peerReviewContext(run: Run, task: Task) {
   if (!run.contract.peerReview) return undefined;
   const candidate = peerReviewCandidate(run, task);

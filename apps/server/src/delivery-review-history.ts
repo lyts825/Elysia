@@ -99,6 +99,7 @@ export function initializeDeliveryReviewHistory(store: Store) {
     CREATE INDEX IF NOT EXISTS delivery_review_history_run ON delivery_review_history_v1(run_id);
   `);
 }
+/** 捕获交付指纹及产物元数据，作为后续复核和差异比较的基线。 */
 export function captureDeliveryBaseline(
   store: Store,
   run: Run,
@@ -124,6 +125,7 @@ export function captureDeliveryBaseline(
     ? capture()
     : cachedDeliveryRead(store, `baseline:${run.id}:${root.id}:${root.revision}`, capture);
 }
+/** 将用户复核及其基线写入历史，保留记录来源。 */
 export function appendDeliveryReview(
   store: Store,
   runId: string,
@@ -154,6 +156,7 @@ export function appendDeliveryReview(
   return snapshot;
 }
 /** Only the currently surviving old review can be imported; earlier ordinary events are not reconstructed. */
+/** 已有用户复核时确保存在对应的历史快照；没有复核时返回 undefined。 */
 export function ensureCurrentReviewSnapshot(store: Store, run: Run): string | undefined {
   if (!run.deliveryReview) return;
   return store.tx(() => {

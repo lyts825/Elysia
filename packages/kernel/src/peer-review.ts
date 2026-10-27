@@ -22,6 +22,7 @@ import type { Kernel } from './index.js';
 
 const modelIdentity = (model: string) => model.trim().toLowerCase();
 
+// 创建时核验权限、代理容量和模型独立性，保存评审连接供后续轮次使用。
 export function freezePeerReview(
   store: Store,
   contract: Contract,
@@ -63,10 +64,12 @@ export function freezePeerReview(
 }
 
 /** Reserved review slots cannot be consumed by ordinary plan or delegated tasks. */
+// 尚未创建的评审任务保留代理名额，普通委派不能占用。
 export function peerReviewReservedSlots(run: Run) {
   return Math.max(0, (run.peerReview?.bindings.length ?? 0) - (run.peerReview?.reviewerTaskIds.length ?? 0));
 }
 
+// 要求变化时使现有轮次失效；评审正在运行时先等待安全检查点。
 export function invalidatePeerReview(kernel: Kernel, run: Run, reason: string) {
   if (!run.peerReview?.rounds.length) return run;
   const latest = run.peerReview.rounds.at(-1)!;
@@ -149,6 +152,7 @@ function candidateFingerprint(
 }
 
 /** Called only after the gateway has verified every candidate evidence reference. */
+// 仅根任务需要进入评审；复用已通过的相同候选，评审中等待，超过轮次则停止推进。
 export function gatePeerReview(
   kernel: Kernel,
   original: Task,
@@ -351,6 +355,7 @@ export function gatePeerReview(
   });
 }
 
+// 校验评分提交并关联当前候选轮次，领域层负责记录与状态推进。
 export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
   const submission = PeerReviewSubmission.parse(raw);
   invariant(

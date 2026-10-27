@@ -43,6 +43,7 @@ function schema(directory: string) {
 }
 
 // Called with both service locks held; snapshots remain readable by the pre-upgrade application.
+/** 启动前恢复未完成安装并检查入口数据库版本，按需准备升级。 */
 export async function prepareStartupUpgrade(directory: string, surfaces: Surface[] = ['native', 'terminal']) {
   recoverPreparedInstall(directory);
   const versions = surfaces.map((surface) => {
@@ -111,6 +112,7 @@ export async function prepareStartupUpgrade(directory: string, surfaces: Surface
   }
 }
 
+/** 先获取入口锁，再准备升级并打开原生和终端存储。 */
 export async function openStartupStores(configuredDirectory: string) {
   const release = acquireSurfaceLocks(configuredDirectory);
   let native: Store | undefined, terminal: Store | undefined;

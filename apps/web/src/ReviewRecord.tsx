@@ -17,6 +17,7 @@ export function ReviewRecord({
   reading?: boolean;
   renderNotes?: (value: DeliveryReviewHistoryDetail) => ReactNode;
 }) {
+  // 复核结论、比较结果和产物变更来自同一历史记录，由调用方控制刷新。
   return (
     <section className="workflow-history-detail review-record review-entry-record" aria-label="历史复核详情">
       <header className="review-entry-heading">

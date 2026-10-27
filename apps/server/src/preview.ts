@@ -79,6 +79,7 @@ const capabilityKey = (taskId: string, scope: string, page: string) => JSON.stri
 const resourceVersion = (stat: { size: number; mtimeMs: number; ctimeMs: number; isFile: () => boolean }) =>
   stat.isFile() ? JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs]) : 'unavailable:NOT_FILE';
 
+/** 管理任务工作区预览、受限资源访问及定位能力。 */
 export class PreviewService {
   private locator = new FileLocator();
   private capabilities = new Map<string, Capability>();
@@ -236,6 +237,7 @@ export class PreviewService {
     );
     return result;
   }
+  /** 读取任务工作区的预览快照；没有工作区时返回空文件列表。 */
   async snapshot(runId: string, taskId: string, selected?: string): Promise<PreviewSnapshot> {
     const task = this.task(runId, taskId);
     if (selected !== undefined) normalized(selected);
@@ -359,6 +361,7 @@ export class PreviewService {
       renderBase: `${this.prefix}/preview/${token}/`,
     };
   }
+  /** 验证任务和相对路径后，按运行、任务和文件作用域定位锚点。 */
   async locate(runId: string, taskId: string, input: string, options: FileLocationOptions) {
     const task = this.task(runId, taskId);
     const name = normalized(input);

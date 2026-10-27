@@ -15,6 +15,7 @@ export interface SurfaceAuth {
   origins: Set<string>;
   hosts: Set<string>;
 }
+/** 为指定本地端口生成一次性启动令牌及允许的来源和主机集合。 */
 export function createSurfaceAuth(port: number, dev = false): SurfaceAuth {
   return {
     bootstrapToken: randomBytes(32).toString('hex'),
@@ -25,6 +26,7 @@ export function createSurfaceAuth(port: number, dev = false): SurfaceAuth {
     hosts: new Set([`127.0.0.1:${port}`, ...(dev ? ['127.0.0.1:5173'] : [])]),
   };
 }
+/** 创建终端独立数据目录，并拒绝符号链接及越过数据根目录的路径。 */
 export function terminalDataDirectory(directory: string) {
   const root = realpathSync(directory);
   const target = path.join(root, 'surfaces', 'terminal');
@@ -61,6 +63,7 @@ function assertDifferentDatabase(nativeFile: string, terminalFile: string) {
 type ServerOptions = Parameters<typeof createServer>[1];
 type SurfaceOptions = Omit<ServerOptions, 'port' | 'app' | 'prefix' | 'surface' | 'auth'>;
 /** Registers independent services under one local session. Execution starts explicitly after recovery. */
+/** 校验两个入口使用不同目录和数据库，再装配各自服务。 */
 export async function createSurfaceServer(
   nativeStore: Store,
   terminalStore: Store,

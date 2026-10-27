@@ -5,6 +5,7 @@ import type { WorkbenchCache, WorkbenchSnapshot, WorkbenchInspection } from './W
 import './workbench-persistence.css';
 
 function downloadText(value: string, name: string, type = 'text/plain;charset=utf-8') {
+  // 本地导出保留完整原稿；临时下载 URL 在触发后释放。
   const url = URL.createObjectURL(new Blob([value], { type }));
   const link = document.createElement('a');
   link.href = url;

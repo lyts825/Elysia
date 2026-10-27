@@ -10,11 +10,12 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.22.3';
+export const VERSION = '1.22.4';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
 export * from './tool-calls.js';
+// 各实体共享这些生命周期状态；是否允许在状态间转换由领域操作校验。
 export const Status = z.enum([
   'DRAFT',
   'READY',
@@ -26,6 +27,7 @@ export const Status = z.enum([
   'CANCELLED',
 ]);
 export type Status = z.infer<typeof Status>;
+// 默认只读；写入、执行、允许访问的 URL 和可写路径需要在合同中明确指定。
 export const Permissions = z.object({
   read: z.boolean().default(true),
   write: z.boolean().default(false),
@@ -34,12 +36,14 @@ export const Permissions = z.object({
   writePaths: z.array(z.string().min(1)).default(['.']),
 });
 export type Permissions = z.infer<typeof Permissions>;
+// 预算约束累计请求、令牌和费用；maxCost 为 null 表示未设置费用上限。
 export const Budget = z.object({
   maxRequests: z.number().int().min(1).max(80).default(80),
   maxTokens: z.number().int().min(1000).default(500000),
   maxCost: z.number().positive().nullable().default(null),
 });
 export type Budget = z.infer<typeof Budget>;
+// 限制代理深度、数量、并发、步骤及运行时间，不替代预算约束。
 export const Limits = z.object({
   maxDepth: z.number().int().min(0).max(5).default(2),
   maxAgents: z.number().int().min(1).max(12).default(12),
@@ -49,6 +53,7 @@ export const Limits = z.object({
   maxMinutes: z.number().min(1).max(30).default(30),
 });
 export type Limits = z.infer<typeof Limits>;
+// 合同汇集目标、范围、交付和验收标准，以及权限、预算和可选执行策略。
 export const Contract = z.object({
   version: z.number().int().positive().default(1),
   objective: z.string().min(1),
@@ -84,6 +89,7 @@ const StoredContextPolicy = z
     message: '手动模式必须指定上下文窗口大小',
     path: ['windowTokens'],
   });
+// 新输入限制最大窗口，手动模式以整数 K 为单位；旧记录仍可通过存储格式读取。
 export const ContextPolicy = StoredContextPolicy.refine(
   (policy) => policy.windowTokens === undefined || policy.windowTokens <= CONTEXT_MAX_WINDOW_TOKENS,
   { message: '上下文窗口最高支持 1M（1000K）', path: ['windowTokens'] },
@@ -104,6 +110,7 @@ export function minimumContextWindowTokens(provider: { outputLimit: number; auth
       CONTEXT_MIN_INPUT_TOKENS,
   );
 }
+// 实际窗口取策略、连接上限与应用上限中的最小值。
 export function effectiveContextWindowTokens(agent: {
   contextPolicy?: ContextPolicy;
   providerBinding: { contextLimit: number };
@@ -335,6 +342,7 @@ export const ExecutionBinding = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('docker-agent'), profile: AgentTerminalProfile }),
 ]);
 export type ExecutionBinding = z.infer<typeof ExecutionBinding>;
+// 运行记录保存冻结的模型、能力、合同和执行入口，交付审核与执行状态分开记录。
 export interface Run extends Entity {
   peerReview?: PeerReviewState;
   /** Role choices captured at creation; never changes the coordinator's explicit choice. */
@@ -368,6 +376,7 @@ export interface Run extends Entity {
   /** Explicit user review of a fingerprinted delivery; independent of execution status. */
   deliveryReview?: DeliveryUserReview;
 }
+// 任务绑定代理与工作区，额外保留依赖阻塞、限流和无进展等等待信息。
 export interface Task extends Entity {
   peerReview?: { candidateId: string; reviewerProviderId: string };
   contractVersion: number;
@@ -421,6 +430,7 @@ export interface Agent extends Entity {
   contextAssignedByAgentId?: string;
   contextPolicyRevision?: number;
 }
+// 每次执行尝试独立记录租约、步骤和检查点，供中断后恢复使用。
 export interface Attempt extends Entity {
   runId: string;
   taskId: string;
@@ -437,6 +447,7 @@ export interface ToolCall {
   name: string;
   arguments: string;
 }
+// 会话按 ordinal 排序；工具结果通过 callId 对应模型发起的调用。
 export interface Message extends Entity {
   /** Read-only display metadata. Full provider reasoning remains in reasoningContent for replay. */
   reasoning?: import('./reasoning.js').ReasoningDisplay;
@@ -457,6 +468,7 @@ export interface Message extends Entity {
   reasoningContent?: string;
   providerKind?: string;
 }
+// 各项用量可为 null：未知不等于零；原始供应商数据单独保留。
 export interface Usage {
   inputTotal: number | null;
   cacheRead: number | null;
@@ -491,6 +503,7 @@ export const UsageSchema = z
     (u) => u.outputTotal === null || u.reasoning === null || u.reasoning <= u.outputTotal,
     '推理用量必须包含于输出总量',
   );
+// 请求先预约资源，再记录结算、未知或释放状态；usage 可缺失。
 export interface RequestRecord extends Entity {
   purpose?: 'assistant' | 'tool-review';
   /** Read-only display metadata; the display cache is independent of request accounting. */

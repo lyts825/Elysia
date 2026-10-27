@@ -1,6 +1,7 @@
 /* 筛选和整理对话时间线中的消息。 */
 import type { Message } from '../../../packages/contracts/src/index';
 
+/** 仅将普通用户收件消息纳入去重，工具调用和特殊用途消息保留原样。 */
 export function isInboxUserMessage(message: Message): boolean {
   return (
     message.role === 'user' &&
@@ -12,6 +13,7 @@ export function isInboxUserMessage(message: Message): boolean {
   );
 }
 
+/** 同一运行的同一来源若正文一致只显示一次；正文冲突时保留所有记录供核对。 */
 export function conversationMessages(messages: readonly Message[]): Message[] {
   const sources = new Map<string, { text: string; conflict: boolean }>();
   const sourceKey = (message: Message) => JSON.stringify([message.runId, message.sourceInboxId]);

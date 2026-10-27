@@ -14,6 +14,10 @@ import './terminal-maintenance.css';
 const endpoint = '/terminal/control/maintenance';
 const size = (bytes: number) =>
   bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
+/**
+ * 管理终端数据扫描、清理计划和会话快照。危险操作先生成计划，
+ * 用户确认后通过 perform 和当前计划版本提交。
+ */
 export function TerminalDataMaintenance({
   disabled,
   perform,
@@ -55,6 +59,7 @@ export function TerminalDataMaintenance({
   useEffect(() => {
     planRef.current = plan;
   }, [plan]);
+  /** 先清除界面上的旧计划，再串行请求取消；未确认的计划保留待下次重试。 */
   async function clearPlan() {
     const current = planRef.current;
     planRef.current = null;
@@ -82,6 +87,7 @@ export function TerminalDataMaintenance({
       ),
     );
   }
+  /** 读取一页备份历史；所选备份不在新页时清除选择并取消关联计划。 */
   async function readHistory(query: string, cursor: string | undefined, signal?: AbortSignal) {
     const params = new URLSearchParams({ query, limit: '20' });
     if (cursor) params.set('cursor', cursor);
@@ -154,6 +160,7 @@ export function TerminalDataMaintenance({
     setScan((current) => (current ? { ...current, status: 'failed' } : null));
     setError(issue instanceof Error ? issue.message : fallback);
   }
+  /** 创建扫描并每 250 毫秒读取状态；调用方负责取消已创建的服务端扫描。 */
   async function scanRequest(body: Record<string, unknown>, signal: AbortSignal) {
     let current = await api<TerminalMaintenanceScan>(endpoint + '/scans', body, undefined, signal);
     scanIdRef.current = current.id;
@@ -262,6 +269,7 @@ export function TerminalDataMaintenance({
         void api(endpoint + '/plans/' + id + '/cancel', {}).catch(() => {});
     };
   }, [api]);
+  /** 取消旧计划后，按操作类型取得必要的运行版本并生成新预览。 */
   async function preview(
     kind: TerminalMaintenancePlan['kind'],
     retry?: TerminalMaintenanceOverview['pendingCleanup'][number],
@@ -304,6 +312,7 @@ export function TerminalDataMaintenance({
       if (controllerRef.current === controller) controllerRef.current = null;
     }
   }
+  /** 按预览类型提交计划 ID 和版本，完成后重新读取维护状态。 */
   async function apply() {
     if (!plan) return;
     await perform(async () => {

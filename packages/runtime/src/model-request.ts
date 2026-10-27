@@ -32,6 +32,7 @@ export class ModelRequestRunner {
     private readonly control: RunControl,
     private readonly services: ModelRequestServices,
   ) {}
+  /** 更新上下文指标；提供请求 ID 时，同时保存到该请求清单并发布事件。 */
   publishContext(task: Task, attempt: Attempt, metrics: ContextRuntimeMetrics, recordId?: string) {
     const current = { ...metrics, updatedAt: new Date().toISOString() };
     this.kernel.store.tx(() => {
@@ -46,6 +47,11 @@ export class ModelRequestRunner {
     });
     return current;
   }
+  /**
+   * 执行一次逻辑模型请求，检查账号并发和分钟额度并最多尝试三次。
+   * 流式正文先持久化再通知界面；成功后在事务中结算用量并追加助手消息。
+   * 限流需要延后调度时返回 undefined，调用方不得将其视为完成响应。
+   */
   async run(
     task: Task,
     attempt: Attempt,
@@ -62,6 +68,7 @@ export class ModelRequestRunner {
       request = adapter.compile(context);
     const previous = store.latestTaskRequest(run.id, task.id);
     context.manifest.difference = requestDifference(previous?.manifest, context.manifest);
+    // 恢复限流等待时沿用逻辑请求 ID，并以账本记录防止重启后重置重试次数。
     const retryHistory = cooldown?.logicalId
       ? store.requestLedger({ runId: run.id, logicalId: cooldown.logicalId, attemptId: attempt.id })
       : [];
@@ -92,6 +99,7 @@ export class ModelRequestRunner {
         });
         return;
       }
+      // 用最近一分钟的已结算或预留用量计算 RPM/TPM，缺失用量按预留值计入。
       const accountRequests = store.requestLedger({ account: config.account, since: Date.now() - 60000 });
       const requestTokens = context.estimatedTokens + config.outputLimit;
       if (requestTokens > config.tpm) {
@@ -198,6 +206,7 @@ export class ModelRequestRunner {
           !error.responseStarted &&
           error.status >= 400 &&
           error.status < 500;
+        // 中断后保留已有正文引用；不把部分文本误认作完整助手回复。
         if (partial) {
           const object = store.object(
             stable({ requestId: record.id, partialText: partial, completed: false }),
@@ -243,6 +252,7 @@ export class ModelRequestRunner {
         );
         if (signal.aborted) throw error;
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
+        // 短等待在本步内退避；超过一分钟交还调度器，避免长期占用执行槽。
         const wait = Math.max(error.retryAfterMs, 1000 * 2 ** retry);
         if (wait > 60000) {
           this.control.waitAtRateLimit(task, {

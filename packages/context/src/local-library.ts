@@ -27,6 +27,7 @@ export interface LocalLibrary {
   sources: LocalAgentSource[];
   items: LocalStoredItem[];
 }
+// 未导入过本地资源时返回空库及修订 0；其余数据由持久化记录提供。
 export function importedLibrary(store: Store): LocalLibrary {
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(LOCAL_LIBRARY_KEY) as
     | { value: string }
@@ -53,6 +54,7 @@ export function writeImportedLibrary(store: Store, library: LocalLibrary) {
     .prepare('INSERT OR REPLACE INTO storage_meta(key,value) VALUES(?,?)')
     .run(LOCAL_LIBRARY_KEY, stable(library));
 }
+// 返回目录信息时剔除内部对象引用及冻结正文，避免把存储细节暴露给调用方。
 export function publicLocalItem(item: LocalStoredItem): LocalAgentItem {
   const {
     contentRef: _contentRef,
@@ -64,6 +66,7 @@ export function publicLocalItem(item: LocalStoredItem): LocalAgentItem {
   } = item;
   return safe;
 }
+// 按项目、版本、大小和摘要校验快照；校验失败不使用当前资源替代。
 export function capabilitySnapshot(scope?: CapabilityScope): ProjectCapabilitySnapshot | undefined {
   const snapshot = scope?.capabilities;
   if (snapshot == null) return undefined;
@@ -80,6 +83,7 @@ export function capabilitySnapshot(scope?: CapabilityScope): ProjectCapabilitySn
     throw new AppError('CAPABILITY_SCOPE', '任务能力快照无效或不属于当前项目', false, null, 409);
   return snapshot;
 }
+// 冻结内容仍受当前启用状态约束；已停用项目不会从旧快照重新启用。
 export function scopedLocalItems(store: Store, scope?: CapabilityScope): LocalStoredItem[] {
   const current = importedLibrary(store).items;
   const snapshot = capabilitySnapshot(scope);
@@ -111,6 +115,7 @@ export function localItem(
     throw new AppError('LOCAL_ITEM_NOT_FOUND', '同步项不存在或尚未启用', false, null, 404);
   return item;
 }
+// 优先读取冻结正文，否则读取对象引用；两种路径都验证内容大小和摘要。
 export function localItemText(store: Store, item: LocalStoredItem) {
   if (item.frozenContent !== undefined) {
     if (
@@ -131,6 +136,7 @@ export function listLocalMemories(store: Store, scope?: CapabilityScope) {
     .filter((item) => item.kind === 'memory' && item.enabled)
     .map(publicLocalItem);
 }
+// 按字符偏移返回有界内容，查询时从匹配位置附近开始；分页边界保留完整代理对。
 export function pageLocalText(
   item: { id: string; contentHash: string },
   text: string,

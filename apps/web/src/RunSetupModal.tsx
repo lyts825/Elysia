@@ -31,6 +31,7 @@ import { TaskRequirements, requirementLines, validRequirements } from './TaskReq
 import './workflow.css';
 import './run-setup.css';
 import type { RunSetupDraft } from './RunSetupDraft';
+// 设置草稿由外层持久化；表单在提交前组合模型、权限、预算及可选审核策略。
 export type { RunSetupDraft } from './RunSetupDraft';
 const TerminalSetup = deferredPanel(() => import('./TerminalSetup').then((m) => m.TerminalSetup), '终端设置');
 

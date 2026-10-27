@@ -36,6 +36,7 @@ const questionsInactive = (detail: Pick<QuestionDetail, 'run'>) =>
   (['DONE', 'CANCELLED'].includes(detail.run.status) || detail.run.execution?.kind === 'docker-agent');
 
 export function currentQuestionsReadNotice(detail: Pick<QuestionDetail, 'run' | 'currentQuestions'>) {
+  // 仅活动运行显示覆盖不足提示；截断与读取故障使用不同文案。
   if (questionsInactive(detail) || detail.currentQuestions?.coverage.complete !== false) return '';
   return detail.currentQuestions.coverage.limited
     ? '部分待答问题超出单次核对范围，暂无法完整确认；已有输入和任务状态保持。'
@@ -43,6 +44,7 @@ export function currentQuestionsReadNotice(detail: Pick<QuestionDetail, 'run' | 
 }
 
 export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
+  // 新服务端的当前问题投影优先；旧服务端才从最近事件向前查找。
   if (questionsInactive(detail)) return [];
   const waiting = detail.tasks.filter(
     (item) =>
@@ -93,6 +95,7 @@ export function currentQuestions(detail: QuestionDetail): CurrentQuestion[] {
 }
 
 export function rateResumeAt(task: Task): number | null {
+  // 兼容旧任务的 result.resumeAt，同时优先使用明确的速率限制记录。
   const value =
     task.rateLimit === undefined
       ? (task.result as { resumeAt?: unknown } | null)?.resumeAt
@@ -106,6 +109,7 @@ export function rateWaitText(
   now = Date.now(),
   dependenciesReady = true,
 ): string {
+  // 暂停或依赖未就绪时不承诺自动重试；倒计时只用于展示。
   const resumeAt = rateResumeAt(task);
   const providerWait = task.rateLimit?.source === 'provider';
   const label = providerWait ? '模型服务暂时受限' : '账号速率受限';
@@ -119,6 +123,7 @@ export function rateWaitText(
 }
 
 export function getRunFeedback(detail: FeedbackDetail, archived: boolean, now = Date.now()): RunFeedback {
+  // 详情不完整和归档状态优先，其余状态再决定可展示的操作与原因。
   if (detailReadReason(detail))
     return { text: '部分执行记录无法读取；请查看读取提示并重试，运行状态保持原记录' };
   const { run, tasks, operations, events } = detail;

@@ -39,6 +39,7 @@ function signalFor(request: FastifyRequest, reply: FastifyReply) {
   });
   return controller.signal;
 }
+/** 注册本地代理资源扫描、同步和管理路由；服务关闭时释放同步器。 */
 export function registerLocalAgentRoutes(
   app: FastifyInstance,
   store: Store,

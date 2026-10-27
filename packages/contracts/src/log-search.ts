@@ -7,6 +7,7 @@ export interface TerminalLogMatch {
   match: string;
   after: string;
 }
+// 返回扫描进度和下一游标，调用方可在当前文件版本上继续查询。
 export interface TerminalLogSearchPage {
   artifactId: string;
   query: string;

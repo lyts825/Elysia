@@ -1,5 +1,6 @@
 // 终端 CLI 安装失败分类及对应修复指引。
 export type TerminalCliInstallRepair = 'check' | 'version' | 'template' | 'retry';
+// 保留原始错误码、分类和可执行修复动作，供界面选择对应的指引。
 export type TerminalCliInstallFailure = {
   code: string;
   category: string;
@@ -148,6 +149,7 @@ function versions(details: unknown): { actualVersion: string; requestedVersion: 
 }
 
 /** Public installation failures use a closed vocabulary, never transport text or arbitrary AppError messages. */
+// 未知错误码映射为通用说明；仅在版本格式严格有效时展示实际与请求版本。
 export function terminalCliInstallFailure(code: unknown, details?: unknown): TerminalCliInstallFailure {
   const safeCode = typeof code === 'string' && Object.hasOwn(guides, code) ? code : 'TERMINAL_CLI_INSTALL';
   const guide = guides[safeCode];

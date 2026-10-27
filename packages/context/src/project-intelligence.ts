@@ -75,6 +75,7 @@ export function requireIntelligenceProject(store: Store, projectId: string) {
   invariant(!project.archived, 'PROJECT_ARCHIVED', '请先恢复归档项目再使用项目能力和记忆');
   return project;
 }
+// 修改配置前比较调用方持有的修订，防止覆盖并发更新。
 export function assertIntelligenceRevision(expected: number, actual: number) {
   if (expected !== actual)
     throw new AppError(
@@ -85,6 +86,7 @@ export function assertIntelligenceRevision(expected: number, actual: number) {
       409,
     );
 }
+// 没有显式配置时沿用旧版默认选择；损坏或不属于当前项目的配置不能静默回退。
 export function readProjectIntelligence(store: Store, projectId: string): ProjectIntelligenceConfig {
   requireIntelligenceProject(store, projectId);
   const raw = readMeta(store, projectIntelligenceKey(projectId), 256 * 1024);
@@ -111,6 +113,7 @@ export function projectIntelligenceView(store: Store, projectId: string): Projec
     limits: PROJECT_INTELLIGENCE_LIMITS,
   };
 }
+// 在同一事务核对修订和所选能力，再保存新的显式配置。
 export function updateProjectIntelligence(
   store: Store,
   projectId: string,
@@ -146,6 +149,7 @@ export function updateProjectIntelligence(
   });
 }
 /** Capture executable/readable content inline so object maintenance cannot invalidate a run's capability snapshot. */
+// 正文和资源随快照保存，并检查大小、内容哈希与 UTF-8；超限时拒绝而非截断。
 export function freezeProjectCapabilities(store: Store, projectId: string): ProjectCapabilitySnapshot {
   return store.tx(() => {
     const config = readProjectIntelligence(store, projectId);

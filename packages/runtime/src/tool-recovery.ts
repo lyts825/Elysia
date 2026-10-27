@@ -15,6 +15,7 @@ export interface ToolRecovery {
 }
 
 /** Advice for the next model step, never permission changes or automatic retries. */
+/** 根据工具错误码生成恢复建议，并附上去重排序后的可用工具列表。 */
 export function toolRecovery(code: string, tool: string, toolNames: string[]): ToolRecovery {
   const availableTools = [...new Set(toolNames)].sort();
   const advice = (kind: ToolRecovery['kind'], nextAction: string): ToolRecovery => ({

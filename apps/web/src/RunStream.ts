@@ -15,6 +15,7 @@ type PartialResponse = TextStream & {
 };
 export type LiveReasoning = ReasoningDisplay & { requestId: string; text: string; missing: boolean };
 export class RunStream {
+  // 每个任务仅保留一个活动请求；completed 用于忽略迟到的流片段。
   private partials: Record<string, PartialResponse> = {};
   private completed = new Set<string>();
 
@@ -23,6 +24,7 @@ export class RunStream {
     this.completed.clear();
   }
   delta(value: { taskId: string; text: string; requestId?: string; offset?: number }) {
+    // 返回 false 表示存在尚未补齐的偏移缺口，调用方应读取可靠快照。
     if (!value.taskId || typeof value.text !== 'string') return true;
     if (value.requestId && this.completed.has(value.requestId)) return true;
     const old = this.partials[value.taskId];
@@ -48,6 +50,7 @@ export class RunStream {
     partial.chunks = missing;
   }
   reasoningDelta(value: ReasoningDelta, live = true) {
+    // 推理正文与普通回复分别合并，显示长度受上限约束。
     if (
       !value.taskId ||
       !value.requestId ||
@@ -91,6 +94,7 @@ export class RunStream {
     return !missing;
   }
   seedReasoning(taskId: string, requestId: string, text: string, offset: number) {
+    // 仅给仍匹配的请求补读持久化内容，避免恢复数据污染新请求。
     const partial = this.partials[taskId];
     if (this.completed.has(requestId) || partial?.requestId !== requestId || !partial.display) return;
     this.reasoningDelta({ runId: '', taskId, requestId, kind: partial.display.kind, text, offset }, false);
@@ -101,6 +105,7 @@ export class RunStream {
     if (this.partials[taskId]?.requestId === message.requestId) delete this.partials[taskId];
   }
   sync(requests: RequestRecord[]) {
+    // 每个任务选择最新的在途请求；服务端快照也负责结束已结算的本地流。
     const active = new Map<string, RequestRecord>();
     for (const request of requests) {
       if (request.status !== 'RESERVED' || this.completed.has(request.id)) continue;

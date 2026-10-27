@@ -21,6 +21,7 @@ const effortLabels: Record<string, string> = {
 };
 
 export type ComposerModelControlProps = {
+  // 父组件持有连接选择和上下文读取；控件仅显示投影并发出打开请求。
   modelLabel: string;
   providerLabel?: string;
   reasoningEffort?: ProviderConfig['reasoningEffort'];

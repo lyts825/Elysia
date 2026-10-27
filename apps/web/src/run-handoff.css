@@ -1,4 +1,5 @@
 /* 定义 run-handoff 对应界面的样式与布局。 */
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .run-handoff-source .run-handoff-reading,
 .run-handoff-modal .run-handoff-reading,
 .run-handoff-feedback .run-handoff-reading {
@@ -12,6 +13,7 @@
   scroll-padding-block: var(--space-2);
   line-height: var(--leading-body);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .run-handoff-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -55,6 +57,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* 短窗口让交接弹窗整体滚动并固定标题，释放表单自身的滚动约束。 */
 @media (max-height: 600px) {
   .run-handoff-modal {
     overflow-y: auto;

@@ -7,6 +7,7 @@
   background: var(--surface-soft);
   color: var(--text);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .delivery-comparison-summary h4 {
   margin: 0;
   font-size: var(--font-md);
@@ -24,6 +25,7 @@
   color: var(--muted);
   font-size: var(--font-xs);
 }
+/* 列数随容器宽度变化；每列以 8rem 为目标下限，容器更窄时不超过容器宽度。 */
 .delivery-comparison-summary .delivery-comparison-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));

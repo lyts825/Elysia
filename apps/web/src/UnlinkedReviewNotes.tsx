@@ -23,6 +23,7 @@ export function UnlinkedReviewNotes({
   const editor = useRef<HTMLElement>(null);
   const origin = useRef<HTMLButtonElement | null>(null);
   const item = selected === undefined ? undefined : draft.unlinked[selected];
+  // 旧备注先由用户选择当前目标，再合并到草稿；未记录的旧标准明确标记未知。
   useEffect(() => {
     if (selected !== undefined) {
       editor.current?.focus({ preventScroll: true });

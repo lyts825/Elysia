@@ -11,6 +11,7 @@
   font-size: var(--font-md);
   font-weight: 600;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .plan-editor-index-list {
   display: grid;
   gap: var(--space-2);
@@ -21,6 +22,7 @@
   margin-top: var(--space-3);
   padding: var(--space-1);
 }
+/* 序号占固定宽度，说明文字使用可收缩的剩余列。 */
 .plan-editor-index-list button {
   display: grid;
   grid-template-columns: 2em minmax(0, 1fr);

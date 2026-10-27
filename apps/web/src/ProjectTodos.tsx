@@ -23,6 +23,7 @@ type Todo = {
   target: 'item' | 'run' | 'review';
 };
 
+/** 将交付就绪状态映射为待办原因和跳转目标；已就绪项不生成待办。 */
 export function projectTodo(item: ProjectDeliveryItem): Todo | undefined {
   const current = item.current;
   switch (item.readiness) {

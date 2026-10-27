@@ -139,10 +139,12 @@ function view(store: Store, state: ReturnType<typeof sourceState>): SourceNoteRe
     }),
   };
 }
+/** 根据运行、根任务和当前交付指纹生成来源备注处理状态。 */
 export function sourceNoteResolutionsFor(store: Store, run: Run, root: Task, fingerprint: string) {
   return view(store, sourceState(store, run.id, { run, root, fingerprint }));
 }
 /** Manual follow-up conclusions are independent of execution and saved acceptance decisions. */
+/** 注册来源备注读取和人工处理接口；处理结果独立于执行和验收决定。 */
 export function registerSourceNoteResolutions(
   app: FastifyInstance,
   store: Store,

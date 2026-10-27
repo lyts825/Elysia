@@ -62,6 +62,10 @@ const schemas = {
   diff: z.object({}),
   integrate_worktrees: z.object({ taskIds: z.array(z.string()).min(1).max(11) }),
 };
+/**
+ * 注册目录、文件、命令、产物和工作树工具。文件路径经网关授权；写入使用 expectedHash
+ * 检测并发修改，null 表示目标应不存在，不能用占位哈希覆盖现有文件。
+ */
 export function workspaceTools(
   context: Pick<
     ToolServices,
@@ -83,6 +87,7 @@ export function workspaceTools(
 
     return result;
   }
+  /** 只读取当前运行中已授权的产物；文本分页保留完整字符，二进制内容不内联返回。 */
   function execute_read_artifact({ task }: ToolInvocation, args: z.output<typeof schemas.read_artifact>) {
     let result: unknown;
 
@@ -137,6 +142,7 @@ export function workspaceTools(
 
     return result;
   }
+  /** 限制读取大小并保存原文快照；二进制仅返回元信息，文本预览可能截断。 */
   async function execute_read({ task }: ToolInvocation, args: z.output<typeof schemas.read>) {
     let result: unknown;
 
@@ -161,6 +167,7 @@ export function workspaceTools(
 
     return result;
   }
+  /** 有界字面搜索：跳过链接和常见构建目录，返回匹配行及文件内容哈希。 */
   async function execute_search({ task }: ToolInvocation, args: z.output<typeof schemas.search>) {
     let result: unknown;
 
@@ -190,6 +197,10 @@ export function workspaceTools(
 
     return result;
   }
+  /**
+   * 核对原文哈希并记录预期前后哈希，再写临时文件；重命名前重新检查权限和原文。
+   * 补丁要求旧文本唯一匹配，来源产物复制还要求当前运行明确选择且内容哈希一致。
+   */
   async function execute_write({ task, operation, signal }: ToolInvocation, args: any, name: string) {
     let result: unknown;
 
@@ -278,6 +289,7 @@ export function workspaceTools(
   async function execute_diff({ task, signal }: ToolInvocation) {
     return await context.diff(task, signal);
   }
+  /** 只集成已完成、基线相同的后代工作区；逐个生成暂存补丁并通过三方合并应用。 */
   async function execute_integrate_worktrees(
     { task, operation, signal }: ToolInvocation,
     args: z.output<typeof schemas.integrate_worktrees>,

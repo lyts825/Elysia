@@ -18,6 +18,7 @@ export class HistoryAnchorIndex {
     });
   }
   private changed(records: MutationRecord[]) {
+    // 只在锚点节点增删或标识变化时失效；文字流更新不需要重建索引。
     if (this.dirty) return;
     this.dirty = records.some(
       (record) =>
@@ -65,6 +66,7 @@ export function historyViewportVisible(viewport: HTMLElement | null) {
   );
 }
 
+/** 返回可视消息及其距视口顶部的像素偏移；优先复用仍可见的指定锚点。 */
 export function captureHistoryAnchor(
   viewport: HTMLElement | null,
   index?: HistoryAnchorIndex,
@@ -91,6 +93,7 @@ export function captureHistoryAnchor(
   }
 }
 
+/** 按锚点当前位置修正滚动量；目标不存在时返回 false，交由调用方选择回退。 */
 export function restoreHistoryAnchor(
   viewport: HTMLElement,
   anchor: HistoryAnchor | undefined,

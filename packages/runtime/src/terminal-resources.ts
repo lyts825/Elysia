@@ -29,6 +29,7 @@ export class TerminalResourcePool {
   has(id: string) {
     return this.reservations.has(id);
   }
+  /** 根据 Docker 容量更新可预约上限，并唤醒可以满足的等待者。 */
   configure(cpus: number, memoryMiB: number) {
     if (!Number.isFinite(cpus) || cpus < 1 || !Number.isFinite(memoryMiB) || memoryMiB < 1) {
       this.unavailable('Docker 未返回可用的资源容量');
@@ -50,6 +51,7 @@ export class TerminalResourcePool {
     this.state = 'unavailable';
     this.message = message;
   }
+  /** 探测可由已有任务或安装预约赞助；赞助失效后恢复独立资源计费。 */
   private amount(id: string, kind: Kind, preset?: TerminalResourcePreset) {
     if (kind !== 'probe') return terminalResourceRequirement(kind === 'task' ? preset : undefined);
     const sponsor = this.sponsors.get(id);
@@ -84,6 +86,7 @@ export class TerminalResourcePool {
       used.memoryMiB + amount.memoryMiB <= this.capacity.memoryMiB
     );
   }
+  /** 区分引擎不可用、规格超过总容量和资源暂时被占用三种排队原因。 */
   reason(preset?: TerminalResourcePreset): 'terminal-resources' | 'terminal-capacity' | 'terminal-engine' {
     if (this.state !== 'ready') return 'terminal-engine';
     const required = terminalResourceRequirement(preset);
@@ -108,6 +111,7 @@ export class TerminalResourcePool {
     this.reservations.set(id, { kind, ...(kind === 'task' && preset ? { resourcePreset: preset } : {}) });
     return true;
   }
+  /** 清理结果不确定时保留预约，防止仍在运行的容器被重复计入空闲容量。 */
   hold(id: string, reason?: string, kind: Kind = 'task', preset?: TerminalResourcePreset) {
     this.reservations.set(
       id,
@@ -143,6 +147,7 @@ export class TerminalResourcePool {
   acquireInstallation(id: string, signal?: AbortSignal) {
     return this.acquire(id, 'installation', signal);
   }
+  /** 等待安装或探测资源；取消时从队列移除，预约后取消则释放资源。 */
   private async acquire(id: string, kind: 'installation' | 'probe', signal?: AbortSignal) {
     signal?.throwIfAborted();
     if (this.tryAcquire(id, kind)) return;
@@ -184,6 +189,7 @@ export class TerminalResourcePool {
       entry.resolve();
     }
   }
+  /** 生成只读快照；仅当内容发生变化时递增 revision。 */
   snapshot(): TerminalResourceSnapshot {
     const content = {
       status: this.state,

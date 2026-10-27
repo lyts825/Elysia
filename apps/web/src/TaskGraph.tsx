@@ -49,6 +49,7 @@ export function TaskGraph({
   const id = useId();
   const tasks = detail.tasks.filter((task) => task.parentTaskId);
   const root = detail.tasks.find((task) => !task.parentTaskId);
+  // 任务覆盖不完整时，界面不能把当前可见分支当作完整依赖图。
   const incomplete = detail.detailCoverage?.tasks.complete === false;
   const pendingPlan =
     detail.run.plan && (!detail.run.authorized || detail.run.acceptedPlanVersion !== detail.run.plan.version)

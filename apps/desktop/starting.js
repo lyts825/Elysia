@@ -10,6 +10,7 @@
     void window.elysia
       ?.markStartupStage?.({ stage, status, atEpoch: performance.timeOrigin + performance.now() })
       .catch(() => {});
+  // 替换动画前释放旧视频的来源，避免隐藏页面继续解码或播放。
   const replaceVisual = (...elements) => {
     visual.querySelectorAll('video').forEach((element) => {
       element.pause();
@@ -31,6 +32,7 @@
     );
     return element;
   };
+  // generation 防止较早的异步媒体读取覆盖最新偏好或已销毁的页面。
   const render = async () => {
     const current = ++generation,
       moving = config?.enabled !== false && !skipped && !reduced.matches;

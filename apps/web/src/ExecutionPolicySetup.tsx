@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { CommandBackendPolicy, ToolReviewPolicy } from '../../../packages/contracts/src/execution-policy';
 import type { SelectableProvider } from './ModelPicker';
 
+/** 校验审核策略与命令后端；模型审核必须选择当前版本已验证的连接。 */
 export function executionPolicyIssue(
   review: ToolReviewPolicy | undefined,
   backend: CommandBackendPolicy | undefined,

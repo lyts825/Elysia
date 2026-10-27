@@ -51,6 +51,7 @@
   min-width: 0;
 }
 
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .delivery-overview-reading {
   min-width: 0;
   max-width: 100%;
@@ -62,6 +63,7 @@
   scrollbar-gutter: stable;
 }
 
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .delivery-overview-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

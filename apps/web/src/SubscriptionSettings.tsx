@@ -31,6 +31,7 @@ export function SubscriptionSettings({
   ready?: (valid: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
+  // 账号连接状态和可选模型目录独立读取，选择变更由父组件保存。
   const accountHelpId = useId(),
     modelHelpId = useId();
   const [status, setStatus] = useState<State>(),

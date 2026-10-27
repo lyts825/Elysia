@@ -9,6 +9,7 @@ import './project-launch-draft.css';
 
 type Launch = NonNullable<ProjectBoardDraft['launch']>;
 export function effectiveLaunchContent(launch: Launch): ProjectLaunchContent {
+  // 运行设置中已有交付与验收输入时优先使用，其他字段沿用启动草稿。
   const setup = readRunSetupDraft(launch.setupRaw);
   return {
     title: launch.title,

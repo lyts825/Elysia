@@ -611,6 +611,10 @@ export class McpClient {
       maxConnections?: number;
     } = {},
   ) {}
+  /**
+   * 建立短会话并读取允许的工具目录；限制页数和工具数，校验名称及分页游标。
+   * 返回内容标记为不可信，已识别的敏感值会从响应中清理。
+   */
   inspect(config: LocalMcpConfig, signal?: AbortSignal, permission?: McpPermission): Promise<McpInspection> {
     if (permission) permissionGate(config, permission, false);
     return this.withSession(config, signal, async (session, initialized, context) => {
@@ -663,6 +667,10 @@ export class McpClient {
       return { ...initialized, tools, truncated, trust: 'untrusted' };
     });
   }
+  /**
+   * 检查调用权限和参数大小后执行远端工具。请求发出后若连接中断且结果无法确认，
+   * 返回 MCP_CALL_UNCERTAIN，提醒调用方先核验副作用再决定是否重试。
+   */
   call(
     config: LocalMcpConfig,
     tool: string,
@@ -705,6 +713,7 @@ export class McpClient {
       }
     });
   }
+  /** 取消所有活动会话并等待它们结束；关闭后不再接受新连接。 */
   async close() {
     this.closed = true;
     for (const controller of this.active.keys()) controller.abort();

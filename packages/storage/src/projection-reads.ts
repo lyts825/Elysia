@@ -17,7 +17,7 @@ const states: Record<ProjectionTable, readonly string[]> = {
   tool_operations: ['INTENT', 'DONE', 'FAILED', 'UNCERTAIN'],
 };
 
-/** Derived failures never overwrite the original compressed body or pretend it was migrated. */
+/** 记录投影读取问题，同时保留原始业务正文，供修复后重试。 */
 export class ProjectionReads {
   constructor(private store: Store) {
     store.tx(() => {
@@ -63,8 +63,13 @@ export class ProjectionReads {
       .prepare('SELECT 1 FROM projection_read_issues_v1 WHERE table_name=? AND record_id=?')
       .get(table, id);
   }
+  /**
+   * 读取并校验实体与数据库元数据的一致性。refresh 可重建投影；retry 允许重查已标记问题。
+   * 单条数据错误写入问题表并返回 undefined，SQLite 本身的错误继续向上传递。
+   */
   read<T extends Entity>(table: ProjectionTable, id: string, refresh = false, retry = false): T | undefined {
     if (!retry && this.has(table, id)) return;
+    // 单条记录失败只回滚自身的刷新，不撤销外围批次中的其他记录。
     this.store.db.exec('SAVEPOINT projection_read_item');
     try {
       const entity = this.store.get<T>(table, id);
@@ -105,6 +110,7 @@ export class ProjectionReads {
       return;
     }
   }
+  /** 区分记录不存在与记录存在但当前不可读取。 */
   require<T extends Entity>(table: ProjectionTable, id: string): T {
     const result = this.read<T>(table, id);
     if (result) return result;
@@ -122,6 +128,7 @@ export class ProjectionReads {
       return row ? [row] : [];
     });
   }
+  /** 每批最多刷新 32 条缺少投影的健康记录。 */
   batch(table: ProjectionTable, runId?: string) {
     const rows = this.store.db
       .prepare(
@@ -133,12 +140,14 @@ export class ProjectionReads {
     });
     return rows.length;
   }
+  /** 分批预热并在批次之间让出事件循环。 */
   async warm(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) await new Promise<void>((resolve) => setImmediate(resolve));
   }
   warmSync(table: ProjectionTable, runId?: string) {
     while (this.batch(table, runId)) {}
   }
+  /** 请求重新检查已有问题；仍不可读的记录继续保留问题标记。 */
   async retry(runId?: string) {
     this.store.tx(() => {
       this.store.db
@@ -159,6 +168,7 @@ export class ProjectionReads {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
+  /** 返回指定表或运行的不可读数量；未指定表时按运行去重。 */
   coverage(table?: ProjectionTable, runId?: string): ProjectionReadCoverage {
     const clauses = [...(table ? ['table_name=?'] : []), ...(runId ? ['run_id=?'] : [])];
     const unavailable = Number(

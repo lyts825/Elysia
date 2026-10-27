@@ -50,6 +50,7 @@
 .project-draft-protection[data-readable='false'] .project-draft-backup-heading > span {
   color: var(--warning);
 }
+/* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .project-draft-backup-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -117,6 +118,7 @@
 .project-draft-restore-wait {
   margin: var(--space-3) 0;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-draft-backup pre {
   max-height: min(50vh, 32rem);
   overflow: auto;

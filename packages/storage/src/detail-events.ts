@@ -11,7 +11,10 @@ export const DETAIL_EVENT_LIMITS = {
   totalBytes: 2 * 1024 * 1024,
 } as const;
 
-/** A bounded, failure-isolated preview; authoritative event and SSE readers are unchanged. */
+/**
+ * 读取最近的事件预览。单条正文和总解压量分别受限；损坏或超限时保留事件元数据，
+ * 并在 coverage 中标记正文不可用。此预览不替代完整事件或 SSE 读取。
+ */
 export function readDetailEvents(
   store: Store,
   runId: string,
@@ -87,6 +90,7 @@ export function readDetailEvents(
       if (payload && typeof payload === 'object' && 'externalPayloadRef' in payload)
         throw new Error('External legacy event body');
     } catch {
+      // 单条事件不可读不阻止其他预览；调用方可从覆盖状态辨别不完整结果。
       coverage.unavailable++;
       coverage.limited ||= limited;
       payload = { detailsOmitted: true, readUnavailable: true };
@@ -97,6 +101,7 @@ export function readDetailEvents(
       typeof payload === 'object' &&
       typeof (payload as { reasoningContent?: unknown }).reasoningContent === 'string'
     )
+      // 推理正文只返回预览，不将完整内容混入详情事件列表。
       payload = reasoningMessagePreview(payload as { reasoningContent: string });
     return {
       runId,

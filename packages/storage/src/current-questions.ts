@@ -28,7 +28,10 @@ class UnavailableQuestion extends Error {
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-/** Read only the current question and the state transitions proving it is still unanswered. */
+/**
+ * 查找运行中仍等待用户回答的问题，并用事件前后的任务状态核验其有效性。
+ * 读取受任务数、事件数和字节预算限制；无法核验的任务写入 coverage，不能当作没有问题。
+ */
 export function readCurrentQuestions(
   store: Store,
   run: Run,
@@ -142,6 +145,7 @@ export function readCurrentQuestions(
         // No clarification is valid for ordinary text-only chat waits.
         continue;
       }
+      // 提问时必须处于等待用户状态；之后若离开该状态，旧问题视为已处理。
       const before = store.db
         .prepare(
           `SELECT ${select} FROM events WHERE run_id=? AND task_id=?

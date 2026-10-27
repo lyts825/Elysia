@@ -4,6 +4,7 @@
 .review-source-note-body {
   min-width: 0;
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .review-source-note-body {
   display: grid;
   gap: var(--space-3);
@@ -45,6 +46,7 @@
   font: var(--font-sm) / var(--leading-body) var(--font-mono);
   overflow-wrap: anywhere;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .review-source-note-reading {
   min-width: 0;
   max-height: min(22rem, 50dvh);

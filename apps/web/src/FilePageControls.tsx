@@ -4,6 +4,7 @@ import type { TextFilePage } from '../../../packages/contracts/src/files';
 import { Icon } from './Icon';
 import './file-page.css';
 
+/** 用二进制单位显示字节数量，保留最多一位小数。 */
 export function formatFileBytes(bytes: number) {
   if (bytes < 1024) return `${bytes.toLocaleString()} B`;
   const divisor = bytes < 1024 ** 2 ? 1024 : bytes < 1024 ** 3 ? 1024 ** 2 : 1024 ** 3;
@@ -35,6 +36,7 @@ export function FilePageControls({
   }, [page.offset, page.totalBytes, page.version]);
   const target = Number(percent);
   const valid = percent.trim() !== '' && Number.isFinite(target) && target >= 0 && target <= 100;
+  // 百分之百定位到末页起点，其他比例预留末尾字节以便服务端对齐编码边界。
   const targetOffset =
     target === 100
       ? Math.max(0, page.totalBytes - Math.max(4, page.endOffset - page.offset))

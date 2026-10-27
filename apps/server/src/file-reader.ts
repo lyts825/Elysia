@@ -16,6 +16,7 @@ import {
 
 export type FileStat = Stats;
 export type TextReadHandle = { read: FileHandle['read']; stat: () => Promise<Stats> };
+/** 从文件大小、时间和设备信息计算版本，用于检测读取期间的变化。 */
 export function fileVersion(stat: FileStat) {
   return createHash('sha256')
     .update(JSON.stringify([stat.size, stat.mtimeMs, stat.ctimeMs, stat.dev, stat.ino]))
@@ -33,6 +34,7 @@ function changed(stat: FileStat, version = fileVersion(stat)) {
     409,
   );
 }
+/** 以只读方式打开普通文件并核对路径；可通过 signal 取消。 */
 export async function openFile(filename: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const handle = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
@@ -63,6 +65,7 @@ async function read(handle: TextReadHandle, start: number, length: number, signa
   signal?.throwIfAborted();
   return buffer.subarray(0, bytesRead);
 }
+/** 打开文件读取属性与最多 4096 字节前缀，并在结束后关闭句柄。 */
 export async function inspectFile(filename: string, signal?: AbortSignal) {
   const opened = await openFile(filename, signal);
   try {
@@ -81,6 +84,7 @@ function encodingError() {
     '无法按当前编码读取文本，请选择文件实际编码；Windows 中文旧文件可尝试 GB18030 / GBK。',
   );
 }
+/** 结合字节前缀和请求编码识别文本格式，拒绝不支持的 UTF-32。 */
 export function resolveEncoding(prefix: Uint8Array, requested: TextFileEncoding = 'auto') {
   const starts = (...bytes: number[]) => bytes.every((byte, index) => prefix[index] === byte);
   if (starts(0xff, 0xfe, 0, 0) || starts(0, 0, 0xfe, 0xff))
@@ -211,6 +215,7 @@ async function boundary(
   }
   return position;
 }
+/** 安全打开文件并按编码与分页参数读取文本；读取时检查文件版本。 */
 export async function readTextPage(
   filename: string,
   requestedEncoding: TextFileEncoding = 'auto',
@@ -321,6 +326,7 @@ export type FileResource = {
   contentLength?: number;
   acceptRanges: boolean;
 };
+/** 打开文件资源流，支持版本校验、字节范围及取消信号。 */
 export async function streamFile(
   filename: string,
   mediaType: string,

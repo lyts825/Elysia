@@ -75,6 +75,7 @@ const draftShape = z.object({
     .optional(),
 });
 
+/** 恢复版本 1 草稿；允许未完成的表单值，但拒绝损坏或超长的缓存。 */
 export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {
   if (raw === undefined || raw === '') return;
   if (typeof raw !== 'string' || raw.length > 200000) throw Error('创建配置草稿格式无法读取，原文仍保留。');
@@ -85,6 +86,7 @@ export function readRunSetupDraft(raw: unknown): RunSetupDraft | undefined {
     throw Error('创建配置草稿格式或版本无法读取，原文仍保留。');
   }
 }
+/** 序列化前保留原表单，超出保存上限时明确失败而不生成截断草稿。 */
 export function writeRunSetupDraft(draft: RunSetupDraft) {
   const raw = JSON.stringify({ version: 1, draft });
   if (raw.length > 200000) throw Error('创建配置草稿超过本机保存上限，请缩短输入；当前表单仍保留。');

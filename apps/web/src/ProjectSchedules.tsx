@@ -27,6 +27,7 @@ const fieldsShape = z
   })
   .strict();
 const pendingShape = z.discriminatedUnion('kind', [
+  // 待处理创建和更新请求按类型保存，恢复时保留原请求体。
   z.object({ kind: z.literal('create'), body: ProjectScheduleCreate }).strict(),
   z.object({ kind: z.literal('update'), id: z.string().uuid(), body: ProjectScheduleUpdate }).strict(),
 ]);
@@ -156,6 +157,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     }
   }
   function edit(values: Partial<Draft['fields']>) {
+    // 编辑后撤销先前确认；变更来源时废弃旧模板预览并取消读取。
     if (locked) return;
     if (change((value) => ({ ...value, fields: { ...value.fields, ...values } }))) {
       setReviewed(false);
@@ -172,6 +174,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     }
   }
   async function read() {
+    // 读取新列表前取消旧请求，并核对返回的项目归属。
     listReader.current?.abort();
     const controller = new AbortController();
     listReader.current = controller;
@@ -199,6 +202,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     void read();
   }, [api, projectId]);
   async function readPreview() {
+    // 预览必须对应所选来源运行；成功前不能把旧预览作为当前结果。
     if (!fields?.sourceRunId || locked) return;
     previewReader.current?.abort();
     const controller = new AbortController();
@@ -260,6 +264,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     return result.data;
   }
   async function send(request: Pending) {
+    // 发送前持久化原请求；网络或协议结果未知时保留请求供后续核对。
     if (writing.current || archived || !loaded) return;
     if (!change((value) => ({ ...value, pending: request }))) return;
     writing.current = true;
@@ -344,6 +349,7 @@ function ProjectSchedulePanel({ projectId, cache, archived = false, openRun }: P
     }
   }
   function saveTemplate() {
+    // 仅在当前列表和预览均已核对时创建或刷新模板，并携带来源版本及捕获哈希。
     if (locked || !current || !previewCurrent || !preview || !reviewed) return;
     try {
       const next = settings();

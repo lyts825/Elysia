@@ -80,6 +80,7 @@
   color: var(--secondary);
   line-height: var(--leading-body);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .file-page-detail-reading {
   max-height: clamp(8rem, 30dvh, 16rem);
   overflow: auto;
@@ -88,6 +89,7 @@
   margin-top: var(--space-2);
   line-height: var(--leading-body);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .file-page-detail-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -109,6 +111,7 @@
 .file-page-detail p {
   margin: var(--space-2) 0 0;
 }
+/* 窄屏减少分页控件的水平留白并调整操作区位置。 */
 @media (max-width: 420px) {
   .file-page-controls {
     padding-inline: var(--space-3);

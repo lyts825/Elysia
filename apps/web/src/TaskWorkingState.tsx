@@ -8,6 +8,7 @@ import { ApiError } from './api';
 import './task-working-state.css';
 
 const pendingShape = z.discriminatedUnion('kind', [
+  // 保存审批或撤销请求的命令 ID 和期望版本，结果未知时可继续核对。
   z
     .object({
       kind: z.literal('approve'),

@@ -22,6 +22,7 @@ export function taskCenterDestination(
   archived: boolean,
   terminalSurface: boolean,
 ): TaskCenterDestination {
+  // 先处理只读、归档及结果未知等优先级更高的状态，再决定具体目标页面。
   if (detailReadReason(detail) || detail.readOnly) return { kind: 'status' };
   if (archived) return { kind: 'archive' };
   const { run } = detail;

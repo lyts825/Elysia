@@ -20,6 +20,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/* 列数随容器宽度变化；每列以 18rem 为目标下限，容器更窄时不超过容器宽度。 */
 .native-defaults-comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
@@ -50,6 +51,7 @@
 .native-project-defaults :is(button, summary, .native-defaults-reading) {
   scroll-margin-block: var(--space-3);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .native-defaults-reading {
   max-height: min(16rem, 42dvh);
   overflow: auto;

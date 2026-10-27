@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rename
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+/** 优先使用当前 Node 自带的 Corepack；失败时向启动流程传递明确错误。 */
 function pnpm(root, command) {
   const corepack = path.join(
     path.dirname(process.execPath),
@@ -30,6 +31,7 @@ function pnpm(root, command) {
   if (result.error || result.status !== 0)
     throw result.error || new Error(`pnpm ${command} 失败，请查看启动日志`);
 }
+/** 从项目本地依赖的 package.json 解析可执行入口，避免依赖全局命令版本。 */
 function packageCommand(root, packageName, binary, args) {
   const require = createRequire(path.join(root, 'package.json'));
   const manifestPath = require.resolve(packageName + '/package.json');
@@ -45,6 +47,7 @@ function packageCommand(root, packageName, binary, args) {
     throw result.error || new Error(`${binary} 构建失败，请查看启动日志`);
 }
 
+/** 按稳定目录顺序计算构建输入摘要，并保存将随构建发布的提示词和技能原文。 */
 function captureBuildInputs(root) {
   const fingerprint = createHash('sha256');
   const resources = new Map();
@@ -83,6 +86,11 @@ function captureBuildInputs(root) {
   return { digest: fingerprint.digest('hex'), resources };
 }
 
+/**
+ * 校验锁定依赖后按输入摘要复用或构建缓存。新构建先写入独立临时目录，
+ * 核对源文件未变化和资源哈希后再原子发布；不完整的既有缓存不会被覆盖。
+ * mark 接收启动阶段，commands 可由调用方注入构建命令。
+ */
 export function buildLaunch(root, mark = () => {}, commands = { pnpm, packageCommand }) {
   if (
     !existsSync(path.join(root, 'node_modules/.pnpm/lock.yaml')) ||

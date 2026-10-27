@@ -47,6 +47,7 @@ export class ObjectReferenceProjection {
       }
     }
   }
+  /** 递归索引命令正文的字符串摘要，以便快速筛选可能引用指定标识的命令。 */
   private commandTokens(commandId: string, value: unknown) {
     const tokens = new Set<string>();
     const visit = (item: unknown) => {
@@ -60,6 +61,7 @@ export class ObjectReferenceProjection {
     for (const token of tokens) save.run(commandId, token);
     this.db.prepare('INSERT OR IGNORE INTO command_reference_tokens_ready_v1 VALUES(?)').run(commandId);
   }
+  /** 对引用排序后保存内容、数量与摘要，便于后续发现投影损坏。 */
   write(table: string, key: string, value: unknown) {
     const refs = [...this.refs(value)].sort(),
       json = JSON.stringify(refs);
@@ -80,6 +82,10 @@ export class ObjectReferenceProjection {
       .iterate(source.table) as Iterable<{ id: string; content: Uint8Array }>)
       this.write(source.table, row.id, this.expand(row.content));
   }
+  /**
+   * 枚举应保留的对象引用。先补齐缺失投影，再核对引用格式、数量和摘要；
+   * 投影异常时从原文重建，原文不可用则停止回收，避免误删对象。
+   */
   roots() {
     for (const source of this.sources) this.warm(source);
     const retained = new Set<string>();
@@ -124,6 +130,7 @@ export class ObjectReferenceProjection {
     }
     return retained;
   }
+  /** 按标识摘要及可选运行 ID 筛选候选命令；结果仍需调用方读取原文确认。 */
   commandCandidates(identifiers: Set<string>, runId?: string) {
     for (const row of this.db
       .prepare(
@@ -135,6 +142,7 @@ export class ObjectReferenceProjection {
     const candidates = new Set<string>(),
       values = [...identifiers].map((value) => digest(JSON.stringify(value)));
     for (let start = 0; start < values.length; start += 500) {
+      // 分批查询以限制单条 SQL 的参数数量。
       const batch = values.slice(start, start + 500);
       for (const row of this.db
         .prepare(

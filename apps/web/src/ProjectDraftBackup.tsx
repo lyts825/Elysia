@@ -18,6 +18,7 @@ import {
 import './project-draft-backup.css';
 
 function download(raw: string, name: string, type = 'application/json;charset=utf-8') {
+  // 用临时对象 URL 导出，触发下载后释放浏览器持有的资源。
   const url = URL.createObjectURL(new Blob([raw], { type }));
   try {
     const link = document.createElement('a');
@@ -135,6 +136,7 @@ export function ProjectDraftBackup({
     setDownloadedProtection(null);
   }, [protectedRaw]);
   const prepare = (backup: ProjectDraftBackupPreview) => {
+    // 预览绑定当前原稿和已有保护副本，恢复时再次比较这些快照。
     const protection = readProtection();
     setProtectedRaw(protection);
     setPreview({ backup, currentRaw: currentRaw(), protection });
@@ -147,6 +149,7 @@ export function ProjectDraftBackup({
     setOpen(true);
   };
   const read = async (file: File) => {
+    // 用代次忽略过期的文件读取；只有完整解码并验证后才展示预览。
     restoreController.current?.abort();
     const request = ++generation.current;
     setReading(true);
@@ -200,6 +203,7 @@ export function ProjectDraftBackup({
     }
   };
   const restore = async () => {
+    // 恢复与删除互斥；进入临界区后仍核对界面代次和工作台作用域。
     if (!preview || restoringNow.current || deletingNow.current) return;
     restoringNow.current = true;
     restorePhaseNow.current = 'waiting';
@@ -267,6 +271,7 @@ export function ProjectDraftBackup({
     }
   };
   const deleteProtection = async () => {
+    // 仅允许删除已另存并确认的当前副本，其他状态不发起删除。
     if (
       protectedRaw === null ||
       deletingNow.current ||

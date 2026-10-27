@@ -24,6 +24,7 @@ type Props = {
   reading?: boolean;
 };
 export function ArtifactChanges(props: Props) {
+  // 运行、复核或交付指纹变化时重建分页状态，避免显示上一版差异。
   return <ArtifactChangePages key={`${props.runId}:${props.reviewId}:${props.fingerprint}`} {...props} />;
 }
 function Metadata({ label, value }: { label: string; value: DeliveryArtifactMetadata | null }) {

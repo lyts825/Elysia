@@ -7,6 +7,7 @@ export interface ReviewModelAssignment {
 }
 
 // Connection IDs, accounts, endpoints and reasoning effort do not identify a different model.
+// 比较去除首尾空白并转为小写后的型号；返回首个冲突说明或 null。
 export function reviewModelConflict(assignments: readonly ReviewModelAssignment[]) {
   const identity = (model: string) => model.trim().toLowerCase();
   for (const reviewer of assignments.filter((item) => item.role === 'reviewer')) {

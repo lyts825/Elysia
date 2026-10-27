@@ -13,6 +13,7 @@ export type PreviewEntry = {
   renderIssues?: PreviewResourceIssue[];
   renderIssueCount?: number;
 };
+// 快照关联任务、工作区与基线；truncated 表示文件清单并不完整。
 export type PreviewSnapshot = {
   taskId: string;
   workspace: string | null;

@@ -3,6 +3,7 @@
   position: relative;
   flex: 0 0 auto;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .conversation-search-panel {
   position: absolute;
   z-index: 12;
@@ -76,6 +77,7 @@
   border-color: var(--accent);
   background: var(--surface-selected);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .conversation-search-results span {
   line-height: var(--leading-ui);
   overflow-wrap: anywhere;

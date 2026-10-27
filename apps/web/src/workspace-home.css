@@ -16,6 +16,7 @@
   border-left: 2px solid var(--border-strong);
   color: var(--secondary);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .home-project-reading,
 .home-model-reading {
   overflow: auto;
@@ -38,6 +39,7 @@
 .workspace-home .composer textarea {
   padding-top: var(--space-2);
 }
+/* 内容列占用剩余空间，操作列按自身内容确定宽度。 */
 .workspace-home .composer-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

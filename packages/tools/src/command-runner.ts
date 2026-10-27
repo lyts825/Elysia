@@ -26,6 +26,10 @@ export interface CommandRunner {
   recover?(): Promise<void>;
 }
 
+/**
+ * 将本机工作目录映射到容器内的 /workspace，并生成 docker create 参数。
+ * scope 是数据目录派生的标签，用于恢复时只查找本实例遗留的命令容器。
+ */
 export function dockerCommandArguments(request: CommandRequest, scope: string) {
   invariant(request.backend.kind === 'docker', 'COMMAND_BACKEND', '命令后端不匹配');
   invariant(
@@ -102,6 +106,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
       throw new AppError('COMMAND_CLEANUP', '无法确认命令容器已停止：' + result.stderr);
   }
   recover() {
+    // 并发调用共享同一次恢复；失败后清除缓存，允许下次重试。
     return (this.ready ??= this.cleanStaleContainers().catch((error) => {
       this.ready = undefined;
       throw error;
@@ -127,6 +132,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
     }
   }
   async cancel(taskIds?: Set<string>) {
+    // 等待所有匹配容器的清理结果，失败的容器保留在 active 中以便重试。
     const results = await Promise.allSettled(
       [...this.active]
         .filter(([, task]) => !taskIds || taskIds.has(task))
@@ -161,6 +167,7 @@ export class ConfiguredCommandRunner implements CommandRunner {
     const { name, args } = dockerCommandArguments(request, this.scope);
     this.active.set(name, request.taskId);
     try {
+      // 先创建后附着运行，使取消或失败时仍能按确定的名称清理容器。
       const created = await this.processes.run(
         request.taskId,
         'docker',

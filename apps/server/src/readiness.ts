@@ -192,6 +192,7 @@ function terminalChecks(store: Store, project?: Project): ReadinessCheck[] {
   return checks;
 }
 
+/** 汇总当前入口、项目和配置的就绪检查，供界面解释缺失项。 */
 export function readinessSnapshot(
   store: Store,
   surface: WorkspaceSurface,
@@ -258,6 +259,7 @@ export function readinessSnapshot(
   });
 }
 
+/** 注册就绪查询路由；可选项目 ID 必须通过格式校验。 */
 export function registerReadiness(app: FastifyInstance, store: Store, surface: WorkspaceSurface) {
   app.get('/api/readiness', (request) => {
     const query = z.object({ projectId: z.string().uuid().optional() }).strict().parse(request.query);

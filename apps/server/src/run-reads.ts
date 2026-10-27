@@ -66,6 +66,7 @@ function clipped(value: unknown, depth = 0): unknown {
       .map(([key, item]) => [key, clipped(item, depth + 1)]),
   );
 }
+/** 裁剪操作结果中的大集合，生成适合详情预览的操作记录。 */
 export function briefOperation(operation: Operation): Operation {
   const result =
     operation.result && typeof operation.result === 'object' && !Array.isArray(operation.result)
@@ -98,6 +99,7 @@ function briefRequest(request: RequestRecord): RequestRecord {
   } as RequestRecord;
 }
 /** Reads small SQL projections; legacy rows warm once without expanding business bodies again. */
+/** 聚合运行、任务、请求和操作的只读投影，并报告不可读记录。 */
 export class RunReads {
   private projections: ProjectionReads;
   constructor(private store: Store) {

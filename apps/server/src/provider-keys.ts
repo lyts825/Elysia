@@ -22,6 +22,7 @@ export class ProviderKeys {
         throw e;
       }));
   }
+  /** 检查凭据引用或配置的环境变量是否有值；读取保险库失败按未配置显示。 */
   async configured(p: ProviderConfig) {
     if (!p.credentialId) return !!process.env[p.apiKeyEnv];
     try {
@@ -30,11 +31,13 @@ export class ProviderKeys {
       return false;
     }
   }
+  /** 解析模型绑定的密钥；缺失时抛出 API_KEY_MISSING。 */
   async credential(p: ProviderConfig) {
     const token = p.credentialId ? (await this.load()).keys[p.credentialId] : process.env[p.apiKeyEnv];
     invariant(token, 'API_KEY_MISSING', '请保存 API Key 或配置所选环境变量');
     return { token, signal: new AbortController().signal };
   }
+  /** 串行写入保险库并返回新凭据 ID，已有任务继续引用原凭据。 */
   save(key: string): Promise<string> {
     const result = this.queue.then(async () => {
       const vault = await this.load(),

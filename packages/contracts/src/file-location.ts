@@ -1,6 +1,7 @@
 // 文本定位请求及扫描结果的数据契约。
 import type { ResolvedTextEncoding, TextFileEncoding } from './files.js';
 
+// version 和 cursor 用于继续扫描同一文件快照；signal 可取消当前查找。
 export type FileLocationOptions = {
   anchor: string;
   encoding?: TextFileEncoding;

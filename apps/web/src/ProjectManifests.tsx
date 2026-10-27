@@ -29,6 +29,7 @@ function ArtifactSelection({
   const selectionId = useId();
   type Position = { before: string; trail: string[] };
   const firstPage = (): Position => ({ before: '', trail: [] });
+  // 产物候选页绑定当前执行及版本，执行变化后不能复用旧页选择。
   const owner = `${item.current?.runId}:${item.current?.runRevision}`;
   const [open, setOpen] = useState(false);
   const [display, setDisplay] = useState<{ owner: string; page: SourceOptions; position: Position }>();

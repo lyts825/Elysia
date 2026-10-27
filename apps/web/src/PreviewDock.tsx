@@ -9,6 +9,7 @@ import './preview-dock.css';
 import { readingCheckpoint, saveReadingCheckpoint } from './ReadingCheckpoint';
 
 function savedRatio(ratioKey: string) {
+  // 只接受 0 到 1 之间的比例；本地存储不可用时回退到均分。
   try {
     const value = Number(localStorage.getItem(ratioKey));
     if (Number.isFinite(value) && value > 0 && value < 1) return value;

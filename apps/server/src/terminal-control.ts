@@ -80,6 +80,7 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 /** ProviderKeys encryption is reused, but every vault operation targets the terminal vault. */
+/** 构造仅访问终端独立密钥库的凭据服务。 */
 export function terminalProviderKeys(desktop?: DesktopServices): ProviderKeys {
   return new ProviderKeys(
     desktop && {
@@ -97,6 +98,7 @@ export function terminalProviderKeys(desktop?: DesktopServices): ProviderKeys {
     },
   );
 }
+/** 管理终端连接、配置、凭据探测及项目偏好，探测关闭时可取消。 */
 export class TerminalControlService {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly keys: ProviderKeys;
@@ -182,6 +184,7 @@ export class TerminalControlService {
     invariant(binding, 'TERMINAL_CONNECTION_MISSING', '所选 API 连接已删除，请刷新');
     return this.connectionHealth(binding);
   }
+  /** 按连接 ID、预期版本和操作类型发起连接检测或模型列表查询。 */
   async probe(connectionId: string, input: unknown, operation: 'check' | 'models', caller?: AbortSignal) {
     const id = z.string().uuid().parse(connectionId);
     const body = TerminalConnectionProbeRequest.parse(input);
@@ -249,6 +252,7 @@ export class TerminalControlService {
     this.closed = true;
     for (const controller of this.probes.values()) controller.abort();
   }
+  /** 读取终端配置并汇总指定模板的诊断状态。 */
   async diagnostics(profileId: string, input: unknown = {}) {
     const id = z.string().uuid().parse(profileId);
     const body = z.object({ projectId: z.string().uuid().optional() }).strict().parse(input);
@@ -352,6 +356,7 @@ export class TerminalControlService {
       ready: !issues.some((issue) => issue.severity === 'error'),
     });
   }
+  /** 按显式选择或当前配置确定连接，并为终端模板构造绑定。 */
   bindProfile(profile: AgentTerminalProfile, connectionId?: string | null): AgentTerminalProfile {
     const supplied = profile as AgentTerminalProfile & {
       connectionId?: string | null;
@@ -410,6 +415,7 @@ export class TerminalControlService {
       if (profile) assertTerminalConnectionCompatible(profile, connection);
     }
   }
+  /** 串行保存连接；命令记录使用密钥摘要，避免明文进入数据库记录。 */
   saveConnection(connectionId: string, input: unknown, route: string) {
     const id = z.string().uuid().parse(connectionId);
     const body = TerminalConnectionWrite.parse(input);
@@ -476,6 +482,7 @@ export class TerminalControlService {
       });
     });
   }
+  /** 按预期版本及命令 ID 删除连接，并校验当前配置。 */
   deleteConnection(connectionId: string, input: unknown, route: string) {
     const id = z.string().uuid().parse(connectionId);
     const body = Command.extend({ expectedRevision: z.number().int().nonnegative() }).strict().parse(input);
@@ -567,6 +574,7 @@ export class TerminalControlService {
       }),
     );
   }
+  /** 按项目版本保存默认模板与连接偏好。 */
   savePreferences(projectId: string, input: unknown, route: string) {
     const body = Command.extend({
       expectedRevision: z.number().int().nonnegative(),

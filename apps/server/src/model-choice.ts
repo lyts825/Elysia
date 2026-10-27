@@ -24,6 +24,7 @@ export type AvailableModel = {
 export type ApiModelCatalog = (provider: ProviderConfig) => Promise<AvailableModel[]>;
 
 /** Reads the current connection catalog; listing does not make an inference request. */
+/** 按认证方式从 Codex、ChatGPT 或 API 目录读取模型；无目录服务时使用已配置模型。 */
 export async function availableModels(
   subscription: CatalogServices['subscription'],
   codex: CatalogServices['codex'],
@@ -37,6 +38,7 @@ export async function availableModels(
 }
 
 /** Freeze a per-agent choice while retaining the verified connection and shared account quota. */
+/** 验证模型连接后解析并冻结单个代理的模型选择。 */
 export async function resolveModelChoice(
   store: Store,
   subscription: CatalogServices['subscription'],
@@ -124,6 +126,7 @@ export async function resolveModelChoice(
 }
 
 /** Share discovery only within one plan; each choice still validates its current connection. */
+/** 批量解析模型选择，同一调用内复用相同连接的目录请求。 */
 export async function resolveModelChoices(
   store: Store,
   subscription: CatalogServices['subscription'],

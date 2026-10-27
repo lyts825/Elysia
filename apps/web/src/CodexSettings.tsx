@@ -32,6 +32,7 @@ export function CodexSettings({
   ready?: (valid: boolean) => void;
 }) {
   const { api, mutation } = useSurfaceClient();
+  // 连接来源、登录状态和模型目录分别维护，更新配置由父组件持有。
   const [source, setSource] = useState(
     config.subscriptionAccountId?.startsWith('codex-elysia-') ? 'elysia' : 'local',
   );

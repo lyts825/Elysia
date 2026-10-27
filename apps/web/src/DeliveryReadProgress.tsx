@@ -29,6 +29,7 @@ export async function prepareDeliveryRead(
   signal: AbortSignal,
   update: (progress: DeliveryWarmProgress) => void,
 ) {
+  // 每个读取者使用独立 jobId；创建请求尚未结束时取消会等待创建收束再删除该任务。
   signal.throwIfAborted();
   const base = baseFor(target),
     jobId = crypto.randomUUID();

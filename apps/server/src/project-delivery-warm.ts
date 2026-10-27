@@ -35,6 +35,7 @@ type Job = {
 };
 
 /** Project jobs own subscriptions to shared Run work, rather than cancelling another window's reader. */
+/** 注册项目交付数据预热接口，按项目来源组织各运行的预热任务。 */
 export function registerProjectDeliveryWarm(
   app: FastifyInstance,
   store: Store,

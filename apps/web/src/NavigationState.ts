@@ -10,6 +10,7 @@ export function navigationKey(scope: string | undefined, client: SurfaceClient =
 }
 
 export function readNavigation(key: string | undefined): NavigationState | undefined {
+  // 恢复时仅接受长度有界的字符串字段，损坏或不可用的存储直接忽略。
   if (!key) return;
   try {
     const value = JSON.parse(sessionStorage.getItem(key) || 'null');
@@ -41,6 +42,7 @@ export function resolveNavigation(
   spaces: ProjectSpace[],
   restoring = false,
 ): NavigationState {
+  // 先验证空间和项目，再验证运行归属；恢复时不重新选择已归档实体。
   const spaceId = spaces.some((space) => space.id === value.spaceId)
     ? value.spaceId
     : spaces.find((space) => space.protected)?.id || spaces[0]?.id || 'default';

@@ -44,6 +44,7 @@
   background: var(--warning-bg);
   color: var(--warning);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .project-plan-preview-content {
   max-height: min(50vh, 32rem);
   overflow: auto;
@@ -137,6 +138,7 @@
 .project-plan-transfer .project-plan-filename {
   max-height: min(8rem, 25dvh);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .project-plan-reading:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

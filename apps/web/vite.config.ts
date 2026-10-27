@@ -3,7 +3,10 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
-// Keep a fixed built-in entry URL so retrying a failed import uses a fresh module URL.
+/**
+ * 为计划对齐面板提供稳定的虚拟入口。开发时指向源码；生产构建将其输出为独立 chunk，
+ * 返回构建器生成的资源 URL，供加载失败后的重试使用。
+ */
 function planAlignmentEntry(): Plugin {
   const virtualId = 'virtual:elysia-plan-alignment';
   const resolvedId = '\0' + virtualId;
@@ -29,6 +32,7 @@ function planAlignmentEntry(): Plugin {
     },
   };
 }
+// 开发服务只监听本机；API、终端和预览请求转发到同一个本地后端。
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react(), planAlignmentEntry()],

@@ -20,6 +20,7 @@ const headerSchema = z
   .strict();
 
 /** Object keys are canonicalized; array order remains part of the original execution plan. */
+/** 验证对象清理计划并提取入口及候选对象的审计绑定信息。 */
 export function objectAuditPlan(value: unknown) {
   const plan = ObjectCleanupPlan.parse(value);
   const surfaces = new Set<string>(),
@@ -42,6 +43,7 @@ export function objectAuditPlan(value: unknown) {
   };
 }
 
+/** 生成审计开始记录，包含计划绑定信息但不复制候选对象清单。 */
 export function objectAuditHeader(plan: unknown) {
   const { candidates: _, ...binding } = objectAuditPlan(plan);
   return { type: 'started' as const, format: 2 as const, createdAt: new Date().toISOString(), ...binding };
@@ -60,6 +62,7 @@ type Binding = {
 };
 
 /** Verifies a receipt against an optional plan, never against current database or file state. */
+/** 读取有大小限制的普通审计文件，并在提供计划时检查绑定关系。 */
 export function inspectObjectAudit(filename: string, suppliedPlan?: unknown) {
   try {
     if (!existsSync(filename)) return { available: false as const };

@@ -38,6 +38,7 @@
   font-size: var(--font-xs);
   color: var(--muted);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .terminal-profile-settings .terminal-settings-title {
   max-height: clamp(5rem, 25dvh, 10rem);
   overflow: auto;
@@ -78,6 +79,7 @@
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .terminal-template-reading:focus-visible,
 .terminal-template-connection-reading:focus-visible,
 .terminal-profile-error:focus-visible {

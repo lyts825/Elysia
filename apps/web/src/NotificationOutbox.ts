@@ -22,6 +22,7 @@ export class NotificationOutbox {
     this.lastFailureAt = prior?.lastFailureAt;
   }
   enqueue(item: TaskCenterItem, after: number) {
+    // 同一任务只保留比已观察版本新的最近一次通知，避免发送过期状态。
     const notice = item.notification;
     if (!notice || notice.revision <= after) return;
     const old = this.entries.get(item.id);
@@ -36,6 +37,7 @@ export class NotificationOutbox {
       createdAt: Date.now(),
     });
     while (this.entries.size > 40) {
+      // 队列有界；被淘汰的条目计入失败数，避免悄然丢失。
       this.entries.delete(this.entries.keys().next().value!);
       this.inheritedFailures = Math.min(999, this.inheritedFailures + 1);
       this.lastFailureAt = Date.now();
@@ -47,6 +49,7 @@ export class NotificationOutbox {
     this.publish();
   }
   async drain(signal: AbortSignal, now = Date.now()) {
+    // 投递前复核任务状态；过期或不再有效的通知直接移除。
     for (const entry of [...this.entries.values()]) {
       if (signal.aborted) return;
       if (entry.attempts >= 3 || entry.nextAt > now) continue;
@@ -61,6 +64,7 @@ export class NotificationOutbox {
       } catch {
         if (!signal.aborted && this.entries.get(entry.id) === entry) {
           entry.attempts++;
+          // 失败最多尝试三次，重试间隔按 2 秒、4 秒递增。
           entry.nextAt = now + 2000 * 2 ** (entry.attempts - 1);
           this.lastFailureAt = Date.now();
         }

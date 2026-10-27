@@ -4,6 +4,7 @@ export type ProjectionReadIssue = {
   message: string;
   retryable: true;
 };
+// complete 表示读取覆盖完整；unavailable 单独计数无法读取的记录。
 export type ProjectionReadCoverage = { complete: boolean; unavailable: number };
 export type DetailCollectionCoverage = ProjectionReadCoverage & {
   total: number;

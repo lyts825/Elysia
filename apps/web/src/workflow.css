@@ -186,6 +186,7 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .workflow-preview {
   min-height: 180px;
   max-height: 480px;
@@ -255,6 +256,7 @@
 .workflow-modal .modal-footer {
   flex-wrap: wrap;
 }
+/* 窄屏收紧复核内容留白，并调整文件和分页操作布局。 */
 @media (max-width: 480px) {
   .workflow-defaults,
   .workflow-criterion,
@@ -264,6 +266,7 @@
   .workflow-file {
     align-items: flex-start;
   }
+  /* 两列共享可用宽度；零最小值允许列在空间不足时收缩。 */
   .workflow-pagination-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

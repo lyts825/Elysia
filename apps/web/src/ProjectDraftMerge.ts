@@ -68,6 +68,7 @@ export function mergeProjectPlan(
       mineItem = mineById.get(id);
     const label = currentItem?.title || mineItem?.title || baseItem?.title || '未命名交付项';
     if (!currentItem || !mineItem) {
+      // 整项新增或删除作为一个字段比较；双方仍保留时再逐字段合并。
       const kept = field(`items.${id}`, `交付项「${label}」· 新增或移除`, baseItem, currentItem, mineItem);
       if (kept) result.items.push({ ...kept });
       continue;
@@ -86,6 +87,7 @@ export function mergeProjectPlan(
     }
     result.items.push(merged);
   }
+  // 仍未选择的冲突供界面阻止提交，result 只是可预览的暂定结果。
   return { result, differences, unresolved: differences.filter((row) => row.conflict && !row.choice).length };
 }
 

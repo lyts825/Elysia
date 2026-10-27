@@ -44,6 +44,7 @@ interface Attempt {
 }
 
 /** OAuth secrets stay in the backend and the OS-encrypted desktop vault. */
+/** 管理订阅登录、凭据和模型目录；关闭时取消登录与在途请求。 */
 export class SubscriptionService {
   private data?: VaultData;
   private loading?: Promise<void>;

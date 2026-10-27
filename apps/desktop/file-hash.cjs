@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const { createHash } = require('node:crypto');
 let sharedBuffer;
 
+/** 以固定大小缓冲区同步读取文件，返回小写十六进制 SHA-256。 */
 function sha256File(filename) {
   const descriptor = fs.openSync(filename, 'r');
   try {

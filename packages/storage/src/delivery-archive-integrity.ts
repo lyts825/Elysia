@@ -21,7 +21,11 @@ function plain(filename: string, directory = false) {
   return stat;
 }
 
-/** Validate every authoritative saved package before publishing a backup or installing a restore. */
+/**
+ * 在发布备份或安装恢复数据前验证全部已保存交付包。
+ * 逐条核对项目、冻结清单、对象引用、大小和 SHA-256；读取前后核对文件身份与时间，
+ * 防止校验期间替换文件。任何一条无法证明完整时抛错，由调用方中止操作。
+ */
 export function validateDeliveryArchiveObjects(db: DatabaseSync, directory: string) {
   if (
     !db
@@ -49,6 +53,7 @@ export function validateDeliveryArchiveObjects(db: DatabaseSync, directory: stri
       !z.string().datetime().safeParse(row.saved_at).success
     )
       throw new Error('保存交付包记录或清单绑定无效');
+    // 清单自身的冻结哈希不参与其摘要计算，并与归档记录交叉核对。
     const manifest = JSON.parse(row.manifest_data),
       { hash: frozenHash, ...snapshot } = manifest;
     if (

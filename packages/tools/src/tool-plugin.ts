@@ -13,9 +13,13 @@ export interface ToolInvocation {
 }
 
 export interface ToolPolicy {
+  /** 是否在存储事务内执行。 */
   transaction: boolean;
+  /** 是否与其他串行工具协调执行顺序。 */
   serial: boolean;
+  /** 是否可能产生持久副作用。 */
   mutating: boolean;
+  /** 成功调用是否计入运行时的进展判断。 */
   progress: boolean;
 }
 
@@ -30,6 +34,10 @@ export interface ToolContribution {
 /** Capabilities are supplied by the gateway; plugins do not receive the gateway itself. */
 export type ToolServices = ReturnType<typeof pluginServices>;
 
+/**
+ * 将参数校验、模型可见定义、执行函数和策略封装为工具贡献。
+ * 定义按需生成并返回独立副本，避免调用方修改共享缓存。
+ */
 export function defineTool<Schema extends z.ZodType<Record<string, unknown>>>(
   name: string,
   schema: Schema,

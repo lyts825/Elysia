@@ -5,6 +5,7 @@ import { defineTool, type ToolServices, type ToolInvocation, type ToolContributi
 import type { PluginContributions } from '../../../plugins/src/index.js';
 
 const schemas = { fetch_url: z.object({ url: z.string().url() }) };
+/** 注册 fetch_url：参数先经 URL 校验，具体授权、地址检查和快照由网关执行。 */
 export function networkTools(context: Pick<ToolServices, 'fetch'>): PluginContributions<ToolContribution> {
   async function execute_fetch_url(
     { task, signal }: ToolInvocation,

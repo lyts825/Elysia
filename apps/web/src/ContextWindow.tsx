@@ -26,6 +26,7 @@ export function ContextMeter({
   showStreaming?: boolean;
 }) {
   const used = percentage(projection);
+  // 缺少估算时显示占位；圆环限制在 100%，文字保留真实估算比例。
   return (
     <>
       <button

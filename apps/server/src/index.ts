@@ -17,6 +17,7 @@ let terminalServer: ReturnType<typeof createServer> | undefined;
 let frontend: { close(): Promise<void> } | undefined;
 let interval: NodeJS.Timeout | undefined;
 let closing: Promise<void> | undefined;
+/** 合并重复关闭请求，等待服务和存储逐步释放，再报告首个关闭失败。 */
 function close() {
   return (closing ??= (async () => {
     if (interval) clearInterval(interval);
@@ -35,6 +36,7 @@ function close() {
   })());
 }
 try {
+  // 先打开并升级两个入口的存储，恢复未完成操作后再对外监听。
   const opened = await openStartupStores(directory);
   release = opened.release;
   store = opened.native;

@@ -7,6 +7,7 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 export interface CompiledContext {
+  /** 传给模型的系统规则、当前任务、已配对历史和允许使用的工具。 */
   system: string;
   task: string;
   history: Message[];
@@ -14,13 +15,16 @@ export interface CompiledContext {
   manifest: Record<string, unknown>;
   estimatedTokens: number;
 }
+/** 在发起模型请求前拒绝无效或尚未结束的工具调用序列。 */
 export function validatePairs(messages: Message[]) {
   const sequence = inspectToolCalls(messages);
   if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
   if (sequence.pending.length) throw new AppError('TOOL_PAIR_INCOMPLETE', '工具调用结果缺失');
 }
 export class ProviderError extends AppError {
+  /** 一旦收到响应内容，调用方需要谨慎处理重试，避免把部分结果当成全新请求。 */
   responseStarted = false;
+  /** 失败时已知的供应商用量；null 表示没有可用的用量信息。 */
   usage: Usage | null = null;
   constructor(
     code: string,
@@ -43,6 +47,7 @@ export type ProviderEvent =
       reasoningContent?: string;
     };
 export interface ProviderAdapter {
+  /** 接入层声明能力；compile 将共享上下文映射为具体协议，stream 逐步产出事件。 */
   capabilities: { streaming: boolean; tools: boolean; nativeReplay: boolean };
   compile(context: CompiledContext): Record<string, unknown>;
   stream(request: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<ProviderEvent>;

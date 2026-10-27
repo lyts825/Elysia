@@ -31,6 +31,7 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'terminal-capacity': '规格超出 Docker 容量，请增加 Docker 资源或新建较小规格任务',
   'terminal-engine': '等待 Docker 引擎',
 };
+/** 无法格式化的时间保留原值，避免隐藏异常数据。 */
 function runtimeTime(timestamp: number) {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? (
@@ -39,6 +40,7 @@ function runtimeTime(timestamp: number) {
     <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>
   );
 }
+/** 展示执行队列、终端阶段和资源预约；任务名称从调用方提供的列表中匹配。 */
 export function TerminalRuntimePanel({
   snapshot,
   tasks,
@@ -54,6 +56,7 @@ export function TerminalRuntimePanel({
   );
   useEffect(() => {
     if (!working) return;
+    // 只在存在活动阶段时刷新经过时间，空闲时不保留计时器。
     setTime(Date.now());
     const timer = setInterval(() => setTime(Date.now()), 1000);
     return () => clearInterval(timer);

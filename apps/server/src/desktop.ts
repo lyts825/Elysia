@@ -15,6 +15,7 @@ export interface DesktopServices {
     value?: unknown,
   ): Promise<any>;
 }
+/** 仅在桌面子进程启用 IPC；每个请求以随机 ID 匹配响应，并在 15 秒后超时。 */
 export function desktopServices(): DesktopServices | undefined {
   if (!process.send || process.env.ELYSIA_DESKTOP !== '1') return undefined;
   return {

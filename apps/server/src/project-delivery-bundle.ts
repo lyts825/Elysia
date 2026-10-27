@@ -247,6 +247,7 @@ class ZipWriter {
   }
 }
 
+/** 协调交付包检查、下载和保存任务，关闭时取消并释放临时资源。 */
 export class ProjectDeliveryBundleService {
   private previews: ArtifactPreviewService;
   private lifetime = new AbortController();
@@ -838,6 +839,7 @@ export class ProjectDeliveryBundleService {
 }
 
 /** The caller binds the export to the exact manifest they reviewed. */
+/** 核对冻结清单正文哈希及调用方预期哈希，不一致时要求重新读取。 */
 export function assertBundleManifest(manifest: ProjectDeliveryManifest, expectedHash: string) {
   const { hash: actual, ...body } = manifest;
   if (actual !== expectedHash || hash(stable(body)) !== actual)

@@ -5,6 +5,7 @@
 .preview-open > .conversation {
   min-width: 0;
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .preview-panel {
   container-type: inline-size;
   --preview-reading-height: min(16rem, 50dvh);
@@ -320,6 +321,7 @@
   font-size: var(--font-sm);
   line-height: 1.8;
 }
+/* 高度受限时压缩空预览的留白和文字间距。 */
 @media (max-height: 760px) {
   .preview-empty {
     padding: var(--space-4) var(--space-6);
@@ -625,6 +627,7 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .preview-activity details pre:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -689,6 +692,7 @@
   max-width: 180px;
   font-variant-numeric: tabular-nums;
 }
+/* 较窄窗口使用完整宽度的预览面板，并隐藏部分预览标签。 */
 @media (max-width: 1100px) {
   .preview-panel {
     width: 100%;
@@ -714,6 +718,7 @@
 .preview-tools button:hover:not(:disabled) {
   background: var(--accent-pale);
 }
+/* 极窄屏收紧预览标签、徽标和 Markdown 区域的水平留白。 */
 @media (max-width: 420px) {
   .preview-tabs button {
     padding-inline: 2px;

@@ -30,12 +30,17 @@ const schemas = {
     incomplete: z.array(z.string()),
   }),
 };
+/**
+ * 注册澄清、子任务、上下文分配和结果提交工具。子任务等待只接受不重复的直属子任务；
+ * 状态变更和范围约束继续由内核校验。
+ */
 export function collaborationTools(
   context: Pick<ToolServices, 'submit'> & {
     store: Pick<ToolServices['store'], 'require'>;
     kernel: Pick<ToolServices['kernel'], 'wait' | 'event' | 'spawn' | 'allocateContext' | 'submitPeerReview'>;
   },
 ): PluginContributions<ToolContribution> {
+  /** 将任务置为等待用户，并记录待回答的问题事件。 */
   function execute_clarify({ task }: ToolInvocation, args: z.output<typeof schemas.clarify>) {
     let result: unknown;
 
@@ -58,6 +63,7 @@ export function collaborationTools(
   ) {
     return context.kernel.allocateContext(task, args.taskId, args.expectedRevision, args.windowTokens);
   }
+  /** 子任务均已结束时返回结果，否则将当前任务置为等待子任务状态。 */
   function execute_join_tasks({ task }: ToolInvocation, args: z.output<typeof schemas.join_tasks>) {
     let result: unknown;
 

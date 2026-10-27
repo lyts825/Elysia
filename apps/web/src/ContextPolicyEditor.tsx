@@ -10,6 +10,7 @@ import { contextWindowSizeLabel } from './ContextLabel';
 import './context-window.css';
 import './context-policy-editor.css';
 
+/** 托管策略可不指定窗口；手动窗口还需符合最小值、模型上限与整千单位。 */
 export function validContextPolicy(
   policy: ContextPolicy,
   minimumWindowTokens: number,
@@ -26,6 +27,7 @@ export function validContextPolicy(
   );
 }
 
+/** 优先选择范围内的首个预设，无法使用预设时选择不超过上限的整千值。 */
 export function defaultManualContextWindowTokens(minimumWindowTokens: number, providerLimit: number) {
   const limit = Math.min(providerLimit, CONTEXT_MAX_WINDOW_TOKENS);
   const preset = CONTEXT_WINDOW_PRESETS.find((tokens) => tokens >= minimumWindowTokens && tokens <= limit);

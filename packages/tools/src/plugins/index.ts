@@ -11,7 +11,10 @@ import { mcpTools } from './mcp.js';
 import { networkTools } from './network.js';
 import { workspaceTools } from './workspace.js';
 
-/** Fixed composition; a new tool still needs an explicit grant in the gateway's policy. */
+/**
+ * 组装固定的内置工具插件，并为各插件挑选所需能力。
+ * 注册工具不等于授予任务权限；工具网关仍按任务和阶段生成可用清单。
+ */
 export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
   const registry = new PluginRegistry<ToolContribution>([
     collaborationTools({
@@ -70,6 +73,7 @@ export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
       },
     },
   ]);
+  // 事务工具必须串行，避免异步并发破坏事务边界。
   for (const [name, tool] of registry.entries())
     invariant(
       tool.name === name && (!tool.policy.transaction || tool.policy.serial),

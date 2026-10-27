@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { sha256File } = require('./file-hash.cjs');
+/** 清单路径必须是目录内的普通文件，不能通过路径片段或符号链接越界。 */
 const relativeFile = (directory, relative) => {
   if (
     typeof relative !== 'string' ||
@@ -19,6 +20,10 @@ const relativeFile = (directory, relative) => {
     throw new Error('分发包条目不是普通文件');
   return filename;
 };
+/**
+ * 核验清单、关键文件的大小和摘要以及应用版本。full 为 true 时还遍历整个发行目录，
+ * 拒绝清单外文件和符号链接，并校验清单列出的全部文件。
+ */
 function verifyDistribution(appRoot, full = false) {
   const directory = path.resolve(appRoot, '../..');
   const file = path.join(appRoot, 'distribution.json');
@@ -87,6 +92,7 @@ function verifyDistribution(appRoot, full = false) {
   if (appPackage.version !== manifest.version) throw new Error('分发包应用版本不一致');
   return manifest;
 }
+/** 核验当前发行包后返回桌面启动所需的服务端、前端和 Node 路径。 */
 function packagedBuild(appRoot) {
   const manifest = verifyDistribution(appRoot);
   if (process.versions.electron && process.versions.electron !== manifest.electronVersion)

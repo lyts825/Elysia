@@ -17,6 +17,7 @@ import { captureHistoryAnchor, historyViewportVisible, restoreHistoryAnchor } fr
 import { ProjectArchiveDeleteNotice, type ProjectArchiveDeleteConsent } from './ProjectDeliveryArchive';
 
 type Target = { kind: 'project'; item: Project } | { kind: 'run'; item: RunListItem };
+// 菜单操作携带目标实体，避免项目与运行使用同一个未区分的标识。
 export type SessionTarget = Target;
 export type SessionUpdateResult = boolean | 'conflict';
 type Dialog = { target: Target; action: 'rename' | 'delete' | 'move'; value: string };
@@ -121,6 +122,7 @@ export function SessionSidebar({
     treeAnchor.current = captureHistoryAnchor(tree);
   }, [runs, projects, listIdentity, listPage?.before]);
   const requestOlderList = () => {
+    // 仅在列表可见且接近底部时请求下一页，同一游标不重复触发。
     const tree = treeRef.current;
     const cursor = listPage?.nextBefore;
     if (
@@ -153,6 +155,7 @@ export function SessionSidebar({
   const projectCount = (id: string) => (projectCounts ? (projectCounts[id] ?? 0) : '—');
   const activeProjects = projects.filter((p) => !p.archived && p.spaceId === spaceId);
   const visibleRuns = runs.filter(
+    // 归档运行不进入常规侧栏；终端入口只展示任务。
     (r) =>
       !r.archived &&
       (!terminal || r.kind === 'task') &&
@@ -208,6 +211,7 @@ export function SessionSidebar({
           terminal ||
           archiveConsent?.projectId === dialog.target.item.id);
   const showDialog = (target: Target, action: Dialog['action']) => {
+    // 并发冲突后恢复同一目标与操作的输入草稿，避免用户重新填写。
     setArchiveConsent(undefined);
     const next: Dialog = {
       target,

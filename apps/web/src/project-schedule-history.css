@@ -19,6 +19,7 @@
 .schedule-history h3 {
   margin: 0 0 var(--space-2);
 }
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .schedule-history p,
 .schedule-history strong {
   overflow-wrap: anywhere;
@@ -37,6 +38,7 @@
   min-width: 0;
   background: var(--surface);
 }
+/* 三列共享可用宽度；零最小值允许列在空间不足时收缩。 */
 .schedule-history-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -151,6 +153,7 @@
   max-width: 100%;
   white-space: normal;
 }
+/* 窄屏将历史分页操作改为网格并调整按钮宽度。 */
 @media (max-width: 480px) {
   .schedule-history-page-actions {
     display: grid;

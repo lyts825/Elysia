@@ -24,6 +24,7 @@ import './workflow.css';
 import './run-handoff.css';
 
 function HandoffArtifactDetails({ artifact }: { artifact: SourceArtifact }) {
+  // 展示带入产物的版本和完整元数据，供交接前核对来源。
   return (
     <details className="run-handoff-artifact-details">
       <summary>产物完整信息 · v{artifact.version}</summary>

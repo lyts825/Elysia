@@ -26,6 +26,7 @@ export function PersistentRunSetup({
     [writeError, setWriteError] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
+    // 草稿键准备完成后才恢复表单；读取失败时保留错误供重试。
     let live = true;
     setLoaded(undefined);
     setReadError('');

@@ -40,6 +40,7 @@ export const deliveryWarmSession = (request: FastifyRequest) =>
   );
 
 /** Independent callers share bounded batch work. Cancelling one caller never cancels another subscriber. */
+/** 管理按运行和会话绑定的交付元数据预热任务及工作进程。 */
 export class DeliveryArtifactWarmReads {
   private jobs = new Map<string, Job>();
   private workers = new Map<string, Worker>();
@@ -266,6 +267,7 @@ export class DeliveryArtifactWarmReads {
     for (const job of this.jobs.values()) this.finish(job, 'cancelled');
   }
 }
+/** 为同一个 Store 复用交付元数据预热管理器。 */
 export function deliveryArtifactWarmReads(store: Store) {
   let manager = managers.get(store);
   if (!manager) {

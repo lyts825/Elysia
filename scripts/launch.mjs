@@ -41,6 +41,7 @@ try {
   };
   delete environment.ELECTRON_RUN_AS_NODE;
   const output = openSync(path.join(runtime, 'desktop-launch.log'), 'a');
+  // 先启动 Electron，由获得单实例锁的进程请求构建，避免重复启动竞争。
   const child = spawn(electron, ['apps/desktop/main.cjs'], {
     cwd: root,
     detached: true,
@@ -57,6 +58,7 @@ try {
         () => finish(new Error('桌面窗口启动超时，请查看 desktop-launch.log')),
         300000,
       );
+      // 就绪、启动错误、子进程退出及超时可能竞争，只处理首个结果。
       const finish = (error) => {
         if (finished) return;
         finished = true;

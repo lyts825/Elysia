@@ -96,6 +96,7 @@
   border-color: var(--danger-border);
   background: var(--danger-bg);
 }
+/* 内容溢出时允许在此区域滚动，便于查看超出部分。 */
 .terminal-diagnosis-panel .terminal-diagnosis-message,
 .terminal-diagnosis-panel .terminal-diagnosis-reading {
   margin: 0;
@@ -129,6 +130,7 @@
   background: var(--danger-bg);
   color: var(--danger);
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .terminal-diagnosis-panel :is([tabindex='0'], summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

@@ -14,6 +14,7 @@ import type { WorkbenchCache } from './WorkbenchCache';
 import { Modal } from './Modal';
 import './project-item-setup.css';
 
+/** 为从交付项创建的任务恢复和保存设置草稿；实际创建交由父组件提交。 */
 export function ProjectItemSetup({
   projectId,
   projectName,

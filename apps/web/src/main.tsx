@@ -303,6 +303,7 @@ function Badge({ status }: { status: string }) {
     </span>
   );
 }
+/** 单个入口的工作台：维护独立的会话、导航、流式内容和草稿状态。 */
 function App({
   changeSurface,
   registerCache,
@@ -320,6 +321,7 @@ function App({
 }) {
   const client = useSurfaceClient();
   const { api, apiUrl, mutation, initializeSession, surface: localSurface } = client;
+  // 客户端固定绑定原生或终端入口，所有后续读取和写入沿用该入口。
   const terminalSurface = localSurface === 'terminal';
   const [ready, setReady] = useState(false),
     [error, setError] = useState(''),
@@ -361,6 +363,7 @@ function App({
   const modalCurrent = useRef(modal);
   modalCurrent.current = modal;
   const historyPosition = useRef<HistoryPosition>({
+    // 保存分页游标和跳转轨迹；读取失败时可恢复原位置。
     runId: '',
     before: '',
     trail: [],
@@ -1032,6 +1035,7 @@ function App({
             }
           };
           const [projectResult, listingResult, spaceResult] = await Promise.allSettled([
+            // 互不依赖的列表并行读取；部分失败不会丢弃已成功更新的内容。
             api<Project[]>('/projects', undefined, undefined, signal).then((value) => {
               if (current()) {
                 listData.current.projects = value;
@@ -1102,6 +1106,7 @@ function App({
     [navigate, clearReadIssue, cache, refreshConfiguration],
   );
   async function changeRunList(direction: 'older' | 'newer' | 'latest') {
+    // 乐观更新游标；读取失败时恢复原游标和追加方式。
     if (runListMoving.current) return;
     const prior = runListPosition.current;
     const priorAppend = runListAppend.current;
@@ -5410,6 +5415,7 @@ function SurfaceEntry({
 }
 
 function SurfaceWorkspaces() {
+  // 每个入口创建独立客户端；已访问入口保持挂载以保留草稿和页面状态。
   const [current, setCurrent] = useState(localSurface);
   const [visited, setVisited] = useState(() => new Set([localSurface]));
   const [notificationTarget, setNotificationTarget] = useState<{
@@ -5442,6 +5448,7 @@ function SurfaceWorkspaces() {
     [],
   );
   const changeSurface = useCallback((surface: 'native' | 'terminal') => {
+    // 同步地址栏以支持历史导航，再激活对应工作台。
     history.replaceState(null, '', surfaceLocation(surface));
     setVisited((old) => new Set([...old, surface]));
     setCurrent(surface);

@@ -36,6 +36,7 @@ function approvedHash(state: ApprovedTaskWorkingState) {
 }
 
 /** Only source-backed facts are generated here. Deciding which prior requests remain active is a user action. */
+// 绑定运行、会话和合同修订，并记录历史与需求摘要；这里只收集事实，不替用户确认要求。
 export function captureTaskWorkingState(
   input: WorkingStateContext & {
     children: Task[];
@@ -118,6 +119,7 @@ export function captureTaskWorkingState(
 }
 
 /** The caller must obtain this confirmation from the human and check the current draft hash before saving. */
+// 要求明确确认、非空要求和匹配的草稿摘要，再生成可复核的批准记录。
 export function approveTaskWorkingState(
   draft: TaskWorkingStateDraft,
   input: {
@@ -148,6 +150,7 @@ export function approveTaskWorkingState(
 export type WorkingStateValidation = { valid: true } | { valid: false; reason: string };
 
 /** Later messages are not covered. Every correction after this prefix remains verbatim in compaction. */
+// 验证摘要、作用域、当前需求和已覆盖历史；较晚的消息不属于这个检查点。
 export function validateTaskWorkingState(
   state: ApprovedTaskWorkingState,
   input: WorkingStateContext & {

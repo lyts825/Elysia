@@ -38,6 +38,7 @@ const unavailable = () =>
   );
 
 /** Only this new, service-owned namespace is inspected. Legacy temp directories are never scanned. */
+/** 为交付包后台任务管理受所有者标记保护的临时目录。 */
 export class BundleJobStorage {
   readonly instanceId = randomUUID();
   readonly ready: Promise<void>;

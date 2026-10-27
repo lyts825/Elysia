@@ -38,6 +38,7 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
   const identity = useId();
   const mutate = <T,>(path: string, body: Record<string, unknown>, signal: AbortSignal) =>
     api<T>(path, { commandId: crypto.randomUUID(), ...body }, 'POST', signal);
+  // 扫描来源、候选选择、详情读取和配置编辑各自维护状态。
   const [overview, setOverview] = useState<Overview>();
   const [tab, setTab] = useState<Kind>('skill');
   const [kind, setKind] = useState<SourceKind>('codex');

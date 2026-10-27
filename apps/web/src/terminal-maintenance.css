@@ -36,6 +36,7 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/* 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。 */
 .terminal-maintenance-reading,
 .terminal-maintenance-error {
   min-width: 0;
@@ -47,6 +48,7 @@
 .terminal-data-groups .terminal-maintenance-reading {
   max-height: 10rem;
 }
+/* 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。 */
 .terminal-maintenance-reading:focus-visible,
 .terminal-maintenance-error:focus-visible,
 .terminal-maintenance-plan h4:focus-visible {
@@ -253,6 +255,7 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
+/* 窄屏调整维护项与备份信息的网格列数和间距。 */
 @media (max-width: 480px) {
   .terminal-maintenance-items p,
   .terminal-backup-selection dl > div {

@@ -19,6 +19,7 @@ import {
 import './startup-settings.css';
 
 const stageLabels: Record<StartupStage, string> = {
+  // 将启动诊断阶段转换为界面可读名称，原始阶段标识保持稳定。
   'launch-entry': '启动入口',
   'dependencies-ready': '依赖检查',
   'fingerprint-ready': '构建检查',

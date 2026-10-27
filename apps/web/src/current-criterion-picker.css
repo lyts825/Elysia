@@ -1,4 +1,5 @@
 /* 定义 current-criterion-picker 对应界面的样式与布局。 */
+/* 允许长内容在必要时断行，避免无空格的文本撑开容器。 */
 .current-criterion-picker .current-criterion-selection {
   margin: 0 0 var(--space-3);
   color: var(--secondary);
@@ -12,6 +13,7 @@
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
+/* 选中项使用强调边框和背景，与组件提供的选中状态一致。 */
 .current-criterion-picker .current-criterion-overall[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);
