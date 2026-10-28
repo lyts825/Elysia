@@ -2500,6 +2500,20 @@ a {
     min-width: var(--control-lg);
     min-height: var(--control-lg);
   }
+  .conversation-search .conversation-search-field .conversation-search-clear {
+    min-width: var(--control-lg);
+    min-height: var(--control-lg);
+  }
+  .workspace-manager-modal .management-row .management-actions button,
+  .workspace-manager-modal .management-tabs button,
+  .local-capability-settings .local-agent-tabs button,
+  .readiness-modal .readiness-list .text-button,
+  .startup-preferences-panel .startup-preferences-group .startup-color-fields input,
+  .project-usage
+    :is(.project-usage-version, .project-usage-connection-totals, .project-usage-run-totals)
+    > summary {
+    min-height: var(--control-lg);
+  }
   .sidebar-tools > summary,
   .markdown-document .markdown-code-block .markdown-code-toolbar button,
   .file-content-view .file-content-tabs button,
@@ -2525,11 +2539,18 @@ a {
     .project-item[aria-current='page'],
     .project-tabs button.active,
     .provider-card.selected,
+    .workspace-manager-modal .management-tabs [aria-selected='true'],
+    .local-agent-tabs [aria-selected='true'],
+    .startup-styles [aria-pressed='true'],
     .task-center-filters button[aria-pressed='true'],
     .terminal-control-tabs button[aria-selected='true'],
     .file-content-tabs button[aria-pressed='true'],
     .preview-dock-tabs button[aria-pressed='true']
   ) {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .local-capability-candidate:has(> label input:checked) {
     outline: 2px solid Highlight;
     outline-offset: -3px;
   }
