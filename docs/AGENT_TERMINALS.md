@@ -1,6 +1,6 @@
 # Agent 终端与 Docker 调度
 
-当前应用版本：1.9.0；本轮新增功能限原生项目，终端业务行为沿用 v1.8.0。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Gemini CLI 及自定义模板可在管理中心启用。终端及预览等可选界面按需加载；加载失败保留工作台并显示明确的重新加载入口。
+当前应用版本：1.23.0；Antigravity 与 Claude Code 的配置、能力导入和验证边界见 [接入说明](AGENT_INTEGRATIONS.md)。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Antigravity CLI、Gemini CLI 及自定义模板可在管理中心启用。终端及预览等可选界面按需加载；加载失败保留工作台并显示明确的重新加载入口。
 
 ```mermaid
 flowchart LR

@@ -18,7 +18,7 @@ Antigravity 的 API Key 模式需要在任务私有 HOME 中设置 `modelProvide
 
 Antigravity 使用 JSONL 标准输入和结构化输出。界面只展示公开回复和简短工具活动，错误结果不能作为成功交付；不会保存思考正文和工具原始输出。协议依据 [官方非交互模式](https://antigravity.google/docs/cli/headless/)。固定发布包与摘要见 [1.4.7 发布资产](https://github.com/google-antigravity/antigravity-cli/releases/expanded_assets/1.4.7)。
 
-Claude 使用 `-p` 和 `stream-json` 输出。运行时、模板编辑器和应用目录使用同一默认命令。最终结果与上一条回复相同时只展示一次；不同的最终结果仍会保留。已有任务继续使用各自的冻结配置。
+Claude 使用 `-p` 和 `stream-json` 输出，参数依据 [Claude CLI 参考](https://code.claude.com/docs/en/cli-reference)。运行时、模板编辑器和应用目录使用同一默认命令。最终结果与上一条回复相同时只展示一次；不同的最终结果仍会保留。已有任务继续使用各自的冻结配置。
 
 原会话续接、计划模式和费用统计保持原有能力边界。Antigravity 与 Claude 暂不支持经 Elysia 核验的原会话续接；内部用量仍显示未知。这里接入的是 CLI 的 API Key 模式，不复用宿主 Google 或 Claude 订阅登录，也不自动控制 IDE 窗口。
 

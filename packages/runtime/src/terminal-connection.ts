@@ -42,7 +42,11 @@ export function terminalEnvironmentFiles(
     ? [
         {
           path: '.gemini/antigravity-cli/settings.json',
-          content: JSON.stringify({ modelProvider: 'gemini', artifactReviewPolicy: 'always-proceed' }),
+          content: JSON.stringify({
+            modelProvider: 'gemini',
+            artifactReviewPolicy: 'always-proceed',
+            trustedWorkspaces: ['/workspace'],
+          }),
         },
       ]
     : [];
