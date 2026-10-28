@@ -213,7 +213,8 @@ export function ConversationSearch({
     <div
       className={'conversation-search' + (embedded ? ' embedded' : '')}
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && open) {
+        if (event.key === 'Escape' && open && !event.nativeEvent.isComposing) {
+          event.preventDefault();
           event.stopPropagation();
           close();
         }
@@ -237,15 +238,31 @@ export function ConversationSearch({
         <div className="conversation-search-panel" id={panelId} aria-label="对话正文搜索">
           <div className="conversation-search-input">
             <Icon name="search" size={16} />
-            <input
-              ref={input}
-              value={query}
-              aria-label="搜索当前对话正文"
-              placeholder="搜索当前对话正文"
-              maxLength={200}
-              disabled={disabled}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <div className="conversation-search-field">
+              <input
+                ref={input}
+                value={query}
+                aria-label="搜索当前对话正文"
+                placeholder="搜索当前对话正文"
+                maxLength={200}
+                disabled={disabled}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="conversation-search-clear"
+                  aria-label="清除正文搜索关键词"
+                  disabled={disabled}
+                  onClick={() => {
+                    setQuery('');
+                    input.current?.focus();
+                  }}
+                >
+                  清除
+                </button>
+              )}
+            </div>
             <button type="button" className="icon-button" aria-label="关闭正文搜索" onClick={close}>
               <Icon name="close" size={15} />
             </button>
