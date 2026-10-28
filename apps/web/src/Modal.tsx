@@ -4,7 +4,7 @@
  * EN: Provides shared modal layout and error context. Centralizes surface-local modal focus, Escape/Tab handling, scroll locking, and error-feedback scope, allowing only the top modal to handle keys.
  */
 import { useSurfaceRoot } from './SurfaceClientContext';
-import { createContext, useContext, useLayoutEffect, useId, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { usePresenceMotion } from './Motion';
 
@@ -42,6 +42,21 @@ export function Modal({
   const busyRef = useRef(busy);
   const titleId = useId();
   const descriptionId = useId();
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const [descriptionOverflow, setDescriptionOverflow] = useState(false);
+  /**
+   * 说明溢出时才加入键盘阅读顺序；窗口缩放或文本变化后重新测量，不改变当前焦点。
+   * EN: Add overflowing descriptions to keyboard navigation, remeasuring after resize/text changes without moving focus.
+   */
+  useLayoutEffect(() => {
+    const node = descriptionRef.current;
+    if (!node) return;
+    const measure = () => setDescriptionOverflow(node.scrollHeight > node.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [subtitle, present]);
   const error = useContext(ModalErrorContext);
   closeRef.current = close;
   busyRef.current = busy;
@@ -130,7 +145,15 @@ export function Modal({
           <div>
             <h2 id={titleId}>{title}</h2>
             {subtitle && (
-              <p id={descriptionId} title={subtitle}>
+              <p
+                ref={descriptionRef}
+                className="modal-description"
+                id={descriptionId}
+                title={subtitle}
+                tabIndex={descriptionOverflow ? 0 : undefined}
+                role={descriptionOverflow ? 'region' : undefined}
+                aria-label={descriptionOverflow ? '窗口完整说明' : undefined}
+              >
                 {subtitle}
               </p>
             )}

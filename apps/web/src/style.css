@@ -1852,15 +1852,18 @@ a {
   letter-spacing: -0.3px;
   overflow-wrap: anywhere;
 }
-.modal header p {
+.modal > header p {
   font-size: var(--font-sm);
   color: var(--muted);
   margin-top: 6px;
   overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  max-height: min(4.5em, 20dvh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overscroll-behavior: contain;
+}
+.modal-description:focus-visible {
+  outline-offset: -2px;
 }
 .modal form {
   display: flex;
