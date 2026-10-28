@@ -3,8 +3,8 @@
  * EN: Project usage detail: separates revisions, connection/run totals, and full identities. Expandable sections and focusable scrolling allow complete billing/identity inspection without hiding provenance behind truncation.
  */
 .project-usage-meta {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   gap: var(--space-3) var(--space-5);
   margin: var(--space-4) 0;
   padding: var(--space-3);
@@ -41,6 +41,22 @@
   cursor: pointer;
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
+}
+.project-usage-connection-totals > summary,
+.project-usage-run-totals > summary {
+  padding-inline: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.project-usage-connection-totals > summary:hover,
+.project-usage-run-totals > summary:hover {
+  background: var(--surface-hover);
+}
+.project-usage :is(.project-usage-connection-totals, .project-usage-run-totals) > summary:focus-visible {
+  outline-offset: -3px;
 }
 /*
  * 内容溢出时允许在此区域滚动，便于查看超出部分。
