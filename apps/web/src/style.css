@@ -2490,3 +2490,53 @@ a {
   color: var(--muted);
   font-size: var(--font-sm);
 }
+/*
+ * 触控设备扩大紧凑控件的命中区，保留桌面鼠标使用时的密度。
+ * EN: Expand compact touch targets while retaining the desktop pointer layout density.
+ */
+@media (pointer: coarse) {
+  .session-search .session-search-clear,
+  button.send-button {
+    min-width: var(--control-lg);
+    min-height: var(--control-lg);
+  }
+  .sidebar-tools > summary,
+  .markdown-document .markdown-code-block .markdown-code-toolbar button,
+  .file-content-view .file-content-tabs button,
+  button.composer-model-chip,
+  button.composer-context-chip {
+    min-height: var(--control-lg);
+  }
+}
+/*
+ * 强制颜色模式不依赖阴影或底色表达选中；品牌遮罩沿用系统文字色。
+ * EN: Forced colors retain selection boundaries without shadows/fills; brand masks use system text color.
+ */
+@media (forced-colors: active) {
+  .brand-glyph {
+    forced-color-adjust: none;
+    background: currentColor;
+  }
+  :is(.new-task, .send-button, .composer, .reply-box, .badge, .task-center-status) {
+    border: 1px solid ButtonText;
+  }
+  :is(
+    .history-item[aria-current='page'],
+    .project-item[aria-current='page'],
+    .project-tabs button.active,
+    .provider-card.selected,
+    .task-center-filters button[aria-pressed='true'],
+    .terminal-control-tabs button[aria-selected='true'],
+    .file-content-tabs button[aria-pressed='true'],
+    .preview-dock-tabs button[aria-pressed='true']
+  ) {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  :is(button, a, summary, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+  .file-image-scroll {
+    background-image: none;
+  }
+}

@@ -177,7 +177,12 @@
   border-radius: var(--radius-control);
   padding: var(--space-4);
   background-color: var(--surface);
-  background-image: conic-gradient(var(--surface-soft) 25%, transparent 0 50%, var(--surface-soft) 0 75%, transparent 0);
+  background-image: conic-gradient(
+    var(--surface-soft) 25%,
+    transparent 0 50%,
+    var(--surface-soft) 0 75%,
+    transparent 0
+  );
   background-size: 16px 16px;
 }
 .file-image-scroll img {

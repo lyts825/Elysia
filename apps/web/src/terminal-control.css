@@ -272,6 +272,20 @@
   opacity: 0.5;
   cursor: default;
 }
+/*
+ * 系统强制颜色时使用原生复选框，避免自绘开关的轨道和滑块消失。
+ * EN: Use native checkboxes in forced colors so custom switch tracks/thumbs cannot disappear.
+ */
+@media (forced-colors: active) {
+  .cli-visibility input {
+    appearance: auto;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .cli-visibility input::after {
+    display: none;
+  }
+}
 .cli-install-options {
   margin-top: var(--space-5);
   font-size: var(--font-md);
