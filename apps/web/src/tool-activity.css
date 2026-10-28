@@ -57,13 +57,17 @@
 .tool-activity > summary::-webkit-details-marker {
   display: none;
 }
+.tool-activity > summary:hover {
+  background: var(--surface-hover);
+  border-radius: var(--radius-card);
+}
 /*
  * 键盘焦点使用清晰轮廓，方便定位当前可操作或可阅读区域。
  * EN: Uses a clear keyboard-focus outline to locate the currently interactive or readable region.
  */
 .tool-activity > summary:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -3px;
   border-radius: var(--radius-control);
 }
 .tool-activity-glyph,
@@ -135,9 +139,19 @@
   font-size: var(--font-xs);
   line-height: var(--leading-ui);
   color: var(--muted);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
 }
 .tool-activity.done .tool-activity-status {
   color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+.tool-activity.failed .tool-activity-status {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 .tool-activity.failed .tool-activity-status,
 .tool-activity-error-summary {
@@ -151,6 +165,8 @@
 }
 .tool-activity.uncertain .tool-activity-status {
   color: var(--warning);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
 }
 .tool-activity-error-summary {
   display: -webkit-box;
@@ -172,6 +188,8 @@
   padding: 0 var(--space-3) var(--space-3);
   border-top: 1px solid var(--border);
   min-width: 0;
+  background: var(--surface);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
 }
 .tool-activity-body section {
   margin-top: var(--space-3);
@@ -209,12 +227,16 @@
  */
 .tool-activity-body pre {
   margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
   max-height: min(18rem, 50dvh);
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   line-height: var(--leading-body);
   color: var(--secondary);
   tab-size: 2;
@@ -246,6 +268,8 @@
 }
 .tool-activity-error pre {
   color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 .tool-activity-output {
   margin-top: var(--space-3);
