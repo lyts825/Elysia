@@ -72,6 +72,7 @@ export function TaskCenter({
   const [opening, setOpening] = useState('');
   const [openingError, setOpeningError] = useState<{ id: string; message: string }>();
   const openingErrorRef = useRef<HTMLParagraphElement>(null);
+  const queryInput = useRef<HTMLInputElement>(null);
   const openingFocus = useRef<{
     origin: HTMLButtonElement;
     active: boolean;
@@ -258,6 +259,7 @@ export function TaskCenter({
             搜索任务
             <input
               type="search"
+              ref={queryInput}
               aria-label="搜索任务"
               placeholder="搜索任务…"
               maxLength={200}
@@ -296,6 +298,31 @@ export function TaskCenter({
           <p className="task-center-project-summary">
             当前项目：{projects.find((project) => project.id === state.projectId)?.name || '原项目不可用'}
           </p>
+        )}
+        {(state.filter !== 'all' || state.query || state.projectId || state.reviewFilter) && (
+          <div className="task-center-filter-summary">
+            <span>正在按所选条件筛选任务</span>
+            <button
+              type="button"
+              className="quiet-button"
+              aria-label="清除任务筛选"
+              onClick={() => {
+                changeState({
+                  ...state,
+                  filter: 'all',
+                  query: '',
+                  projectId: '',
+                  reviewFilter: undefined,
+                  before: '',
+                  trail: [],
+                });
+                queryInput.current?.focus({ preventScroll: true });
+              }}
+            >
+              <Icon name="close" size={14} />
+              清除筛选
+            </button>
+          </div>
         )}
         <div className="task-center-options">
           <label>
