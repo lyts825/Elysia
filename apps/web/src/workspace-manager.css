@@ -108,6 +108,15 @@
   font-size: var(--font-sm);
 }
 /*
+ * 窄屏以两列排列四个管理入口，避免最后一个页签单独占一行。
+ * EN: Arrange the four management tabs in two columns on narrow screens, avoiding an orphaned final tab.
+ */
+@media (max-width: 480px) {
+  .workspace-manager-modal .management-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/*
  * 短窗口由工作区管理弹窗整体滚动，并释放内部内容区的高度约束。
  * EN: Scrolls the entire workspace-manager modal in short windows and releases internal content-height constraints.
  */
