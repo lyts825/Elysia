@@ -103,6 +103,7 @@ export function SessionSidebar({
   const { surface: localSurface, api } = useSurfaceClient();
   const surfaceRoot = useSurfaceRoot();
   const [search, setSearch] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number; trigger: HTMLElement } | null>(
     null,
   );
@@ -185,6 +186,15 @@ export function SessionSidebar({
   const title = (target: Target) =>
     target.kind === 'project' ? target.item.name : target.item.title || target.item.objective;
   const searchValue = changeListQuery ? listQuery || '' : search;
+  /**
+   * 清除当前搜索并保留输入焦点，沿用父级服务端筛选或本地筛选的状态来源。
+   * EN: Clear the current search and retain input focus, preserving the parent/local query owner.
+   */
+  const clearSearch = () => {
+    if (changeListQuery) changeListQuery('');
+    else setSearch('');
+    searchInput.current?.focus({ preventScroll: true });
+  };
   const query = searchValue.trim().toLocaleLowerCase();
   /**
    * 服务端搜索时采用记录的匹配标记，本地模式才比较标题和目标，避免仅用已加载片段重复筛选。
@@ -617,13 +627,32 @@ export function SessionSidebar({
         <div className="session-search">
           <Icon name="search" size={15} />
           <input
+            ref={searchInput}
             type="search"
             aria-label="搜索会话"
             maxLength={200}
             placeholder="搜索会话…"
             value={searchValue}
             onChange={(e) => (changeListQuery ? changeListQuery(e.target.value) : setSearch(e.target.value))}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && searchValue && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.stopPropagation();
+                clearSearch();
+              }
+            }}
           />
+          {!!searchValue && (
+            <button
+              type="button"
+              className="session-search-clear"
+              aria-label="清除会话搜索"
+              title="清除会话搜索 · Esc"
+              onClick={clearSearch}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          )}
         </div>
         {clipboardError && (
           <p className="session-error" role="alert" aria-label="会话操作失败详情" tabIndex={0}>

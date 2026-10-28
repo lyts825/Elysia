@@ -40,6 +40,25 @@
 .session-search input::placeholder {
   color: var(--muted);
 }
+.session-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.session-search-clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--control-sm);
+  min-height: var(--control-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+}
+.session-search-clear:hover {
+  background: var(--surface-selected);
+  color: var(--text);
+}
 /*
  * 内容溢出时允许在此区域滚动，便于查看超出部分。
  * EN: Allows this region to scroll when content exceeds its bounds.
