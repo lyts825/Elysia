@@ -4138,6 +4138,7 @@ function App({
                       <button
                         className="send-button"
                         aria-label="发送补充需求"
+                        title="发送补充需求 · Ctrl + Enter"
                         disabled={
                           runReadOnly ||
                           !reply.trim() ||

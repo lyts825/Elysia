@@ -748,6 +748,8 @@ a {
 .run-controls .run-next-action {
   color: var(--accent);
   background: var(--accent-pale);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-weight: 600;
 }
 .limits-summary {
   display: grid;
@@ -1269,7 +1271,7 @@ a {
   width: calc(100% - var(--conversation-gutter) * 2);
   max-width: var(--conversation-width);
   margin: var(--space-2) auto var(--space-5);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: var(--composer-shadow);
@@ -1294,7 +1296,7 @@ a {
   box-shadow: none;
   background: transparent;
   padding: var(--space-4) var(--space-4) var(--space-2);
-  font-size: var(--font-md);
+  font-size: var(--font-reading);
   line-height: 1.65;
 }
 .reply-box textarea:focus {
@@ -1311,6 +1313,18 @@ a {
   font-size: var(--font-xs);
   color: var(--muted);
   gap: var(--space-2);
+}
+/*
+ * 模型信息占用可收缩的一列，发送按钮单独保留位置，适配预览分屏。
+ * EN: Give model controls a shrinkable column and reserve a separate send column in split views.
+ */
+.reply-box > div:has(> .reply-model-controls) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+.reply-model-controls .reply-hint {
+  flex-basis: 100%;
 }
 .reply-box textarea:disabled {
   color: var(--muted);
@@ -1348,8 +1362,8 @@ a {
   flex: none;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 40px;
+  min-height: 40px;
 }
 .send-button:hover:not(:disabled) {
   background: var(--accent-strong);
