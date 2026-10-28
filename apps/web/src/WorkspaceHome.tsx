@@ -9,6 +9,7 @@ import type { SelectableProvider } from './ModelPicker';
 import type { ModelChoice } from './ModelPicker';
 import { ComposerModelPicker } from './ComposerModelPicker';
 import { Icon } from './Icon';
+import { BrandGlyph } from './Brand';
 import './home.css';
 import './workspace-home.css';
 
@@ -65,6 +66,9 @@ export function WorkspaceHome({
     <div className="welcome workspace-home">
       <div className="welcome-content">
         <header className="home-heading">
+          <div className="home-identity" aria-hidden="true">
+            <BrandGlyph size={24} />
+          </div>
           <h1>{project ? '新建任务' : terminal ? 'Agent 终端' : '新建对话'}</h1>
           <p>
             {project
@@ -161,7 +165,7 @@ export function WorkspaceHome({
               </div>
               <div className="composer-actions">
                 <span className="composer-shortcut" aria-hidden="true">
-                  Ctrl + Enter
+                  <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
                 </span>
                 <button
                   className="primary"
@@ -188,7 +192,10 @@ export function WorkspaceHome({
         )}
         {!terminal && (
           <details className="home-current-model">
-            <summary>当前模型完整信息</summary>
+            <summary>
+              <Icon name="chevron" size={14} />
+              当前模型完整信息
+            </summary>
             <dl className="home-model-reading" role="region" aria-label="当前模型连接与型号" tabIndex={0}>
               <div>
                 <dt>连接名称</dt>
@@ -221,10 +228,12 @@ export function WorkspaceHome({
           </p>
         )}
         {!terminal && !connected && (
-          <div className="home-connection" role="status">
+          <div className="home-connection home-connection-setup" role="status">
+            <Icon name="spark" size={18} />
             <span>先连接一个模型，即可开始。</span>
-            <button className="text-button" disabled={busy} onClick={openSettings}>
+            <button className="secondary" disabled={busy} onClick={openSettings}>
               连接模型
+              <Icon name="arrow" size={14} />
             </button>
           </div>
         )}

@@ -29,7 +29,7 @@ button {
   box-shadow: 240px 0 0 var(--canvas);
 }
 .sidebar {
-  overflow: hidden;
+  overflow-x: hidden;
 }
 .app-shell:not(.sidebar-collapsed) .sidebar :is(.brand > span, .project-list, .history-list) {
   animation: surface-arrive var(--motion-enter) var(--ease-enter) both;

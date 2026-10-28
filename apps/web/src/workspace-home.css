@@ -6,6 +6,10 @@
   min-width: 0;
   container-type: inline-size;
 }
+.workspace-home .terminal-start-empty {
+  justify-content: flex-start;
+  margin-top: var(--space-6);
+}
 .workspace-home .welcome-content,
 .workspace-home .composer,
 .workspace-home .composer-bottom,
@@ -63,17 +67,40 @@
   max-width: 100%;
 }
 .home-current-model {
-  margin-top: var(--space-3);
-  border: 1px solid var(--border);
+  margin-top: var(--space-2);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: var(--surface);
   color: var(--secondary);
   font-size: var(--font-sm);
 }
 .home-current-model summary {
-  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  list-style: none;
   cursor: pointer;
   overflow-wrap: anywhere;
+}
+.home-current-model summary::-webkit-details-marker {
+  display: none;
+}
+.home-current-model summary > svg {
+  flex: none;
+}
+.home-current-model summary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.home-current-model[open] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.home-current-model[open] summary > svg {
+  transform: rotate(90deg);
 }
 .home-model-reading {
   max-height: min(16rem, 40dvh);

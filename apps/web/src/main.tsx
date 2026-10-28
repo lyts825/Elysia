@@ -2841,30 +2841,6 @@ function App({
           update={updateSession}
         />
         <div className="sidebar-bottom">
-          {!terminalSurface && (
-            <button
-              className="nav-item"
-              onClick={() => setModal('local-agents')}
-              title="Skills、记忆与 MCP"
-              aria-label="Skills、记忆与 MCP"
-              aria-haspopup="dialog"
-              aria-expanded={modal === 'local-agents'}
-            >
-              <Icon name="tree" />
-              <span>本机能力</span>
-            </button>
-          )}
-          <button
-            className="nav-item"
-            onClick={() => setModal('appearance')}
-            title="外观与启动"
-            aria-label="外观与启动"
-            aria-haspopup="dialog"
-            aria-expanded={modal === 'appearance'}
-          >
-            <Icon name="spark" />
-            <span>外观与启动</span>
-          </button>
           <button
             className="nav-item"
             onClick={() => setModal('manage:archive')}
@@ -2887,18 +2863,51 @@ function App({
             <Icon name="settings" />
             <span>{terminalSurface ? '终端管理' : '模型与设置'}</span>
           </button>
+          <details className="sidebar-tools">
+            <summary title="工具与偏好" aria-label="工具与偏好">
+              <Icon name="more" />
+              <span>工具与偏好</span>
+              <Icon name="chevron" size={14} />
+            </summary>
+            {!terminalSurface && (
+              <button
+                className="nav-item"
+                onClick={() => setModal('local-agents')}
+                title="Skills、记忆与 MCP"
+                aria-label="Skills、记忆与 MCP"
+                aria-haspopup="dialog"
+                aria-expanded={modal === 'local-agents'}
+              >
+                <Icon name="tree" />
+                <span>本机能力</span>
+              </button>
+            )}
+            <button
+              className="nav-item"
+              onClick={() => setModal('appearance')}
+              title="外观与启动"
+              aria-label="外观与启动"
+              aria-haspopup="dialog"
+              aria-expanded={modal === 'appearance'}
+            >
+              <Icon name="spark" />
+              <span>外观与启动</span>
+            </button>
+            <button
+              type="button"
+              className="nav-item"
+              disabled={!ready}
+              title="首次使用检查"
+              aria-label="首次使用检查"
+              aria-haspopup="dialog"
+              aria-expanded={modal === 'readiness'}
+              onClick={() => setModal('readiness')}
+            >
+              <Icon name="check" />
+              <span>首次使用检查</span>
+            </button>
+          </details>
           <WorkbenchSaveStatus snapshot={cacheState} open={openPersistence} />
-          <button
-            type="button"
-            className="nav-item"
-            disabled={!ready}
-            aria-haspopup="dialog"
-            aria-expanded={modal === 'readiness'}
-            onClick={() => setModal('readiness')}
-          >
-            <Icon name="check" />
-            <span>首次使用检查</span>
-          </button>
           <div className="local-indicator">
             <i />
             本机连接<span>v{VERSION}</span>

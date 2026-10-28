@@ -15,12 +15,23 @@
 }
 .welcome-content {
   width: 100%;
-  max-width: calc(var(--conversation-width) + 48px);
+  max-width: calc(48rem + 48px);
   margin: auto;
   padding: var(--space-8) var(--space-6) clamp(var(--space-8), 10vh, 100px);
 }
 .home-heading {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+.home-identity {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--accent-pale);
+  color: var(--accent);
 }
 .home-heading h1 {
   margin: 0;
@@ -41,7 +52,7 @@
 }
 .composer {
   overflow: hidden;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: var(--composer-shadow);
@@ -119,6 +130,13 @@
   font-size: var(--font-xs);
   white-space: nowrap;
 }
+.composer-shortcut kbd {
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  background: var(--surface-soft);
+}
 .composer-actions .primary {
   min-width: 76px;
   min-height: var(--control-md);
@@ -132,6 +150,22 @@
   gap: var(--space-2);
   margin-top: 14px;
   color: var(--muted);
+  font-size: var(--font-sm);
+}
+.home-connection-setup {
+  justify-content: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--accent-pale);
+  color: var(--accent-strong);
+}
+.home-connection-setup > span:not(.brand-glyph) {
+  flex: 1;
+  min-width: 120px;
+}
+.home-connection-setup .secondary {
   font-size: var(--font-sm);
 }
 .home-terminal-template {
@@ -179,6 +213,9 @@
  * EN: Reduces welcome-section whitespace and composer height in short windows.
  */
 @media (max-height: 480px) {
+  .home-identity {
+    display: none;
+  }
   .welcome-content {
     padding-block: var(--space-5);
   }

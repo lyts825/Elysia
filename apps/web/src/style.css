@@ -428,13 +428,69 @@ a {
 }
 .sidebar-bottom {
   padding-top: 10px;
-  flex: none;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid var(--border);
 }
 .sidebar-bottom .nav-item {
   min-height: 34px;
   font-size: var(--font-sm);
   padding-block: 7px;
+}
+/*
+ * 次要工具按需展开，为会话列表留出空间；原生 details 保留键盘操作和展开语义。
+ * EN: Disclose secondary tools on demand to preserve list space; native details retains keyboard and expanded-state semantics.
+ */
+.sidebar-tools {
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--radius-control);
+}
+.sidebar-tools > summary {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: var(--radius-control);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.sidebar-tools > summary::-webkit-details-marker {
+  display: none;
+}
+.sidebar-tools > summary > span {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-tools > summary > svg {
+  flex: none;
+}
+.sidebar-tools > summary:hover,
+.sidebar-tools[open] {
+  background: var(--surface-hover);
+}
+.sidebar-tools[open] > summary > svg:last-child {
+  transform: rotate(90deg);
+}
+.sidebar-bottom .sidebar-tools > .nav-item {
+  width: 100%;
+}
+.sidebar-tools > summary:focus-visible,
+.sidebar-bottom .nav-item:focus-visible {
+  outline-offset: -2px;
+}
+.sidebar-collapsed .sidebar-tools > summary {
+  justify-content: center;
+  padding-inline: 0;
+}
+.sidebar-collapsed .sidebar-tools > summary > span,
+.sidebar-collapsed .sidebar-tools > summary > svg:last-child {
+  display: none;
 }
 .nav-item > span {
   min-width: 0;
@@ -2105,6 +2161,9 @@ a {
   .sidebar-bottom .nav-item {
     min-height: var(--control-lg);
   }
+  .sidebar-tools > summary {
+    min-height: var(--control-lg);
+  }
   .plan-card-head,
   .plan-footer {
     flex-wrap: wrap;
@@ -2159,6 +2218,20 @@ a {
 @media (max-height: 480px) {
   .sidebar {
     padding-top: 10px;
+    overflow-y: auto;
+  }
+  .sidebar > .brand,
+  .sidebar > .new-task,
+  .sidebar > .space-selector {
+    flex-shrink: 0;
+  }
+  .sidebar .session-navigation {
+    min-height: 112px;
+  }
+  .sidebar-bottom {
+    flex-shrink: 0;
+    max-height: none;
+    overflow: visible;
   }
   .brand {
     margin-bottom: var(--space-2);
