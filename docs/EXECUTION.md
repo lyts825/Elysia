@@ -23,6 +23,8 @@
 
 独立目录复用本机依赖。`pnpm exec` 因依赖目录链接拒绝安装操作，改为直接调用现有 `tsc`、`vite` 和 `prettier`，没有新增或替换依赖。最终验证日志、截图和报告已保存到 `.local-qa/ui-next-final/`，必要的复验脚本保留；一次性版本脚本已清理。
 
+UI 交付已完成，临时检出目录归档受限。应用将 `C:/Users/27247/.codex/worktrees/ui-rounds-validation/Elysia` 视为主检出，返回 `The task's primary checkout cannot be removed.`。目录继续保留；正式成果和最终证据均已同步到 `D:/27247/Desktop/Elysia`。
+
 第 9 轮提交时混入并行终端预设改动，随后以补偿提交 `b2b5d49` 移出 UI 交付，保留当时的工作区文件及提交历史。尚未发布的本地 `v1.22.26` 标签已校正到该补偿提交。最终差异仅包含本次 UI、版本与交付记录；10 轮对应 `v1.22.18` 至 `v1.22.27`，另有 1 次范围修正提交。
 
 ### 分轮验证结论
