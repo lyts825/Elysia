@@ -16,11 +16,14 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
+  scroll-padding-inline: var(--space-3);
+  overscroll-behavior-x: contain;
+  background: var(--surface-soft);
 }
 .terminal-control-tabs button {
   flex: none;
   min-height: var(--control-md);
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   border-radius: var(--radius-control);
@@ -34,6 +37,10 @@
 .terminal-control-tabs button[aria-selected='true'] {
   color: var(--accent-strong);
   background: var(--accent-pale);
+  border-color: var(--border-strong);
+}
+.terminal-control-tabs button:focus-visible {
+  outline-offset: -3px;
 }
 .terminal-control-tabs button:hover:not(:disabled):not([aria-selected='true']) {
   color: var(--text);
@@ -93,6 +100,11 @@
   gap: var(--space-4);
   align-items: center;
   padding: var(--space-5) var(--space-5);
+  transition: background-color var(--motion-fast);
+}
+.cli-app-row:hover,
+.cli-app-row:focus-within {
+  background: var(--surface-soft);
 }
 .cli-app-row + .cli-app-row {
   border-top: 1px solid var(--border);
@@ -210,6 +222,7 @@
   min-width: 0;
   white-space: normal;
   padding: var(--space-2) var(--space-2);
+  min-height: 40px;
 }
 .cli-app-actions .text-button {
   grid-column: 1/-1;
