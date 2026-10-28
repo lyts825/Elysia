@@ -10,7 +10,7 @@
   min-width: 0;
   max-width: 100%;
   color: var(--text);
-  font-size: var(--font-md);
+  font-size: var(--font-reading);
   line-height: 1.75;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -134,11 +134,11 @@
 .markdown-document .markdown-code-toolbar button {
   width: auto;
   min-height: var(--control-sm);
-  border: 0;
-  padding: 2px 6px;
+  border: 1px solid var(--border);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-control);
   color: inherit;
-  background: transparent;
+  background: var(--surface);
   font-size: var(--font-xs);
   flex: none;
 }
@@ -165,6 +165,8 @@
   margin: 0;
   padding: var(--space-3) 14px;
   overflow: auto;
+  overscroll-behavior: contain;
+  tab-size: 4;
   max-height: max(8rem, min(28rem, 65dvh));
   border: 0;
   border-radius: 0;
@@ -186,6 +188,7 @@
 }
 .markdown-document .markdown-table-scroll {
   overflow: auto;
+  overscroll-behavior: contain;
   max-width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -217,6 +220,9 @@
 .markdown-document tbody tr:nth-child(even) {
   background: var(--surface-soft);
 }
+.markdown-document tbody tr:hover {
+  background: var(--surface-hover);
+}
 .markdown-document .contains-task-list {
   padding-left: 0.3em;
   list-style: none;
@@ -242,7 +248,7 @@
   margin-top: 0;
 }
 .message-body .markdown-document {
-  font-size: var(--font-md);
+  font-size: var(--font-reading);
 }
 .message-body .markdown-document p {
   white-space: normal;
