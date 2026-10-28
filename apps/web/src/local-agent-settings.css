@@ -54,15 +54,25 @@
   min-width: 0;
   padding: var(--space-3);
   border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.local-capability-candidate:has(> label input:checked) {
+  background: var(--accent-pale);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.local-capability-candidate:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .local-capability-candidate:last-child {
   border-bottom: 0;
 }
 .local-capability-candidate > label {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
+  min-height: var(--control-lg);
+  padding: var(--space-2);
   border: 0;
   font-size: var(--font-sm);
 }

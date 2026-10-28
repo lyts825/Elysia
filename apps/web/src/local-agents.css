@@ -51,6 +51,11 @@
 .local-agent-tabs button[aria-selected='true'] {
   background: var(--surface-selected);
   color: var(--accent-strong);
+  font-weight: 600;
+  box-shadow: inset 0 -2px var(--accent);
+}
+.local-agent-tabs button:focus-visible {
+  outline-offset: -3px;
 }
 .local-agent-tabs button:hover:not(:disabled):not([aria-selected='true']) {
   background: var(--surface-hover);
@@ -192,6 +197,10 @@
   flex: 1;
   min-width: 0;
   color: var(--muted);
+}
+.local-agent-toolbar label:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .local-agent-toolbar input {
   flex: 1;
