@@ -16,9 +16,21 @@
 }
 .file-content-info > summary {
   cursor: pointer;
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   color: var(--secondary);
   line-height: var(--leading-body);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.file-content-info > summary:hover {
+  background: var(--surface-hover);
+}
+.file-content-info[open] > summary {
+  color: var(--accent-strong);
+  border-color: var(--border-strong);
 }
 /*
  * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
@@ -76,13 +88,19 @@
   min-height: var(--control-sm);
   padding: var(--space-1) var(--space-3);
   font-size: var(--font-sm);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
 }
 .file-content-tabs button[aria-pressed='true'] {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  color: var(--accent-strong);
+  border-color: var(--border-strong);
+  font-weight: 600;
+}
+.file-content-tabs button:focus-visible {
+  outline-offset: -3px;
 }
 .file-content-tabs button:hover:not(:disabled):not([aria-pressed='true']) {
   background: var(--surface-hover);
@@ -158,6 +176,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   padding: var(--space-4);
+  background-color: var(--surface);
+  background-image: conic-gradient(var(--surface-soft) 25%, transparent 0 50%, var(--surface-soft) 0 75%, transparent 0);
+  background-size: 16px 16px;
 }
 .file-image-scroll img {
   max-width: 100%;

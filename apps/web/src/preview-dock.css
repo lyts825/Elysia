@@ -93,6 +93,7 @@
 }
 .preview-dock-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   flex: none;
   padding: var(--space-2) var(--space-3);
@@ -109,6 +110,11 @@
   font-size: var(--font-sm);
   padding: 6px 10px;
   min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+}
+.preview-dock-tabs button:focus-visible {
+  outline-offset: -2px;
 }
 .preview-dock-tabs button[aria-pressed='true'] {
   background: var(--accent-pale);
