@@ -7,7 +7,6 @@
  * EN: Builds initial agent profiles with independent editable arrays, command arguments, result protocol, image, and resource defaults. It creates configuration/identity only; later flows start agents, verify images, and inject credentials.
  */
 import type { AgentTerminalProfile } from '../../../packages/contracts/src/index';
-import { antigravityTerminalCommand, claudeTerminalCommand } from '../../../packages/contracts/src/terminal-presets';
 /**
  * 生成独立可编辑模板：按代理类型选择非交互命令、结果协议和环境变量名，分配新 ID。
  * 数组复制避免修改预设共享值；镜像与标准资源只是初始值，创建任务时还需冻结并核验。
@@ -36,7 +35,14 @@ export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): Ag
       environment: ['OPENAI_API_KEY'],
     },
     claude: {
-      command: claudeTerminalCommand(),
+      command: [
+        'claude',
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
+      ],
       protocol: 'claude-stream-json',
       environment: ['ANTHROPIC_API_KEY'],
     },
@@ -51,11 +57,6 @@ export function terminalPreset(agent: AgentTerminalProfile['agent'] = 'dsh'): Ag
         'yolo',
       ],
       protocol: 'gemini-stream-json',
-      environment: ['GEMINI_API_KEY'],
-    },
-    antigravity: {
-      command: antigravityTerminalCommand(),
-      protocol: 'antigravity-stream-json',
       environment: ['GEMINI_API_KEY'],
     },
     custom: { command: ['agent'], protocol: 'text', environment: [] },

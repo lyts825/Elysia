@@ -31,7 +31,6 @@ import {
   type TerminalConnectionBinding,
 } from '../../contracts/src/index.js';
 import { Kernel } from '../../kernel/src/index.js';
-import { antigravityTerminalCommand, claudeTerminalCommand } from '../../contracts/src/terminal-presets.js';
 import { terminalHarnessPrompt } from '../../context/src/harness.js';
 import { hash, id, now, stable } from '../../storage/src/index.js';
 import { cleanEnv, ToolGateway } from '../../tools/src/index.js';
@@ -188,8 +187,19 @@ export const defaultAgentCommand = (agent: AgentTerminalProfile['agent']): strin
       '--ignore-user-config',
       '-',
     ];
-  if (agent === 'claude') return claudeTerminalCommand();
-  if (agent === 'antigravity') return antigravityTerminalCommand();
+  if (agent === 'claude')
+    return [
+      'claude',
+      '--bare',
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--allowedTools',
+      'Read,Edit,Write,Bash',
+      '--permission-prompts',
+      'none',
+    ];
   if (agent === 'dsh') return ['dsh', '--profile', 'headless', '--json', '-'];
   if (agent === 'gemini')
     return [
@@ -213,7 +223,6 @@ export class TerminalProjection {
   private redactionPending = '';
   private output = '';
   private bytes = 0;
-  private hasResponseText = false;
   malformed = false;
   failed = false;
   completed = false;
@@ -294,7 +303,7 @@ export class TerminalProjection {
       this.malformed = true;
       return;
     }
-    if (!event || typeof event !== 'object' || typeof event[this.protocol === 'antigravity-stream-json' ? 'event' : 'type'] !== 'string') {
+    if (!event || typeof event !== 'object' || typeof event.type !== 'string') {
       this.malformed = true;
       return;
     }
@@ -315,49 +324,12 @@ export class TerminalProjection {
         ['command_execution', 'file_change', 'mcp_tool_call'].includes(event.item?.type)
       )
         this.append(`[${event.item.type} · ${event.item.status ?? '已记录'}]\n`);
-    } else if (this.protocol === 'antigravity-stream-json') {
-      if (event.event === 'init' && typeof event.conversation_id === 'string')
-        this.sessionId = event.conversation_id;
-      if (event.event === 'step_update') {
-        const step = event.step_update;
-        if (!step || typeof step !== 'object') {
-          this.malformed = true;
-          return;
-        }
-        // 仅接收公开回复增量；工具详情、子代理和思考内容不投影。
-        // EN: Accept only public response deltas, excluding tool details, subagents and thinking.
-        if (step.step_type === 'agent_response' && typeof step.text_delta === 'string') {
-          this.hasResponseText ||= !!step.text_delta;
-          this.append(step.text_delta);
-        } else if (step.step_type === 'tool' && step.state === 'DONE') {
-          this.append(`[tool · ${typeof step.tool_name === 'string' ? step.tool_name.slice(0, 100) : '已记录'}]\n`);
-        }
-      }
-      if (event.event === 'result') {
-        const result = event.result;
-        if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
-          this.malformed = true;
-          return;
-        }
-        this.completed = result.status === 'SUCCESS';
-        this.failed ||= !this.completed;
-        if (typeof result.response === 'string') {
-          this.summary = result.response;
-          if (!this.hasResponseText) this.append(result.response);
-        }
-      }
     } else if (this.protocol === 'claude-stream-json') {
       if (event.type === 'system' && typeof event.session_id === 'string') this.sessionId = event.session_id;
       if (event.type === 'assistant') {
-        if (!Array.isArray(event.message?.content)) {
-          this.malformed = true;
-          return;
-        }
         for (const part of event.message?.content ?? []) {
-          if (part?.type === 'text' && typeof part.text === 'string') {
-            this.hasResponseText ||= !!part.text;
-            this.append(part.text);
-          } else if (part?.type === 'tool_use')
+          if (part.type === 'text' && typeof part.text === 'string') this.append(part.text);
+          else if (part.type === 'tool_use')
             this.append(`[tool · ${typeof part.name === 'string' ? part.name.slice(0, 100) : '已记录'}]\n`);
         }
       }
@@ -366,7 +338,7 @@ export class TerminalProjection {
         this.failed ||= !this.completed;
         if (typeof event.result === 'string') {
           this.summary = event.result;
-          if (!this.hasResponseText) this.append(event.result + '\n');
+          this.append(event.result + '\n');
         }
       }
     } else if (this.protocol === 'gemini-stream-json') {
@@ -2169,11 +2141,8 @@ export class DockerAgentService {
       );
       if (pending?.mode !== 'resume') {
         await fs.mkdir(home, { mode: 0o700 });
-        const configurationFiles = configuration?.files ?? terminalEnvironmentFiles(profile);
-        for (const file of configurationFiles) {
-          await fs.mkdir(path.dirname(path.join(home, file.path)), { recursive: true, mode: 0o700 });
+        for (const file of configuration?.files ?? [])
           await fs.writeFile(path.join(home, file.path), file.content, { mode: 0o600, flag: 'wx' });
-        }
       } else this.sessionHome(session!, true);
       await fs.writeFile(guard, 'gitdir: /elysia-hidden-git\n', { mode: 0o600 });
       /**
@@ -2329,9 +2298,7 @@ export class DockerAgentService {
         result = await this.command(
           ['start', '--attach', '--interactive', String(operation.args.containerName)],
           {
-            input: profile.agent === 'antigravity'
-              ? JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n'
-              : prompt,
+            input: prompt,
             signal: controller.signal,
             timeoutMs: profile.timeoutMs + 1000,
             outputLimit: profile.outputLimit,
