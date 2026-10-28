@@ -19,6 +19,8 @@
   font-size: var(--font-lg);
   line-height: var(--leading-heading);
   color: var(--text);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--border-strong);
 }
 .execution-config-fields {
   display: grid;
@@ -30,6 +32,8 @@
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+  color: var(--secondary);
+  font-weight: 500;
 }
 .execution-config-field textarea {
   margin: 0;
@@ -38,6 +42,8 @@
   line-height: var(--leading-body);
   scroll-padding-block: var(--space-2);
   overflow-wrap: anywhere;
+  font-size: var(--font-reading);
+  font-weight: 400;
 }
 .execution-config-field textarea[readonly] {
   background: var(--surface-soft);
@@ -88,6 +94,8 @@
 }
 .execution-config-budget dd {
   font-variant-numeric: tabular-nums;
+  font-size: var(--font-lg);
+  font-weight: 600;
 }
 /*
  * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
@@ -112,12 +120,19 @@
   gap: var(--space-3);
   margin: 0;
 }
-.execution-config-selected {
-  margin-top: var(--space-3);
+.execution-config-section
+  > .execution-config-read:not(.execution-config-selected):not(.execution-config-task) {
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-soft);
+}
+.execution-config-selected {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--accent-pale);
 }
 .execution-config-section .model-picker {
   min-width: 0;

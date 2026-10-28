@@ -16,7 +16,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.22.25';
+export const VERSION = '1.22.26';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -405,7 +405,7 @@ export type ModelChoice = z.infer<typeof ModelChoice>;
 export const AgentTerminalProfile = z.object({
   id: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
-  agent: z.enum(['codex', 'claude', 'dsh', 'gemini', 'custom']),
+  agent: z.enum(['codex', 'claude', 'dsh', 'gemini', 'antigravity', 'custom']),
   image: z
     .string()
     .trim()
@@ -413,7 +413,7 @@ export const AgentTerminalProfile = z.object({
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/),
   command: z.array(z.string().min(1).max(2000)).min(1).max(40),
-  protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'gemini-stream-json', 'text']),
+  protocol: z.enum(['codex-jsonl', 'claude-stream-json', 'dsh-jsonl', 'gemini-stream-json', 'antigravity-stream-json', 'text']),
   resourcePreset: z.enum(terminalResourcePresets).optional(),
   connectionId: z.string().uuid().nullable().optional(),
   connection: TerminalConnectionBinding.optional(),

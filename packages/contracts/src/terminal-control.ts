@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 
-export const TerminalAppId = z.enum(['codex', 'dsh', 'claude', 'gemini', 'custom']);
+export const TerminalAppId = z.enum(['codex', 'dsh', 'claude', 'gemini', 'antigravity', 'custom']);
 export type TerminalAppId = z.infer<typeof TerminalAppId>;
 export const TerminalConnectionProtocol = z.enum([
   'openai-responses',
@@ -237,10 +237,10 @@ export interface TerminalAppCatalogEntry {
   preset: {
     id: string;
     label: string;
-    agent: 'codex' | 'dsh' | 'claude' | 'gemini' | 'custom';
+    agent: 'codex' | 'dsh' | 'claude' | 'gemini' | 'antigravity' | 'custom';
     image: string;
     command: string[];
-    protocol: 'codex-jsonl' | 'dsh-jsonl' | 'claude-stream-json' | 'gemini-stream-json' | 'text';
+    protocol: 'codex-jsonl' | 'dsh-jsonl' | 'claude-stream-json' | 'gemini-stream-json' | 'antigravity-stream-json' | 'text';
     environment: string[];
   };
 }

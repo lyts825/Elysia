@@ -4,6 +4,7 @@
  * EN: Defines terminal app presets and connection compatibility checks. Declares app/container/protocol support through fresh objects without proving image installation, running CLI or credential validity.
  */
 import { AgentTerminalProfile, invariant } from '../../../packages/contracts/src/index.js';
+import { antigravityTerminalCommand, claudeTerminalCommand } from '../../../packages/contracts/src/terminal-presets.js';
 import {
   TerminalAppId,
   type TerminalAppCatalogEntry,
@@ -15,6 +16,7 @@ export const terminalProtocols: Record<TerminalAppId, TerminalConnectionBinding[
   dsh: ['anthropic-messages'],
   claude: ['anthropic-messages'],
   gemini: ['gemini'],
+  antigravity: ['gemini'],
   custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
 };
 const image = 'elysia-agents:0.13.0';
@@ -75,14 +77,7 @@ export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
         label: 'Claude Code · Docker',
         agent: 'claude',
         image,
-        command: [
-          'claude',
-          '-p',
-          '--verbose',
-          '--output-format',
-          'stream-json',
-          '--dangerously-skip-permissions',
-        ],
+        command: claudeTerminalCommand(),
         protocol: 'claude-stream-json',
         environment: ['ANTHROPIC_API_KEY'],
       },
@@ -108,6 +103,22 @@ export function terminalAppCatalog(): TerminalAppCatalogEntry[] {
           'yolo',
         ],
         protocol: 'gemini-stream-json',
+        environment: ['GEMINI_API_KEY'],
+      },
+    },
+    {
+      id: 'antigravity',
+      label: 'Antigravity CLI',
+      description: 'Google Antigravity 任务执行，使用 Gemini API 连接',
+      executable: 'agy',
+      protocols: terminalProtocols.antigravity,
+      preset: {
+        id: '9a178702-43db-4f62-8c87-735bd0951c1d',
+        label: 'Antigravity CLI · Docker',
+        agent: 'antigravity',
+        image,
+        command: antigravityTerminalCommand(),
+        protocol: 'antigravity-stream-json',
         environment: ['GEMINI_API_KEY'],
       },
     },
