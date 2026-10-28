@@ -25,6 +25,7 @@
   overflow-y: auto;
   min-width: 0;
   overscroll-behavior: contain;
+  scroll-padding-top: 4rem;
 }
 .section-heading {
   display: flex;
@@ -93,7 +94,12 @@
   margin: var(--space-1) 0 0;
 }
 .provider-list .section-heading {
-  padding: 0 var(--space-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2);
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
 }
 .provider-card {
   width: 100%;
@@ -117,6 +123,10 @@
 .provider-card.selected {
   background: var(--accent-pale);
   border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.provider-card:focus-visible {
+  outline-offset: -3px;
 }
 .provider-card-title {
   font-size: var(--font-md);
@@ -280,8 +290,8 @@
   border-radius: var(--radius-pill);
 }
 .connection-stages {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
   gap: var(--space-2);
   margin: var(--space-3) 0;
 }
@@ -293,10 +303,12 @@
   font-size: var(--font-xs);
   min-width: 0;
   overflow-wrap: anywhere;
+  border: 1px solid var(--border);
 }
 .connection-stages .passed {
   background: var(--success-bg);
   color: var(--success);
+  border-color: var(--success-border);
 }
 .account-label {
   font-size: var(--font-md);
@@ -421,6 +433,7 @@
 .connection-notice {
   color: var(--success);
   background: var(--success-bg);
+  border: 1px solid var(--success-border);
   padding: var(--space-3);
   border-radius: var(--radius-card);
   font-size: var(--font-sm);
@@ -509,7 +522,7 @@
   }
   .provider-list .section-heading {
     margin-bottom: var(--space-2);
-    padding: 0;
+    padding: var(--space-2) 0;
   }
   .provider-list .provider-card {
     margin-bottom: var(--space-2);
