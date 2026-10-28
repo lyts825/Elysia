@@ -46,7 +46,16 @@ function read<T>(store: Store, key: string, schema: z.ZodType<T>): T | undefined
   const row = store.db.prepare('SELECT value FROM storage_meta WHERE key=?').get(key) as
     | { value: string }
     | undefined;
-  return row ? schema.parse(JSON.parse(row.value)) : undefined;
+  if (!row) return undefined;
+  const value = JSON.parse(row.value);
+  // 旧五项目录只在内存中补充隐藏的新入口；保留默认项、连接和修订，不覆盖用户选择。
+  // EN: Expand legacy five-entry catalogs only in memory, preserving defaults, bindings and revisions.
+  if (key === appsKey && Array.isArray(value?.entries) && value.entries.length === 5) {
+    const ids = new Set(value.entries.map((entry: { id?: string } | null) => entry?.id));
+    if (['codex', 'dsh', 'claude', 'gemini', 'custom'].every((id) => ids.has(id)))
+      value.entries.push({ id: 'antigravity', visible: false, connectionId: null });
+  }
+  return schema.parse(value);
 }
 /**
  * 稳定序列化设置并 upsert 元数据；调用方负责将关联设置写入同一事务。

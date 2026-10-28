@@ -73,7 +73,10 @@ export function registerLocalAgentRoutes(
   app.get(prefix + '/api/local-agents', () => view());
   app.post(prefix + '/api/local-agents/scan', async (request, reply) => {
     const body = z
-      .object({ kind: z.enum(['codex', 'claude', 'dsh']), root: z.string().min(1).max(2048).optional() })
+      .object({
+        kind: z.enum(['codex', 'claude', 'dsh', 'antigravity']),
+        root: z.string().min(1).max(2048).optional(),
+      })
       .strict()
       .parse(request.body);
     return service.scan(body.kind, body.root, signalFor(request, reply));

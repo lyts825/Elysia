@@ -30,6 +30,7 @@ const sources: [SourceKind, string][] = [
   ['codex', 'Codex'],
   ['claude', 'Claude Code'],
   ['dsh', 'DSH'],
+  ['antigravity', 'Antigravity'],
 ];
 const tabs: [Kind, string, string][] = [
   ['skill', 'Skills', 'spark'],
@@ -307,6 +308,12 @@ export function LocalAgentSettings({ close }: { close: () => void }) {
               {busy === '扫描' ? '正在扫描…' : '扫描'}
             </button>
           </form>
+          {['claude', 'antigravity'].includes(kind) && (
+            <p className="field-help">
+              可选择全局配置目录或项目根目录。技能与 MCP
+              按需导入，规则文档归入记忆，原工具的触发条件不会自动执行。扫描不读取登录凭据。
+            </p>
+          )}
           {!!overview?.defaults && (
             <div className="local-agent-source-paths">
               <small>默认目录</small>

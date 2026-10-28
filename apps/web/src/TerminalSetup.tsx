@@ -103,6 +103,7 @@ export function TerminalSetup({
               <option value="codex">Codex CLI</option>
               <option value="claude">Claude Code</option>
               <option value="gemini">Gemini CLI</option>
+              <option value="antigravity">Antigravity CLI</option>
               <option value="custom">自定义 Agent</option>
             </select>
           </label>
@@ -258,6 +259,7 @@ export function TerminalSetup({
               <option value="codex-jsonl">Codex JSONL</option>
               <option value="claude-stream-json">Claude Stream JSON</option>
               <option value="gemini-stream-json">Gemini Stream JSON</option>
+              <option value="antigravity-stream-json">Antigravity Stream JSON</option>
               <option value="text">普通文本</option>
             </select>
           </label>

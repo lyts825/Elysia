@@ -5,7 +5,7 @@
  * EN: Defines local agent, skill, memory, and MCP configuration records.
  * Separates catalogs, imports, and frozen resources so discovery is not enablement or execution.
  */
-export type LocalAgentKind = 'codex' | 'claude' | 'dsh';
+export type LocalAgentKind = 'codex' | 'claude' | 'dsh' | 'antigravity';
 export type LocalItemKind = 'memory' | 'skill' | 'mcp';
 /**
  * stdio 使用命令与环境变量名；HTTP 使用 URL 和请求头对应的环境变量名。

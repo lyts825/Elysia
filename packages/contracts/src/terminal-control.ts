@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 
-export const TerminalAppId = z.enum(['codex', 'dsh', 'claude', 'gemini', 'custom']);
+export const TerminalAppId = z.enum(['codex', 'dsh', 'claude', 'gemini', 'antigravity', 'custom']);
 export type TerminalAppId = z.infer<typeof TerminalAppId>;
 export const TerminalConnectionProtocol = z.enum([
   'openai-responses',
@@ -187,9 +187,9 @@ export const TerminalProfileDiagnostics = z
   .strict();
 export type TerminalProfileDiagnostics = z.infer<typeof TerminalProfileDiagnostics>;
 /**
- * 固定保留五个应用身份，可调整可见性和连接；默认应用必须在可见集合内。
+ * 固定保留目录中的应用身份，可调整可见性和连接；默认应用必须在可见集合内。
  *
- * EN: Retains five fixed application identities with configurable visibility/connections; the default app must be visible.
+ * EN: Retains all catalog identities with configurable visibility/connections; the default app must be visible.
  */
 export const TerminalControlApps = z
   .object({
@@ -205,11 +205,11 @@ export const TerminalControlApps = z
           })
           .strict(),
       )
-      .length(5),
+      .length(TerminalAppId.options.length),
   })
   .strict()
   .superRefine((value, context) => {
-    if (new Set(value.entries.map((entry) => entry.id)).size !== 5)
+    if (new Set(value.entries.map((entry) => entry.id)).size !== TerminalAppId.options.length)
       context.addIssue({ code: 'custom', path: ['entries'], message: '请保留所有应用且不要重复' });
     if (!value.entries.some((entry) => entry.id === value.defaultAppId && entry.visible))
       context.addIssue({ code: 'custom', path: ['defaultAppId'], message: '默认应用须开启显示' });
@@ -237,10 +237,16 @@ export interface TerminalAppCatalogEntry {
   preset: {
     id: string;
     label: string;
-    agent: 'codex' | 'dsh' | 'claude' | 'gemini' | 'custom';
+    agent: 'codex' | 'dsh' | 'claude' | 'gemini' | 'antigravity' | 'custom';
     image: string;
     command: string[];
-    protocol: 'codex-jsonl' | 'dsh-jsonl' | 'claude-stream-json' | 'gemini-stream-json' | 'text';
+    protocol:
+      | 'codex-jsonl'
+      | 'dsh-jsonl'
+      | 'claude-stream-json'
+      | 'gemini-stream-json'
+      | 'antigravity-stream-json'
+      | 'text';
     environment: string[];
   };
 }

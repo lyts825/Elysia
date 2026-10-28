@@ -13,6 +13,7 @@ import type { TerminalCliCapability } from '../../contracts/src/terminal-runtime
 import type { Store } from '../../storage/src/index.js';
 import { z } from 'zod';
 import { terminalCliInstallFailure } from '../../contracts/src/cli-installation.js';
+import { ANTIGRAVITY_VERSION, antigravityInstallStep } from './antigravity-install.js';
 
 const ProbeRecord = z
   .object({
@@ -35,6 +36,7 @@ const packages = {
   dsh: { name: '@deepseek-ai/dsh', version: '0.2.1-alpha.2', executable: 'dsh' },
   claude: { name: '@anthropic-ai/claude-code', version: '2.1.296', executable: 'claude' },
   gemini: { name: '@google/gemini-cli', version: '0.63.0', executable: 'gemini' },
+  antigravity: { name: '', version: ANTIGRAVITY_VERSION, executable: 'agy' },
 };
 /**
  * 只接受完整的小写Docker SHA-256镜像ID，去除输出首尾空白后检查。
@@ -423,7 +425,7 @@ export class DockerCliManager {
    * EN: Returns explicit capability declarations distinguishing conditional support, unsupported features, and unknown usage; the view is not proof that a real CLI was verified.
    */
   capabilityMatrix(): TerminalCliCapability[] {
-    return (['codex', 'dsh', 'claude', 'gemini', 'custom'] as const).map((appId) => ({
+    return TerminalAppId.options.map((appId) => ({
       appId,
       execution: {
         status: 'conditional',
@@ -643,13 +645,19 @@ export class DockerCliManager {
         ? `FROM ${baseAlias}\nUSER root\n`
         : 'FROM node:24-bookworm-slim\nRUN apt-get update && apt-get install -y --no-install-recommends bash git ca-certificates python3 make g++ && rm -rf /var/lib/apt/lists/*\n';
       const install = existing
-        ? [`${item.name}@${version}`]
+        ? appId === 'antigravity'
+          ? []
+          : [`${item.name}@${version}`]
         : [
             `${packages.codex.name}@${appId === 'codex' ? version : packages.codex.version}`,
             `${packages.dsh.name}@${appId === 'dsh' ? version : packages.dsh.version}`,
-            ...(['codex', 'dsh'].includes(appId) ? [] : [`${item.name}@${version}`]),
+            ...(['codex', 'dsh', 'antigravity'].includes(appId) ? [] : [`${item.name}@${version}`]),
           ];
-      const dockerfile = `${prelude}RUN npm install --global ${install.map((specifier) => JSON.stringify(specifier)).join(' ')} && npm cache clean --force && mkdir -p /home/agent /workspace && chown node:node /home/agent /workspace\nLABEL io.elysia.cli-manager=${JSON.stringify(this.owner)} io.elysia.cli=${JSON.stringify(appId)} io.elysia.cli-version=${JSON.stringify(version)}\nUSER 1000:1000\nWORKDIR /workspace\nENV HOME=/home/agent CODEX_HOME=/home/agent/.codex DSH_HOME=/home/agent/.dsh\nCMD [${JSON.stringify(item.executable)}, "--version"]\n`;
+      const npmStep = install.length
+        ? `RUN npm install --global ${install.map((specifier) => JSON.stringify(specifier)).join(' ')} && npm cache clean --force\n`
+        : '';
+      const binaryStep = appId === 'antigravity' ? antigravityInstallStep(version) : '';
+      const dockerfile = `${prelude}${npmStep}${binaryStep}RUN mkdir -p /home/agent /workspace && chown node:node /home/agent /workspace\nLABEL io.elysia.cli-manager=${JSON.stringify(this.owner)} io.elysia.cli=${JSON.stringify(appId)} io.elysia.cli-version=${JSON.stringify(version)}\nUSER 1000:1000\nWORKDIR /workspace\nENV HOME=/home/agent CODEX_HOME=/home/agent/.codex DSH_HOME=/home/agent/.dsh\nCMD [${JSON.stringify(item.executable)}, "--version"]\n`;
       /**
        * 只通过stdin发送Dockerfile，不把项目文件或凭据作为构建上下文。
        * EN: A Dockerfile-only stdin build sends no project files or credentials as context.

@@ -867,9 +867,11 @@ export function TerminalControlCenter({
                           ? 'D'
                           : item.id === 'claude'
                             ? '✳'
-                            : item.id === 'gemini'
-                              ? '✦'
-                              : '>_'}
+                            : item.id === 'antigravity'
+                              ? 'A'
+                              : item.id === 'gemini'
+                                ? '✦'
+                                : '>_'}
                     </span>
                     <div className="cli-app-info">
                       <div className="cli-app-title">
@@ -1397,7 +1399,8 @@ export function TerminalControlCenter({
                   </label>
                 )}
                 <p className="field-help">
-                  Codex 使用 Responses，DSH 与 Claude 使用 Messages。现有任务保留创建时的连接。
+                  Codex 使用 Responses，DSH 与 Claude 使用 Messages，Antigravity 与 Gemini 使用 Gemini
+                  API。现有任务保留创建时的连接。
                 </p>
                 {selectedConnection && (
                   <TerminalConnectionChecks

@@ -27,8 +27,26 @@ const supported = {
   dsh: ['anthropic-messages'],
   claude: ['anthropic-messages'],
   gemini: ['gemini'],
+  antigravity: ['gemini'],
   custom: ['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini'],
 };
+
+/**
+ * API Key 模式需显式选择 Gemini 提供商；文件只含设置，不复制宿主登录状态。
+ * EN: API-key mode explicitly selects the Gemini provider without copying host authentication state.
+ */
+export function terminalEnvironmentFiles(
+  profile: AgentTerminalProfile,
+): TerminalConnectionConfiguration['files'] {
+  return profile.agent === 'antigravity'
+    ? [
+        {
+          path: '.gemini/antigravity-cli/settings.json',
+          content: JSON.stringify({ modelProvider: 'gemini', artifactReviewPolicy: 'always-proceed' }),
+        },
+      ]
+    : [];
+}
 
 /**
  * 从冻结绑定及其精确凭据引用构建配置，绝不改读实时供应商记录。 从冻结连接生成容器命令、环境和私有 HOME 配置。实际 credential 只进入环境及脱敏列表， 不写入生成的普通配置文件；拒绝命令中已有的模型/端点覆盖参数，避免两份配置争夺优先级。
@@ -55,7 +73,7 @@ export function terminalConnectionConfiguration(
   const result: TerminalConnectionConfiguration = {
     command,
     environment: {},
-    files: [],
+    files: terminalEnvironmentFiles(profile),
     secrets: [credential],
   };
   /**
@@ -129,6 +147,14 @@ export function terminalConnectionConfiguration(
       ANTHROPIC_BASE_URL: binding.baseUrl,
       ANTHROPIC_MODEL: binding.model,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    };
+    result.command.push('--model', binding.model);
+  } else if (profile.agent === 'antigravity') {
+    refuseFlags(['--model', '--agent', '--project', '--new-project', '--conversation', '--continue', '-c']);
+    invariant(command[0] === 'agy', 'TERMINAL_CONNECTION_COMMAND', 'Antigravity API 连接需要 agy 命令');
+    result.environment = {
+      GEMINI_API_KEY: credential,
+      GOOGLE_GEMINI_BASE_URL: binding.baseUrl,
     };
     result.command.push('--model', binding.model);
   } else if (profile.agent === 'gemini') {

@@ -359,6 +359,7 @@ export function TerminalSettings({
                 <option value="codex">Codex CLI</option>
                 <option value="claude">Claude Code</option>
                 <option value="gemini">Gemini CLI</option>
+                <option value="antigravity">Antigravity CLI</option>
                 <option value="custom">自定义 Agent</option>
               </select>
             </label>

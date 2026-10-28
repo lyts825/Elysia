@@ -36,9 +36,9 @@ const MAX_FILE = 512 * 1024,
   MAX_TOTAL = 16 * 1024 * 1024,
   MAX_ITEMS = 500;
 const secretName =
-  /^(?:\.env(?:\..*)?|auth(?:\.json)?|credentials?(?:\..*)?|secrets?(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i;
+  /^(?:\.env(?:\..*)?|\.?auth(?:\.json)?|\.?credentials?(?:\..*)?|oauth_creds\.json|google_accounts\.json|secrets?(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|ed25519)|.*\.(?:pem|key|p12|pfx))$/i;
 const envName = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
-const label = { codex: 'Codex', claude: 'Claude Code', dsh: 'DeepSeek Harness' };
+const label = { codex: 'Codex', claude: 'Claude Code', dsh: 'DeepSeek Harness', antigravity: 'Antigravity' };
 type Prepared = {
   candidate: LocalAgentCandidate;
   text: string;
@@ -308,9 +308,11 @@ function normalizeMcp(value: unknown): LocalMcpConfig {
     (raw.disabled_tools !== undefined && !strings(raw.disabled_tools, 500))
   )
     incomplete = true;
-  const url = safeUrl(raw.url),
+  const url = safeUrl(raw.url ?? raw.serverUrl),
     transport: 'stdio' | 'http' =
-      raw.url || ['http', 'streamable-http', 'sse'].includes(String(raw.type ?? raw.transport))
+      raw.url ||
+      raw.serverUrl ||
+      ['http', 'streamable-http', 'sse'].includes(String(raw.type ?? raw.transport))
         ? 'http'
         : 'stdio';
   if ((transport === 'http' && !url) || (transport === 'stdio' && !command)) incomplete = true;
@@ -471,6 +473,15 @@ export class LocalAgentSync {
         { kind: 'codex', roots: [path.join(this.home, '.codex'), path.join(this.home, '.agents')] },
         { kind: 'claude', roots: [path.join(this.home, '.claude'), this.home] },
         { kind: 'dsh', roots: [path.join(this.home, '.dsh'), path.join(this.home, '.agents')] },
+        {
+          kind: 'antigravity',
+          roots: [
+            path.join(this.home, '.gemini'),
+            path.join(this.home, '.gemini', 'config'),
+            path.join(this.home, '.gemini', 'antigravity-cli'),
+            path.join(this.home, '.gemini', 'antigravity'),
+          ],
+        },
       ],
     };
   }
@@ -503,11 +514,14 @@ export class LocalAgentSync {
    * EN: Validates source roots and caches selectable candidates in process for ten minutes, retaining at most three scans. Scanning does not change the persistent library or connect/enable imported MCP entries.
    */
   async scan(kind: LocalAgentKind, requestedRoot?: string, signal?: AbortSignal): Promise<LocalAgentScan> {
-    if (!['codex', 'claude', 'dsh'].includes(kind))
-      throw new AppError('LOCAL_SOURCE_INVALID', '请选择 Codex、Claude Code 或 DeepSeek Harness');
+    if (!['codex', 'claude', 'dsh', 'antigravity'].includes(kind))
+      throw new AppError(
+        'LOCAL_SOURCE_INVALID',
+        '请选择 Codex、Claude Code、DeepSeek Harness 或 Antigravity',
+      );
     const requested =
       requestedRoot ||
-      path.join(this.home, kind === 'claude' ? '.claude' : kind === 'codex' ? '.codex' : '.dsh');
+      path.join(this.home, { claude: '.claude', codex: '.codex', dsh: '.dsh', antigravity: '.gemini' }[kind]);
     if (!path.isAbsolute(requested) || requested.length > 4000 || /[\u0000-\u001F]/.test(requested))
       throw new AppError('LOCAL_ROOT_INVALID', '请选择本机来源的绝对目录');
     const root = path.resolve(requested);
@@ -551,7 +565,9 @@ export class LocalAgentSync {
       warnings: string[] = [];
     const rootName = path.basename(source.root).toLowerCase();
     const standardRoot =
-      ['.codex', '.claude', '.dsh', '.agents'].includes(rootName) || samePath(source.root, this.home);
+      ['.codex', '.claude', '.dsh', '.agents', '.agent', '.gemini'].includes(rootName) ||
+      (source.kind === 'antigravity' && ['config', 'antigravity', 'antigravity-cli'].includes(rootName)) ||
+      samePath(source.root, this.home);
     const latestDsh = new Map<string, { path: string; version: number; compressed: boolean }>();
     let total = 0,
       visited = 0,
@@ -805,7 +821,9 @@ export class LocalAgentSync {
           secretName.test(entry.name) ||
           ['node_modules', '.git', 'cache', 'logs', 'plugins', 'auth', 'credentials', '.system'].includes(
             entry.name,
-          )
+          ) ||
+          (source.kind === 'antigravity' &&
+            ['brain', 'browser_profiles', 'conversations'].includes(entry.name))
         )
           continue;
         const file = path.join(directory, entry.name),
@@ -816,15 +834,23 @@ export class LocalAgentSync {
           continue;
         }
         if (entry.isDirectory()) {
+          const agentDirectory =
+            (source.kind === 'claude' && entry.name === '.claude') ||
+            (source.kind === 'antigravity' && ['.agents', '.agent'].includes(entry.name)) ||
+            (source.kind === 'antigravity' && samePath(directory, this.home) && entry.name === '.gemini');
           const allow =
             depth > 0 ||
             !standardRoot ||
             ['skills', 'memories', 'memory', 'projects', 'sessions', 'archived_sessions'].includes(
               entry.name,
             ) ||
+            (['claude', 'antigravity'].includes(source.kind) && entry.name === 'rules') ||
+            (source.kind === 'antigravity' &&
+              ['config', 'antigravity', 'antigravity-cli'].includes(entry.name)) ||
+            agentDirectory ||
             path.basename(source.root) === 'skills' ||
             (source.kind === 'dsh' && /^--|^_no-cwd/.test(entry.name));
-          if (allow && !entry.name.startsWith('.'))
+          if (allow && (!entry.name.startsWith('.') || agentDirectory))
             try {
               await visit(file, depth + 1);
             } catch (error) {
@@ -898,9 +924,16 @@ export class LocalAgentSync {
             else warn(`没有可导入的对话正文：${rel}`);
             continue;
           }
+          const isRule =
+            (source.kind === 'claude' && /^(?:CLAUDE(?:\.local)?|AGENTS)\.md$/i.test(entry.name)) ||
+            (source.kind === 'antigravity' && /^(?:GEMINI|AGENTS)\.md$/i.test(entry.name)) ||
+            (['claude', 'antigravity'].includes(source.kind) &&
+              entry.name.endsWith('.md') &&
+              (rootName === 'rules' || segments.includes('rules')));
           if (
             /\.(?:md|txt)$/i.test(entry.name) &&
-            (segments.some((s) => ['memory', 'memories'].includes(s)) ||
+            (isRule ||
+              segments.some((s) => ['memory', 'memories'].includes(s)) ||
               ['memory', 'memories'].includes(rootName) ||
               /^MEMORY\.md$/i.test(entry.name))
           ) {
@@ -910,18 +943,29 @@ export class LocalAgentSync {
               'memory',
               file,
               entry.name,
-              text
-                .split('\n')
-                .find((line) => line.trim())
-                ?.slice(0, 160) ?? '本机记忆文档',
+              isRule
+                ? '来源规则文档；保留正文与作用范围说明，作为按需记忆读取，不自动应用原工具触发条件。'
+                : (text
+                    .split('\n')
+                    .find((line) => line.trim())
+                    ?.slice(0, 160) ?? '本机记忆文档'),
               text,
               value.hash,
             );
             continue;
           }
           if (
-            depth === 0 &&
-            /^(?:config\.(?:toml|json|ya?ml)|settings\.json|\.claude\.json|\.mcp\.json|mcp\.json|cordis\.ya?ml)$/i.test(
+            (depth === 0 ||
+              (source.kind === 'claude' && path.basename(directory) === '.claude') ||
+              (source.kind === 'antigravity' &&
+                segments
+                  .slice(0, -1)
+                  .every((segment) =>
+                    ['.gemini', 'config', 'antigravity', 'antigravity-cli', '.agent', '.agents'].includes(
+                      segment,
+                    ),
+                  ))) &&
+            /^(?:config\.(?:toml|json|ya?ml)|settings\.json|\.claude\.json|\.mcp\.json|mcp(?:_config)?\.json|cordis\.ya?ml)$/i.test(
               entry.name,
             )
           ) {

@@ -138,7 +138,7 @@ export interface TerminalFeatureCapability {
   reason: string;
 }
 export interface TerminalCliCapability {
-  appId: 'codex' | 'dsh' | 'claude' | 'gemini' | 'custom';
+  appId: 'codex' | 'dsh' | 'claude' | 'gemini' | 'antigravity' | 'custom';
   execution: TerminalFeatureCapability;
   planning: TerminalFeatureCapability;
   resume: TerminalFeatureCapability;
