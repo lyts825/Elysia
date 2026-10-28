@@ -137,6 +137,11 @@
   max-height: 55vh;
   overflow: auto;
   overscroll-behavior: contain;
+  scroll-padding-block: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
 }
 .project-file-list > button {
   display: flex;
@@ -148,7 +153,14 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  min-height: var(--control-md);
+  min-height: var(--control-lg);
+}
+.project-file-list > button:focus-visible {
+  outline-offset: -3px;
+  background: var(--surface-hover);
+}
+.project-file-list:focus-visible {
+  outline-offset: -2px;
 }
 .project-file-list > button:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -156,6 +168,15 @@
 .project-file-list > button > svg {
   flex: none;
   color: var(--muted);
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.project-file-list > button[data-kind='directory'] > svg {
+  color: var(--accent-strong);
+  background: var(--accent-pale);
 }
 .project-file-list > button .project-file-name {
   color: var(--text);
@@ -170,6 +191,8 @@
   flex: none;
   max-width: 35%;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .project-file-error,
 .project-file-empty {

@@ -208,6 +208,7 @@ export function ProjectFiles({ projectId }: { projectId: string }) {
               <button
                 type="button"
                 key={entry.path}
+                data-kind={entry.directory ? 'directory' : 'file'}
                 onClick={() => {
                   feedback.current = 'navigation';
                   choose(entry.path, !entry.directory);
