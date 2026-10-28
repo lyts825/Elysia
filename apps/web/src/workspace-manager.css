@@ -2,6 +2,37 @@
  * 工作区管理：组织搜索、当前作用域、来源说明和读取/管理错误。长来源可展开并聚焦阅读，短窗口让整个管理弹窗滚动，解除内部高度限制以保留表单操作。
  * EN: Workspace manager: arranges search, scope, provenance, and read/management errors. Expandable focusable provenance and whole-modal scrolling in short windows release inner height constraints and preserve form access.
  */
+.workspace-manager-modal .management-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr));
+  background: var(--surface-soft);
+}
+.workspace-manager-modal .management-tabs button.active {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.workspace-manager-modal .management-tabs button:focus-visible {
+  outline-offset: -3px;
+}
+.workspace-manager-modal .management-row {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+}
+.workspace-manager-modal .management-row:focus-within {
+  border-color: var(--border-strong);
+}
+.workspace-manager-modal .management-info strong {
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
+}
+.workspace-manager-modal .management-fields {
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.workspace-manager-modal .management-actions button {
+  min-height: var(--control-md);
+}
 .workspace-manager-modal .workspace-manager-search {
   display: flex;
   flex-wrap: wrap;
@@ -36,6 +67,8 @@
 .workspace-manager-modal .workspace-manager-origin > summary {
   color: var(--muted);
   cursor: pointer;
+  min-height: var(--control-sm);
+  padding-block: var(--space-1);
 }
 /*
  * 内容溢出时允许在此区域滚动，便于查看超出部分。
