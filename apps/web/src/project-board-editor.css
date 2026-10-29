@@ -11,6 +11,8 @@
 }
 .plan-editor-index summary {
   cursor: pointer;
+  min-height: var(--control-md);
+  align-content: center;
   font-size: var(--font-md);
   font-weight: 600;
 }
@@ -20,6 +22,7 @@
  */
 .plan-editor-index-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: var(--space-2);
   max-height: min(18rem, 45dvh);
   overflow: auto;
@@ -39,6 +42,10 @@
   text-align: start;
   overflow-wrap: anywhere;
   font-weight: 400;
+  align-items: start;
+}
+.plan-editor-index :is(summary, button):focus-visible {
+  outline-offset: -3px;
 }
 .plan-editor-index-list button > :first-child {
   color: var(--muted);
@@ -51,6 +58,25 @@
   border-radius: var(--radius-card);
   background: var(--surface-soft);
   scroll-margin-block: var(--space-4);
+}
+.project-board-editor .project-editor-item:focus-within {
+  border-color: var(--accent);
+}
+.project-board-editor .project-editor-item > .project-section-heading {
+  align-items: center;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.project-board-editor .project-editor-item > .project-section-heading h3 {
+  margin: 0;
+}
+.project-board-editor .project-editor-item label.check-row {
+  min-height: var(--control-lg);
+  align-items: center;
+  margin-bottom: 0;
+}
+.project-board-editor .project-editor-item .check-row input {
+  margin-top: 0;
 }
 .project-board-editor .project-form-columns {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
