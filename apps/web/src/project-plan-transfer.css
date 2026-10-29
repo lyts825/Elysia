@@ -3,6 +3,7 @@
  * EN: Project plan transfer: arranges file selection, previews, difference states, and revision comparisons. Long filenames/plans remain readable; narrow-container comparison layouts prevent evidence from crowding confirmations.
  */
 .project-plan-transfer {
+  container: plan-transfer / inline-size;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
@@ -59,6 +60,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   scroll-padding-block: var(--space-3);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.project-plan-preview-content:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .project-plan-preview p,
 .project-plan-preview h4 {
@@ -104,6 +111,7 @@
 }
 .project-plan-comparison-columns > div:last-child {
   border-color: var(--border-strong);
+  border-inline-start: 3px solid var(--accent);
 }
 .project-plan-comparison-columns > div > :first-child {
   display: block;
@@ -132,6 +140,20 @@
 .project-plan-confirmation .project-actions {
   margin-bottom: 0;
 }
+.project-plan-transfer .project-plan-confirmation label.check-row {
+  min-height: var(--control-lg);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.project-plan-transfer .project-plan-confirmation label.check-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-pale);
+}
+.project-plan-transfer .project-plan-confirmation label.check-row:has(input:disabled) {
+  cursor: default;
+}
 .project-plan-transfer .project-plan-reading {
   min-width: 0;
   max-height: min(12rem, 35dvh);
@@ -158,8 +180,12 @@
   color: var(--secondary);
   line-height: var(--leading-body);
 }
-@container (max-width: 560px) {
+@container plan-transfer (max-width: 560px) {
   .project-plan-comparison-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-plan-confirmation .project-actions {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 }
