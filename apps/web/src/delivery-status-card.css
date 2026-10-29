@@ -19,9 +19,11 @@
 }
 .delivery-status-panel .delivery-status-time dd {
   margin: var(--space-1) 0 0;
+  color: var(--secondary);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 /*
  * 内容溢出时允许在此区域滚动，便于查看超出部分。
@@ -54,4 +56,33 @@
 }
 .delivery-status-panel .delivery-overview-error .field-error {
   color: var(--danger);
+}
+/*
+ * 窄屏只让完成图标占据标题行，正文与操作复用完整卡片宽度。
+ * EN: On narrow screens, keep the completion icon beside the title so content and actions use the full card width.
+ */
+@media (max-width: 480px) {
+  .delivery-card.delivery-status-panel {
+    position: relative;
+    display: block;
+    padding: var(--space-4);
+  }
+  .delivery-status-panel > svg {
+    position: absolute;
+    inset-block-start: var(--space-4);
+    inset-inline-start: var(--space-4);
+  }
+  .delivery-status-panel .delivery-status-content {
+    gap: var(--space-3);
+  }
+  .delivery-status-panel .delivery-status-content > h3 {
+    min-height: 24px;
+    padding-inline-start: calc(24px + var(--space-3));
+  }
+  .delivery-status-panel .delivery-status-actions {
+    align-items: stretch;
+  }
+  .delivery-status-panel .delivery-status-actions > button {
+    flex: 1 1 100%;
+  }
 }
