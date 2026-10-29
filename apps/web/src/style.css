@@ -2304,6 +2304,19 @@ a {
   }
 }
 @media (pointer: coarse) {
+  details.record-history > summary,
+  details.record-history .request-detail > summary,
+  details.run-revision-links > summary,
+  details.review-history > summary,
+  details.terminal-history-panel > summary,
+  .terminal-history-panel .terminal-history-source > summary,
+  details.terminal-continuation > summary,
+  .project-delivery-archives .project-delivery-archive > details > summary,
+  .project-draft-difference .project-difference-choice select,
+  .task-working-state details > summary,
+  .task-working-state .working-state-confirm {
+    min-height: var(--control-lg);
+  }
   :is(.primary, .secondary, .quiet-button, .icon-button, .text-button, .new-task, .nav-item) {
     min-height: var(--control-lg);
   }
@@ -2568,6 +2581,13 @@ a {
     outline-offset: -3px;
   }
   .project-schedules .schedule-list article[data-selected] {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .review-history .workflow-history-row[aria-current='true'],
+  .terminal-continuation .terminal-pending-item[data-selected='true'],
+  .project-draft-difference .project-difference-side[data-selected='true'],
+  .task-working-state .working-state-confirm:has(input:checked) {
     outline: 2px solid Highlight;
     outline-offset: -3px;
   }
