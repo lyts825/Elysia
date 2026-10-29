@@ -1,6 +1,6 @@
 {
   "name": "@elysia/server",
-  "version": "1.23.32",
+  "version": "1.23.33",
   "private": true,
   "type": "module"
 }

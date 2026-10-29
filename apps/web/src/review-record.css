@@ -22,9 +22,9 @@
   font-size: var(--font-xs);
 }
 .review-entry-record .review-entry-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-5);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
   margin: var(--space-3) 0;
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -68,17 +68,42 @@
   margin: var(--space-4) 0 var(--space-3);
   font-size: var(--font-md);
 }
+/*
+ * 原标准和复核意见使用独立原文底色，标签留在卡片表面，便于逐项对照。
+ * EN: Give original criteria and review notes their own reading surface while keeping labels on the card for comparison.
+ */
+.review-entry-record .review-record-note h5 {
+  margin-bottom: var(--space-2);
+}
+.review-entry-record .review-record-note .field-help {
+  margin: var(--space-3) 0 0;
+  color: var(--secondary);
+  font-weight: 600;
+}
+.review-entry-record .review-record-note .review-record-reading {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.review-entry-record .review-record-reading:focus-visible {
+  outline-offset: -2px;
+}
 .review-entry-record .review-entry-origin {
   min-width: 0;
   margin-top: var(--space-3);
   font-size: var(--font-sm);
 }
 .review-entry-record .review-entry-origin > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   color: var(--secondary);
+  font-weight: 600;
   cursor: pointer;
 }
 .review-entry-record .review-entry-origin-fields {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: var(--space-3);
   margin-top: var(--space-3);
   padding: var(--space-3);
