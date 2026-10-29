@@ -2551,6 +2551,18 @@ a {
   button.composer-context-chip {
     min-height: var(--control-lg);
   }
+  .model-selection-editor .model-selection-source > summary,
+  .model-switch-modal .model-switch-identity > summary,
+  .native-project-defaults .native-defaults-summary > summary,
+  .project-manifests .manifest-artifact-option label.check-row,
+  .project-manifests details.manifest-frozen-item summary,
+  .project-manifests details > summary,
+  button.context-meter,
+  .context-window-details details > summary,
+  details.context-compact-setup > summary,
+  .run-review-confirmation details.run-review-materials > summary {
+    min-height: var(--control-lg);
+  }
 }
 /*
  * 强制颜色模式不依赖阴影或底色表达选中；品牌遮罩沿用系统文字色。
@@ -2588,6 +2600,12 @@ a {
   .terminal-continuation .terminal-pending-item[data-selected='true'],
   .project-draft-difference .project-difference-side[data-selected='true'],
   .task-working-state .working-state-confirm:has(input:checked) {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .project-manifests .manifest-artifact-option:has(.check-row input:checked),
+  .project-manifests .project-manifest-link[aria-pressed='true'],
+  .context-preset-options .context-preset-option[aria-pressed='true'] {
     outline: 2px solid Highlight;
     outline-offset: -3px;
   }
