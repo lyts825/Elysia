@@ -2504,6 +2504,23 @@ a {
     min-width: var(--control-lg);
     min-height: var(--control-lg);
   }
+  .file-page-controls .file-page-actions button,
+  .file-page-controls .file-page-jump input {
+    min-width: var(--control-lg);
+    min-height: var(--control-lg);
+  }
+  .file-page-controls .file-page-detail > summary,
+  .reasoning-panel :is(.reasoning-copy, .reasoning-more),
+  .reasoning-panel :is(.reasoning-read-error, .reasoning-notice) button,
+  .project-schedules :is(.schedule-source-info, .schedule-template) summary,
+  .schedule-history .schedule-history-origin > summary,
+  .terminal-diagnosis-panel :is(.terminal-diagnosis-result, .terminal-diagnosis-source) > summary,
+  .terminal-data-maintenance .terminal-data-references > summary,
+  .task-graph .graph-dependencies > summary,
+  .task-recovery .task-recovery-source summary,
+  .delivery-overview :is(.delivery-overview-evidence, .delivery-overview-file) summary {
+    min-height: var(--control-lg);
+  }
   .workspace-manager-modal .management-row .management-actions button,
   .workspace-manager-modal .management-tabs button,
   .local-capability-settings .local-agent-tabs button,
@@ -2547,6 +2564,10 @@ a {
     .file-content-tabs button[aria-pressed='true'],
     .preview-dock-tabs button[aria-pressed='true']
   ) {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .project-schedules .schedule-list article[data-selected] {
     outline: 2px solid Highlight;
     outline-offset: -3px;
   }
