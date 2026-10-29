@@ -26,6 +26,19 @@
   border-color: var(--danger-border);
   background: var(--danger-bg);
 }
+.project-delivery-archive > h4 {
+  margin-block: var(--space-2) var(--space-3);
+}
+.project-delivery-archive > .project-actions {
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.project-delivery-archive > details > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
+  color: var(--secondary);
+  cursor: pointer;
+}
 /*
  * 列数随容器宽度变化；每列以 10rem 为目标下限，容器更窄时不超过容器宽度。
  * EN: Column count follows container width, targeting a 10rem minimum per column without exceeding a narrower container.
@@ -56,6 +69,7 @@
   text-align: end;
   max-width: 100%;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 .project-delivery-archives .project-section-heading h3 {
   margin: 0;
@@ -90,6 +104,16 @@
   scrollbar-gutter: stable;
   padding-inline: var(--space-1);
 }
+.archive-hashes {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+.archive-reading:focus-visible,
+.archive-records:focus-visible {
+  outline-offset: -2px;
+}
 .archive-hashes dd {
   font-family: var(--font-mono);
   font-size: var(--font-xs);
@@ -111,4 +135,13 @@
 }
 :is(.project-delivery-archives, .project-archive-save) button {
   scroll-margin-block: var(--space-3);
+}
+@media (max-width: 480px) {
+  .archive-facts > div:last-child {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .archive-facts > div:last-child dd {
+    text-align: start;
+  }
 }
