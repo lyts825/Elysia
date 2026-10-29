@@ -1,6 +1,6 @@
 /*
- * 项目条目启动配置：突出目标标题、版本依据、配置内容和读取错误。版本信息双列对照并允许内容收缩，较长说明独立滚动，使启动前依据可完整核对。
- * EN: Project-item setup: emphasizes target title, revision basis, configuration, and read failures. Shrinkable version-comparison columns and bounded text reading preserve complete prelaunch evidence.
+ * 项目条目启动配置：突出目标标题、版本依据、配置内容和读取错误。版本信息随可用宽度换行，标签与数值保持同行；较长说明独立滚动，使启动前依据可完整核对。
+ * EN: Project-item setup: emphasizes target title, revision basis, configuration, and read failures. Version pairs wrap with available width while labels and values stay together; bounded text reading preserves complete prelaunch evidence.
  */
 .project-item-setup,
 .project-item-setup-error {
@@ -33,12 +33,12 @@
   font-weight: 600;
 }
 /*
- * 两列共享可用宽度；零最小值允许列在空间不足时收缩。
- * EN: Splits available width between two columns; zero minimums let the columns shrink when space is limited.
+ * 宽屏并列对照两个版本，窄屏改为每行一个标签与版本值。
+ * EN: Compares both versions side by side on wider surfaces and keeps one label/value pair per row on narrow surfaces.
  */
 .project-item-setup-versions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: var(--space-3);
   margin: var(--space-3) 0;
   padding: var(--space-3);
@@ -47,6 +47,10 @@
   border-radius: var(--radius-control);
 }
 .project-item-setup-versions > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
   min-width: 0;
 }
 .project-item-setup-versions dt {
@@ -54,12 +58,14 @@
   font-size: var(--font-sm);
 }
 .project-item-setup-versions dd {
-  margin: var(--space-1) 0 0;
+  flex: none;
+  margin: 0;
   font-size: var(--font-md);
   font-variant-numeric: tabular-nums;
 }
 .project-item-setup-restored {
   padding: var(--space-3);
+  border-inline-start: 3px solid var(--accent);
   border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
@@ -81,6 +87,13 @@
   margin: 0;
   text-align: end;
   font-variant-numeric: tabular-nums;
+}
+.project-item-setup:has(textarea[aria-invalid='true']) .project-item-setup-counter {
+  color: var(--danger);
+}
+.project-item-setup-reading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .project-item-setup .project-item-setup-state {
   padding: var(--space-2) var(--space-3);
