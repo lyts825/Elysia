@@ -7,6 +7,7 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -205,13 +206,20 @@ export function ProjectWorkbench({
       clearInterval(timer);
     };
   }, [api, project.id, retry]);
-  let draft: ProjectBoardDraft | undefined;
-  let parseError = '';
-  try {
-    if (loaded) draft = readProjectBoardDraft(raw);
-  } catch (issue) {
-    parseError = issue instanceof Error ? issue.message : '草稿无法读取';
-  }
+  /**
+   * 草稿原文未变时复用解析结果，避免轮询和进度更新反复校验大草稿；错误仍保留原文。
+   * EN: Reuse parsing while the raw draft is unchanged so polling/progress renders do not revalidate large drafts; errors still preserve the source.
+   */
+  const { draft, parseError } = useMemo(() => {
+    try {
+      return { draft: loaded ? readProjectBoardDraft(raw) : undefined, parseError: '' };
+    } catch (issue) {
+      return {
+        draft: undefined,
+        parseError: issue instanceof Error ? issue.message : '草稿无法读取',
+      };
+    }
+  }, [loaded, raw]);
   const activeTab = draft?.usageOpen ? 'usage' : draft?.tab;
   const visibleItems =
     board?.items.filter(

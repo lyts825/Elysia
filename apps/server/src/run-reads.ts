@@ -564,41 +564,54 @@ export class RunReads {
       ].filter(Boolean),
     );
     /**
-     * 把一条列表候选转为公开运行投影，隔离坏记录；旧行按需刷新派生投影，搜索时附是否匹配当前查询。
-     * EN: Maps one list candidate to a public run projection, isolating damage and refreshing legacy projections; search adds query-match state.
+     * 复用本批候选随行读取的小投影，搜索候选仍按 ID 读取。旧行回填可能触发其他投影更新，
+     * 此后本批剩余行重新读取；补页让出执行权后也会重新查询，不跨批复用快照。
+     * EN: Reuses compact projections fetched with this batch; search candidates still read by ID.
+     * Legacy hydration may trigger other projection changes, so remaining rows are reread afterward.
+     * Refill queries also fetch fresh projections after yielding; snapshots never cross batches.
      */
-    const read = (row: { id: string }): RunListItem[] => {
-      if (this.projections.has('runs', row.id)) return [];
-      const projection = this.store.db
-        .prepare("SELECT json_extract(data,'$.readModel') model FROM runs WHERE id=?")
-        .get(row.id) as { model: string | null };
-      let value: RunListItem;
-      if (!projection) return [];
-      if (projection.model) value = JSON.parse(projection.model) as RunListItem;
-      else {
-        const run = this.projections.read<Run>('runs', row.id);
-        if (!run) return [];
-        this.store.refreshReadProjection('runs', run);
-        value = sidebarRun(run);
-      }
-      return [
-        search
-          ? {
-              ...value,
-              matchesQuery: result!.ids.includes(row.id) || result!.matchedIncluded.includes(row.id),
-            }
-          : value,
-      ];
+    type ListRow = { id: string; model?: string | null };
+    const read = (rows: ListRow[]): RunListItem[] => {
+      let refreshed = false;
+      return rows.flatMap((row) => {
+        if (this.projections.has('runs', row.id)) return [];
+        const projection =
+          !refreshed && row.model !== undefined
+            ? row
+            : (this.store.db
+                .prepare("SELECT json_extract(data,'$.readModel') model FROM runs WHERE id=?")
+                .get(row.id) as { model: string | null });
+        let value: RunListItem;
+        if (!projection) return [];
+        if (projection.model) value = JSON.parse(projection.model) as RunListItem;
+        else {
+          refreshed = true;
+          const run = this.projections.read<Run>('runs', row.id);
+          if (!run) return [];
+          this.store.refreshReadProjection('runs', run);
+          value = sidebarRun(run);
+        }
+        return [
+          search
+            ? {
+                ...value,
+                matchesQuery: result!.ids.includes(row.id) || result!.matchedIncluded.includes(row.id),
+              }
+            : value,
+        ];
+      });
     };
-    let selected: { id: string }[], runs: RunListItem[];
+    let selected: ListRow[], runs: RunListItem[];
     for (;;) {
       signal?.throwIfAborted();
       selected = result
         ? result.ids.map((id) => ({ id }))
         : (this.store.db
-            .prepare(`SELECT id FROM runs WHERE ${pageConditions.join(' AND ')} ORDER BY rowid DESC LIMIT ?`)
-            .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as { id: string }[]);
-      runs = selected.flatMap(read);
+            .prepare(
+              `SELECT id,json_extract(data,'$.readModel') model FROM runs WHERE ${pageConditions.join(' AND ')} ORDER BY rowid DESC LIMIT ?`,
+            )
+            .all(...parameters, ...(cursor ? [cursor.position] : []), query.limit + 1) as ListRow[]);
+      runs = read(selected);
       if (runs.length === selected.length || result) break;
       /**
        * 隔离不可读行后补足有界分页，避免返回具有误导性的空页。
@@ -612,10 +625,10 @@ export class RunReads {
     for (const row of selected) included.delete(row.id);
     const extra = this.store.db
       .prepare(
-        `SELECT id FROM runs WHERE id IN (SELECT value FROM json_each(?)) AND ${this.projections.available('runs')} ORDER BY rowid DESC`,
+        `SELECT id,json_extract(data,'$.readModel') model FROM runs WHERE id IN (SELECT value FROM json_each(?)) AND ${this.projections.available('runs')} ORDER BY rowid DESC`,
       )
-      .all(JSON.stringify([...included])) as { id: string }[];
-    const includedRuns = extra.flatMap(read);
+      .all(JSON.stringify([...included])) as ListRow[];
+    const includedRuns = read(extra);
     const total =
       result?.total ??
       Number(
