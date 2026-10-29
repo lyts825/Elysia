@@ -1,6 +1,6 @@
 /*
- * 交付版本对照：将变更结论、字段差异和数量摘要分层，未知结论使用独立状态样式。计数网格按容器宽度自动分列，长说明断行以适应侧栏或窄弹窗。
- * EN: Delivery comparison: separates change conclusions, field differences, and counts, with distinct unknown-state treatment. Counts auto-fit the container and long explanations wrap for sidebars/narrow modals.
+ * 交付版本对照：将变更结论、字段差异和数量摘要分层，未知结论使用独立状态样式。变化字段按容器分列，计数与标签逐行对齐，长说明断行以适应侧栏或窄弹窗。
+ * EN: Delivery comparison: separates change conclusions, field differences, and counts, with distinct unknown-state treatment. Fields fit the container, counts align with their labels in rows, and long explanations wrap for sidebars/narrow modals.
  */
 .delivery-comparison-summary {
   min-width: 0;
@@ -29,15 +29,15 @@
 }
 .delivery-comparison-summary .delivery-comparison-caption {
   color: var(--muted);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
 }
 /*
- * 列数随容器宽度变化；每列以 8rem 为目标下限，容器更窄时不超过容器宽度。
- * EN: Column count follows container width, targeting an 8rem minimum per column without exceeding a narrower container.
+ * 短字段按 6rem 目标宽度分列，避免窄弹窗中五项范围全部堆成一列。
+ * EN: Short field names use a 6rem target column width to avoid stacking all five scopes in narrow modals.
  */
 .delivery-comparison-summary .delivery-comparison-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr));
   gap: var(--space-2) var(--space-4);
   margin: var(--space-2) 0 0;
   padding-left: var(--space-4);
@@ -47,24 +47,30 @@
 }
 .delivery-comparison-summary .delivery-comparison-counts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin: var(--space-3) 0 0;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 .delivery-comparison-summary .delivery-comparison-counts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
   min-width: 0;
 }
 .delivery-comparison-summary .delivery-comparison-counts dt {
   margin: 0;
   color: var(--muted);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
 }
 .delivery-comparison-summary .delivery-comparison-counts dd {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   color: var(--text);
   font-size: var(--font-lg);
+  font-weight: 600;
+  text-align: end;
   line-height: var(--leading-ui);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
