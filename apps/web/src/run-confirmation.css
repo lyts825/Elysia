@@ -1,8 +1,9 @@
 /*
- * 运行复核确认：排列运行字段、材料摘要和确认依据。标签保留最小宽度，内容列使用余量并允许断行，确保长版本或路径可以在提交前完整查看。
- * EN: Run review confirmation: arranges run fields, material summaries, and confirmation basis. Minimum label widths and shrinkable/wrapping content preserve full revisions/paths for pre-submission inspection.
+ * 运行复核确认：排列运行字段、材料摘要和确认依据。宽容器并排展示标签与内容，窄容器上下排列，长版本或路径可在提交前完整查看。
+ * EN: Run review confirmation: arranges run fields, material summaries, and confirmation basis. Labels and values share a row in wide containers and stack in narrow ones; wrapping preserves complete revisions and paths for review.
  */
 .run-review-confirmation {
+  container: run-confirmation / inline-size;
   min-width: 0;
 }
 .run-review-confirmation .run-review-fields {
@@ -23,6 +24,13 @@
   gap: var(--space-2);
   align-items: baseline;
   min-width: 0;
+}
+.run-review-confirmation .run-review-fields > div + div {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.run-review-confirmation .run-setup-reading:focus-visible {
+  outline-offset: -2px;
 }
 .run-review-confirmation .run-review-fields dt {
   margin: 0;
@@ -46,11 +54,19 @@
   margin-top: var(--space-3);
 }
 .run-review-confirmation .run-review-materials summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   cursor: pointer;
   color: var(--secondary);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
+}
+.run-review-confirmation .run-review-materials[open] > summary {
+  font-weight: 600;
+}
+.run-review-confirmation .run-review-materials summary:focus-visible {
+  outline-offset: -2px;
 }
 .run-review-confirmation .run-review-materials p {
   margin: var(--space-2) 0 0;
@@ -65,7 +81,14 @@
   border-top: 1px solid var(--border);
 }
 .run-review-confirmation > .secondary {
+  min-height: var(--control-lg);
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+@container run-confirmation (max-width: 25rem) {
+  .run-review-confirmation .run-review-fields > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
 }
