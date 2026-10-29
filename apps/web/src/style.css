@@ -2563,6 +2563,19 @@ a {
   .run-review-confirmation details.run-review-materials > summary {
     min-height: var(--control-lg);
   }
+  .delivery-status-actions button,
+  .review-entry-record details.review-entry-origin > summary,
+  .project-board-editor details.plan-editor-index > summary,
+  .project-board-editor details.plan-editor-validation > summary,
+  .project-board-editor .plan-editor-index-list button,
+  .project-board-editor .project-editor-item label.check-row,
+  .project-plan-transfer .project-plan-confirmation label.check-row,
+  .review-model-policy > label.check-label,
+  .delivery-user-review details.delivery-review-basis > summary,
+  .delivery-user-review details.delivery-review-old-notes > summary,
+  .delivery-user-review select {
+    min-height: var(--control-lg);
+  }
 }
 /*
  * 强制颜色模式不依赖阴影或底色表达选中；品牌遮罩沿用系统文字色。
@@ -2606,6 +2619,12 @@ a {
   .project-manifests .manifest-artifact-option:has(.check-row input:checked),
   .project-manifests .project-manifest-link[aria-pressed='true'],
   .context-preset-options .context-preset-option[aria-pressed='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .handoff-confirmation .handoff-confirmation-choice:has(input:checked),
+  .review-model-policy > label.check-label:has(input:checked),
+  .project-plan-transfer .project-plan-confirmation .check-row:has(input:checked) {
     outline: 2px solid Highlight;
     outline-offset: -3px;
   }
