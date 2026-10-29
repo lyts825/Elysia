@@ -187,6 +187,8 @@
   gap: var(--space-2);
   margin-bottom: var(--space-1);
   flex-wrap: wrap;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 .context-agent-head strong {
   font-size: var(--font-md);
@@ -254,6 +256,15 @@
 .context-breakdown > div {
   min-width: 0;
 }
+.context-capacity > div + div {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--border);
+}
+.context-breakdown {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
 .context-capacity dt,
 .context-breakdown dt {
   color: var(--secondary);
@@ -316,9 +327,10 @@
   margin-top: var(--space-2);
 }
 .context-window-details summary {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
-  padding: var(--space-1) 0;
+  min-height: var(--control-md);
+  padding: var(--space-2) 0;
   border-radius: var(--radius-sm);
   color: var(--secondary);
   font-size: var(--font-sm);
@@ -326,6 +338,13 @@
 }
 .context-window-details summary:hover {
   color: var(--text);
+  background: var(--surface-soft);
+}
+.context-window-details details[open] > summary {
+  font-weight: 600;
+}
+.context-window-details summary:focus-visible {
+  outline-offset: -2px;
 }
 .context-usage-details .context-breakdown {
   margin-top: var(--space-2);
@@ -343,6 +362,8 @@
   background: var(--surface-soft);
 }
 .context-compact-setup > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   cursor: pointer;
   color: var(--secondary);
   font-size: var(--font-sm);
