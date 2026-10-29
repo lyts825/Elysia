@@ -22,6 +22,8 @@
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 .terminal-recovery-heading > p {
   margin: 0;
@@ -47,6 +49,7 @@
   margin: 0;
   padding: var(--space-3);
   border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--surface-soft);
   color: var(--muted);
   font-size: var(--font-sm);
@@ -71,7 +74,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: var(--surface-soft);
+  background: var(--surface);
   color: var(--secondary);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
@@ -79,15 +82,21 @@
 .terminal-recovery-option h5 {
   margin: 0;
   color: var(--text);
-  font-size: var(--font-sm);
+  font-size: var(--font-md);
 }
 .terminal-recovery-option p {
   margin: 0;
 }
 .terminal-recovery-option button {
   margin-top: auto;
+  align-self: stretch;
+  min-height: var(--control-lg);
   max-width: 100%;
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.terminal-recovery-option:focus-within {
+  border-color: var(--accent);
+  background: var(--accent-pale);
 }
