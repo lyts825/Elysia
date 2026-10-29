@@ -20,16 +20,31 @@
 .handoff-confirmation .handoff-confirmation-choice {
   display: flex;
   gap: var(--space-2);
-  align-items: flex-start;
+  align-items: center;
   margin: 0;
+  min-height: var(--control-lg);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
   font-size: var(--font-md);
   line-height: var(--leading-body);
+}
+.handoff-confirmation-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-pale);
+}
+.handoff-confirmation-choice:has(input:not(:disabled)) {
+  cursor: pointer;
+}
+.handoff-confirmation-choice:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .handoff-confirmation-choice input {
   flex: none;
   width: auto;
-  margin-top: var(--space-1);
+  margin-top: 0;
 }
 
 .handoff-confirmation h3 {
@@ -39,12 +54,12 @@
 }
 
 /*
- * 列数随容器宽度变化；每列以 12rem 为目标下限，容器更窄时不超过容器宽度。
- * EN: Column count follows container width, targeting a 12rem minimum per column without exceeding a narrower container.
+ * 简短计数以 8rem 为分列下限，窄容器自动堆叠；长数字仍允许换行。
+ * EN: Compact counters use an 8rem column minimum, stacking in narrower containers while long numbers can wrap.
  */
 .handoff-confirmation-counts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
   gap: var(--space-2);
   margin: 0;
 }
@@ -71,6 +86,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .handoff-confirmation-state {
   margin: 0;
@@ -100,6 +116,7 @@
   min-width: 0;
 }
 .handoff-confirmation-actions .text-button {
+  min-height: var(--control-lg);
   min-width: 0;
   max-width: 100%;
   white-space: normal;
