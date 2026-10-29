@@ -3,11 +3,15 @@
  * EN: Run revision links: shows revisions, read state, source links, and metadata in expandable sections. Local scrolling/wrapping contain long link evidence, paths, and identifiers within run detail.
  */
 .run-revision-links {
+  container: run-revision / inline-size;
   min-width: 0;
   background: var(--surface);
   color: var(--text);
 }
 .run-revision-links > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
+  font-weight: 600;
   line-height: var(--leading-ui);
   cursor: pointer;
 }
@@ -19,6 +23,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 .run-revision-heading > span,
 .run-revision-links .run-revision-read-state {
@@ -65,11 +71,13 @@
   margin-block: 0 var(--space-3);
   white-space: pre-wrap;
   line-height: var(--leading-body);
+  font-weight: 600;
 }
 .run-revision-title code {
   font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--muted);
+  font-weight: 400;
 }
 .run-revision-links .run-revision-meta {
   display: grid;
@@ -99,4 +107,27 @@
 }
 .run-revision-pagination {
   margin-block-start: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.run-revision-links :is(.run-revision-list, .run-revision-title):focus-visible {
+  outline-offset: -2px;
+}
+/*
+ * 宽容器将状态和跳转放在同一行，减少逐项浏览的高度；窄容器沿用纵向排列。
+ * EN: Wide containers place metadata beside navigation to shorten lists; narrow containers retain vertical flow.
+ */
+@container run-revision (min-width: 32rem) {
+  .run-revision-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-3);
+    align-items: end;
+  }
+  .run-revision-item > .run-revision-title {
+    grid-column: 1 / -1;
+  }
+  .run-revision-item > .run-revision-meta {
+    margin-bottom: 0;
+  }
 }
