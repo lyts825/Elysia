@@ -17,6 +17,8 @@
   overflow-wrap: anywhere;
 }
 .terminal-history-panel > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
@@ -33,6 +35,10 @@
 }
 .terminal-history-page-heading {
   margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
 }
 .terminal-history-panel .terminal-history-page-heading p,
 .terminal-history-panel .terminal-history-page-source {
@@ -88,6 +94,8 @@
   font-size: var(--font-xs);
 }
 .terminal-history-source > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   cursor: pointer;
 }
 /*
@@ -104,7 +112,8 @@
 }
 .terminal-history-source .terminal-history-reading {
   margin-top: var(--space-2);
-  padding: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
 }
@@ -125,6 +134,8 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
 }
 .terminal-history-target {
   display: grid;
@@ -148,10 +159,14 @@
 }
 .terminal-history-pagination {
   margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 .terminal-history-pagination > span {
+  flex-basis: 100%;
   color: var(--muted);
   font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
 }
 .terminal-history-error {
   max-height: min(12rem, 36dvh);
@@ -169,6 +184,6 @@
  */
 .terminal-history-panel :is([tabindex='0'], summary):focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
   border-radius: var(--radius-sm);
 }
