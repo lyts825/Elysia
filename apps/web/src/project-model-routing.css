@@ -29,6 +29,13 @@
 .project-model-routing .routing-role select {
   font-weight: 400;
 }
+.project-model-routing .routing-role:focus-within {
+  border-color: var(--accent);
+}
+.project-model-routing .routing-role > label {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
 .project-model-routing :is(button, select, input, .routing-reading) {
   scroll-margin-block: var(--space-3);
 }
@@ -54,7 +61,7 @@
  */
 .project-model-routing .routing-reading:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .project-model-routing .routing-selection {
   margin: 0;
@@ -82,6 +89,16 @@
 }
 .project-model-routing .routing-comparison-card h4 {
   margin: 0;
+}
+.project-model-routing .routing-comparison-card > p {
+  margin-block: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.project-model-routing .routing-comparison-card .routing-reading > div + div {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-strong);
 }
 .project-model-routing .routing-error {
   min-width: 0;
@@ -119,6 +136,9 @@
 .project-model-routing .routing-actions {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+.project-model-routing .routing-actions > button {
+  min-height: var(--control-lg);
 }
 @container project-model-routing (max-width: 40rem) {
   .project-model-routing .routing-roles,
