@@ -13,6 +13,8 @@
   overflow-wrap: anywhere;
 }
 .terminal-continuation > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   font-size: var(--font-md);
   font-weight: 600;
   line-height: var(--leading-body);
@@ -54,6 +56,10 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
+}
+.terminal-continuation-field textarea {
+  min-height: 8rem;
+  resize: vertical;
 }
 .terminal-continuation button {
   max-width: 100%;
@@ -116,11 +122,18 @@
   border-color: var(--accent);
   background: var(--accent-pale);
 }
+.terminal-pending-item:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
 .terminal-pending-choice {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   min-width: 0;
+  min-height: var(--control-lg);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
 .terminal-pending-choice input[type='checkbox'] {
@@ -145,6 +158,9 @@
 }
 .terminal-pending-item .terminal-pending-text {
   margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   max-height: min(12rem, 40dvh);
   overflow-y: auto;
   white-space: pre-wrap;
