@@ -14,6 +14,9 @@
   background: var(--surface);
   min-width: 0;
 }
+.project-draft-difference[data-conflict='true']:not([data-choice]) {
+  border-color: var(--warning-border);
+}
 .project-difference-heading {
   display: flex;
   align-items: baseline;
@@ -31,6 +34,7 @@
 }
 .project-difference-status {
   padding: var(--space-1) var(--space-2);
+  border: 1px solid currentColor;
   border-radius: var(--radius-sm);
   background: var(--surface-hover);
   color: var(--muted);
@@ -64,6 +68,7 @@
 .project-difference-side[data-selected='true'] {
   border-color: var(--accent);
   background: var(--accent-pale);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .project-difference-side > strong {
   display: flex;
@@ -85,11 +90,16 @@
  * EN: Allows this region to scroll when content exceeds its bounds.
  */
 .project-difference-content {
-  max-height: clamp(10rem, 32vh, 18rem);
+  max-height: min(18rem, 42dvh);
   overflow: auto;
   padding-inline-end: var(--space-1);
   border-radius: var(--radius-sm);
   scroll-padding-block: var(--space-2);
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.project-difference-content:focus-visible {
+  outline-offset: -2px;
 }
 .project-difference-content p {
   margin: 0;
@@ -113,5 +123,23 @@
 @container project-draft-comparison (max-width: 680px) {
   .project-difference-columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+/*
+ * 窄容器减少对照区的嵌套留白，让长文本和逐项选择保留空间。
+ * EN: Reduce nested comparison spacing in narrow containers to leave room for text and choices.
+ */
+@container project-draft-comparison (max-width: 480px) {
+  .project-draft-difference {
+    padding: var(--space-3);
+  }
+  .project-difference-columns {
+    gap: var(--space-2);
+  }
+  .project-difference-side {
+    padding: var(--space-2);
+  }
+  .project-difference-content {
+    max-height: min(14rem, 38dvh);
   }
 }
