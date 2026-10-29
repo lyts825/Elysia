@@ -25,7 +25,9 @@
   margin-top: var(--space-3);
 }
 .terminal-diagnosis-result > summary {
+  min-height: 38px;
   margin-bottom: var(--space-2);
+  padding: var(--space-2) 0;
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
@@ -52,11 +54,14 @@
   font-size: var(--font-xs);
 }
 .terminal-diagnosis-source > summary {
+  min-height: 38px;
+  padding: var(--space-2) 0;
   cursor: pointer;
 }
 .terminal-diagnosis-source > .terminal-diagnosis-context {
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
 .terminal-diagnosis-stage,
@@ -77,6 +82,8 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   min-width: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 .terminal-diagnosis-stage-heading strong {
   min-width: 0;
@@ -142,6 +149,6 @@
  */
 .terminal-diagnosis-panel :is([tabindex='0'], summary):focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
   border-radius: var(--radius-sm);
 }
