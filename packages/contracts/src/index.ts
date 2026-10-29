@@ -16,7 +16,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.23.20';
+export const VERSION = '1.23.21';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';

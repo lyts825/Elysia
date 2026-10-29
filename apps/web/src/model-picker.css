@@ -22,7 +22,8 @@
 .model-selection-state {
   margin: 0;
   color: var(--muted);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
 }
 .model-selection-state[data-ready='true'] {
   color: var(--success);
@@ -40,6 +41,9 @@
 .model-selection-identity small {
   color: var(--muted);
   font-size: var(--font-xs);
+}
+.model-selection-identity strong {
+  font-weight: 600;
 }
 /*
  * 内容溢出时在此区域滚动，并阻止滚动继续传递到外层。
@@ -68,14 +72,19 @@
   font-size: var(--font-xs);
 }
 .model-selection-source summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   cursor: pointer;
   color: var(--secondary);
 }
 .model-selection-source dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-2) var(--space-3);
   margin: var(--space-2) 0 0;
 }
-.model-selection-source dl > div + div {
-  margin-top: var(--space-2);
+.model-selection-source dl > div {
+  min-width: 0;
 }
 .model-selection-source dt {
   color: var(--muted);
@@ -100,6 +109,9 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: var(--font-xs);
 }
