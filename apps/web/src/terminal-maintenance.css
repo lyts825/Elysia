@@ -33,6 +33,10 @@
 .terminal-data-groups strong {
   color: var(--text);
 }
+.terminal-data-groups > div > span {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 .terminal-data-groups small,
 .terminal-data-references span,
 .terminal-backup-eligibility small {
@@ -75,6 +79,8 @@
   margin-top: var(--space-5);
 }
 .terminal-data-references > summary {
+  min-height: 38px;
+  padding: var(--space-2) 0;
   font-weight: 600;
   cursor: pointer;
 }
@@ -122,8 +128,10 @@
   display: grid;
   gap: var(--space-3);
   min-width: 0;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
 }
 .terminal-data-backups label {
   display: grid;
@@ -147,9 +155,9 @@
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  background: var(--surface-soft);
+  background: var(--accent-pale);
 }
 .terminal-backup-selection dl {
   display: grid;
@@ -198,6 +206,8 @@
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
   margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
   color: var(--text);
   font-size: var(--font-lg);
 }
