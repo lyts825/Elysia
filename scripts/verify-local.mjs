@@ -13,7 +13,7 @@ const entry = '.local-tests/verify.ts';
 // reported as passed.
 if (!existsSync(entry)) {
   console.error(
-    '缺少本地验收材料 .local-tests/verify.ts。按 docs/EXECUTION.md 第十一节准备用例；未执行验收。',
+    '缺少本地验收材料 .local-tests/verify.ts。按 docs/EXECUTION.md 的验证入口与验收条件准备用例；未执行验收。',
   );
   process.exit(2);
 }

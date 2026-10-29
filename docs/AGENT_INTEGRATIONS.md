@@ -1,13 +1,17 @@
 # Antigravity 与 Claude Code 接入
 
+适用源码版本：v1.23.43。通用安装、执行和恢复流程见[Agent 终端手册](AGENT_TERMINALS.md)。
+
 ## 终端任务
 
 Elysia v1.23.0 在 Agent 终端中加入 Antigravity CLI，并补齐 Claude Code 的命令和输出处理。两者使用独立 Docker 任务目录，沿用现有的权限、超时、停止核验和人工验收流程。
 
-| 应用 | 命令 | 默认安装版本 | 连接协议 | 凭据环境变量 |
-| --- | --- | --- | --- | --- |
-| Antigravity CLI | `agy` | 1.4.7 | Gemini API | `GEMINI_API_KEY` |
-| Claude Code | `claude` | 2.1.296 | Anthropic Messages | `ANTHROPIC_API_KEY` |
+各应用的固定安装版本及输出协议统一列在[终端应用表](AGENT_TERMINALS.md#应用与固定版本)。本节补充两种接入的配置与能力边界。
+
+| 应用            | 命令     | 连接协议           | 凭据环境变量        |
+| --------------- | -------- | ------------------ | ------------------- |
+| Antigravity CLI | `agy`    | Gemini API         | `GEMINI_API_KEY`    |
+| Claude Code     | `claude` | Anthropic Messages | `ANTHROPIC_API_KEY` |
 
 1. 启动 Docker Desktop 的 Linux 引擎，打开“Agent 终端 → 终端管理 → 应用”。
 2. 显示所需应用，点击“安装”，完成后应用已安装镜像。Antigravity 从官方固定版本下载适合容器架构的发布包，核对 SHA-256，再检测实际 CLI 版本。版本不一致时不能应用镜像。
@@ -26,12 +30,12 @@ Claude 使用 `-p` 和 `stream-json` 输出，参数依据 [Claude CLI 参考](h
 
 打开“工具与偏好 → 本机能力 → 同步本机 Agent”，选择 Antigravity 或 Claude Code。可使用默认全局目录，也可填写项目根目录；扫描后选择需要导入的条目。
 
-| 来源 | 可识别的资料 |
-| --- | --- |
+| 来源                 | 可识别的资料                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Antigravity 全局目录 | `~/.gemini/GEMINI.md`、`AGENTS.md`；`~/.gemini/config/` 中的技能、规则和 `mcp_config.json`；`antigravity-cli/skills/` 与旧 `antigravity/skills/` |
-| Antigravity 项目目录 | `.agents/skills/`、兼容的 `.agent/skills/`、规则目录、`GEMINI.md`、`AGENTS.md` 和 `.agents/mcp_config.json` |
-| Claude 全局目录 | `~/.claude/` 中的技能、规则、记忆与公开对话正文；扫描用户目录时可读取 `.claude.json` 的 MCP 配置 |
-| Claude 项目目录 | `.claude/skills/`、`.claude/rules/`、`CLAUDE.md`、`CLAUDE.local.md`、`AGENTS.md`、`.mcp.json` 和 `.claude/settings.json` 中的 MCP 描述 |
+| Antigravity 项目目录 | `.agents/skills/`、兼容的 `.agent/skills/`、规则目录、`GEMINI.md`、`AGENTS.md` 和 `.agents/mcp_config.json`                                      |
+| Claude 全局目录      | `~/.claude/` 中的技能、规则、记忆与公开对话正文；扫描用户目录时可读取 `.claude.json` 的 MCP 配置                                                 |
+| Claude 项目目录      | `.claude/skills/`、`.claude/rules/`、`CLAUDE.md`、`CLAUDE.local.md`、`AGENTS.md`、`.mcp.json` 和 `.claude/settings.json` 中的 MCP 描述           |
 
 规则正文作为记忆资料保存，保留来源与原有 frontmatter。Elysia 不会自动复现原工具的路径匹配、手动触发或规则优先级；选择项目能力时应核对适用范围。技能目录包含 `SKILL.md` 和允许读取的参考文件，仍按需加载。
 
@@ -43,4 +47,6 @@ MCP 导入后默认关闭。配置只保留安全连接字段及凭据的环境�
 
 旧五应用配置在读取时补充隐藏的 Antigravity 入口，保留原默认应用、连接及修订。用户启用后才保存新配置和模板。升级不启动任务，也不修改已有任务的冻结信息；旧版本不能读取新增的 Antigravity 任务类型，回退应使用升级前的数据备份。
 
-本轮完成隔离数据下的配置兼容、安装校验、任务执行协议、失败与取消、导入和界面验证。验证没有调用真实模型。本机 Docker Linux 引擎未运行，固定镜像构建及真实供应商执行尚待实机验收，界面继续标为“有条件支持”。启动引擎、配置有效凭据并完成一次实际任务后，才能补充这部分验收结论。
+v1.23.0 的接入验收覆盖隔离数据下的配置兼容、安装校验、任务执行协议、失败与取消、导入和界面交互，没有调用真实模型。当时本机 Docker Linux 引擎未运行，固定镜像构建及真实供应商执行尚待实机验收，界面标为“有条件支持”。
+
+v1.23.43 仅整理文档，未重新检查 Docker 环境或执行真实模型任务，以上待验收范围保持。启动引擎、配置有效凭据并完成一次实际任务后，才能在[执行文档](EXECUTION.md)补充这部分验收结论。

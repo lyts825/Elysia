@@ -1,6 +1,8 @@
 # 架构与内置插件
 
-当前架构为 v1.23.42。v1.17.0 建立内置插件注册表，v1.21.0 参考 [架构视频](https://www.bilibili.com/video/BV1winH6DEgt) 展示的依赖接口、集中装配和角色分离思路，将领域规则、执行流程与基础设施的职责明确分开。内核继续拥有任务状态、授权、预算、租约、模型隔离和验收规则，模型提出意图，宿主校验并记录实际结果。
+适用源码版本：v1.23.43。本文说明现有架构；历史版本的设计取舍和验证记录保留当时范围。
+
+v1.17.0 建立内置插件注册表，v1.21.0 参考[架构视频](https://www.bilibili.com/video/BV1winH6DEgt)展示的依赖接口、集中装配和角色分离思路，将领域规则、执行流程与基础设施的职责明确分开。内核继续拥有任务状态、授权、预算、租约、模型隔离和验收规则，模型提出意图，宿主校验并记录实际结果。
 
 ```mermaid
 flowchart TB
@@ -28,17 +30,17 @@ flowchart TB
 
 应用仍在本机进程内协作。Electron 承载 React 界面，Fastify 提供原生 `/api` 与终端 `/terminal/api` 两个入口；两者分别装配 Store、Kernel 和执行器，共用本机认证规则。数据继续由 SQLite 和文件对象保存。
 
-| 模块 | 职责与依赖边界 |
-| --- | --- |
-| `packages/contracts` | 模型输入输出、工具定义、执行策略、实体与版本契约；不依赖供应商或数据库实现 |
-| `packages/kernel/src/ports.ts` | 定义实体、会话、事务、请求账本及恢复接口；Kernel 通过接口访问存储 |
-| `apps/server/src/kernel-services.ts` | 创建内核并注入项目能力快照；缺少必要服务时明确失败 |
-| `apps/server/src/run-application.ts` | 协调运行控制、持久停止及模型切换，路由保留认证、幂等与事务边界 |
-| `packages/runtime` | 调度器管理准入和取消；Agent Loop 串联单步；模型请求服务管理预算、流式响应与重试；工具执行服务管理顺序、重放与进展 |
-| `packages/context` | `snapshot.ts` 一次采集所需状态，`compiler.ts` 只根据快照编译；外围负责持久化压缩对象，原文引用可回查 |
-| `packages/providers` | 实现共享 `ProviderAdapter`；由服务装配注入协议和凭据能力 |
-| `packages/tools` | 校验授权、参数、调用来源及操作账本，执行前审核，并向插件提供最少所需能力 |
-| `packages/storage` | 实现内核存储接口、有界投影查询、事务、对象持久化和迁移 |
+| 模块                                 | 职责与依赖边界                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts`                 | 模型输入输出、工具定义、执行策略、实体与版本契约；不依赖供应商或数据库实现                                        |
+| `packages/kernel/src/ports.ts`       | 定义实体、会话、事务、请求账本及恢复接口；Kernel 通过接口访问存储                                                 |
+| `apps/server/src/kernel-services.ts` | 创建内核并注入项目能力快照；缺少必要服务时明确失败                                                                |
+| `apps/server/src/run-application.ts` | 协调运行控制、持久停止及模型切换，路由保留认证、幂等与事务边界                                                    |
+| `packages/runtime`                   | 调度器管理准入和取消；Agent Loop 串联单步；模型请求服务管理预算、流式响应与重试；工具执行服务管理顺序、重放与进展 |
+| `packages/context`                   | `snapshot.ts` 一次采集所需状态，`compiler.ts` 只根据快照编译；外围负责持久化压缩对象，原文引用可回查              |
+| `packages/providers`                 | 实现共享 `ProviderAdapter`；由服务装配注入协议和凭据能力                                                          |
+| `packages/tools`                     | 校验授权、参数、调用来源及操作账本，执行前审核，并向插件提供最少所需能力                                          |
+| `packages/storage`                   | 实现内核存储接口、有界投影查询、事务、对象持久化和迁移                                                            |
 
 `NativeExecutor` 与原模型类型导出继续作为兼容入口。运行时服务在构造时装配，正常流程不再通过事后覆盖回调切换模型或入口。相同上下文快照可重复编译得到相同结果，快照采集与编译不会暗中扩展项目授权。
 
@@ -58,24 +60,28 @@ flowchart TB
 
 只有当前权限允许整个任务目录写入时，容器挂载才可写；分路径写入授权使用只读挂载，文件工具仍按各自路径授权工作。容器内程序和路径必须适配镜像。MCP 进程及宿主的 Git 管理流程仍在各自原有边界内，不属于此命令容器。
 
-容器先创建再启动，取消或超时后单独清理。清理失败保留待重试记录，操作结果继续待核验。启动恢复只查找当前数据目录标签下的命令容器，记录清理结果；清理失败不阻止界面打开，停止容器也不证明副作用已撤销。本轮已验证参数、超时清理、失败保留、恢复及不回退行为；真实 Docker 隔离与中断恢复按用户选择保留待验收，见执行文档。
+容器先创建再启动，取消或超时后单独清理。清理失败保留待重试记录，操作结果继续待核验。启动恢复只查找当前数据目录标签下的命令容器，记录清理结果；清理失败不阻止界面打开，停止容器也不证明副作用已撤销。既有本地验证覆盖参数、超时清理、失败保留、恢复及不回退行为；真实 Docker 隔离与中断恢复按用户选择保留待验收，见[执行文档](EXECUTION.md)。
 
 插件注入使用实际冻结的能力对象，而非仅以 TypeScript 类型隐藏成员。各职责插件只得到所需函数；存储对象不暴露数据库连接，内核对象不暴露完整状态机。计划插件仍通过专用宿主操作。这些插件随应用构建，能力收窄约束代码职责，不能代替第三方 JavaScript 代码沙箱。
 
 ## 提示词与技能
 
-v1.22.2 使用提示词版本 10、共享执行策略 `autonomous-within-scope-v5` 和编译器版本 7，技能目录版本保持 3。八份内置提示词和程序拼接的规则说明统一使用英文，默认回复语言仍为中文，并服从用户指定的语言和格式。共享规则、角色指导、运行环境和技能资料分别维护。提示词描述已有能力；授权、预算、状态、路径及冻结策略仍由程序检查。
+### 当前版本与职责
+
+自 v1.22.2 起，提示词版本为 10，共享执行策略为 `autonomous-within-scope-v5`，编译器版本为 7，技能目录版本保持 3。八份内置提示词和程序拼接的规则说明统一使用英文，默认回复语言仍为中文，并服从用户指定的语言和格式。共享规则、角色指导、运行环境和技能资料分别维护。提示词描述已有能力；授权、预算、状态、路径及冻结策略仍由程序检查。
 
 英文规则覆盖原生模型、Codex 单步传输、终端启动与续接、工具错误恢复、无进展提醒、评分上下文和历史压缩说明。工具标识、参数、枚举和 JSON 格式保持原样；用户原文、来源资料、已保存历史、技能内容、工具说明及界面诊断不自动翻译。独立工具审核的 reason 默认中文，终端指导也明确保留默认中文回复。
 
-| 内容 | 位置与职责 |
-| --- | --- |
-| 共同规则 | `prompts/platform.md` 定义身份、资料信任边界、调用配对和交付证据；`workspace.md` 说明实际文件及命令工具 |
-| 角色指导 | `coordinator.md`、`worker.md`、`reviewer.md` 和 `chat.md` 分别处理规划集成、执行、普通复核和聊天 |
-| 候选评分 | `peer-reviewer.md` 只用于内核指定的评分任务，要求提交 pass／fail／insufficient，避免与普通复核的提交方式混淆 |
-| 工具审核 | `tool-reviewer.md` 用于无工具的独立审核请求，返回严格决定；请求账本记录提示词版本及哈希 |
+| 内容     | 位置与职责                                                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------------- |
+| 共同规则 | `prompts/platform.md` 定义身份、资料信任边界、调用配对和交付证据；`workspace.md` 说明实际文件及命令工具           |
+| 角色指导 | `coordinator.md`、`worker.md`、`reviewer.md` 和 `chat.md` 分别处理规划集成、执行、普通复核和聊天                  |
+| 候选评分 | `peer-reviewer.md` 只用于内核指定的评分任务，要求提交 pass／fail／insufficient，避免与普通复核的提交方式混淆      |
+| 工具审核 | `tool-reviewer.md` 用于无工具的独立审核请求，返回严格决定；请求账本记录提示词版本及哈希                           |
 | 动态策略 | `context/harness.ts` 根据当前角色、工具、冻结审核及命令后端生成指导；操作系统信息在采集快照时取得，编译保持纯函数 |
-| 内置技能 | `skills/*/SKILL.md` 保存触发说明与主流程，`references/*.md` 保存仅特定操作需要的细节 |
+| 内置技能 | `skills/*/SKILL.md` 保存触发说明与主流程，`references/*.md` 保存仅特定操作需要的细节                              |
+
+### 技能目录、加载与冻结
 
 八项内置技能涵盖数据分析、DOCX、办公写作、PDF、PPTX、资料研究、软件开发和电子表格。按主要交付物选择最少相关技能；例如修改 XLSX 公式优先选 spreadsheets，解释统计口径再补 data-analysis。短问答和纯提纲无需套用文件制作流程。
 
@@ -85,15 +91,19 @@ v1.22.2 使用提示词版本 10、共享执行策略 `autonomous-within-scope-v
 
 定时模板的能力指纹包含参考资料；仅参考文件变化也会使已有模板要求重新核对。发布构建沿用既有资源收集入口，递归收集 prompts 与 skills 并校验哈希。新增技能需在 `context/skills.ts` 注册 ID 和参考路径，并同步入口链接、技能版本及加载验证；不添加无用途的脚本或占位参考文件。
 
-v1.22.1 补充核对以下源码，链接固定到 2026-10-27 读取的提交。中文提示词独立编写，参考正文仅保存在本地忽略目录。
+### 历史参考与取舍
 
-| 参考实现 | 采用的思路 | 本项目取舍 |
-| --- | --- | --- |
-| [Codex 执行指导](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/protocol/src/prompts/base_instructions/default.md)与[续接摘要](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/prompts/templates/compact/prompt.md) | 保留有效要求、决策、已完成工作和下一步；围绕当前改动验证 | 在共享指导中要求续接先核对实际状态；沿用本项目已有压缩及回查机制 |
-| [Codex 复核准则](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/prompts/templates/review/rubric.md) | 缺陷应具体、可操作、有证据；避免推测和重复报告 | 普通复核区分新旧问题；评分按本项目每项验收标准判断，不引入外部输出格式 |
-| [Gemini CLI 提示词片段](https://github.com/google-gemini/gemini-cli/blob/363a13119a57354f469732577518b9d6b319d1d6/packages/core/src/prompts/snippets.ts) | 限定检索范围；无进展时重新检查假设 | 使用本项目字面 search 和实际分页参数；没有新证据或条件变化时不机械重试，不强制全面测试或架构重写 |
-| [OpenCode 运行指导](https://github.com/anomalyco/opencode/blob/54bb0a9f6feb5d9f0e149aeea199aae075b59f38/packages/core/src/session/runner/prompt/system.txt) | 遵循现有代码习惯，保护来源不明的修改，清楚引用文件 | 继续按任务工作区及真实工具行动；资料中的角色标签不能获得指令权限 |
-| [Cline 执行指导](https://github.com/cline/cline/blob/c35b729049c7bb26c340df63ea9235c40b32dd29/sdk/packages/shared/src/prompt/system/act.ts) | 先取得必要上下文，合批独立读取，实际验证后交付 | 依赖返回值的动作分轮，不移植并行写入约定或每轮必须调用工具的要求 |
+以下保留 v1.22.1 和 v1.22.0 的参考来源、设计取舍与验证记录。这里的中文提示词说明指当时版本；v1.22.2 起的语言和版本约定见本节开头。
+
+**v1.22.1** 补充核对以下源码，链接固定到 2026-10-27 读取的提交。当时的中文提示词独立编写，参考正文仅保存在本地忽略目录。
+
+| 参考实现                                                                                                                                                                                                                                                                                           | 采用的思路                                               | 本项目取舍                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [Codex 执行指导](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/protocol/src/prompts/base_instructions/default.md)与[续接摘要](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/prompts/templates/compact/prompt.md) | 保留有效要求、决策、已完成工作和下一步；围绕当前改动验证 | 在共享指导中要求续接先核对实际状态；沿用本项目已有压缩及回查机制                                 |
+| [Codex 复核准则](https://github.com/openai/codex/blob/c587d6e54cb1e4013bf0cf9ea769edde48a23a1e/codex-rs/prompts/templates/review/rubric.md)                                                                                                                                                        | 缺陷应具体、可操作、有证据；避免推测和重复报告           | 普通复核区分新旧问题；评分按本项目每项验收标准判断，不引入外部输出格式                           |
+| [Gemini CLI 提示词片段](https://github.com/google-gemini/gemini-cli/blob/363a13119a57354f469732577518b9d6b319d1d6/packages/core/src/prompts/snippets.ts)                                                                                                                                           | 限定检索范围；无进展时重新检查假设                       | 使用本项目字面 search 和实际分页参数；没有新证据或条件变化时不机械重试，不强制全面测试或架构重写 |
+| [OpenCode 运行指导](https://github.com/anomalyco/opencode/blob/54bb0a9f6feb5d9f0e149aeea199aae075b59f38/packages/core/src/session/runner/prompt/system.txt)                                                                                                                                        | 遵循现有代码习惯，保护来源不明的修改，清楚引用文件       | 继续按任务工作区及真实工具行动；资料中的角色标签不能获得指令权限                                 |
+| [Cline 执行指导](https://github.com/cline/cline/blob/c35b729049c7bb26c340df63ea9235c40b32dd29/sdk/packages/shared/src/prompt/system/act.ts)                                                                                                                                                        | 先取得必要上下文，合批独立读取，实际验证后交付           | 依赖返回值的动作分轮，不移植并行写入约定或每轮必须调用工具的要求                                 |
 
 同时核对 [OpenAI Codex 提示词指南](https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide)。采用执行、工具和验证规则需适配宿主的原则；保持当前模型和协议，没有采用特定型号的参数建议。
 
@@ -103,14 +113,14 @@ v1.22.1 明确三个执行边界。检索定位到改动点、直接依赖和验
 
 提示词、原生续接和终端启动共用同一版本的执行指导；Codex 的 JSON 传输格式继续单独维护。工具审核仍使用独立无工具请求，提交哈希和版本可回查。结构及协议检查不衡量真实模型遵循率，验证范围见 [执行文档](EXECUTION.md)。
 
-v1.22.0 核对的公开实现如下。中文内容按本项目工具契约独立编写，没有移植第三方提示词正文或执行脚本。
+**v1.22.0** 核对的公开实现如下。当时的中文内容按本项目工具契约独立编写，没有移植第三方提示词正文或执行脚本。
 
-| 参考实现 | 采用的思路 | 本项目取舍 |
-| --- | --- | --- |
-| [Cline 执行提示词](https://github.com/cline/cline/blob/a459f1d04dea030833b558be645011ab739c463b/sdk/packages/shared/src/prompt/system/act.ts) | 根据实际环境行动，先核对项目约定，再修改和验证 | 继续使用本项目 availableTools、工具参数和计划接受规则；不强制长篇规划 |
-| [OpenHands 动态提示词](https://github.com/OpenHands/software-agent-sdk/blob/ab0fbb4b5a456f3df0a03df1bc50dd850725d8bd/openhands-sdk/openhands/sdk/context/prompts/sections/dynamic.py) | 动态环境、技能目录与不可信资料分开组织 | 保留现有纯编译和快照边界，资料不能改变授权或代理身份 |
-| [Aider 编辑提示词](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/coders/editblock_prompts.py) | 明确编辑协议，沿用已有代码约定 | 使用真实文件哈希和现有 write／apply_patch，不引入其他项目的编辑块协议 |
-| [Anthropic Skills 创建指南](https://github.com/anthropics/skills/blob/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/skill-creator/SKILL.md) | 区分触发描述、主流程及按需参考，使用真实任务检查适用边界 | 入口保持简短，参考资料冻结并分页读取；不把技能建议变成额外审批 |
+| 参考实现                                                                                                                                                                              | 采用的思路                                               | 本项目取舍                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
+| [Cline 执行提示词](https://github.com/cline/cline/blob/a459f1d04dea030833b558be645011ab739c463b/sdk/packages/shared/src/prompt/system/act.ts)                                         | 根据实际环境行动，先核对项目约定，再修改和验证           | 继续使用本项目 availableTools、工具参数和计划接受规则；不强制长篇规划 |
+| [OpenHands 动态提示词](https://github.com/OpenHands/software-agent-sdk/blob/ab0fbb4b5a456f3df0a03df1bc50dd850725d8bd/openhands-sdk/openhands/sdk/context/prompts/sections/dynamic.py) | 动态环境、技能目录与不可信资料分开组织                   | 保留现有纯编译和快照边界，资料不能改变授权或代理身份                  |
+| [Aider 编辑提示词](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/coders/editblock_prompts.py)                                                 | 明确编辑协议，沿用已有代码约定                           | 使用真实文件哈希和现有 write／apply_patch，不引入其他项目的编辑块协议 |
+| [Anthropic Skills 创建指南](https://github.com/anthropics/skills/blob/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/skill-creator/SKILL.md)                                         | 区分触发描述、主流程及按需参考，使用真实任务检查适用边界 | 入口保持简短，参考资料冻结并分页读取；不把技能建议变成额外审批        |
 
 另核对了公开的 [XLSX 技能](https://github.com/anthropics/skills/blob/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/xlsx/SKILL.md)，其文件标有独立许可，本项目未复制或分发该技能。表格指导强调公式视图与缓存分开、实际重算及兼容性检测，不沿用其他运行环境的预装依赖或函数黑名单。
 

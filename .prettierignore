@@ -3,9 +3,9 @@
 pnpm-lock.yaml
 node_modules
 **/dist
-# 本地验证材料和临时文件由各自流程管理，执行记录保留现有文档排版。
-# EN: Local verification and scratch materials use their own workflows; preserve the execution log's existing formatting.
+# 本地验证材料和临时文件由各自流程管理，历史归档保留原文排版。
+# EN: Local verification and scratch materials use their own workflows; preserve historical archive formatting.
 .local-tests
 .local-qa
 .tmp
-docs/EXECUTION.md
+docs/history/

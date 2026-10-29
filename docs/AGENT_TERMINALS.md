@@ -1,6 +1,8 @@
 # Agent 终端与 Docker 调度
 
-当前应用版本：1.23.0；Antigravity 与 Claude Code 的配置、能力导入和验证边界见 [接入说明](AGENT_INTEGRATIONS.md)。Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Antigravity CLI、Gemini CLI 及自定义模板可在管理中心启用。终端及预览等可选界面按需加载；加载失败保留工作台并显示明确的重新加载入口。
+适用源码版本：v1.23.43。Antigravity 与 Claude Code 的配置、能力导入和验证边界见[接入说明](AGENT_INTEGRATIONS.md)；历史引入版本与验收记录保留原范围。
+
+Elysia 与 Agent 终端通过左上角菜单切换，采用独立存储和调度实例。页面热切换保留状态；隐藏入口暂停事件流与预览轮询，未保存草稿仍写入原入口。Codex CLI 和 DSH 默认显示，Claude Code、Antigravity CLI、Gemini CLI 及自定义模板可在管理中心启用。终端及预览等可选界面按需加载；加载失败保留工作台并显示明确的重新加载入口。
 
 ```mermaid
 flowchart LR
@@ -47,6 +49,21 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
 
 ## 准备与使用
 
+### 应用与固定版本
+
+下表列出当前内置安装版本和协议，版本取自 [cli-manager.ts](../packages/runtime/src/cli-manager.ts) 与 [antigravity-install.ts](../packages/runtime/src/antigravity-install.ts)。这些是应用固定版本，不表示供应商最新版本或已完成真实模型验收。
+
+| 应用            | 命令          | 固定安装版本  | 连接协议           | 输出协议                  |
+| --------------- | ------------- | ------------- | ------------------ | ------------------------- |
+| Codex CLI       | `codex`       | 0.162.1       | Responses          | `codex-jsonl`             |
+| DSH             | `dsh`         | 0.2.1-alpha.2 | Anthropic Messages | `dsh-jsonl`               |
+| Claude Code     | `claude`      | 2.1.296       | Anthropic Messages | `claude-stream-json`      |
+| Gemini CLI      | `gemini`      | 0.63.0        | Gemini API         | `gemini-stream-json`      |
+| Antigravity CLI | `agy`         | 1.4.7         | Gemini API         | `antigravity-stream-json` |
+| 自定义模板      | JSON 参数数组 | 用户指定      | 由程序适配         | 选择适用协议或 `text`     |
+
+### 安装与创建任务
+
 1. 完成 Docker Desktop 初始化，并启用 Linux 容器引擎。
 2. 打开 **终端管理 → 应用**，点击所需 CLI 的“安装”。Docker 就绪后会在后台构建新镜像；可继续使用或切换工作台，也可点击“取消安装”。完成后点击“应用已安装镜像”，服务端只更新安装时选定模板的镜像；模板已删除、换 CLI 或改镜像时提示重新安装。安装选项可指定明确版本，留空使用固定版本。也可手动构建原有预设镜像：
 
@@ -56,9 +73,11 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
 
    镜像固定安装 `@openai/codex@0.162.1` 和 `@deepseek-ai/dsh@0.2.1-alpha.2`。可通过构建参数 `CODEX_VERSION`、`DSH_VERSION` 显式更新，更新后需再次核对 CLI 协议。构建上下文不会包含项目文件或密钥。运行时使用已有镜像，禁止自动拉取。
 
-3. 在 **API 连接** 添加端点、协议、模型 ID 和凭据。可使用终端独立的系统加密密钥库或启动进程的环境变量，再为各应用选择对应连接。Codex 使用 Responses，DSH / Claude 使用 Anthropic Messages，Gemini 使用 Gemini API。DeepSeek 预设为 `/anthropic` 与 `deepseek-flash`，其他供应商模型 ID 手动填写。未绑定连接的模板沿用环境变量方式，DSH 读取 `DEEPSEEK_API_KEY`，Codex 读取 `OPENAI_API_KEY`。终端不复用原生凭据库或宿主 Agent 登录目录。
+3. 在 **API 连接** 添加端点、协议、模型 ID 和凭据。可使用终端独立的系统加密密钥库或启动进程的环境变量，再按上表为各应用选择对应连接。DeepSeek 预设为 `/anthropic` 与 `deepseek-flash`，其他供应商模型 ID 手动填写。未绑定连接的模板沿用环境变量方式，DSH 读取 `DEEPSEEK_API_KEY`，Codex 读取 `OPENAI_API_KEY`。终端不复用原生凭据库或宿主 Agent 登录目录。
 4. 左上角切换 **Agent 终端**，打开项目，在 **项目默认** 可覆盖默认 CLI 与连接。工作台临时选择优先于项目模板，再使用全局默认模板；应用默认与模板默认同步，同一 CLI 的具体默认模板会被保留。修改全局默认保留项目自己的选择；显式保存项目默认会应用新的覆盖。创建窗口可选择连接或明确仅使用模板环境变量。应用中的“检查”会启动无网络、无挂载和无凭据的版本检测容器；“检查就绪”显示配置继承来源以及 Docker、镜像、CLI、本地配置和认证状态。高级模板检查也会运行离线 CLI 版本探测。上述检查不会调用模型；本地凭据可读取不代表 API 已认证。
 5. 创建任务后查看对话中的公开输出，右侧预览工作目录与产物。终端正常结束后，先查看日志和差异，再点击“确认交付并验收”。
+
+### 配置检查与安装历史
 
 管理页之间切换保留模板、连接和项目配置草稿；有未保存修改时，关闭窗口或切换正在编辑的连接会显示简短提示。遇到版本冲突会保留当前修改，可明确载入最新配置后继续编辑。安装取消先保存取消状态，再中断构建进程；进程仍在收尾时拒绝重复安装。Docker 构建缓存可能保留，取消不会应用镜像或修改现有任务。旧安装记录可继续读取；新增的 `cancelled` 状态不被 0.15 服务识别，回退旧源码须使用升级前的终端数据备份。
 
@@ -66,13 +85,15 @@ Docker 终端首版只支持关闭计划模式，以及完整任务目录的读�
 
 保存 API 连接后，可主动“验证连接”或“读取模型目录”。验证发送一次小型模型请求，会产生少量用量；目录缺失仍可手填。两类结果分别持久保存安全状态、时间及配置版本，失败或取消的目录读取不会覆盖连接验证。修改配置后保留上次检查时间并提示重新检查，关闭页面会取消正在进行的请求；打开管理页只读本地状态，不自动发送付费验证。私有响应、密钥和完整模型目录不写入健康记录，目录仅供本次页面选型。供应商返回不同型号时会明确提示。连接协议修改同时检查应用、项目和直接引用连接的模板，拒绝不兼容配置。
 
+就绪诊断中的“修复”可定位当前连接、模板或安装入口，保留未保存编辑。保存后返回原诊断并进行本地检查；不会自动发送付费 API 验证或改变已创建任务的冻结配置。
+
+### 历史阅读与位置恢复
+
 对话只读取当前页消息，可用“更早消息／更新消息／返回最新”翻阅，运行输出不会改变旧页位置。文件链接打开对应任务的工作区预览；工作区与产物切换保留当前阅读状态。终端公开日志产物支持有界全文搜索、命中跳转和分页，搜索只读取已交付的公开日志。
 
 会话列表每页最多 100 条简短记录，另保留当前与最多 40 个置顶会话；搜索读取完整目标，归档管理使用独立筛选，项目对话数量从全量记录统计。请求、操作与产物每页最多 40 条，完整参数和结果在展开时读取；消息关联与全部未确认操作仍保留，费用、请求数和 Token 汇总独立计算。旧无分页参数 API 保持兼容，不删除历史。汇总读取轻量 SQL 元数据，旧压缩记录首次补齐后不再反复解压正文；全量统计与完整目标搜索仍随历史数量增长，不承诺固定加载时延。删除列表游标对应的会话后自动回到最新页；记录有独立版本，展开时更新不依赖 Run 版本变化。
 
 工作区、任务、文件和产物的目录、分页、编码、显示方式及滚动使用分入口的有界检查点；同一窗口整页刷新会在鉴权及新读取完成后恢复有效位置，文件版本变化会失效。每个入口最多 192 项，只保存允许的阅读元数据，序列化上限 512K 字符，不保存正文、模型响应或密钥。检查点与当前本机服务范围绑定，关闭窗口、重启服务或切换数据目录后不沿用；存储损坏、禁用或超限时降级为内存。源码链接支持 `#L420`、`#L420-L430`，Markdown ATX / Setext 标题可跨页查找，重复标题使用原文顺序编号；复杂嵌套和多行标题尚未覆盖，缺失位置给出明确反馈。每次定位扫描最多 8 MiB，可继续或取消，不整份加载大文件。
-
-就绪诊断中的“修复”可定位当前连接、模板或安装入口，保留未保存编辑。保存后返回原诊断并进行本地检查；不会自动发送付费 API 验证或改变已创建任务的冻结配置。
 
 ## 补充需求与会话续接
 
@@ -90,9 +111,11 @@ v1.8.0 可对尚未加入上下文的消息填写理由，由接收方选择“�
 
 续接文本、继续方式和逐操作核验说明使用本机工作台缓存持久化，切换会话或刷新不会丢失；提交失败保留草稿，成功仅清空所提交的版本。删除会话同时清理关联草稿、终端会话及运行阶段元数据，不直接清除工作区或未知 HOME。
 
-首批原会话续接仅对 Codex 开放：实际固定镜像须通过 `exec resume --help` 及所需参数检查，并存在当前任务专属 HOME 内的可靠 session 文件。可靠结束时记录会话文件路径与内容哈希，续接再次比对；数据库回退、文件变化或旧记录缺少哈希时拒绝原会话，保留新会话。原会话在容器启动前可靠失败后，仅在容器清理成功且源会话未变化时保留原补充需求供显式重试；已启动或结果不确定时不自动重跑。专属 HOME 不包含在普通数据备份中，备份不保证恢复 CLI 记忆。自定义命令、缺失目录或绑定不一致时拒绝续接。DSH、Claude、Gemini 的原会话协议尚未核实，明确提示使用新会话；不会猜测续接参数。宿主 CLI 版本不代替任务镜像能力，正式 Codex 镜像与模型闭环仍待实机验收。
+首批原会话续接仅对 Codex 开放：实际固定镜像须通过 `exec resume --help` 及所需参数检查，并存在当前任务专属 HOME 内的可靠 session 文件。可靠结束时记录会话文件路径与内容哈希，续接再次比对；数据库回退、文件变化或旧记录缺少哈希时拒绝原会话，保留新会话。原会话在容器启动前可靠失败后，仅在容器清理成功且源会话未变化时保留原补充需求供显式重试；已启动或结果不确定时不自动重跑。专属 HOME 不包含在普通数据备份中，备份不保证恢复 CLI 记忆。自定义命令、缺失目录或绑定不一致时拒绝续接。DSH、Claude、Gemini 和 Antigravity 的原会话协议尚未核实，明确提示使用新会话；不会猜测续接参数。宿主 CLI 版本不代替任务镜像能力，正式 Codex 镜像与模型闭环仍待实机验收。
 
-自定义命令使用 JSON 参数数组，例如 `["agent", "--json"]`；目标通过 stdin 发送。不会拼接宿主 shell 命令。输出协议可选择 Codex、DSH、Claude、Gemini JSONL 或普通文本。自定义连接提供 `ELYSIA_API_KEY`、`ELYSIA_API_BASE_URL`、`ELYSIA_API_MODEL`、`ELYSIA_API_PROTOCOL`，自定义程序须自行适配，不保证任意 CLI 自动兼容。产品版本与镜像版本独立，旧模板保留 `elysia-agents:0.13.0`；管理安装使用唯一新标签并保存固定 sha256 镜像 ID，已有镜像不被覆盖。内置版本为 Codex 0.162.1、DSH 0.2.1-alpha.2、Claude 2.1.296、Gemini 0.63.0。
+自定义命令使用 JSON 参数数组，例如 `["agent", "--json"]`；目标通过 stdin 发送。不会拼接宿主 shell 命令。输出协议见[应用与固定版本](#应用与固定版本)，也可选择普通文本。自定义连接提供 `ELYSIA_API_KEY`、`ELYSIA_API_BASE_URL`、`ELYSIA_API_MODEL`、`ELYSIA_API_PROTOCOL`，自定义程序须自行适配，不保证任意 CLI 自动兼容。
+
+产品版本与镜像版本独立，旧模板保留 `elysia-agents:0.13.0`；管理安装使用唯一新标签并保存固定 sha256 镜像 ID，已有镜像不被覆盖。
 
 API 连接、应用及项目默认采用版本校验和幂等命令。创建任务时由服务端解析连接并冻结端点、协议、模型和凭据引用，客户端不能注入自己的凭据引用。编辑、换密钥或删除连接不改变已有任务；旧加密引用保留供其恢复。密钥只在私有运行环境注入选定 CLI，不进入管理响应、Run 快照、argv、生成的配置文件或公开终端日志。Agent 及其子进程可以读取自己的 API Key；若程序主动写入工作文件，该文件仍可能进入产物。凭据库不进入历史备份。
 
@@ -139,6 +162,8 @@ pnpm exec tsx apps/server/src/maintenance.ts terminal-cleanup .tmp/cleanup-plan.
 
 ## 验证边界与参考
 
-本轮使用隔离 SQLite、真实 Git worktree、假 Docker 传输和隐藏 Electron 验证创建、权限、调度、公开日志、暂停恢复及验收。当前本机 Docker Linux 引擎尚未就绪，用户选择稍后完成初始化；镜像构建、真实容器和真实模型验收仍待进行。预览版标签不表示发布或完成该实机验收。
+既有本地验收使用隔离 SQLite、真实 Git worktree、假 Docker 传输和隐藏 Electron，验证创建、权限、调度、公开日志、暂停恢复及验收流程。当时本机 Docker Linux 引擎尚未就绪，用户选择稍后完成初始化；镜像构建、真实容器和真实模型验收仍待进行。
+
+v1.23.43 仅整理文档，未重新检查 Docker 环境或执行真实模型任务。各版本的验证范围以[执行文档](EXECUTION.md)为准；预览版标签不表示发布或完成实机验收。
 
 CLI 与生命周期依据：[DSH headless](https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/packages/bundle/headless/README.md)、[DSH 连接配置](https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/apps/cli/reference/README.md)、[Codex 非交互模式](https://learn.chatgpt.com/docs/non-interactive-mode)、[Codex 容器与沙箱边界](https://learn.chatgpt.com/docs/agent-approvals-security)、[Claude CLI](https://code.claude.com/docs/en/cli-reference)、[Gemini 输出协议](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/output/types.ts)、[Docker create](https://docs.docker.com/reference/cli/docker/container/create/)、[Docker stop](https://docs.docker.com/reference/cli/docker/container/stop/)。管理交互参考 [CC Switch](https://github.com/farion1231/cc-switch/blob/main/README.md)，本项目采用独立 Docker 配置。DeepSeek 型号与 Messages 端点依据：[官方更新记录](https://api-docs.deepseek.com/updates/)、[Anthropic API](https://api-docs.deepseek.com/guides/anthropic_api/)。DSH 的 Messages 协议不替换 Elysia 的 Chat Completions 适配器。
