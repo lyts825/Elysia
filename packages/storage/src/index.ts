@@ -699,6 +699,13 @@ export class Store {
     return this.recovery.get(runId);
   }
   /**
+   * 批读当前页运行的持久暂停状态，不展开运行正文。
+   * EN: Reads durable holds for the current page without hydrating run bodies.
+   */
+  getExecutionHolds(runIds: readonly string[]) {
+    return this.recovery.getMany(runIds);
+  }
+  /**
    * get 的必需记录版本：缺失时统一抛出 404，供业务入口避免继续使用空实体。
    * EN: Require an entity through get and raise a uniform 404 when absent, preventing business callers
    * from continuing with an empty value.

@@ -12,7 +12,10 @@ import type {
   TaskCenterChanges,
 } from '../../../packages/contracts/src/task-center.js';
 import type { Store } from '../../../packages/storage/src/index.js';
-import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow.js';
+import type {
+  DeliveryReviewStatus,
+  DeliveryReviewSummary,
+} from '../../../packages/contracts/src/workflow.js';
 import { deliveryReviewReads, type DeliveryReviewReads } from './delivery-summary.js';
 import {
   projectionIssue,
@@ -379,10 +382,13 @@ export class TaskCenterReads {
    * 将投影映射为公开项；不可读分类不附带推测的复核状态，通知也须仍与当前分类一致。
    * EN: Maps projections to public items; unreadable categories get no inferred review state, and notifications must still match current classification.
    */
-  private item(row: Row): TaskCenterItem {
+  private item(
+    row: Row,
+    details?: { executionHold: TaskCenterItem['executionHold']; review?: DeliveryReviewSummary },
+  ): TaskCenterItem {
     const unavailable = row.category === 'unavailable';
-    const executionHold = this.store.getExecutionHold(row.run_id);
-    const review = unavailable ? undefined : this.delivery.cached(row.run_id);
+    const executionHold = details ? details.executionHold : this.store.getExecutionHold(row.run_id);
+    const review = unavailable ? undefined : details ? details.review : this.delivery.cached(row.run_id);
     const expected =
       row.category === 'verification'
         ? 'UNCERTAIN'
@@ -413,6 +419,19 @@ export class TaskCenterReads {
         ? { notification: { status: expected, revision: row.notification_revision } }
         : {}),
     };
+  }
+  /**
+   * 在当前读取事务内批读本页附加信息；已读但缺失的值不退回单项查询，损坏分类不推测复核状态。
+   * EN: Batches page metadata within the current read transaction; known absences never fall back to single reads, and unavailable categories receive no inferred review state.
+   */
+  private items(rows: Row[]): TaskCenterItem[] {
+    const holds = this.store.getExecutionHolds(rows.map((row) => row.run_id));
+    const reviews = this.delivery.cachedMany(
+      rows.filter((row) => row.category !== 'unavailable').map((row) => row.run_id),
+    );
+    return rows.map((row) =>
+      this.item(row, { executionHold: holds.get(row.run_id), review: reviews.get(row.run_id) }),
+    );
   }
   /**
    * 在预热/可选重试后按过滤条件分页，复核读取与列表组装共享一致性边界。 coverage 单独计入归属不明的损坏记录，不因它们无法匹配标题/项目就把结果声称完整。
@@ -534,7 +553,7 @@ export class TaskCenterReads {
       const hasMore = rows.length > query.limit,
         selected = rows.slice(0, query.limit);
       return {
-        items: selected.map((row) => this.item(row)),
+        items: this.items(selected),
         reviewCoverage: { complete: unavailable === 0, unavailable },
         projectionCoverage: { complete: projectionUnavailable === 0, unavailable: projectionUnavailable },
         page: {
@@ -592,11 +611,14 @@ export class TaskCenterReads {
         .all(after, limit + 1) as Row[];
       const hasMore = rows.length > limit,
         selected = rows.slice(0, limit);
+      const items = new Map(
+        this.items(selected.filter((row) => !row.deleted && !row.archived)).map((item) => [item.id, item]),
+      );
       return {
         items: selected.map((row) => ({
           id: row.run_id,
           changeRevision: row.seq,
-          item: row.deleted || row.archived ? null : this.item(row),
+          item: row.deleted || row.archived ? null : items.get(row.run_id)!,
         })),
         cursor: hasMore ? selected.at(-1)!.seq : latest,
         hasMore,

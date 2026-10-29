@@ -21,6 +21,16 @@ const unreadable = {
   message: '交付记录暂时无法读取，复核结论未知。可修复记录后重试。',
   retryable: true as const,
 };
+/**
+ * 单项和批量读取共用缺失值与不可读摘要映射。
+ * EN: Shares missing-value and unreadable-summary mapping between single and batch reads.
+ */
+const reviewSummary = (runId: string, row?: Row): DeliveryReviewSummary => ({
+  runId,
+  reviewStatus: row?.review_status ?? null,
+  reviewedAt: row?.reviewed_at ?? null,
+  ...(row?.issue_code ? { reviewIssue: unreadable } : {}),
+});
 type Projection = {
   deliveryProjectionVersion?: number;
   deliveryReview?: Pick<NonNullable<Run['deliveryReview']>, 'decision' | 'fingerprint' | 'reviewedAt'> | null;
@@ -130,12 +140,21 @@ export class DeliveryReviewReads {
     const row = this.store.db
       .prepare('SELECT review_status,reviewed_at,issue_code FROM delivery_review_summary_v1 WHERE run_id=?')
       .get(runId) as Row | undefined;
-    return {
-      runId,
-      reviewStatus: row?.review_status ?? null,
-      reviewedAt: row?.reviewed_at ?? null,
-      ...(row?.issue_code ? { reviewIssue: unreadable } : {}),
-    };
+    return reviewSummary(runId, row);
+  }
+  /**
+   * 在 ensure/read 的一致性边界内批读当前页已有摘要；缺失项仍返回未知结论，不预热或缓存。
+   * EN: Reads existing page summaries within ensure/read's consistency boundary; missing entries remain unknown, without warming or caching.
+   */
+  cachedMany(runIds: readonly string[]): Map<string, DeliveryReviewSummary> {
+    if (!runIds.length) return new Map();
+    const rows = this.store.db
+      .prepare(
+        'SELECT run_id,review_status,reviewed_at,issue_code FROM delivery_review_summary_v1 WHERE run_id IN (SELECT value FROM json_each(?))',
+      )
+      .all(JSON.stringify(runIds)) as (Row & { run_id: string })[];
+    const found = new Map(rows.map((row) => [row.run_id, row]));
+    return new Map(runIds.map((runId) => [runId, reviewSummary(runId, found.get(runId))]));
   }
   /**
    * 显式将失败项重新标脏，不修改原始交付/复核正文；下一次 ensure 才真正重建。

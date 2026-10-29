@@ -25,6 +25,18 @@ const states: Record<RecoveryTable, readonly string[]> = {
  * EN: Accept only non-null, non-array objects when validating recovery-required fields.
  */
 const object = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value);
+type HoldRow = Omit<ExecutionHold, 'message'>;
+/**
+ * 单项与批量读取共用暂停说明，不根据业务正文推断暂停状态。
+ * EN: Shares hold messages between single and batch reads without inferring holds from business bodies.
+ */
+const executionHold = (row: HoldRow): ExecutionHold => ({
+  ...row,
+  message:
+    row.reason === 'recovery_unreadable'
+      ? '恢复时发现无法核验的执行记录，已持久停止此任务调度。原文保留；修复记录后需显式恢复。'
+      : '此任务已持久停止调度，重启后仍保持停止；检查执行结果后可显式恢复。',
+});
 
 /**
  * 创建持久暂停和不可读记录表；原记录修改或删除时清除对应问题标记。
@@ -88,16 +100,23 @@ export class ExecutionRecovery {
       (SELECT COUNT(*) FROM execution_recovery_issues_v1 WHERE run_id=?) issueCount
       FROM execution_holds_v1 WHERE run_id=?`,
       )
-      .get(runId, runId) as Omit<ExecutionHold, 'message'> | undefined;
-    return (
-      row && {
-        ...row,
-        message:
-          row.reason === 'recovery_unreadable'
-            ? '恢复时发现无法核验的执行记录，已持久停止此任务调度。原文保留；修复记录后需显式恢复。'
-            : '此任务已持久停止调度，重启后仍保持停止；检查执行结果后可显式恢复。',
-      }
-    );
+      .get(runId, runId) as HoldRow | undefined;
+    return row && executionHold(row);
+  }
+  /**
+   * 只批读调用方当前页的暂停记录，问题计数仍按有暂停的运行索引查询；不保留跨请求结果。
+   * EN: Reads holds for the caller's current page only, counting issues by held-run index without caching results across requests.
+   */
+  getMany(runIds: readonly string[]): Map<string, ExecutionHold> {
+    if (!runIds.length) return new Map();
+    const rows = this.store.db
+      .prepare(
+        `SELECT h.run_id,h.reason,h.since,
+      (SELECT COUNT(*) FROM execution_recovery_issues_v1 WHERE run_id=h.run_id) issueCount
+      FROM execution_holds_v1 h WHERE h.run_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(runIds)) as (HoldRow & { run_id: string })[];
+    return new Map(rows.map(({ run_id, ...row }) => [run_id, executionHold(row)]));
   }
   /**
    * 设置持久暂停；已有不可读原因时保留该原因，直到记录修复并显式恢复。

@@ -6,7 +6,7 @@
  * 本模块负责任务列表的筛选、游标分页、周期刷新、打开详情及通知偏好交互；筛选轨迹由父层持有，列表投影只供展示，实际导航由外层读取完整详情后处理。
  * EN: Owns task-list filtering, cursor paging, periodic refresh, detail opening, and notification preferences. The parent retains filter history; list projections support display while outer navigation rereads full detail.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
 import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
 import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow';
@@ -63,6 +63,20 @@ export function TaskCenter({
 }) {
   const client = useSurfaceClient();
   const { api, surface } = client;
+  /**
+   * 项目接口返回新数组时重建索引，保留 find 的首匹配语义，并复用未归档列表。
+   * EN: Rebuilds for a new API project array, preserves find's first match, and reuses active projects.
+   */
+  const { projectsById, activeProjects } = useMemo(() => {
+    const projectsById = new Map<string | null, Project>();
+    const activeProjects: Project[] = [];
+    for (const project of projects) {
+      const id = project.id;
+      if (!projectsById.has(id)) projectsById.set(id, project);
+      if (!project.archived) activeProjects.push(project);
+    }
+    return { projectsById, activeProjects };
+  }, [projects]);
   const [result, setResult] = useState<TaskCenterPage>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -279,24 +293,22 @@ export function TaskCenter({
               }
             >
               <option value="">全部项目</option>
-              {!!state.projectId && !projects.some((project) => project.id === state.projectId) && (
+              {!!state.projectId && !projectsById.has(state.projectId) && (
                 <option value={state.projectId} disabled>
                   原项目不可用
                 </option>
               )}
-              {projects
-                .filter((project) => !project.archived)
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
+              {activeProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
             </select>
           </label>
         </div>
         {state.projectId && (
           <p className="task-center-project-summary">
-            当前项目：{projects.find((project) => project.id === state.projectId)?.name || '原项目不可用'}
+            当前项目：{projectsById.get(state.projectId)?.name || '原项目不可用'}
           </p>
         )}
         {(state.filter !== 'all' || state.query || state.projectId || state.reviewFilter) && (
@@ -486,7 +498,7 @@ export function TaskCenter({
                   <span className="task-center-description">
                     <strong title={item.title}>{item.title}</strong>
                     <small>
-                      {projects.find((project) => project.id === item.projectId)?.name ||
+                      {projectsById.get(item.projectId)?.name ||
                         (item.kind === 'chat' ? '独立对话' : '项目任务')}
                     </small>
                     {!item.readIssue && !item.reviewIssue && presentation.review && item.reviewStatus && (
