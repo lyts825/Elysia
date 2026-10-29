@@ -29,6 +29,7 @@
  */
 .native-defaults-comparison {
   display: grid;
+  align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: var(--space-3);
   margin-block: var(--space-3);
@@ -42,8 +43,18 @@
 }
 .native-defaults-summary summary {
   cursor: pointer;
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
   font-size: var(--font-md);
+  font-weight: 600;
   overflow-wrap: anywhere;
+}
+.native-defaults-summary[open] > summary {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.native-defaults-summary:focus-within {
+  border-color: var(--accent);
 }
 .native-defaults-summary summary span {
   color: var(--muted);
@@ -69,6 +80,9 @@
   scrollbar-gutter: stable;
   line-height: var(--leading-body);
 }
+.native-defaults-reading:focus-visible {
+  outline-offset: -2px;
+}
 .native-defaults-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -84,6 +98,15 @@
 }
 .native-project-defaults dd {
   margin: var(--space-1) 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.native-project-defaults > .workflow-actions {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.native-project-defaults > .workflow-actions > button {
+  flex: 1 1 10rem;
+  min-height: var(--control-lg);
 }
 .native-defaults-error {
   margin-block: var(--space-3);
