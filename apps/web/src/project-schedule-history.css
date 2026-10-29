@@ -45,14 +45,18 @@
   background: var(--surface);
 }
 /*
- * 三列共享可用宽度；零最小值允许列在空间不足时收缩。
- * EN: Splits available width between three columns; zero minimums let columns shrink when space is limited.
+ * 摘要列随可用宽度换行，为数字和标签保留阅读空间。
+ * EN: Summary columns wrap with available width to preserve room for values and labels.
  */
 .schedule-history-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   gap: var(--space-3);
   margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
 }
 .schedule-history-summary dt {
   color: var(--muted);
@@ -72,11 +76,17 @@
 .schedule-history-origin summary {
   color: var(--secondary);
   cursor: pointer;
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
 }
 .schedule-history-origin dl {
   display: grid;
   gap: var(--space-2);
   margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
 }
 .schedule-history-origin dt {
   color: var(--muted);
@@ -113,6 +123,7 @@
   color: var(--secondary);
   background: var(--surface-soft);
   font-size: var(--font-xs);
+  border: 1px solid currentColor;
 }
 .schedule-history-status:is([data-state='READY'], [data-state='RUNNING']) {
   color: var(--accent);
