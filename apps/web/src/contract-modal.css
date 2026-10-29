@@ -1,7 +1,16 @@
 /*
- * 合同编辑弹窗的局部补充样式：突出当前编辑状态及预算说明，并允许长状态文本断行。弹窗骨架、表单和按钮沿用公共样式，本文件只控制合同编辑特有的提示层级。
- * EN: Contract-editor modal overrides: emphasizes editing state/budget notes and wraps long state text. Shared styles provide modal/form/button structure; this file controls contract-specific guidance hierarchy.
+ * 任务约定编辑：宽容器并排展示相关字段，窄容器保持纵向阅读；编辑依据与只读预算分层，长状态文本允许断行。弹窗交互沿用公共组件。
+ * EN: Contract editing: pairs related fields in wide containers and stacks them in narrow ones. Separates editing provenance from read-only budgets and wraps long status text; shared components retain dialog behavior.
  */
+.contract-editor-modal {
+  width: 760px;
+}
+.contract-editor-modal .execution-config-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+.contract-editor-modal .execution-config-field:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 /*
  * 允许长内容在必要时断行，避免无空格的文本撑开容器。
  * EN: Wraps long content when needed so unspaced text cannot force the container wider.
@@ -16,6 +25,10 @@
   font-size: var(--font-sm);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
+  padding: var(--space-3);
+  border-inline-start: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-soft);
 }
 .contract-editor-modal .contract-editor-state strong {
   color: var(--text);
@@ -26,4 +39,10 @@
   color: var(--muted);
   font-size: var(--font-sm);
   line-height: var(--leading-body);
+}
+.contract-editor-budget-note > p {
+  margin: 0 0 var(--space-2);
+}
+.contract-editor-budget-note > p:last-child {
+  margin-bottom: 0;
 }
