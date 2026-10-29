@@ -15,6 +15,9 @@
   overflow-wrap: anywhere;
 }
 .record-history > summary {
+  min-height: var(--control-md);
+  padding-block: var(--space-1);
+  font-weight: 600;
   line-height: var(--leading-ui);
   cursor: pointer;
 }
@@ -23,14 +26,19 @@
   margin-inline-start: var(--space-2);
   color: var(--muted);
   font-size: var(--font-sm);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 .record-history-pagination {
   margin-block: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 .record-history-pagination p {
   margin-block: 0 var(--space-2);
   color: var(--muted);
   font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
 }
 .record-history-pagination > div {
   display: flex;
@@ -57,16 +65,46 @@
   min-width: 0;
   align-items: baseline;
   line-height: var(--leading-ui);
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
+}
+/*
+ * Flex 摘要隐藏了原生折叠标记；补充箭头，让记录正文的展开入口保持明确。
+ * EN: Flex summaries hide native markers; an explicit caret keeps the record disclosure recognizable.
+ */
+.record-history .request-detail > summary::before {
+  content: '';
+  align-self: center;
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.record-history .request-detail[open] > summary::before {
+  transform: rotate(45deg);
+}
+.record-history .request-detail[open] {
+  background: var(--surface);
+  border-color: var(--border-strong);
 }
 .record-history .record-history-name {
   min-width: 0;
+  flex: 1;
+  color: var(--secondary);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
 .record-history .request-detail summary small {
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 42%;
+  overflow-wrap: anywhere;
+}
+.record-history :is(.record-history-list, .record-history-identity, pre):focus-visible {
+  outline-offset: -2px;
 }
 .record-history-identity,
 .record-history-feedback > p {
