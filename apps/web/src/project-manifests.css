@@ -29,7 +29,7 @@
 .project-manifests .manifest-history-list:focus-visible,
 .project-manifests .manifest-artifact-options:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: -2px;
   border-radius: var(--radius-sm);
 }
 .project-manifests .project-freeze-readiness {
@@ -99,11 +99,26 @@
 }
 .project-manifests .manifest-artifact-option {
   min-width: 0;
-  padding-block: var(--space-3);
+  padding: var(--space-3) var(--space-2);
   border-top: 1px solid var(--border);
+}
+.project-manifests .manifest-artifact-option:has(.check-row input:checked) {
+  background: var(--accent-pale);
 }
 .project-manifests .manifest-artifact-option .check-row {
   margin-top: 0;
+  min-height: var(--control-md);
+  align-items: center;
+  cursor: pointer;
+}
+.project-manifests .manifest-artifact-option .check-row:has(input:disabled) {
+  cursor: default;
+}
+.project-manifests .manifest-artifact-option .check-row input {
+  margin-top: 0;
+}
+.project-manifests .manifest-artifact-option:has(.check-row input:checked) .manifest-artifact-metadata {
+  border-inline-start-color: var(--accent);
 }
 .project-manifests .manifest-artifact-metadata {
   padding-inline-start: var(--space-3);
@@ -132,6 +147,12 @@
 .project-manifests .project-manifest-link {
   min-width: 0;
 }
+.project-manifests .project-manifest-link[aria-pressed='true'] {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.project-manifests .project-manifest-link:focus-visible {
+  outline-offset: -3px;
+}
 .project-manifests .manifest-frozen-item {
   padding: var(--space-3);
   border: 1px solid var(--border);
@@ -140,6 +161,9 @@
 .project-manifests .manifest-frozen-item summary {
   color: var(--secondary);
   font-weight: 600;
+  min-height: var(--control-md);
+  padding-block: var(--space-2);
+  cursor: pointer;
 }
 .project-manifests ol.manifest-reading {
   padding-inline-start: var(--space-6);
