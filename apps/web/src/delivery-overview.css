@@ -75,7 +75,7 @@
  */
 .delivery-overview-reading:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
   border-radius: var(--radius-sm);
 }
 
@@ -88,6 +88,10 @@
   gap: var(--space-2);
   min-width: 0;
   margin-block: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
 }
 
 .delivery-overview-file p {
@@ -103,6 +107,10 @@
   display: grid;
   gap: var(--space-3);
   margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
 .delivery-overview-fields > div {
@@ -142,6 +150,8 @@
 
 .delivery-overview-evidence summary,
 .delivery-overview-file summary {
+  min-height: 38px;
+  padding-block: var(--space-2);
   color: var(--secondary);
   cursor: pointer;
   font-size: var(--font-sm);
