@@ -22,6 +22,10 @@
 }
 .composer-picker-trigger > svg:last-child {
   transform: rotate(90deg);
+  transition: transform var(--motion-fast) ease;
+}
+.composer-picker-trigger[aria-expanded='true'] > svg:last-child {
+  transform: rotate(-90deg);
 }
 .composer-picker-trigger > .brand-glyph {
   color: var(--accent);
@@ -30,6 +34,7 @@
   display: grid;
   gap: var(--space-1);
   min-width: 0;
+  flex: 1;
 }
 .composer-picker-label > span,
 .composer-picker-label > small {
@@ -86,6 +91,7 @@
   background: var(--surface);
   margin-bottom: var(--space-3);
   padding-block: var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 .composer-picker-panel .composer-model-heading h3 {
   margin: 0;
@@ -106,4 +112,20 @@
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+/*
+ * 高窗口保留菜单操作入口；矮窗口沿普通流滚动，避免两端固定区挤压选项。
+ * EN: Keep menu actions visible in tall windows; short windows retain normal flow to preserve option space.
+ */
+@media (min-height: 560px) {
+  .composer-picker-panel {
+    scroll-padding-bottom: calc(var(--control-lg) + var(--space-6) + var(--space-2));
+  }
+  .composer-picker-panel .composer-model-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: var(--space-2);
+    background: var(--surface);
+  }
 }

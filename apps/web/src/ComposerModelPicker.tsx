@@ -40,7 +40,7 @@ export function ComposerModelPicker({
    * 依据按钮上下可用空间决定浮层方向并限制尺寸；直接更新样式，使滚动和窗口变化后选择器仍可访问。
    * EN: Chooses a popup direction from the space above and below the trigger and constrains its dimensions. Direct style updates keep the picker reachable after scrolling or resizing.
    */
-    const position = () => {
+  const position = () => {
     /**
      * 根据触发按钮上下空间定位浮层；窗口过小时限制宽高以保持可访问。
      * EN: Position the popup using space around the trigger; constrain its dimensions in a small viewport to keep it reachable.
@@ -84,7 +84,7 @@ export function ComposerModelPicker({
      * 从原生popover状态同步React展开标志；打开后重新定位并将焦点交给首个选择框。
      * EN: Synchronizes React open state from the native popover; opening repositions it and focuses the first select control.
      */
-        const toggled = () => {
+    const toggled = () => {
       const visible = node.matches(':popover-open');
       setOpen(visible);
       if (visible) {
@@ -104,12 +104,25 @@ export function ComposerModelPicker({
    */
   useEffect(() => {
     if (!open) return;
-    const observer = new ResizeObserver(position);
+    let frame: number | undefined;
+    /**
+     * 尺寸观测回调延后到下一帧定位，避免在同一观测周期内再次改变浮层尺寸。
+     * EN: Coalesce observed size changes into the next frame to avoid resizing the popup within its observation cycle.
+     */
+    const schedulePosition = () => {
+      if (frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        if (panel.current?.matches(':popover-open')) position();
+      });
+    };
+    const observer = new ResizeObserver(schedulePosition);
     if (panel.current) observer.observe(panel.current);
     window.addEventListener('resize', position);
     document.addEventListener('scroll', position, true);
     return () => {
       observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
       window.removeEventListener('resize', position);
       document.removeEventListener('scroll', position, true);
     };
@@ -125,7 +138,7 @@ export function ComposerModelPicker({
    * 通过原生API隐藏模型选择器并恢复触发器焦点；preventScroll避免关闭时页面跳动。
    * EN: Hides the model picker through the native API and restores trigger focus with preventScroll to avoid a page jump.
    */
-    const close = () => {
+  const close = () => {
     panel.current?.hidePopover();
     trigger.current?.focus({ preventScroll: true });
   };
