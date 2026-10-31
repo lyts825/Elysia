@@ -5,6 +5,7 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
+import { RuntimeDiagnostics } from './RuntimeDiagnostics';
 import { StartupVisual, startupColors } from './StartupTransition';
 import {
   defaultStartupPreferences,
@@ -377,6 +378,7 @@ export function StartupSettings({ close }: { close: () => void }) {
           ))}
           {diagnostics && !diagnostics.records.length && <p>暂无启动记录</p>}
         </details>
+        <RuntimeDiagnostics />
         <footer className="startup-preferences-actions">
           <button
             className="secondary"

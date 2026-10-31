@@ -86,6 +86,7 @@ import { attachRunSource, captureRunSource, registerWorkflow } from './workflow.
 import { ProjectDeliveryBinding } from '../../../packages/contracts/src/project-delivery.js';
 import { attachProjectDeliveryRun, registerProjectDelivery } from './project-delivery.js';
 import { registerProjectUsage } from './project-usage.js';
+import { registerRuntimeDiagnostics } from './runtime-diagnostics.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -198,6 +199,7 @@ export function createServer(
 ) {
   const app = options.app ?? Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
   const prefix = options.prefix ?? '';
+  const diagnostics = registerRuntimeDiagnostics(app, options.surface ?? 'native');
   /**
    * 把请求 URL 映射到本入口局部路径，其他入口返回 null，防止共享监听器上的路由越界。
    * EN: Maps URLs to this surface's local path and returns null for other surfaces, preserving shared-listener route ownership.
@@ -283,11 +285,15 @@ export function createServer(
     executionPlugins: (gateway) => {
       terminal = new DockerAgentService(kernel, gateway, {
         ...options.terminal,
-        ...(terminalControl ? { /**
-           * 把冻结终端绑定交给终端独立凭据服务解析，不读取原生账号存储。
-           * EN: Resolves frozen terminal bindings through terminal-only credentials rather than native account storage.
-           */
-          resolveConnection: (binding) => terminalControl.credential(binding) } : {}),
+        ...(terminalControl
+          ? {
+              /**
+               * 把冻结终端绑定交给终端独立凭据服务解析，不读取原生账号存储。
+               * EN: Resolves frozen terminal bindings through terminal-only credentials rather than native account storage.
+               */
+              resolveConnection: (binding) => terminalControl.credential(binding),
+            }
+          : {}),
       });
       return [terminalExecutionPlugin(terminal)];
     },
@@ -442,10 +448,11 @@ export function createServer(
    * 统一业务错误与输入校验的 HTTP 形态；范围错误保留 Content-Range 供客户端正确恢复读取。
    * EN: Normalizes domain and validation errors into HTTP responses and retains Content-Range for range recovery.
    */
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     const e = error as any;
     const code =
       e instanceof AppError ? e.code : e instanceof z.ZodError ? 'VALIDATION_ERROR' : 'SERVER_ERROR';
+    const requestId = diagnostics.recordError(request, code);
     const rangeDetails =
       e instanceof AppError && e.details && typeof e.details === 'object'
         ? (e.details as { totalBytes?: number })
@@ -456,6 +463,7 @@ export function createServer(
       .code(e instanceof AppError ? e.httpStatus : e instanceof z.ZodError ? 400 : (e.statusCode ?? 500))
       .send({
         code,
+        requestId,
         message:
           e instanceof z.ZodError
             ? e.issues.map((i: any) => i.path.join('.') + ': ' + i.message).join('; ')
@@ -505,6 +513,10 @@ export function createServer(
     status: 'ok',
     surface: options.surface ?? 'native',
   }));
+  app.get('/api/diagnostics', async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return diagnostics.snapshot();
+  });
   registerWorkbench(app, store);
   registerReadiness(app, store, options.surface ?? 'native');
   registerTerminalLogSearchRoutes(app, store, artifactPreviews);
@@ -1814,7 +1826,10 @@ export function createServer(
            * 记录计划检查的安全领域错误，诊断不承担任务重试或状态修改。
            * EN: Logs safe schedule-check domain errors without retrying tasks or mutating state.
            */
-          onError: (error) => app.log.error(error, '项目定时任务检查失败'),
+          onError: (error) => {
+            diagnostics.backgroundError(error);
+            app.log.error(error, '项目定时任务检查失败');
+          },
         });
   executor.onDelta = (runId, taskId, text, requestId, offset) => {
     for (const stream of streams.get(runId) ?? [])

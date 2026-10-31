@@ -24,6 +24,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { buildLaunch } from './launch-build.mjs';
+import { checkVerification } from './verification.mjs';
 
 // 离线打包只使用当前 Windows x64 环境、锁定依赖及精确 Node 版本的许可证。
 // EN: Offline packaging uses the current Windows x64 environment, locked dependencies, and licenses
@@ -38,12 +39,26 @@ const { sha256File } = require('../apps/desktop/file-hash.cjs');
 const json = (filename) => JSON.parse(readFileSync(filename, 'utf8'));
 const args = process.argv.slice(2);
 let output = path.join(root, '.elysia-runtime/releases'),
-  archive = true;
+  archive = true,
+  verificationBundle,
+  verificationReport;
 for (let index = 0; index < args.length; index++) {
   if (args[index] === '--no-archive') archive = false;
   else if (args[index] === '--output' && args[index + 1]) output = path.resolve(args[++index]);
-  else throw new Error('用法：node scripts/package-windows.mjs [--no-archive] [--output 目录]');
+  else if (args[index] === '--verification-bundle' && args[index + 1])
+    verificationBundle = path.resolve(args[++index]);
+  else if (args[index] === '--verification-report' && args[index + 1])
+    verificationReport = path.resolve(args[++index]);
+  else
+    throw new Error(
+      '用法：node scripts/package-windows.mjs --verification-bundle 验收包 --verification-report verification.json [--no-archive] [--output 目录]',
+    );
 }
+if (!verificationBundle || !verificationReport)
+  throw new Error(
+    '打包需要当前源码的验收包和通过报告；先运行 pnpm verify:local --bundle 目录 --output 报告目录',
+  );
+const verification = checkVerification(verificationBundle, verificationReport, root);
 if (
   process.platform !== 'win32' ||
   process.arch !== 'x64' ||
@@ -352,6 +367,7 @@ try {
     electronVersion: electronPackage.version,
     applicationSignature: 'not-signed-by-elysia',
     createdAt: new Date().toISOString(),
+    verification,
     sourceCommit: commit.status === 0 ? commit.stdout.trim() : null,
     sourceTreeDirty: status.status === 0 ? Boolean(status.stdout.trim()) : null,
     lockHash: sha256File(path.join(root, 'pnpm-lock.yaml')),
@@ -363,6 +379,7 @@ try {
   // EN: After writing the full manifest, run the bundled validation entry before publishing the
   // directory. Failed validation must not create the final release target.
   writeFileSync(path.join(app, 'distribution.json'), JSON.stringify(manifest, null, 2));
+  checkVerification(verificationBundle, verificationReport, root);
   command(process.execPath, [path.join(app, 'apps/desktop/packaged.cjs')], stage);
   renameSync(stage, destination);
   if (archive) {

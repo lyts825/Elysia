@@ -1,6 +1,6 @@
 {
   "name": "elysia",
-  "version": "1.23.44",
+  "version": "1.24.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -25,6 +25,8 @@
     "cache:preview": "node scripts/launch-cache.mjs preview",
     "stop": "tsx apps/server/src/maintenance.ts stop",
     "verify:local": "node scripts/verify-local.mjs",
+    "verify:bundle": "node scripts/verification.mjs bundle",
+    "verify:check": "node scripts/verification.mjs check",
     "assets:build": "node scripts/build-brand-assets.mjs",
     "package:windows": "node scripts/package-windows.mjs"
   },

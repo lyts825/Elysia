@@ -66,7 +66,7 @@ function packageCommand(root, packageName, binary, args) {
  * EN: Fingerprint inputs in stable directory order and capture exact prompt/skill bytes to publish
  * with this build.
  */
-function captureBuildInputs(root) {
+export function captureBuildInputs(root) {
   const fingerprint = createHash('sha256');
   const resources = new Map();
   /**

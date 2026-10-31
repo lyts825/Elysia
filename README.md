@@ -2,7 +2,7 @@
 
 本机多 Agent 协作应用，用统一的项目与任务入口处理代码、资料和办公产物。原生入口接入 OpenAI Responses 与 DeepSeek Chat，Agent 终端入口管理 CLI 任务。
 
-当前源码：**v1.23.44 本地版本**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。本地版本标签不代表已发布。
+当前源码：**v1.24.0 本地版本**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。本地版本标签不代表已发布。
 
 ## 快速启动
 
@@ -43,10 +43,10 @@ Windows 也可在安装依赖后双击 `Start-Elysia.vbs`；`Start-Elysia.cmd` �
 ```powershell
 pnpm typecheck
 pnpm build
-pnpm verify:local
+pnpm verify:local --bundle C:/delivery/acceptance-v1.24.0 --output .local-qa/release-check
 ```
 
-`verify:local` 需要本机的 `.local-tests/verify.ts`；新检出目录没有该材料时会明确失败。具体准备方法见 [验证入口与验收条件](docs/EXECUTION.md#验证入口与验收条件)。
+`verify:local` 可从独立验收包导入材料，生成绑定当前构建输入的报告；包需单独取得。Windows 打包必须使用完整通过报告。制作、迁移及交付检查见 [验收包与本地交付](docs/VERIFICATION.md)。
 
 | 目录                                      | 职责                                     |
 | ----------------------------------------- | ---------------------------------------- |

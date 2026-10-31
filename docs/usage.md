@@ -1,6 +1,6 @@
 # 使用指南
 
-适用源码版本：v1.23.43。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
+适用源码版本：v1.24.0。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
 
 - [启动](#启动)
 - [项目与交付](#项目与交付)
@@ -17,7 +17,9 @@
 
 使用已构建的 Windows 便携包时，将整个 ZIP 解压到独立目录，双击 `Elysia.exe`。应用数据继续保存在 `%LOCALAPPDATA%/Elysia`（或显式设置的 `ELYSIA_DATA_DIR`），程序目录中不存用户会话；日志在数据目录 `logs/desktop.log`。升级前关闭旧窗口，将新版解压到新目录再启动，保留原数据与升级前自动备份，不覆盖正在运行的程序。
 
-源码维护者可在已安装锁定依赖的 Windows x64 环境运行 `pnpm package:windows`，生成 `.elysia-runtime/releases/Elysia-<当前版本>-win-x64.zip` 及 SHA-256 文件。打包器使用当前精确 Node 版本及对应许可，仅复制实际生产依赖，拒绝覆盖已有输出；`--output` 可指定新目录。该命令不安装依赖或下载运行时。解压后运行 `Verify-Elysia.cmd` 可核验完整清单；哈希核验用于发现损坏，不是数字签名。
+源码维护者可在已安装锁定依赖的 Windows x64 环境运行 `pnpm package:windows`。命令必须带 `--verification-bundle 包目录 --verification-report 报告路径`，具体步骤见 [验收包与本地交付](VERIFICATION.md)。输出为 `.elysia-runtime/releases/Elysia-<当前版本>-win-x64.zip` 及 SHA-256 文件。
+
+打包器使用当前精确 Node 版本及对应许可，仅复制实际生产依赖，拒绝覆盖已有输出；`--output` 可指定新目录。该命令不安装依赖或下载运行时。解压后运行 `Verify-Elysia.cmd` 可核验完整清单；哈希核验用于发现损坏，不是数字签名。
 
 需要 Node.js 24.15 或更高的 24 LTS。首次使用先执行 `pnpm install --frozen-lockfile` 安装锁定依赖，需要 pnpm 11；已配置 Corepack 时可用 `corepack pnpm install --frozen-lockfile`。**随后双击根目录 `Start-Elysia.vbs` 即可打开 Elysia 独立桌面窗口**。已安装依赖时直接用当前 Node 构建，不要求系统 PATH 中有 pnpm。对话和分屏预览均在 Elysia 桌面窗口内；ChatGPT 登录按官方要求在系统浏览器中完成授权后返回。`Start-Elysia.cmd` 是保留终端输出的备用入口。
 
@@ -359,13 +361,17 @@ pnpm cache:preview --keep 2
 
 ## 验证与工程入口
 
+在“外观与启动 → 运行诊断”中，可按需读取和导出当前服务快照。请求统计按原生和终端入口分开；内存与事件循环指标属于共用的服务进程。错误带服务端生成的请求编号，导出不包含会话正文、实际 URL 参数、文件路径、密钥和错误原文。
+
+诊断仅保留本次服务生命周期的数据，重启后清空。每个入口最多记录 64 个路由项、每个路由最近 128 个耗时样本和最近 64 条错误；路由均值与最大值覆盖本次服务生命周期，P95 使用保留样本。长连接在结束或断开时结算；读取诊断的请求本身可能显示为进行中。刷新失败保留上次已读快照，导出以已读快照为准。
+
 ```powershell
 pnpm typecheck
 pnpm build
-pnpm verify:local
+pnpm verify:local --bundle C:/delivery/acceptance-v1.24.0 --output .local-qa/release-check
 ```
 
-`verify:local` 执行被忽略的 `.local-tests/verify.ts`，产物写入 `.local-qa/`。本地验证材料按迭代保存；新检出目录不包含测试材料，命令会以错误退出而不会跳过。新环境按 [验证入口与验收条件](EXECUTION.md#验证入口与验收条件) 准备适用的本地验收材料。协议夹具和合成执行器使用量不能替代真实模型、缓存、账号并发和厂商续接验收。
+`verify:local` 校验并导入独立验收包，再执行类型检查、生产构建和包内用例。使用该入口时，前两条命令已包含在验收中，无需另外重复。新环境按 [验收包与本地交付](VERIFICATION.md) 取得匹配的材料；缺失或不匹配时明确失败。无参数的历史入口仍读取 `.local-tests/verify.ts`。协议夹具和合成执行器的结果不能替代真实模型质量、缓存、账号并发和供应商续接验收。
 
 ## 数据格式与升级
 
