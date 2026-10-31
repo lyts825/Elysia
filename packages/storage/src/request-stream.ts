@@ -8,6 +8,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { AppError } from '../../contracts/src/index.js';
+import { StatementCache } from './statement-cache.js';
 
 export const REQUEST_STREAM_FORMAT = 'sqlite-chunks-v1';
 export const REQUEST_STREAM_CHUNK_CHARS = 4096;
@@ -27,7 +28,10 @@ export class RequestStreams {
    * EN: Create request-length metadata and ordered chunks; foreign-key cascades remove chunks with
    * their request or stream record.
    */
-  constructor(private db: DatabaseSync) {
+  constructor(
+    db: DatabaseSync,
+    private statements = new StatementCache(db),
+  ) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS request_streams_v1(
         request_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
@@ -46,7 +50,7 @@ export class RequestStreams {
    * EN: Create an empty stream for an existing requestId.
    */
   start(requestId: string) {
-    this.db.prepare('INSERT INTO request_streams_v1 VALUES(?,0,0)').run(requestId);
+    this.statements.prepare('INSERT INTO request_streams_v1 VALUES(?,0,0)').run(requestId);
   }
   /**
    * 按单块的最大 JSON 编码长度限制解压，并核对块声明的字符数与实际文本。
@@ -72,7 +76,7 @@ export class RequestStreams {
    * persisted text and must fail.
    */
   private state(requestId: string): Stream {
-    const stream = this.db
+    const stream = this.statements
       .prepare('SELECT characters,chunk_count FROM request_streams_v1 WHERE request_id=?')
       .get(requestId) as Stream | undefined;
     if (!stream) throw new AppError('REQUEST_STREAM_MISSING', '模型流正文缺失，请保留数据并检查备份');
@@ -86,7 +90,7 @@ export class RequestStreams {
     const stream = this.state(requestId);
     const parts: string[] = [];
     let characters = 0;
-    for (const row of this.db
+    for (const row of this.statements
       .prepare(
         'SELECT chunk_index,characters,content FROM request_stream_chunks_v1 WHERE request_id=? ORDER BY chunk_index',
       )
@@ -119,7 +123,7 @@ export class RequestStreams {
         'REQUEST_STREAM_LIMIT',
         '单次模型输出超过 8,388,608 个 UTF-16 字符上限，已停止并保留此前正文；请缩小输出范围后继续',
       );
-    const request = this.db
+    const request = this.statements
       .prepare("SELECT json_extract(data,'$.status') status FROM requests WHERE id=?")
       .get(requestId);
     if (request?.status !== 'RESERVED')
@@ -130,7 +134,7 @@ export class RequestStreams {
     // 只重写未满的尾块，其余已提交分块保持不变。
     // EN: Rewrite only a partially filled tail; leave all other committed chunks unchanged.
     if (index) {
-      const tail = this.db
+      const tail = this.statements
         .prepare(
           'SELECT chunk_index,characters,content FROM request_stream_chunks_v1 WHERE request_id=? AND chunk_index=?',
         )
@@ -145,7 +149,7 @@ export class RequestStreams {
     while (offset < text.length) {
       const count = Math.min(REQUEST_STREAM_CHUNK_CHARS - prefix.length, text.length - offset);
       const block = prefix + text.slice(offset, offset + count);
-      this.db
+      this.statements
         .prepare(
           `INSERT INTO request_stream_chunks_v1 VALUES(?,?,?,?)
         ON CONFLICT(request_id,chunk_index) DO UPDATE SET characters=excluded.characters,content=excluded.content`,
@@ -154,12 +158,12 @@ export class RequestStreams {
       offset += count;
       prefix = '';
     }
-    this.db
+    this.statements
       .prepare('UPDATE request_streams_v1 SET characters=?,chunk_count=? WHERE request_id=?')
       .run(stream.characters + text.length, index, requestId);
     // 保留请求公开版本的递增，而不解压或重写其清单正文。
     // EN: Advance the request public revision without decompressing or rewriting its manifest body.
-    this.db
+    this.statements
       .prepare(
         "UPDATE requests SET revision=revision+1,data=json_set(data,'$.revision',revision+1) WHERE id=?",
       )
@@ -170,6 +174,6 @@ export class RequestStreams {
    * EN: Delete a stream and its cascaded chunks.
    */
   clear(requestId: string) {
-    this.db.prepare('DELETE FROM request_streams_v1 WHERE request_id=?').run(requestId);
+    this.statements.prepare('DELETE FROM request_streams_v1 WHERE request_id=?').run(requestId);
   }
 }

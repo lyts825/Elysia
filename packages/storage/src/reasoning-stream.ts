@@ -8,6 +8,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { AppError } from '../../contracts/src/index.js';
+import { StatementCache } from './statement-cache.js';
 import {
   REASONING_DISPLAY_MAX_CHARS,
   REASONING_PAGE_MAX_CHARS,
@@ -49,7 +50,10 @@ export class ReasoningStreams {
    * EN: Create display metadata and compressed chunks. received_characters tracks received input,
    * while characters tracks retained display content.
    */
-  constructor(private db: DatabaseSync) {
+  constructor(
+    db: DatabaseSync,
+    private statements = new StatementCache(db),
+  ) {
     db.exec(`CREATE TABLE IF NOT EXISTS reasoning_streams_v1(
       request_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
       run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -74,7 +78,7 @@ export class ReasoningStreams {
    * instead of trusting cache state alone.
    */
   private state(requestId: string): State | undefined {
-    return this.db
+    return this.statements
       .prepare(
         `SELECT s.*,r.run_id request_run_id,json_extract(r.data,'$.status') request_status
       FROM reasoning_streams_v1 s JOIN requests r ON r.id=s.request_id WHERE s.request_id=?`,
@@ -102,7 +106,7 @@ export class ReasoningStreams {
       Boolean(state.complete) ||
       (state.request_status === 'SETTLED' &&
         Boolean(
-          this.db
+          this.statements
             .prepare(
               `SELECT 1 FROM messages WHERE run_id=? AND json_extract(data,'$.role')='assistant'
             AND json_extract(data,'$.conversationLinks.requestId')=? LIMIT 1`,
@@ -153,7 +157,7 @@ export class ReasoningStreams {
     kind: ReasoningKind,
   ): { text: string; offset: number } {
     if (!text.length) return { text: '', offset };
-    const request = this.db
+    const request = this.statements
       .prepare("SELECT run_id,json_extract(data,'$.status') status FROM requests WHERE id=?")
       .get(requestId);
     if (!request || request.status !== 'RESERVED')
@@ -161,7 +165,7 @@ export class ReasoningStreams {
     let state = this.state(requestId);
     if (!state) {
       if (offset !== 0) throw new AppError('REASONING_OFFSET', '思考文本偏移不连续');
-      this.db
+      this.statements
         .prepare('INSERT INTO reasoning_streams_v1 VALUES(?,?,?,0,0,0,0,0)')
         .run(requestId, request.run_id, kind);
       state = this.state(requestId)!;
@@ -176,7 +180,7 @@ export class ReasoningStreams {
     let index = Math.floor(state.characters / CHUNK_CHARS),
       prefix = '';
     if (state.characters % CHUNK_CHARS) {
-      const tail = this.db
+      const tail = this.statements
         .prepare(
           'SELECT chunk_index,characters,content FROM reasoning_stream_chunks_v1 WHERE request_id=? AND chunk_index=?',
         )
@@ -188,7 +192,7 @@ export class ReasoningStreams {
     for (let start = 0; start < retained.length; ) {
       const count = Math.min(CHUNK_CHARS - prefix.length, retained.length - start);
       const block = prefix + retained.slice(start, start + count);
-      this.db
+      this.statements
         .prepare(
           `INSERT INTO reasoning_stream_chunks_v1 VALUES(?,?,?,?)
         ON CONFLICT(request_id,chunk_index) DO UPDATE SET characters=excluded.characters,content=excluded.content`,
@@ -197,7 +201,7 @@ export class ReasoningStreams {
       start += count;
       prefix = '';
     }
-    this.db
+    this.statements
       .prepare(
         'UPDATE reasoning_streams_v1 SET characters=?,received_characters=?,truncated=?,pending=? WHERE request_id=?',
       )
@@ -210,12 +214,12 @@ export class ReasoningStreams {
    * untouched.
    */
   complete(requestId: string, text: string) {
-    this.db.prepare('DELETE FROM reasoning_streams_v1 WHERE request_id=?').run(requestId);
+    this.statements.prepare('DELETE FROM reasoning_streams_v1 WHERE request_id=?').run(requestId);
     if (!text.length) return;
     const retained = text.slice(0, reasoningPrefixLength(text, REASONING_DISPLAY_MAX_CHARS));
-    const request = this.db.prepare('SELECT run_id FROM requests WHERE id=?').get(requestId);
+    const request = this.statements.prepare('SELECT run_id FROM requests WHERE id=?').get(requestId);
     if (!request) throw new AppError('NOT_FOUND', '模型请求不存在', false, null, 404);
-    this.db
+    this.statements
       .prepare('INSERT INTO reasoning_streams_v1 VALUES(?,?,?,?,?,1,?,0)')
       .run(
         requestId,
@@ -227,7 +231,7 @@ export class ReasoningStreams {
       );
     for (let offset = 0; offset < retained.length; offset += CHUNK_CHARS) {
       const block = retained.slice(offset, offset + CHUNK_CHARS);
-      this.db
+      this.statements
         .prepare('INSERT INTO reasoning_stream_chunks_v1 VALUES(?,?,?,?)')
         .run(
           requestId,
@@ -260,7 +264,7 @@ export class ReasoningStreams {
     const end = Math.min(reasoning.characters, offset + limit),
       first = Math.floor(Math.max(0, offset - 1) / CHUNK_CHARS),
       last = Math.floor(Math.min(reasoning.characters - 1, end) / CHUNK_CHARS);
-    const rows = this.db
+    const rows = this.statements
       .prepare(
         'SELECT chunk_index,characters,content FROM reasoning_stream_chunks_v1 WHERE request_id=? AND chunk_index BETWEEN ? AND ? ORDER BY chunk_index',
       )

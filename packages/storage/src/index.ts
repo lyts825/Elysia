@@ -34,6 +34,7 @@ import {
 import { SearchWork, searchCancelled } from './search-work.js';
 import { REQUEST_STREAM_FORMAT, RequestStreams } from './request-stream.js';
 import { ReasoningStreams } from './reasoning-stream.js';
+import { StatementCache } from './statement-cache.js';
 import {
   completedReasoning,
   reasoningMessagePreview,
@@ -306,6 +307,7 @@ export class Store {
   directory: string;
   private depth = 0;
   private searchWork = new SearchWork();
+  private statements: StatementCache;
   private requestStreams: RequestStreams;
   private reasoningStreams: ReasoningStreams;
   private artifactDeliveryReads: ArtifactDeliveryMetadataReads;
@@ -328,6 +330,7 @@ export class Store {
     for (const d of ['objects', 'workspaces', 'logs'])
       mkdirSync(path.join(this.directory, d), { recursive: true });
     this.db = new DatabaseSync(path.join(this.directory, 'state.db'));
+    this.statements = new StatementCache(this.db);
     this.db.exec(
       'PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000; PRAGMA secure_delete=ON;',
     );
@@ -339,8 +342,8 @@ export class Store {
         (artifact) => this.refreshReadProjection('artifacts', artifact),
       );
       this.recovery = new ExecutionRecovery(this);
-      this.requestStreams = new RequestStreams(this.db);
-      this.reasoningStreams = new ReasoningStreams(this.db);
+      this.requestStreams = new RequestStreams(this.db, this.statements);
+      this.reasoningStreams = new ReasoningStreams(this.db, this.statements);
       this.objectReferences = new ObjectReferenceProjection(this.db, tables, expand, objectRefs);
       // 直接修复正文会使派生日志指针失效，但不重写请求与用量投影。
       // EN: Raw-body repair invalidates the derived log pointer without rewriting request or usage
@@ -687,7 +690,7 @@ export class Store {
    * corrupt-body or legacy-object failures.
    */
   get<T>(table: Table, key: string): T | undefined {
-    const row = this.db.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
+    const row = this.statements.prepare(`SELECT data,content FROM ${table} WHERE id=?`).get(key) as any;
     return row && this.decodeRow(table, row);
   }
   /**
@@ -864,7 +867,7 @@ export class Store {
    * EN: Read one request without expanding its in-flight stream body.
    */
   requestMetadata(key: string): RequestRecord {
-    const row = this.db.prepare('SELECT data,content FROM requests WHERE id=?').get(key) as any;
+    const row = this.statements.prepare('SELECT data,content FROM requests WHERE id=?').get(key) as any;
     if (!row) throw new AppError('NOT_FOUND', 'requests 记录不存在', false, null, 404);
     return this.decodeRow('requests', row, false);
   }
@@ -1701,7 +1704,7 @@ export class Store {
   put<T extends Entity>(table: Table, entity: T, expectedRevision?: number): T {
     const previous =
       table === 'requests'
-        ? (this.db.prepare('SELECT revision FROM requests WHERE id=?').get(entity.id) as
+        ? (this.statements.prepare('SELECT revision FROM requests WHERE id=?').get(entity.id) as
             | { revision: number }
             | undefined)
         : this.get<Entity>(table, entity.id);
@@ -1738,14 +1741,14 @@ export class Store {
      * EN: Persist entity body, projection, and derived indexes in one transaction and return the incremented version.
      */
     const save = () => {
-      this.db
+      this.statements
         .prepare(
           `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
         )
         .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
       this.objectReferences?.write(table, next.id, stored);
       if (table === 'requests')
-        this.db.prepare('DELETE FROM request_log_pointer_dirty_v1 WHERE record_id=?').run(next.id);
+        this.statements.prepare('DELETE FROM request_log_pointer_dirty_v1 WHERE record_id=?').run(next.id);
       if (table === 'artifacts') this.artifactDeliveryReads.write(stored);
       if (clearStream) this.requestStreams.clear(entity.id);
       if (table === 'runs' || table === 'messages')
@@ -2166,19 +2169,22 @@ export class Store {
   }
   /**
    * 按内容摘要保存不可变对象并返回引用；字符串压缩进 SQLite，Buffer 保存在 objects 文件树。
-   * 重复内容复用同一引用。来源是外部大文件且需并发完整性检查时应使用 publishFileObject。
+   * 重复文本先查数据库，已存在则复用引用并跳过压缩；事务回滚或回收后可重新写入。
+   * 来源是外部大文件且需并发完整性检查时应使用 publishFileObject。
    * EN: Save immutable content-addressed objects and return their references: strings are compressed
-   * in SQLite, Buffers use the objects file tree. Reuse references for identical bytes. Use
-   * publishFileObject for external large files needing concurrency-aware integrity checks.
+   * in SQLite, Buffers use the objects file tree. Check SQLite before compressing duplicate text;
+   * reinsert after rollback or collection. Use publishFileObject for external large files needing
+   * concurrency-aware integrity checks.
    */
   object(content: string | Buffer): { hash: string; objectRef: string } {
     if (typeof content === 'string') {
       const bytes = Buffer.from(content),
         digest = hash(bytes),
         ref = 'sqlite:' + digest;
-      this.db
-        .prepare('INSERT OR IGNORE INTO compressed_objects VALUES(?,?,?,?)')
-        .run(ref, digest, bytes.length, gzipSync(bytes, { level: 6 }));
+      if (!this.statements.prepare('SELECT 1 FROM compressed_objects WHERE ref=?').get(ref))
+        this.statements
+          .prepare('INSERT OR IGNORE INTO compressed_objects VALUES(?,?,?,?)')
+          .run(ref, digest, bytes.length, gzipSync(bytes, { level: 6 }));
       return { hash: digest, objectRef: ref };
     }
     const digest = hash(content),
@@ -2212,7 +2218,7 @@ export class Store {
   readObject(ref: string, maxBytes?: number): Buffer {
     if (!legacyObjectPattern.test(ref) && !sqliteObjectPattern.test(ref))
       throw new AppError('INVALID_OBJECT', '无效对象引用');
-    const compressed = this.db
+    const compressed = this.statements
       .prepare(
         'SELECT hash,raw_size,CASE WHEN ? IS NULL OR (raw_size<=? AND length(content)<=?) THEN content END content FROM compressed_objects WHERE ref=?',
       )
@@ -2273,6 +2279,7 @@ export class Store {
     }
     this.closeHooks.clear();
     this.requestReadProjectionUpdate = undefined;
+    this.statements.clear();
     try {
       this.searchWork.close();
     } finally {
