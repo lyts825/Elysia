@@ -118,6 +118,11 @@ export function pluginServices(
     fetch: gateway.fetch.bind(gateway),
     definitions: gateway.definitions.bind(gateway),
     runCommand: gateway.runCommand.bind(gateway),
+    backgroundJobs: Object.freeze({
+      start: gateway.backgroundJobs.start.bind(gateway.backgroundJobs),
+      read: gateway.backgroundJobs.read.bind(gateway.backgroundJobs),
+      cancel: gateway.backgroundJobs.cancel.bind(gateway.backgroundJobs),
+    }),
     catalogueBudget,
     processes: Object.freeze({ run: gateway.processes.run.bind(gateway.processes) }),
     mcp: Object.freeze({

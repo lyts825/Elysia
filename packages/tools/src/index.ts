@@ -44,6 +44,7 @@ import { PlanAlignmentHost, type PlanAlignmentLoader } from './module-host.js';
 import { builtinTools } from './plugins/index.js';
 import { MCP_CATALOGUE_BYTES } from './catalogue.js';
 import { contained, resolved } from './path-policy.js';
+import { BackgroundJobs } from './background-jobs.js';
 export { cleanEnv, Processes } from './processes.js';
 /**
  * 模型工具调用的统一宿主：按角色计算工具清单，核验调用身份和参数，管理审核与操作账本。
@@ -55,6 +56,7 @@ export { cleanEnv, Processes } from './processes.js';
 export class ToolGateway {
   processes = new Processes();
   readonly commandRunner: CommandRunner;
+  readonly backgroundJobs: BackgroundJobs;
   readonly mcp = new McpClient();
   readonly planAlignment: PlanAlignmentHost;
   private readonly tools: ReturnType<typeof builtinTools>;
@@ -75,6 +77,8 @@ export class ToolGateway {
   ) {
     this.commandRunner =
       options.commandRunner ?? new ConfiguredCommandRunner(this.processes, kernel.store.directory);
+    this.backgroundJobs = new BackgroundJobs(kernel, this.runCommand.bind(this));
+    kernel.backgroundJobs = this.backgroundJobs;
     this.planAlignment = new PlanAlignmentHost(
       { propose: kernel.propose.bind(kernel), accept: kernel.accept.bind(kernel) },
       options.planAlignmentLoader,
@@ -90,6 +94,7 @@ export class ToolGateway {
    */
   async cancelCommands(taskIds?: Set<string>) {
     const results = await Promise.allSettled([
+      this.backgroundJobs.cancelForTasks(taskIds),
       this.processes.cancel(taskIds),
       this.commandRunner.cancel(taskIds),
     ]);
@@ -119,6 +124,7 @@ export class ToolGateway {
       permission = this.kernel.permissions(task),
       backend = run.contract.commandBackend ?? { kind: 'local' as const };
     invariant(permission.exec, 'EXEC_DENIED', '命令未授权');
+    if (operation.name !== 'job_execution') this.assertBackgroundBoundary(task, 'exec');
     // 在实际执行边界重新核验解析后的工作目录。
     // EN: Revalidate the resolved working directory at the execution boundary.
     const cwd = await this.path(task, args.cwd);
@@ -134,6 +140,29 @@ export class ToolGateway {
     // 部分文件写入授权不能变成整个工作区的可写挂载。
     // EN: Partial file-write grants must never become a writable mount of the entire workspace.
     const writable = permission.write && allowedWrites.some((root) => root === workspace);
+    signal.throwIfAborted();
+    const latestTask = this.store.require<Task>('tasks', task.id),
+      latestRun = this.store.require<Run>('runs', run.id);
+    const background = operation.name === 'job_execution';
+    invariant(
+      !this.closed &&
+        !this.store.getExecutionHold(run.id) &&
+        !latestRun.archived &&
+        (['READY', 'RUNNING'].includes(latestRun.status) ||
+          (background &&
+            latestRun.status === 'WAITING' &&
+            ['background_job', 'user'].includes(latestRun.reason ?? ''))) &&
+        (latestTask.status === 'RUNNING' ||
+          (background &&
+            (latestTask.status === 'READY' ||
+              (latestTask.status === 'WAITING' &&
+                ['background_job', 'user'].includes(latestTask.waitReason ?? ''))))),
+      'TASK_STOPPED',
+      '命令启动前运行已停止',
+    );
+    const remaining =
+      latestRun.limits.maxMinutes * 60000 - (latestRun.startedAt ? Date.now() - latestRun.startedAt : 0);
+    invariant(remaining >= 100, 'TIME_BUDGET', '命令启动前累计运行时间已耗尽');
     const current = this.store.require<Operation>('tool_operations', operation.id);
     this.store.put('tool_operations', {
       ...current,
@@ -152,7 +181,7 @@ export class ToolGateway {
         cwd,
         program: args.program,
         args: args.args,
-        timeout: args.timeout,
+        timeout: Math.min(args.timeout, Math.floor(remaining)),
         outputLimit: args.outputLimit,
         writable,
         backend,
@@ -207,6 +236,7 @@ export class ToolGateway {
     this.closed = true;
     this.closing = (async () => {
       const results = await Promise.allSettled([
+        this.backgroundJobs.close(),
         Promise.resolve().then(() => this.cancelCommands()),
         Promise.resolve().then(() => this.mcp.close()),
         this.planAlignment.dispose(),
@@ -250,6 +280,7 @@ export class ToolGateway {
    * verification path.
    */
   async recoverOperations() {
+    this.backgroundJobs.recover();
     const containers: Operation[] = [];
     for (const key of this.store.recovery.candidates('tool_operations', ['UNCERTAIN']))
       this.store.recovery.apply<Operation>('tool_operations', key, (operation) => {
@@ -407,10 +438,29 @@ export class ToolGateway {
           );
           if (task.workspace ? task.baseline : project.baseline) names.push('diff', 'integrate_worktrees');
         }
-        if (permission.exec) names.push('exec');
+        if (permission.exec) names.push('exec', 'job_start', 'job_read', 'job_cancel');
       }
     }
     return names.map((name) => this.tools.require(name).definition());
+  }
+  /** 作业执行或结果未知期间，整个运行禁止与其冲突的新副作用和验收。 */
+  private assertBackgroundBoundary(task: Task, name: string) {
+    if (!this.backgroundJobs.hasUnsettled(task.runId)) return;
+    invariant(
+      !this.tools.get(name)?.policy.mutating &&
+        ![
+          'submit_result',
+          'submit_peer_review',
+          'integrate_worktrees',
+          'artifact',
+          'diff',
+          'spawn_task',
+          'allocate_context',
+          'propose_plan',
+        ].includes(name),
+      'BACKGROUND_JOB_ACTIVE',
+      '后台命令仍在运行或结果待核验；先读取/停止并核验作业，不能开始冲突操作或提交验收',
+    );
   }
   /**
    * 将任务输入解析为实际路径并检查权限。读取可访问授权的项目源目录；写入必须同时
@@ -665,6 +715,7 @@ export class ToolGateway {
       }
     }
     signal.throwIfAborted();
+    this.assertBackgroundBoundary(task, name);
     /**
      * 重新读取所有影响授权的上下文并构造审核指纹输入，检测异步审核期间的变化。
      * EN: Reread authorization-relevant state and build review-fingerprint input to detect changes during asynchronous review.
@@ -767,6 +818,7 @@ export class ToolGateway {
     );
     invariant(!this.store.getExecutionHold(task.runId), 'TASK_STOPPED', '当前执行已停止');
     invariant(task.status === 'RUNNING', 'TASK_STOPPED', '任务已停止，不能开始新工具操作');
+    this.assertBackgroundBoundary(task, name);
     const operation: Operation = {
       id: id(),
       revision: 0,
@@ -972,6 +1024,7 @@ export class ToolGateway {
     signal: AbortSignal,
   ) {
     task = this.store.require<Task>('tasks', task.id);
+    this.assertBackgroundBoundary(task, 'submit_result');
     const run = this.store.require<Run>('runs', task.runId);
     invariant(!args.incomplete.length, 'ACCEPTANCE_INCOMPLETE', '仍有未完成事项，不能验收');
     invariant(!task.peerReview, 'PEER_REVIEW_TOOL', '评审任务必须使用 submit_peer_review 提交逐项评分');
@@ -1009,7 +1062,7 @@ export class ToolGateway {
         invariant(
           operation.runId === run.id &&
             operation.taskId === task.id &&
-            operation.name === 'exec' &&
+            (operation.name === 'exec' || operation.name === 'job_execution') &&
             operation.status === 'DONE' &&
             (operation.result as any)?.exitCode === 0 &&
             !(operation.result as any)?.timedOut,

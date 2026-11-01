@@ -45,6 +45,12 @@
   color: var(--accent-strong);
   font-size: var(--font-sm);
 }
+.task-center-attention-summary {
+  margin: var(--space-3) 0 0;
+  color: var(--secondary);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
 .task-center-options {
   display: flex;
   gap: var(--space-3);

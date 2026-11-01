@@ -73,6 +73,14 @@ const TerminalCommunication = deferredPanel(
   () => import('./TerminalCommunication').then((m) => m.TerminalCommunication),
   '终端通信',
 );
+const NativeInboxReceipts = deferredPanel(
+  () => import('./NativeInboxReceipts').then((m) => m.NativeInboxReceipts),
+  '补充消息状态',
+);
+const BackgroundJobs = deferredPanel(
+  () => import('./BackgroundJobs').then((m) => m.BackgroundJobs),
+  '后台作业',
+);
 import {
   readTerminalCommunicationDraft,
   readTerminalResolutionDraft,
@@ -303,6 +311,7 @@ const reasons: Record<string, string> = {
   limit: '达到运行上限',
   peer_review_limit: '评审轮次已用完，查看意见并新建任务继续',
   rate_limit: '等待账号额度',
+  background_job: '后台命令执行中',
   dependency_failed: '依赖分支失败或已取消，等待局部恢复',
   no_progress: '相同工具错误重复发生，已暂停此代理',
 };
@@ -414,7 +423,7 @@ function App({
   const [initialHistoryAnchor, setInitialHistoryAnchor] = useState<HistoryAnchor>();
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [taskCenterState, setTaskCenterState] = useState<TaskCenterState>({
-    filter: 'all',
+    filter: 'attention',
     before: '',
     trail: [],
   });
@@ -2329,7 +2338,11 @@ function App({
           !projectLeaveGuard.current(intent)
         )
           return;
-        selectRun(target, { intent, /** 仅在关联导航成功后关闭当前弹窗，保留离开检查取消时的原界面。 EN: Close the modal only after its associated navigation succeeds, preserving the current view when leave checks cancel it. */ after: () => setModal('') });
+        selectRun(target, {
+          intent,
+          /** 仅在关联导航成功后关闭当前弹窗，保留离开检查取消时的原界面。 EN: Close the modal only after its associated navigation succeeds, preserving the current view when leave checks cancel it. */ after:
+            () => setModal(''),
+        });
       })
       .catch((issue) => {
         if (!controller.signal.aborted && projectLeaveGuard.current(intent))
@@ -4151,6 +4164,21 @@ function App({
                     </div>
                   </form>
                 )}
+                {!terminalSurface && <NativeInboxReceipts key={runId} runId={detail.run.id} />}
+                {!terminalSurface && (
+                  <BackgroundJobs
+                    key={`jobs:${runId}`}
+                    runId={detail.run.id}
+                    revision={detail.run.revision}
+                    disabledReason={
+                      detailReadOnlyReason ||
+                      (archived || ['DONE', 'CANCELLED'].includes(detail.run.status)
+                        ? '已结束或归档的运行仅供查看'
+                        : '')
+                    }
+                    verify={(operationId) => void openResourceOwner(detail.run.id, operationId)}
+                  />
+                )}
                 {!terminalSurface &&
                   (archived || ['DONE', 'CANCELLED'].includes(detail.run.status)) &&
                   ((cachedReplyReceipt?.targetRunId === runId && cachedReplyReceipt) ||
@@ -5769,6 +5797,7 @@ function DecisionModal({
   disabledReason: string;
 }) {
   const [outcome, setOutcome] = useState('confirmed'),
+    [processStopped, setProcessStopped] = useState(false),
     [note, setNote] = useState(''),
     [result, setResult] = useState(''),
     [parseError, setParseError] = useState('');
@@ -5777,11 +5806,17 @@ function DecisionModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || disabledReason) return;
+          if (busy || disabledReason || (operation.name === 'job_execution' && !processStopped)) return;
           try {
             const parsed = result.trim() ? JSON.parse(result) : undefined;
             setParseError('');
-            submit({ operationId: operation.id, outcome, note, result: parsed });
+            submit({
+              operationId: operation.id,
+              outcome,
+              note,
+              result: parsed,
+              ...(operation.name === 'job_execution' ? { processStopped } : {}),
+            });
           } catch {
             setParseError('结果需要是合法 JSON');
           }
@@ -5794,6 +5829,18 @@ function DecisionModal({
             </p>
           )}
           <pre>{JSON.stringify(operation.evidence || operation.args, null, 2)}</pre>
+          {operation.name === 'job_execution' && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                required
+                checked={processStopped}
+                disabled={busy || !!disabledReason}
+                onChange={(event) => setProcessStopped(event.target.checked)}
+              />
+              已核验命令及其子进程停止，并在证据说明中记录依据。停止不代表副作用已撤销。
+            </label>
+          )}
           <label>
             核验结论
             <select
@@ -5809,6 +5856,8 @@ function DecisionModal({
             证据说明
             <textarea
               required
+              minLength={operation.name === 'job_execution' ? 5 : 1}
+              maxLength={operation.name === 'job_execution' ? 2000 : undefined}
               disabled={busy || !!disabledReason}
               value={note}
               onChange={(e) => setNote(e.target.value)}

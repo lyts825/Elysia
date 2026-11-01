@@ -28,7 +28,8 @@ export type ReviewModel = (input: ToolReviewInput, signal: AbortSignal) => Promi
  * complete command parser nor process isolation.
  */
 export function reviewToolRules(name: string, args: Record<string, unknown>): ToolReviewDecision {
-  if (name !== 'exec') return { decision: 'allow', reason: '继续执行已有工具授权与路径校验' };
+  if (name !== 'exec' && name !== 'job_start')
+    return { decision: 'allow', reason: '继续执行已有工具授权与路径校验' };
   const program = String(args.program)
     .replace(/\\/g, '/')
     .split('/')

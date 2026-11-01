@@ -5,7 +5,7 @@
  * EN: Defines storage and recovery ports required by the domain core.
  * Capability ports isolate domain/infrastructure; transactions remain synchronous and storage supplies authoritative entities.
  */
-import type { Entity, Event, Message } from '../../contracts/src/index.js';
+import type { Entity, Event, Message, Operation } from '../../contracts/src/index.js';
 import type { Table, RequestLedgerRow } from '../../contracts/src/persistence.js';
 import type { ExecutionHold } from '../../contracts/src/run-reads.js';
 import type { ProjectCapabilitySnapshot } from '../../contracts/src/project-intelligence.js';
@@ -130,4 +130,9 @@ export interface KernelServices {
    * EN: Called inside the creation transaction to freeze the currently authorized capability revision.
    */
   captureProjectCapabilities?(projectId: string): ProjectCapabilitySnapshot;
+}
+/** 宿主提供真实作业边界；只有仍被当前进程管理的作业可豁免反馈的 INTENT 阻塞。 */
+export interface BackgroundJobBoundary {
+  isActiveOperation(operation: Operation): boolean;
+  hasUnsettled(runId: string, taskId?: string): boolean;
 }

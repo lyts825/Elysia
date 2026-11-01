@@ -13,6 +13,7 @@ const { pathToFileURL } = require('node:url');
 const { attachServices } = require('./services.cjs');
 const { allowedLocalNavigation } = require('./navigation.cjs');
 const { createStartupDiagnostics } = require('./startup-diagnostics.cjs');
+const { createBackendSupervisor, backendReadyLocation } = require('./backend-supervisor.cjs');
 const { waitForLaunchBuild } = require('./launch-handshake.cjs');
 const { createBuildLease } = require('../../scripts/launch-cache.cjs');
 const root = path.resolve(__dirname, '../..');
@@ -39,6 +40,8 @@ let window,
   diagnostics,
   uiOrigin,
   buildLease,
+  supervisor,
+  backendVersion,
   quitting = false,
   ready = false;
 const logFile = packaged
@@ -60,12 +63,18 @@ const log = (text) => appendFileSync(logFile, new Date().toISOString() + ' ' + t
 async function shutdown() {
   if (quitting) return;
   quitting = true;
+  supervisor?.stop();
   if (window && !window.isDestroyed()) window.setTitle('Elysia · 正在安全停止…');
-  if (backend && backend.exitCode === null) {
+  const child = backend;
+  if (child?.pid && child.exitCode === null && child.signalCode === null) {
     await new Promise((resolve) => {
-      backend.once('exit', resolve);
-      if (backend.connected) backend.send({ type: 'shutdown' });
-      else resolve();
+      child.once('exit', resolve);
+      try {
+        if (child.connected) child.send({ type: 'shutdown' }, (error) => error && resolve());
+        else resolve();
+      } catch {
+        resolve();
+      }
     });
   }
   if (diagnostics)
@@ -146,6 +155,9 @@ if (!app.requestSingleInstanceLock()) {
           preload: path.join(__dirname, 'preload.cjs'),
         },
       });
+      // 标题由主进程呈现服务健康状态，页面更新不得覆盖恢复或待人工处理提示。
+      // EN: Keep supervisor status in the native title even when the page changes its own title.
+      window.on('page-title-updated', (event) => event.preventDefault());
       if (process.platform === 'win32') {
         window.setAppDetails({
           appId: 'local.elysia.desktop',
@@ -213,85 +225,134 @@ if (!app.requestSingleInstanceLock()) {
         delete backendEnvironment.NODE_PATH;
         delete backendEnvironment.ELECTRON_RUN_AS_NODE;
       }
-      backend = spawn(
-        packaged ? prepared.build.node : process.env.ELYSIA_NODE_BINARY || 'node',
-        dev
-          ? ['--import', 'tsx', 'apps/server/src/index.ts']
-          : [prepared?.build.server || 'apps/server/dist/apps/server/src/index.js'],
-        {
-          cwd: root,
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-          env: backendEnvironment,
-        },
-      );
-      if (backend.pid) buildLease?.backend(backend.pid);
       let failed = false;
-      // 后端错误、退出与加载失败可能竞争，只展示一次失败并进入统一关闭流程。
-      // EN: Backend errors, process exit, and page-load failure can race. Present one failure and enter
-      // the shared shutdown path.
-      const fail = (message) => {
+      const failInitial = () => {
         if (failed || quitting) return;
         failed = true;
-        log(message);
-        if (process.send) process.send({ type: 'desktop-error', message });
+        const message = '本机服务未能完成启动或安全握手';
+        if (process.send && process.connected) process.send({ type: 'desktop-error', message }, () => {});
         dialog.showErrorBox(
           'Elysia 启动失败',
           message + '\n\n请先安全关闭其他 Elysia 服务，再重新打开。日志：' + logFile,
         );
         void shutdown();
       };
-      backend.stderr.on('data', (value) => log(value.toString()));
-      backend.stdout.on('data', (value) => log(value.toString()));
-      backend.on('error', (error) => fail(error.message));
-      backend.on('exit', (code) => {
-        if (!quitting) {
-          if (!ready || code) fail('本机服务已退出，状态码 ' + code);
-          else void shutdown();
-        }
+      const attention = {
+        'heartbeat-timeout': '心跳无响应，未自动终止进程',
+        'ipc-unavailable': '服务通信异常，未自动终止进程',
+        'recovery-failed': '服务恢复失败，请检查日志后重新打开',
+        'restart-limit': '5 分钟内已重启 3 次，请检查日志后重新打开',
+      };
+      supervisor = createBackendSupervisor({
+        restart: () => startBackend(),
+        onStopped: () => void shutdown(),
+        onState: (state) => {
+          if (quitting || window.isDestroyed()) return;
+          // 仅记录受控状态码，不能记录 IPC 正文、凭据回执或含 bootstrap 的导航错误。
+          // EN: Log fixed state codes, never IPC payloads, credentials, or bootstrap-bearing load errors.
+          log(
+            `backend-supervisor state=${state.status} reason=${state.reason}${state.attempt ? ` attempt=${state.attempt}` : ''}`,
+          );
+          if (state.reason === 'initial-start-failed') return failInitial();
+          const suffix =
+            state.status === 'healthy'
+              ? `${backendVersion} · 服务正常`
+              : state.status === 'attention'
+                ? `需人工处理 · ${attention[state.reason] || '本机服务异常'}`
+                : state.status === 'recovering'
+                  ? `服务恢复中${state.attempt ? `（第 ${state.attempt} 次）` : ''}…`
+                  : state.status === 'starting'
+                    ? '正在启动本机服务…'
+                    : '正在安全停止…';
+          window.setTitle('Elysia · ' + suffix);
+        },
       });
-      backend.on('message', async (message) => {
-        if (message?.type === 'desktop-request' && typeof message.id === 'string') {
-          // 后端不能直接使用 Electron 安全存储/系统浏览器，通过带 ID 的请求回执桥调用。
-          // EN: The backend requests Electron safe storage or the system browser through an ID-based
-          // request/response bridge instead of accessing those APIs directly.
+      /**
+       * 每次恢复使用相同构建、数据目录和原恢复流程，重新取得认证；不改变任务授权或停止记录。
+       * EN: Restart the same build/data directory through normal recovery and obtain new authentication.
+       * Never alter task permissions, execution holds, or uncertain operations here.
+       */
+      function startBackend() {
+        if (quitting || window.isDestroyed()) return;
+        const child = spawn(
+          packaged ? prepared.build.node : process.env.ELYSIA_NODE_BINARY || 'node',
+          dev
+            ? ['--import', 'tsx', 'apps/server/src/index.ts']
+            : [prepared?.build.server || 'apps/server/dist/apps/server/src/index.js'],
+          { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: backendEnvironment },
+        );
+        backend = child;
+        supervisor.attach(child);
+        if (child.pid) buildLease?.backend(child.pid);
+        let receivedReady = false,
+          childReady = false;
+        child.stderr.on('data', (value) => {
+          if (supervisor.isCurrent(child)) log(value.toString());
+        });
+        child.stdout.on('data', (value) => {
+          if (supervisor.isCurrent(child)) log(value.toString());
+        });
+        child.on('error', () => {
+          if (childReady) supervisor.unavailable(child);
+          else supervisor.failed(child);
+        });
+        child.on('exit', (code, signal) => supervisor.exited(child, code, signal));
+        child.on('disconnect', () => supervisor.unavailable(child));
+        child.on('message', async (message) => {
+          if (!supervisor.isCurrent(child) || quitting || !message || typeof message !== 'object') return;
+          if (message.type === 'health-pong') return supervisor.heartbeat(child, message.id);
+          if (message.type === 'backend-stopping') return supervisor.stopping(child);
+          if (message.type === 'desktop-request' && typeof message.id === 'string') {
+            // 异步回执只返回发起请求且仍然有效的子进程，不能随 backend 变量转交给新进程。
+            // EN: Return asynchronous credential replies only to the still-current requesting child.
+            let reply;
+            try {
+              reply = { value: await desktopService(message) };
+            } catch (error) {
+              reply = { error: error.message };
+            }
+            if (supervisor.isCurrent(child) && child.connected) {
+              try {
+                child.send({ type: 'desktop-response', id: message.id, ...reply }, () => {});
+              } catch {}
+            }
+            return;
+          }
+          if (message.type === 'startup-error') return supervisor.failed(child);
+          if (message.type !== 'ready' || receivedReady) return;
+          receivedReady = true;
           try {
-            const value = await desktopService(message);
-            if (backend.connected) backend.send({ type: 'desktop-response', id: message.id, value });
-          } catch (error) {
-            if (backend.connected)
-              backend.send({ type: 'desktop-response', id: message.id, error: error.message });
+            const location = backendReadyLocation(message, packaged ? prepared.manifest.version : undefined);
+            diagnostics.mark('backend-ready');
+            const bootstrap = new URL(location.bootstrapUrl);
+            // 同窗口、同端口优先保留已有草稿存储和入口；仅携带已识别的入口参数。
+            // EN: Reuse the window and preferred ports to retain stored drafts; preserve only the known surface query.
+            if (ready && new URL(window.webContents.getURL()).searchParams.get('surface') === 'terminal')
+              bootstrap.searchParams.set('surface', 'terminal');
+            uiOrigin = location.origin;
+            backendEnvironment.ELYSIA_PORT = String(location.port);
+            if (dev) backendEnvironment.ELYSIA_WEB_PORT = new URL(location.origin).port;
+            log(`ready v${location.version} port=${location.port} preferred=${location.preferredPort}`);
+            await window.loadURL(bootstrap.href);
+            if (!supervisor.isCurrent(child) || quitting || window.isDestroyed()) return;
+            diagnostics.mark('web-loaded');
+            backendVersion = location.version;
+            childReady = supervisor.ready(child);
+            if (!childReady) return;
+            const initial = !ready;
+            ready = true;
+            if (initial && !hiddenLaunch) {
+              window.show();
+              window.focus();
+            }
+            if (initial && process.send && process.connected)
+              process.send({ type: 'desktop-ready', port: location.port }, () => {});
+          } catch {
+            supervisor.failed(child);
           }
-          return;
-        }
-        if (message.type === 'startup-error') return fail(message.message);
-        if (message.type !== 'ready') return;
-        // 安装包禁止连接到与清单版本不一致的服务，避免前后端协议混用。
-        // EN: Reject a packaged backend whose version differs from the distribution manifest to avoid mixing
-        // frontend and backend protocols.
-        if (packaged && message.version !== prepared.manifest.version)
-          return fail('分发包与本机服务版本不一致');
-        diagnostics.mark('backend-ready');
-        try {
-          const origin = new URL(message.origin).origin;
-          uiOrigin = origin;
-          log(`ready v${message.version} port=${message.port} preferred=${message.preferredPort}`);
-          await window.loadURL(message.bootstrapUrl);
-          // 页面加载完成后才向启动器报告 ready，避免把后端启动当作整个桌面已就绪。
-          // EN: Report ready to the launcher only after the page loads; backend readiness alone does not mean
-          // the desktop is ready.
-          diagnostics.mark('web-loaded');
-          ready = true;
-          window.setTitle(`Elysia · ${message.version}`);
-          if (!hiddenLaunch) {
-            window.show();
-            window.focus();
-          }
-          if (process.send) process.send({ type: 'desktop-ready', port: message.port });
-        } catch (error) {
-          fail(error.message);
-        }
-      });
+        });
+      }
+      startBackend();
     })
     .catch((error) => {
       if (process.send && process.connected) process.send({ type: 'desktop-error', message: error.message });

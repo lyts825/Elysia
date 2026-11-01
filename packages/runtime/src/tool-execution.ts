@@ -37,7 +37,15 @@ export class ToolExecutionService {
    */
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
-    while (this.toolActive >= limit) {
+    const jobControl = call.name === 'job_read' || call.name === 'job_cancel';
+    // 同运行作业期间的冲突工具由网关立即拒绝，避免等待名额掩盖冲突；只读/控制工具仍可响应反馈。
+    while (
+      this.toolActive +
+        (jobControl || this.gateway.backgroundJobs.hasUnsettled(task.runId)
+          ? 0
+          : this.gateway.backgroundJobs.occupancy().length) >=
+      limit
+    ) {
       await delay(20, signal);
     }
     this.toolActive++;

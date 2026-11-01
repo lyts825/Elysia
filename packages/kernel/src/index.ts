@@ -38,7 +38,7 @@ import {
   type ContextSnapshot,
 } from '../../contracts/src/index.js';
 import { id, now, stable } from '../../contracts/src/identity.js';
-import type { KernelStore, KernelServices } from './ports.js';
+import type { KernelStore, KernelServices, BackgroundJobBoundary } from './ports.js';
 import { reasoningMessagePreview } from '../../contracts/src/reasoning.js';
 import { freezeRoleRouting, routeTask } from './model-routing.js';
 import { assertReviewModelPolicy } from './review-policy.js';
@@ -57,6 +57,7 @@ export type PlanModelAssignment = ModelChoice & { key: string; contextPolicy?: C
  * EN: Domain operations coordinate state, permissions, budgets, and events through storage ports; runtime handles external execution.
  */
 export class Kernel<Storage extends KernelStore = KernelStore> {
+  backgroundJobs?: BackgroundJobBoundary;
   /** 只持有领域存储端口和显式注入的宿主服务；构造本身不创建运行或启动外部执行。
    * EN: Holds domain storage ports and explicitly injected host services; construction neither creates a run nor starts external execution.
    */
@@ -1883,7 +1884,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
             .some((request) => ['RESERVED', 'UNKNOWN'].includes(request.status)) ||
           this.store
             .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId })
-            .some((operation) => ['INTENT', 'UNCERTAIN'].includes(operation.status)))
+            .some(
+              (operation) =>
+                ['INTENT', 'UNCERTAIN'].includes(operation.status) &&
+                !this.backgroundJobs?.isActiveOperation(operation),
+            ))
       )
         return;
       if (tasks.some((t) => !toolCallsClosed(this.history(t)))) return;
@@ -1914,6 +1919,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
        * EN: continue preserves authorization and children; replan stales the old candidate and cancels old children when needed before returning to planning.
        */
       const replan = run.planMode !== false && incoming.some((message) => message.intent !== 'continue');
+      if (replan && this.backgroundJobs?.hasUnsettled(runId)) return;
       const continuing =
         run.planMode === false ||
         (!replan && run.authorized && run.plan && run.acceptedPlanVersion === run.plan.version);
@@ -1927,7 +1933,12 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       if (
         !replan &&
         !['READY', 'RUNNING'].includes(run.status) &&
-        !(run.status === 'WAITING' && (run.reason === 'user' || (!run.authorized && run.reason === 'plan')))
+        !(
+          run.status === 'WAITING' &&
+          (run.reason === 'user' ||
+            run.reason === 'background_job' ||
+            (!run.authorized && run.reason === 'plan'))
+        )
       )
         return;
       run = invalidatePeerReview(this, run, '用户要求已更新，需要重新评审候选结果');
@@ -1957,7 +1968,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           if (stable(spec) !== stable(root.spec)) this.updateTask(root, root.status, { spec });
         }
         const answered = this.descendants(root).filter(
-          (task) => task.status === 'WAITING' && task.waitReason === 'user',
+          (task) => task.status === 'WAITING' && ['user', 'background_job'].includes(task.waitReason ?? ''),
         );
         for (const task of answered)
           this.updateTask(task, 'READY', { waitReason: undefined, waitingFor: [] });

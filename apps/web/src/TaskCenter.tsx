@@ -8,7 +8,11 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Project } from '../../../packages/contracts/src/index';
-import type { TaskCenterCategory, TaskCenterPage } from '../../../packages/contracts/src/task-center';
+import type {
+  TaskCenterCategory,
+  TaskCenterFilter,
+  TaskCenterPage,
+} from '../../../packages/contracts/src/task-center';
 import type { DeliveryReviewStatus } from '../../../packages/contracts/src/workflow';
 import { reviewStatusLabels } from './ReviewStatus';
 import { useSurfaceClient } from './SurfaceClientContext';
@@ -30,14 +34,15 @@ export type TaskCenterState = {
    *
    * EN: The parent owns filters and paging history so they survive closing the panel.
    */
-  filter: 'all' | TaskCenterCategory;
+  filter: TaskCenterFilter;
   before: string;
   trail: string[];
   projectId?: string;
   query?: string;
   reviewFilter?: DeliveryReviewStatus;
 };
-const labels: Record<'all' | TaskCenterCategory, string> = {
+const labels: Record<TaskCenterFilter, string> = {
+  attention: '需要我处理',
   all: '全部',
   ...taskCenterCategoryLabels,
 };
@@ -243,6 +248,11 @@ export function TaskCenter({
             </button>
           ))}
         </nav>
+        {state.filter === 'attention' && (
+          <p className="task-center-attention-summary">
+            等待你回应、核验或复核的任务，以及失败和读取异常。自动等待和主动暂停可在“全部”查看。
+          </p>
+        )}
         {surface === 'native' && (
           <label className="task-center-review-filter">
             用户复核状态
@@ -265,7 +275,11 @@ export function TaskCenter({
                 </option>
               ))}
             </select>
-            <small>与执行状态、项目和搜索共同筛选。</small>
+            <small>
+              {state.filter === 'attention'
+                ? '在需要处理的任务中筛选；已采纳任务可在“全部”查看。'
+                : '与执行状态、项目和搜索共同筛选。'}
+            </small>
           </label>
         )}
         <div className="task-center-search">
@@ -311,17 +325,17 @@ export function TaskCenter({
             当前项目：{projectsById.get(state.projectId)?.name || '原项目不可用'}
           </p>
         )}
-        {(state.filter !== 'all' || state.query || state.projectId || state.reviewFilter) && (
+        {(state.filter !== 'attention' || state.query || state.projectId || state.reviewFilter) && (
           <div className="task-center-filter-summary">
-            <span>正在按所选条件筛选任务</span>
+            <span>当前视图：{labels[state.filter]}，按所选条件筛选任务</span>
             <button
               type="button"
               className="quiet-button"
-              aria-label="清除任务筛选"
+              aria-label="恢复默认任务筛选"
               onClick={() => {
                 changeState({
                   ...state,
-                  filter: 'all',
+                  filter: 'attention',
                   query: '',
                   projectId: '',
                   reviewFilter: undefined,
@@ -332,7 +346,7 @@ export function TaskCenter({
               }}
             >
               <Icon name="close" size={14} />
-              清除筛选
+              恢复默认筛选
             </button>
           </div>
         )}
@@ -418,7 +432,9 @@ export function TaskCenter({
               {result.reviewCoverage.unavailable} 项复核状态暂不可读取。
               {state.reviewFilter
                 ? '当前结果与总数仅包含已知状态的匹配项，筛选结果可能不完整。'
-                : '任务记录仍可打开，暂不归入任何复核状态。'}
+                : state.filter === 'attention'
+                  ? '读取异常仍列入需要处理的范围，复核结论保持未知。'
+                  : '任务记录仍可打开，暂不归入任何复核状态。'}
             </p>
             <button
               className="secondary"
@@ -513,7 +529,7 @@ export function TaskCenter({
                   </span>
                   <Icon name={opening === item.id ? 'refresh' : 'chevron'} size={16} />
                 </button>
-                {(item.readIssue || (presentation.review && item.reviewIssue)) && (
+                {(item.readIssue || item.reviewIssue) && (
                   <p
                     className="task-center-item-issue"
                     role="region"
@@ -544,7 +560,17 @@ export function TaskCenter({
           })}
           {!result?.items.length && (
             <p className="task-center-empty" role="status">
-              {loading ? '正在读取任务…' : error ? '任务暂时无法读取' : '暂无此类任务'}
+              {loading
+                ? '正在读取任务…'
+                : error
+                  ? '任务暂时无法读取'
+                  : state.filter === 'attention' &&
+                      ((result?.projectionCoverage && !result.projectionCoverage.complete) ||
+                        (result?.reviewCoverage && !result.reviewCoverage.complete))
+                    ? '当前没有可列出的匹配项，仍有读取异常待处理。'
+                    : state.filter === 'attention'
+                      ? '当前筛选范围内暂无需要处理的任务'
+                      : '暂无此类任务'}
             </p>
           )}
         </div>
@@ -552,7 +578,7 @@ export function TaskCenter({
       <footer className="modal-footer task-center-pagination">
         <span role="status">
           {result
-            ? `${result.projectionCoverage && !result.projectionCoverage.complete ? '当前可列出' : state.reviewFilter && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
+            ? `${result.projectionCoverage && !result.projectionCoverage.complete ? '当前可列出' : (state.reviewFilter || state.filter === 'attention') && result.reviewCoverage && !result.reviewCoverage.complete ? '已知匹配' : '共'} ${result.page.total} 项`
             : '每页最多 40 项'}
           {result && (
             <small>

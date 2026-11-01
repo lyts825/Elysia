@@ -63,21 +63,23 @@ export const dataFormat = (version: number): DataFormat => ({
   name: 'elysia-sqlite',
   version,
   minimumReaderVersion:
-    version >= 10
+    version >= 11
       ? STORAGE_MIN_READER_VERSION
-      : version === 9
-        ? '1.20.0'
-        : version === 8
-          ? '1.10.0'
-          : version === 7
-            ? '1.9.0'
-            : version === 6
-              ? '1.0.0-preview.6'
-              : version === 5
-                ? '1.0.0-preview.1'
-                : version === 4
-                  ? '0.25.0-preview.1'
-                  : '0.24.0-preview.1',
+      : version === 10
+        ? '1.21.0'
+        : version === 9
+          ? '1.20.0'
+          : version === 8
+            ? '1.10.0'
+            : version === 7
+              ? '1.9.0'
+              : version === 6
+                ? '1.0.0-preview.6'
+                : version === 5
+                  ? '1.0.0-preview.1'
+                  : version === 4
+                    ? '0.25.0-preview.1'
+                    : '0.24.0-preview.1',
 });
 /**
  * 核对备份声明的数据格式和最低读取版本；旧备份按兼容规则处理。

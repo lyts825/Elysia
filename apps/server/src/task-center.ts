@@ -39,9 +39,11 @@ type Row = {
   updated_at: string;
   notification_status: NonNullable<TaskCenterItem['notification']>['status'] | null;
   notification_revision: number;
+  attention_reason?: string | null;
 };
 const categories = [
   'all',
+  'attention',
   'running',
   'waiting',
   'verification',
@@ -64,6 +66,27 @@ const state = (alias: string) =>
  */
 const waitReason = (alias: string) =>
   `COALESCE(json_extract(${alias}.data,'$.readModel.waitReason'),json_extract(${alias}.data,'$.waitReason'))`;
+
+/**
+ * 自动等待可能掩盖另一分支的待回应；按任务小投影找出仍需用户处理的原因。
+ * EN: An automatic run wait can mask another branch's user action; find it in task read projections.
+ */
+const attentionWaitReason = `(SELECT COALESCE(${waitReason('t')},'') FROM tasks t
+  WHERE t.run_id=task_center_changes_v1.run_id AND ${state('t')}='WAITING'
+    AND COALESCE(${waitReason('t')},'') NOT IN ('children','rate_limit','background_job','paused','interrupted')
+  ORDER BY t.rowid LIMIT 1)`;
+/**
+ * 需要处理的范围由当前分类、恢复故障和有效交付摘要组成；计数与分页共用此条件。
+ * 主动暂停和自动等待不单独成为待办，读取故障仍保留，复核摘要由 delivery.read 先刷新。
+ * EN: Counts and pages share current categories, recovery faults and current delivery summaries.
+ * Voluntary holds and automatic waits alone are excluded; read faults remain and delivery.read refreshes summaries first.
+ */
+const attention = `(category IN ('verification','failed','unavailable')
+  OR (category='waiting' AND (COALESCE(reason,'') NOT IN ('children','rate_limit','background_job') OR ${attentionWaitReason} IS NOT NULL))
+  OR EXISTS(SELECT 1 FROM execution_holds_v1 h WHERE h.run_id=task_center_changes_v1.run_id AND h.reason='recovery_unreadable')
+  OR run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE issue_code IS NOT NULL)
+  OR (kind='task' AND status='DONE' AND category='done'
+    AND run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status IN ('unreviewed','changes_requested','stale'))))`;
 
 /**
  * 采用小型持久当前状态投影；仅在显式访问时预热历史正文。 读取任务中心投影和交付复核摘要，支持筛选、分页及增量查询。
@@ -464,13 +487,13 @@ export class TaskCenterReads {
       const clauses = [
         'deleted=0',
         'archived=0',
-        ...(query.filter === 'all' ? [] : ['category=?']),
+        ...(query.filter === 'all' || query.filter === 'attention' ? [] : ['category=?']),
         ...(query.projectId ? ['project_id=?'] : []),
         ...(query.kind ? ['kind=?'] : []),
         ...(query.query?.trim() ? ["instr(lower(COALESCE(title,'')),?)>0"] : []),
       ];
       const params = [
-        ...(query.filter === 'all' ? [] : [query.filter]),
+        ...(query.filter === 'all' || query.filter === 'attention' ? [] : [query.filter]),
         ...(query.projectId ? [query.projectId] : []),
         ...(query.kind ? [query.kind] : []),
         ...(query.query?.trim() ? [query.query.trim().toLocaleLowerCase()] : []),
@@ -515,6 +538,7 @@ export class TaskCenterReads {
             .get(...params) as { n: number }
         ).n,
       );
+      if (query.filter === 'attention') clauses.push(attention);
       if (query.reviewFilter) {
         clauses.push("category<>'unavailable'");
         clauses.push('run_id IN (SELECT run_id FROM delivery_review_summary_v1 WHERE review_status=?)');
@@ -547,13 +571,18 @@ export class TaskCenterReads {
       );
       const rows = this.store.db
         .prepare(
-          `SELECT * FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}${position === undefined ? '' : ' AND position<?'} ORDER BY position DESC LIMIT ?`,
+          `SELECT *${query.filter === 'attention' ? `,CASE WHEN category='waiting' AND reason IN ('children','rate_limit','background_job') THEN ${attentionWaitReason} ELSE reason END attention_reason` : ''}
+          FROM task_center_changes_v1 WHERE ${clauses.join(' AND ')}${position === undefined ? '' : ' AND position<?'} ORDER BY position DESC LIMIT ?`,
         )
         .all(...params, ...(position === undefined ? [] : [position]), query.limit + 1) as Row[];
       const hasMore = rows.length > query.limit,
         selected = rows.slice(0, query.limit);
       return {
-        items: this.items(selected),
+        items: this.items(
+          query.filter === 'attention'
+            ? selected.map((row) => ({ ...row, reason: row.attention_reason ?? row.reason }))
+            : selected,
+        ),
         reviewCoverage: { complete: unavailable === 0, unavailable },
         projectionCoverage: { complete: projectionUnavailable === 0, unavailable: projectionUnavailable },
         page: {

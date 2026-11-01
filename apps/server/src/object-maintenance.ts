@@ -20,6 +20,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import { hash, now, tables, STORAGE_SCHEMA_VERSION } from '../../../packages/storage/src/index.js';
 import { VERSION } from '../../../packages/contracts/src/index.js';
+import { automationObjectReferences } from '../../../packages/storage/src/automation.js';
+import { automationReferenceClosure } from '../../../packages/storage/src/automation-object-references.js';
 import {
   assertDirectory,
   assertSurfacePath,
@@ -432,6 +434,21 @@ function readReferences(directory: string, scan: Scan, surface: Surface) {
         references(row.object_ref, retained, scan);
         scan.state.recordsScanned++;
       }
+    }
+    scan.phase('references', surface, 'automation');
+    for (const ref of automationReferenceClosure(directory, database, automationObjectReferences(database), {
+      check: () => scan.check(),
+      onBytes: (bytes) => {
+        scan.state.bytesHashed += bytes;
+      },
+      onObject: (kind) => {
+        scan.state.recordsScanned++;
+        if (kind === 'file') scan.state.filesChecked++;
+      },
+    })) {
+      scan.check();
+      references(ref, retained, scan);
+      scan.state.recordsScanned++;
     }
     scan.phase('references', surface, 'storage_meta');
     for (const row of database.prepare('SELECT key,value FROM storage_meta').iterate() as Iterable<{

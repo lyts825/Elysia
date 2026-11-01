@@ -32,6 +32,7 @@ const reasons: Record<string, { action: string; hint: string }> = {
   paused: { action: '查看', hint: '执行已暂停，检查记录后可恢复。' },
   interrupted: { action: '查看', hint: '执行已中断，请检查记录后恢复。' },
   rate_limit: { action: '查看', hint: '服务或账号受限，请查看重试状态。' },
+  background_job: { action: '查看', hint: '后台命令正在执行，结果会在安全边界加入上下文。' },
   terminal_unavailable: { action: '查看', hint: '终端环境未就绪，请检查后恢复。' },
 };
 
@@ -72,9 +73,26 @@ export function taskCenterPresentation(item: TaskCenterItem): {
       action: '详情',
       target: 'unavailable',
       review: false,
-      ...(item.executionHold ? { hint: '本机调度已停止，请先重试读取记录。' } : {}),
+      hint: item.executionHold
+        ? '本机调度已停止，请先重试读取记录。'
+        : '任务记录暂不可读，请重试读取后核对。',
     };
-  if (review) return { status, action: item.reviewIssue ? '检查' : '复核', target: 'review', review };
+  if (review)
+    return {
+      status,
+      action: item.reviewIssue ? '检查' : '复核',
+      target: 'review',
+      review,
+      hint: item.reviewIssue
+        ? '交付记录暂不可读，请重试读取后核对。'
+        : item.reviewStatus === 'unreviewed'
+          ? '交付已就绪，等待你的复核。'
+          : item.reviewStatus === 'changes_requested'
+            ? '你已提出修改，请查看复核意见并决定后续任务。'
+            : item.reviewStatus === 'stale'
+              ? '交付内容已变化，请重新核对原复核结论。'
+              : '你已采纳当前交付。',
+    };
   if (item.category === 'done') return { status, action: '查看', target: item.category, review };
 
   const reason = reasons[item.reason || ''];

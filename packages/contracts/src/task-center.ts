@@ -18,6 +18,11 @@ export type TaskCenterCategory =
   | 'paused'
   | 'unavailable';
 /**
+ * 聚合视图只决定查询范围，不新增或改变任务的执行分类。
+ * EN: Aggregate views filter the query without adding or changing execution categories.
+ */
+export type TaskCenterFilter = 'all' | 'attention' | TaskCenterCategory;
+/**
  * 中心条目保留状态、分类和修订；读取失败或持久暂停可独立表达。
  *
  * EN: Items retain execution status, category, and revision; read failures and durable holds are independently represented.

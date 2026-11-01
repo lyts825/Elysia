@@ -142,7 +142,14 @@ export class NativeAgentLoop {
      * 单步结束归还 READY 使其他候选有机会执行；工具内部若已转为等待/完成则保持其状态。
      * EN: Return a still-running task to READY for fairness; preserve any wait or completion established by its tools.
      */
-    if (task.status === 'RUNNING') this.kernel.updateTask(task, 'READY');
+    if (task.status === 'RUNNING') {
+      if (this.gateway.backgroundJobs.hasUnsettled(task.runId))
+        this.kernel.wait(
+          task,
+          this.kernel.store.hasUncertainOperation(task.runId, task.id) ? 'verification' : 'background_job',
+        );
+      else this.kernel.updateTask(task, 'READY');
+    }
     this.kernel.checkpoint(attempt.id);
   }
 }

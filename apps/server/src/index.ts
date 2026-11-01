@@ -27,6 +27,13 @@ let closing: Promise<void> | undefined;
  */
 function close() {
   return (closing ??= (async () => {
+    // 先报告主动停止，关闭失败产生非零退出时也不能被桌面当作崩溃重新启动。
+    // EN: Announce intentional shutdown before cleanup, even if cleanup later exits unsuccessfully.
+    if (process.send && process.connected) {
+      try {
+        process.send({ type: 'backend-stopping' }, undefined, undefined, () => {});
+      } catch {}
+    }
     if (interval) clearInterval(interval);
     const stopped = await Promise.allSettled([
       Promise.resolve().then(() => frontend?.close()),
@@ -114,6 +121,21 @@ try {
   process.on('SIGTERM', requestClose);
   process.on('message', (message: any) => {
     if (message?.type === 'shutdown') requestClose();
+    // 心跳只证明服务事件循环能回应，不证明模型或任务有进展，也不触发任务恢复。
+    // EN: A heartbeat proves event-loop responsiveness only; it neither asserts task progress nor resumes work.
+    if (
+      !closing &&
+      message?.type === 'health-ping' &&
+      typeof message.id === 'string' &&
+      message.id.length <= 64 &&
+      /^\d+:\d+$/.test(message.id) &&
+      process.send &&
+      process.connected
+    ) {
+      try {
+        process.send({ type: 'health-pong', id: message.id }, undefined, undefined, () => {});
+      } catch {}
+    }
   });
   process.on('disconnect', requestClose);
   interval = setInterval(() => {

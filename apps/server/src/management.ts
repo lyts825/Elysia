@@ -30,6 +30,10 @@ export function registerManagement(
   executor: NativeExecutor,
   closeStreams: (runId: string) => void,
   deletedProject?: (projectId: string) => void,
+  projectLifecycle?: {
+    suspendProject(projectId: string): Promise<() => void>;
+    assertProjectDeletable(projectId: string): void;
+  },
 ) {
   const deleting = new Set<string>();
   /**
@@ -87,6 +91,14 @@ export function registerManagement(
    * EN: Prevent concurrent retries from interrupting/deleting the same running conversation twice.
    */
   const pending = new Map<string, { fingerprint: string; result: Promise<unknown> }>();
+  /** 删除前不能丢弃仍可能运行的旧进程证据；受管进程先中断，提交前再核对。 */
+  const assertNoUnconfirmedProcess = (runId: string) => {
+    invariant(
+      !executor.gateway.backgroundJobs.hasUnconfirmedProcess(runId),
+      'JOB_STOP_UNCONFIRMED',
+      '后台进程是否停止尚未确认；请先核验进程与结果，再删除或归档',
+    );
+  };
   /**
    * 删除生命周期先占用进程内实体锁并暂停/取消运行，再等待实际执行停止，最后幂等删除。 同一命令并发重试共享 Promise，避免两次中断或一方清理另一方仍使用的数据。
    * EN: Deletion first takes an in-process entity lock, pauses/cancels the run, waits for actual execution to stop, then deletes idempotently. Concurrent retries share a promise, avoiding duplicate interrupts or cleaning data still used by another attempt.
@@ -96,6 +108,7 @@ export function registerManagement(
     route: string,
     prepare: (lock: (key: string) => void) => string[],
     finish: () => unknown,
+    projectId?: string,
   ) => {
     const payload = { route, body },
       fingerprint = hash(stable(payload));
@@ -116,11 +129,24 @@ export function registerManagement(
       deleting.add(key);
       held.push(key);
     };
+    let releaseProject: (() => void) | undefined;
     const result = (async () => {
       const runs = store.tx(() => prepare(lock));
-      await Promise.all(runs.map((runId) => executor.interrupt(runId)));
-      return command(body, route, finish);
+      const stopped = await Promise.allSettled([
+        Promise.resolve().then(async () => {
+          if (projectId) releaseProject = await projectLifecycle?.suspendProject(projectId);
+        }),
+        ...runs.map((runId) => executor.interrupt(runId)),
+      ]);
+      const failed = stopped.find((item) => item.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+      return command(body, route, () => {
+        for (const runId of runs) assertNoUnconfirmedProcess(runId);
+        if (projectId) projectLifecycle?.assertProjectDeletable(projectId);
+        return finish();
+      });
     })().finally(() => {
+      releaseProject?.();
       pending.delete(body.commandId);
       for (const key of held) deleting.delete(key);
     });
@@ -142,15 +168,15 @@ export function registerManagement(
       kernel.updateRun(store.require('runs', runId), { status: run.status, reason: run.reason });
   };
   /**
-   * 先归档运行，未结束时按删除模式取消或保留决定地暂停；已结束运行不再次执行状态动作。
-   * EN: Archives a run and cancels or decision-preservingly pauses unfinished work according to removal mode; finished runs receive no extra state action.
+   * 先核验旧进程再归档并暂停；删除失败仍可取消归档后核验，不提前写入取消状态。
+   * EN: Check orphaned processes, then archive and pause; failed deletion remains recoverable for verification.
    */
-  const halt = (runId: string, remove = false) => {
+  const halt = (runId: string) => {
+    assertNoUnconfirmedProcess(runId);
     const run = store.require<Run>('runs', runId);
     kernel.updateRun(run, { archived: true });
     if (!['DONE', 'CANCELLED'].includes(run.status)) {
-      if (remove) kernel.action(runId, 'cancel');
-      else pauseKeepingDecision(runId);
+      pauseKeepingDecision(runId);
     }
   };
   app.get('/api/spaces', () => store.all<ProjectSpace>('project_spaces'));
@@ -216,6 +242,7 @@ export function registerManagement(
       if (body.spaceId) store.require<ProjectSpace>('project_spaces', body.spaceId);
       if (body.archived === true)
         for (const run of store.all<Run>('runs').filter((r) => r.projectId === project.id && !r.archived)) {
+          assertNoUnconfirmedProcess(run.id);
           /**
            * 项目归档暂停执行，对话归档标记仍独立保存。
            * EN: Project archival pauses execution; conversation archive flags stay independent.
@@ -225,13 +252,24 @@ export function registerManagement(
       const { commandId: _commandId, expectedRevision: _revision, ...changes } = body;
       return store.put('projects', { ...project, ...changes });
     });
-    if (body.archived === true && !replayed)
-      await Promise.all(
-        store
-          .all<Run>('runs')
-          .filter((r) => r.projectId === request.params.id)
-          .map((r) => executor.interrupt(r.id)),
-      );
+    if (body.archived === true && !replayed) {
+      let release: (() => void) | undefined;
+      try {
+        const stopped = await Promise.allSettled([
+          Promise.resolve().then(async () => {
+            release = await projectLifecycle?.suspendProject(request.params.id);
+          }),
+          ...store
+            .all<Run>('runs')
+            .filter((r) => r.projectId === request.params.id)
+            .map((r) => executor.interrupt(r.id)),
+        ]);
+        const failed = stopped.find((item) => item.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+      } finally {
+        release?.();
+      }
+    }
     return result;
   });
   app.delete<{ Params: { id: string } }>('/api/projects/:id', (request) => {
@@ -255,7 +293,7 @@ export function registerManagement(
         const runs = store.all<Run>('runs').filter((r) => r.projectId === project.id);
         for (const run of runs) {
           lock('run:' + run.id);
-          halt(run.id, true);
+          halt(run.id);
         }
         return runs.map((r) => r.id);
       },
@@ -270,6 +308,7 @@ export function registerManagement(
         deletedProject?.(request.params.id);
         return { ok: true, deletedRunIds: deletedRuns.map((run) => run.id) };
       },
+      request.params.id,
     );
   });
   app.patch<{ Params: { id: string } }>('/api/runs/:id', async (request) => {
@@ -298,7 +337,7 @@ export function registerManagement(
         revision(body, run);
         assertMutable(run.id, run.projectId);
         lock('run:' + run.id);
-        halt(run.id, true);
+        halt(run.id);
         return [run.id];
       },
       () => {

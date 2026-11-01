@@ -97,11 +97,15 @@ export class NativeExecutor implements ExecutorAdapter {
     this.executionPlugins = new ExecutionPlugins([
       {
         manifest: { id: 'execution.native', version: '1.0.0', apiVersion: 1 },
-        contributions: { native: { /**
-           * 原生通道贡献只委托代理循环单步，不在插件中自行领取任务或调度其他运行。
-           * EN: The native channel contribution delegates one agent-loop step without independently claiming tasks or scheduling other runs.
-           */
-          step: (task, signal) => this.loop.step(task, signal) } },
+        contributions: {
+          native: {
+            /**
+             * 原生通道贡献只委托代理循环单步，不在插件中自行领取任务或调度其他运行。
+             * EN: The native channel contribution delegates one agent-loop step without independently claiming tasks or scheduling other runs.
+             */
+            step: (task, signal) => this.loop.step(task, signal),
+          },
+        },
       },
       ...(options.executionPlugins?.(this.gateway) ?? []),
     ]);
@@ -126,6 +130,18 @@ export class NativeExecutor implements ExecutorAdapter {
        * EN: Closes the shared gateway during scheduler disposal, draining MCP, plan-module, and command resources together.
        */
       disposeTools: () => this.gateway.dispose(),
+      backgroundWork: () => this.gateway.backgroundJobs.occupancy(),
+      maintainBackgroundWork: () => this.gateway.backgroundJobs.pump(),
+    });
+    this.gateway.backgroundJobs.configure({
+      isTaskActive: (taskId) => this.scheduler.active.has(taskId),
+      wake: (runId) => this.scheduler.resume(runId),
+      modelWork: () =>
+        [...this.scheduler.active].map(([taskId, entry]) => ({
+          taskId,
+          runId: entry.runId,
+          account: entry.account,
+        })),
     });
     this.tools = new ToolExecutionService(kernel, this.gateway);
     this.requests = new ModelRequestRunner(kernel, this.scheduler, {
@@ -160,6 +176,15 @@ export class NativeExecutor implements ExecutorAdapter {
    */
   get active() {
     return this.scheduler.active;
+  }
+  /** 管理边界使用真实在途模型/后台命令事实；未知且未确认停止的作业同样阻止破坏性管理。 */
+  hasActiveWork(runId: string, taskId?: string) {
+    return (
+      [...this.active].some(([key, entry]) => entry.runId === runId && (!taskId || key === taskId)) ||
+      this.gateway.backgroundJobs
+        .occupancy()
+        .some((entry) => entry.runId === runId && (!taskId || entry.taskId === taskId))
+    );
   }
   /**
    * 启动调度计时器；幂等与关闭保护由调度器负责。

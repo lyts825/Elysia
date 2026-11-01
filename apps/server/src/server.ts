@@ -87,6 +87,9 @@ import { ProjectDeliveryBinding } from '../../../packages/contracts/src/project-
 import { attachProjectDeliveryRun, registerProjectDelivery } from './project-delivery.js';
 import { registerProjectUsage } from './project-usage.js';
 import { registerRuntimeDiagnostics } from './runtime-diagnostics.js';
+import { registerNativeInboxReceipts } from './inbox-receipts.js';
+import { createAutomationPlugins, registerAutomationPluginRoutes } from './automation-plugins.js';
+import type { AutomationPlugin } from '../../../packages/plugins/src/automation.js';
 const textPageQuery = z.object({
   offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   limit: z.coerce.number().int().min(1).max(TEXT_PAGE_BYTES).optional(),
@@ -195,6 +198,7 @@ export function createServer(
     surface?: WorkbenchSurface;
     auth?: SurfaceAuth;
     serveWeb?: boolean;
+    automationPlugins?: readonly AutomationPlugin[];
   },
 ) {
   const app = options.app ?? Fastify({ logger: false, bodyLimit: 3 * 1024 * 1024 });
@@ -213,6 +217,8 @@ export function createServer(
         ? null
         : url;
   const kernel = createKernel(store);
+  const automation =
+    options.surface === 'terminal' ? undefined : createAutomationPlugins(store, options.automationPlugins);
   const terminalControl =
     options.surface === 'terminal'
       ? new TerminalControlService(store, options.terminalDesktop ?? desktopServices())
@@ -972,6 +978,45 @@ export function createServer(
   };
   registerRunRecordRoutes(app, store);
   registerTaskCenter(app, store);
+  if (options.surface !== 'terminal') registerNativeInboxReceipts(app, store);
+  if (options.surface !== 'terminal') {
+    const jobParams = z.object({ id: z.string().uuid(), jobId: z.string().uuid() });
+    const nativeJobRun = (runId: string) => {
+      const run = store.require<Run>('runs', runId);
+      invariant(run.execution?.kind !== 'docker-agent', 'NATIVE_JOBS_ONLY', '后台作业仅用于原生执行');
+      return run;
+    };
+    app.get<{ Params: { id: string } }>('/api/runs/:id/jobs', async (request) => {
+      const run = nativeJobRun(z.string().uuid().parse(request.params.id));
+      const query = z.object({ before: z.string().uuid().optional() }).strict().parse(request.query);
+      return { runId: run.id, ...executor.gateway.backgroundJobs.listPage(run.id, query.before) };
+    });
+    app.get('/api/runs/:id/jobs/:jobId', async (request) => {
+      const { id, jobId } = jobParams.parse(request.params);
+      nativeJobRun(id);
+      return executor.gateway.backgroundJobs.read(id, jobId);
+    });
+    app.post('/api/runs/:id/jobs/:jobId/cancel', async (request) => {
+      const { id, jobId } = jobParams.parse(request.params);
+      const body = z
+        .object({ commandId: z.string().uuid(), expectedRevision: z.number().int() })
+        .strict()
+        .parse(request.body);
+      executionCommand(id, body, request.url, () => {
+        const run = nativeJobRun(id);
+        revision(body, run);
+        management.assertMutable(run.id, run.projectId);
+        invariant(
+          !run.archived && !['DONE', 'CANCELLED'].includes(run.status),
+          'INVALID_STATE',
+          '已结束或归档的运行不能取消作业',
+        );
+        executor.gateway.backgroundJobs.read(id, jobId);
+        return { jobId, accepted: true };
+      });
+      return executor.gateway.backgroundJobs.cancel(id, jobId);
+    });
+  }
   registerContextPreview(app, store);
   registerPreviewLocationRoutes(app, previews);
   app.get('/api/runs', async (request, reply) => {
@@ -1711,6 +1756,7 @@ export function createServer(
         result: z.unknown().optional(),
         usage: z.any().optional(),
         note: z.string().min(1),
+        processStopped: z.boolean().optional(),
       })
       .parse(request.body);
     return executionCommand(request.params.id, body, request.url, () => {
@@ -1726,7 +1772,7 @@ export function createServer(
       );
       invariant(body.operationId || body.requestId, 'DECISION_TARGET', '需要具体操作或请求引用');
       if (body.operationId) {
-        const op = store.require<Operation>('tool_operations', body.operationId);
+        let op = store.require<Operation>('tool_operations', body.operationId);
         invariant(
           op.name !== 'terminal_agent',
           'TERMINAL_VERIFICATION_ROUTE',
@@ -1743,6 +1789,15 @@ export function createServer(
           'INVALID_STATE',
           '已结束的任务不能修改核验结果',
         );
+        if (op.name === 'job_execution') {
+          const job = executor.gateway.backgroundJobs.findByOperation(run.id, op.id);
+          invariant(job, 'JOB_NOT_FOUND', '后台作业证据缺失，不能放行');
+          if (!job.stopConfirmed) {
+            invariant(body.processStopped === true, 'JOB_STOP_EVIDENCE', '请先核验进程已停止，再确认副作用');
+            executor.gateway.backgroundJobs.confirmStopped(run.id, job.id, body.note);
+            op = store.require<Operation>('tool_operations', op.id);
+          }
+        }
         const updated = store.put('tool_operations', {
           ...op,
           status: body.outcome === 'confirmed' ? 'DONE' : 'FAILED',
@@ -1802,8 +1857,10 @@ export function createServer(
       streams.delete(runId);
     },
     (projectId) => terminalControl?.removeProjectPreferences(projectId),
+    automation,
   );
   if (options.surface !== 'terminal') registerWorkflow(app, store, management.assertMutable);
+  if (automation) registerAutomationPluginRoutes(app, automation, management.assertMutable);
   if (options.surface !== 'terminal') registerModelRouting(app, store, management.assertMutable);
   if (options.surface !== 'terminal') registerProjectIntelligenceRoutes(app, store, management.assertMutable);
   if (options.surface !== 'terminal')
@@ -1961,6 +2018,7 @@ export function createServer(
     scheduler?.stop();
     for (const set of streams.values()) for (const stream of set) stream.end();
     const stopped = await Promise.allSettled([
+      Promise.resolve().then(() => automation?.close()),
       Promise.resolve().then(() => (options.surface === 'terminal' ? undefined : codex.close())),
       Promise.resolve().then(() => (options.surface === 'terminal' ? undefined : subscription.close())),
       Promise.resolve().then(() => executor.dispose()),
@@ -1974,6 +2032,7 @@ export function createServer(
     executor,
     terminal,
     providerPlugins,
+    automation,
     scheduler,
     auth,
     bootstrapToken,
@@ -2013,10 +2072,5 @@ function requestPreviewPolicy(url: string, policy: unknown) {
  * EN: Compatibly checks executor active-map occupancy for a run/optional task, returning a falsy default when the map is absent.
  */
 function executorHasActive(executor: NativeExecutor, runId: string, taskId?: string) {
-  return (
-    (executor as any).active &&
-    [...(executor as any).active.entries()].some(
-      ([key, a]: [string, any]) => a.runId === runId && (!taskId || key === taskId),
-    )
-  );
+  return executor.hasActiveWork(runId, taskId);
 }

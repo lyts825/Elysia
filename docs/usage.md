@@ -1,6 +1,6 @@
 # 使用指南
 
-适用源码版本：v1.24.0。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
+适用源码版本：v1.25.0。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
 
 - [启动](#启动)
 - [项目与交付](#项目与交付)
@@ -25,6 +25,8 @@
 
 首次启动构建应用，需要升级数据库时先备份再迁移；以后仅在源代码变化时重新构建。首次安装 Electron 需要网络。关闭窗口会安全停止本轮服务；重复启动会聚焦已有窗口。启动错误会显示对话框，日志在 `.elysia-runtime/launcher.log` 和 `desktop.log`。
 
+服务正常启动后，桌面主进程独立监督后端。异常退出按 1、3、10 秒退避，5 分钟内最多重启 3 次，并在原窗口重新认证；窗口标题显示恢复或需处理状态。初始配置失败、关闭窗口及 `pnpm stop` 不触发重启。心跳超时只提示，不强制杀进程。恢复沿用原有持久停止、未知请求和副作用核验，不自动清除授权或恢复人工暂停。
+
 需要桌面快捷方式时，执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-shortcut.ps1`。它创建或更新桌面的 `Elysia.lnk`，指向本项目入口并使用应用图标；已有本项目快捷方式也可运行此命令更新图标。移动项目后需重新创建。桌面进程异常日志另存 `.elysia-runtime/desktop-launch.log`。
 
 ```powershell
@@ -41,6 +43,16 @@ pnpm start
 下载网络不能访问 GitHub 时，可在启动终端设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重试；安装器仍校验锁定 Electron 包内的校验和。密钥和镜像设置均不会自动写入项目文件。
 
 ## 项目与交付
+
+### 需要我处理、消息与后台作业
+
+任务中心默认打开“需要我处理”，集中显示待回答、待核验、执行失败、读取故障和未完成的交付复核。自动限流、子任务等待、后台命令执行和主动暂停不单独成为人工待办；另一分支仍有待回答事项时会保留。可切换到“全部”查看其他运行，原生与终端入口各自保存筛选。
+
+原生对话底部的“补充消息状态”按需读取消息。已保存表示需求已持久接收；“已加入上下文”表示执行器已应用，不能据此判断模型已读或任务完成。暂停、归档、结束和未知结果会分别说明等待原因，长文展开后读取原文。分页或读取失败保留上次结果，并说明未能核验的记录。
+
+已授权命令执行的原生任务可使用 `job_start` 启动后台命令，以 `job_read` 读取状态和分页输出，以 `job_cancel` 停止。界面“后台作业”也提供停止、输出和核验入口。同步 `exec` 继续可用。每个运行最多一个未结算后台作业，占用既有并发名额并受累计时间预算约束；作业期间可接收补充需求，冲突写入、再次执行命令和验收会被阻止。
+
+启动回执只证明登记成功。命令完成后，结果会在消息配对完整的安全边界加入原任务上下文一次。取消或服务中断可能留下未知副作用；应用不自动重跑。若无法确认旧进程已停止，须先自行核对进程和文件，再在核验入口明确记录停止依据与副作用结论。完成任务时使用真实执行操作记录作为证据，不能使用启动回执。
 
 ### 目标与计划
 
@@ -316,7 +328,7 @@ pnpm backup D:\ElysiaBackups\snapshot
 pnpm restore D:\ElysiaBackups\snapshot
 pnpm backup D:\ElysiaBackups\terminal --surface=terminal
 pnpm restore D:\ElysiaBackups\terminal --surface=terminal
-pnpm db:migrate                      # 幂等迁移到当前 schema10
+pnpm db:migrate                      # 幂等迁移到当前 schema11
 pnpm objects:plan .local-qa\objects-plan.json    # 服务停止后生成清理预览，目标文件须不存在
 pnpm objects:cleanup .local-qa\objects-plan.json # 核对计划后执行
 # 可选：指定新的审计文件，默认自动生成到计划文件旁
@@ -368,14 +380,14 @@ pnpm cache:preview --keep 2
 ```powershell
 pnpm typecheck
 pnpm build
-pnpm verify:local --bundle C:/delivery/acceptance-v1.24.0 --output .local-qa/release-check
+pnpm verify:local --bundle C:/delivery/acceptance-v1.25.0 --output .local-qa/release-check
 ```
 
 `verify:local` 校验并导入独立验收包，再执行类型检查、生产构建和包内用例。使用该入口时，前两条命令已包含在验收中，无需另外重复。新环境按 [验收包与本地交付](VERIFICATION.md) 取得匹配的材料；缺失或不匹配时明确失败。无参数的历史入口仍读取 `.local-tests/verify.ts`。协议夹具和合成执行器的结果不能替代真实模型质量、缓存、账号并发和供应商续接验收。
 
 ## 数据格式与升级
 
-本版数据格式为 schema10，最低读取版本 1.21.0，防止旧版跳过执行前审核或把容器命令改为本机执行。首次打开旧数据沿用双入口先备份再升级，迁移不改写旧任务的配置。schema9 备份仍声明最低读取 1.20.0，schema8 为 1.10.0，schema7 为 1.9.0；回退旧程序应先恢复升级前备份。
+本版数据格式为 schema11，最低读取版本 1.25.0，防止旧版忽略后台作业副作用和来源授权版本继续执行。首次打开旧数据沿用双入口先备份再升级，迁移不改写旧任务的配置。schema10 备份仍声明最低读取 1.21.0，schema9 为 1.20.0，schema8 为 1.10.0，schema7 为 1.9.0；回退旧程序应先恢复升级前备份。
 
 ## 工程布局
 

@@ -40,9 +40,7 @@ export class RunApplicationService {
    * EN: Checks live host execution entries for a run/optional task instead of assuming persisted state proves process shutdown.
    */
   private hasActive(runId: string, taskId?: string) {
-    return [...this.executor.active.entries()].some(
-      ([id, active]) => active.runId === runId && (!taskId || id === taskId),
-    );
+    return this.executor.hasActiveWork(runId, taskId);
   }
   /**
    * 在调用方命令事务内校验版本、归档和活动边界并修改领域状态。 显式恢复把持久停止解除与状态动作一同提交；结束运行的恢复只解除 hold，不重新执行任务。 模型切换只能发生在该代理没有活动请求时，避免旧模型响应写入新会话。
@@ -75,6 +73,11 @@ export class RunApplicationService {
         return run;
       }
       if (['start', 'resume', 'resume_task'].includes(body.action) || body.switchMode === 'resume') {
+        invariant(
+          !executor.gateway.backgroundJobs.hasUnsettled(run.id),
+          'BACKGROUND_JOB_UNSETTLED',
+          '后台命令尚未结束或结果未核验，请先处理后台作业，再恢复执行',
+        );
         if (store.getExecutionHold(run.id)) {
           invariant(!this.hasActive(run.id), 'STOP_IN_PROGRESS', '当前执行尚未停止，请稍后再恢复');
           if (store.getExecutionHold(run.id)?.reason === 'recovery_unreadable') kernel.recover(run.id);

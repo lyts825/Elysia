@@ -49,6 +49,9 @@ import { projectionReads } from './projection-reads.js';
 import { ExecutionRecovery, initializeExecutionRecovery } from './execution-recovery.js';
 import { publishFileObject } from './file-objects.js';
 import { ObjectReferenceProjection } from './object-reference-projection.js';
+import { initializeBackgroundJobs } from './background-jobs.js';
+import { initializeAutomationSchema, automationObjectReferences } from './automation.js';
+import { automationReferenceClosure } from './automation-object-references.js';
 import {
   ArtifactDeliveryMetadataReads,
   serializeDeliveryArtifactMetadata,
@@ -70,8 +73,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
     ...(message.calls?.length ? { calls: message.calls.map((call) => ({ id: call.id })) } : {}),
   };
 }
-export const STORAGE_SCHEMA_VERSION = 10;
-export const STORAGE_MIN_READER_VERSION = '1.21.0';
+export const STORAGE_SCHEMA_VERSION = 11;
+export const STORAGE_MIN_READER_VERSION = '1.25.0';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 /**
@@ -568,6 +571,14 @@ export class Store {
     // 旧客户端不能绕过工具审核，或把容器命令静默改成本机执行。
     // EN: Older clients must not bypass tool review or silently run container commands on the host.
     if (version < 10) this.tx(() => this.db.exec('PRAGMA user_version=10;'));
+    // 旧客户端不识别后台副作用和来源授权版本，不能继续执行新库中的运行。
+    // EN: Older clients cannot safely execute runs without background effects and source revisions.
+    if (version < 11)
+      this.tx(() => {
+        initializeBackgroundJobs(this.db);
+        initializeAutomationSchema(this.db);
+        this.db.exec('PRAGMA user_version=11;');
+      });
     // 原子迁移提交后再回收旧明文页。待清理标记使COMMIT后中断的清理能够在重开时继续。
     // EN: Reclaim old plaintext pages only after the atomic schema/content migration commits. A pending
     // marker lets reopening finish cleanup after an interruption following COMMIT.
@@ -2113,6 +2124,12 @@ export class Store {
       | { value: string }
       | undefined;
     if (library) objectRefs(JSON.parse(library.value), retained);
+    for (const ref of automationReferenceClosure(
+      this.directory,
+      this.db,
+      automationObjectReferences(this.db),
+    ))
+      objectRefs(ref, retained, 'objectRef');
     if (!this.objectReferences)
       for (const table of tables)
         for (const row of this.db.prepare(`SELECT content FROM ${table}`).all() as any[])

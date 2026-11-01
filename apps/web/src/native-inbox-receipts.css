@@ -1,0 +1,45 @@
+.native-inbox-receipts {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+.native-inbox-receipts > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.inbox-receipt-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.inbox-receipt-list > li {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+.inbox-receipt-heading,
+.inbox-receipt-pages {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.inbox-receipt-heading time {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+.inbox-receipt-list pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+  font: inherit;
+}
+.inbox-receipt-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.inbox-receipt-pages {
+  margin-top: var(--space-3);
+}

@@ -16,6 +16,7 @@ import { knowledgeTools } from './knowledge.js';
 import { mcpTools } from './mcp.js';
 import { networkTools } from './network.js';
 import { workspaceTools } from './workspace.js';
+import { backgroundJobTools } from './background-jobs.js';
 
 /**
  * 组装固定的内置工具插件，并为各插件挑选所需能力。
@@ -25,6 +26,7 @@ import { workspaceTools } from './workspace.js';
  */
 export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
   const registry = new PluginRegistry<ToolContribution>([
+    backgroundJobTools(context.backgroundJobs),
     collaborationTools({
       store: capabilities(context.store, ['require']),
       kernel: capabilities(context.kernel, ['wait', 'event', 'spawn', 'allocateContext', 'submitPeerReview']),

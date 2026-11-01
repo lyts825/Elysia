@@ -38,6 +38,8 @@ export interface SchedulerServices {
   step(task: Task, signal: AbortSignal): Promise<void>;
   cancelProcesses(taskIds?: Set<string>): Promise<void>;
   disposeTools(): Promise<void>;
+  backgroundWork?(): { taskId: string; runId: string; account: string }[];
+  maintainBackgroundWork?(): Promise<void>;
 }
 export interface RunControl {
   rateLimitResumeAt(task: Task): number | undefined;
@@ -167,8 +169,9 @@ export class ExecutionScheduler implements RunControl {
    * EN: Returns the first queue reason in global, run, dependency, channel, and account-limit order.
    */
   private queueReason(task: Task, run: Run): RuntimeQueueReason {
-    if (this.active.size >= 4) return 'global-concurrency';
-    if ([...this.active.values()].filter((entry) => entry.runId === run.id).length >= run.limits.concurrency)
+    const occupied = this.occupied().filter((entry) => entry.taskId !== task.id);
+    if (occupied.length >= 4) return 'global-concurrency';
+    if (occupied.filter((entry) => entry.runId === run.id).length >= run.limits.concurrency)
       return 'run-concurrency';
     if (
       !this.kernel
@@ -183,11 +186,18 @@ export class ExecutionScheduler implements RunControl {
     if (unavailable) return unavailable;
     const agent = this.kernel.store.require<Agent>('agents', task.agentId);
     if (
-      [...this.active.values()].filter((entry) => entry.account === agent.providerBinding.account).length >=
+      occupied.filter((entry) => entry.account === agent.providerBinding.account).length >=
       agent.providerBinding.concurrency
     )
       return 'account-concurrency';
     return admission?.reason(task, run) ?? 'ready';
+  }
+  /** 模型步骤与其后台命令合并为同一代理名额，命令独立执行时仍占名额。 */
+  private occupied() {
+    const entries = new Map((this.services.backgroundWork?.() ?? []).map((entry) => [entry.taskId, entry]));
+    for (const [taskId, entry] of this.active)
+      entries.set(taskId, { taskId, runId: entry.runId, account: entry.account });
+    return [...entries.values()];
   }
   /**
    * 入口、持久停止和归档检查先于通道选择，旧入口不能因加载了某驱动就调度其历史任务。
@@ -238,7 +248,8 @@ export class ExecutionScheduler implements RunControl {
           ...this.executionPlugins.forRun(run).queueMetadata?.(run),
         });
     }
-    const activeTaskIds = [...this.active.keys()];
+    const occupied = this.occupied();
+    const activeTaskIds = occupied.map((entry) => entry.taskId);
     const serialized = stable({ queue, activeTaskIds });
     if (serialized !== this.runtimeLast) {
       this.runtimeLast = serialized;
@@ -247,7 +258,9 @@ export class ExecutionScheduler implements RunControl {
     return {
       revision: this.runtimeRevision,
       queue: queue.filter((entry) => !runId || entry.runId === runId),
-      activeTaskIds: activeTaskIds.filter((key) => !runId || this.active.get(key)?.runId === runId),
+      activeTaskIds: activeTaskIds.filter(
+        (key) => !runId || occupied.find((entry) => entry.taskId === key)?.runId === runId,
+      ),
     };
   }
   /**
@@ -352,6 +365,8 @@ export class ExecutionScheduler implements RunControl {
   private async schedule() {
     if (this.stopped) return;
     try {
+      await this.services.maintainBackgroundWork?.();
+      if (this.stopped) return;
       for (let run of this.kernel.store
         .schedulerRunCandidates(Date.now(), [...this.locallyStopped])
         .filter(
@@ -374,7 +389,11 @@ export class ExecutionScheduler implements RunControl {
                 .some((r) => ['RESERVED', 'UNKNOWN'].includes(r.status)) &&
               !this.kernel.store
                 .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: run.id })
-                .some((o) => ['INTENT', 'UNCERTAIN'].includes(o.status))))
+                .some(
+                  (o) =>
+                    ['INTENT', 'UNCERTAIN'].includes(o.status) &&
+                    !this.kernel.backgroundJobs?.isActiveOperation(o),
+                )))
         ) {
           /**
            * 先应用安全的项目反馈，再检查保持累计的时间预算。
@@ -449,7 +468,7 @@ export class ExecutionScheduler implements RunControl {
    */
   private dispatchReady(tasks: readonly Task[], dispatched: Set<string>) {
     for (const candidate of this.orderedCandidates(tasks)) {
-      if (this.stopped || this.active.size >= 4) break;
+      if (this.stopped) break;
       /**
        * 每次准备完成都重新核对宿主当前状态，不使用早先快照直接派发。
        * EN: Every preparation completion rechecks current host state, never its earlier snapshot.
