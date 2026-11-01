@@ -420,14 +420,16 @@ export class ToolGateway {
       this.planAlignment.loaded
     )
       names.push('propose_plan');
-    if (permission.read) names.push('list', 'read', 'read_artifact', 'search');
+    if (permission.read) names.push('list', 'read', 'read_artifact', 'list_artifacts', 'search');
     if (permission.urls.length) names.push('fetch_url');
     if (task.phase === 'executing') {
       names.push(
-        ...(task.peerReview ? ['read_peer_evidence', 'submit_peer_review'] : ['join_tasks', 'submit_result']),
+        ...(task.peerReview
+          ? ['read_peer_evidence', 'submit_peer_review']
+          : ['join_tasks', 'list_children', 'submit_result']),
       );
       if (task.spec.role !== 'reviewer') {
-        names.push('spawn_task', 'allocate_context');
+        names.push('spawn_task', 'spawn_tasks', 'allocate_context');
         if (permission.write) {
           names.push('write', 'apply_patch', 'artifact');
           if (permission.read && this.store.require<Run>('runs', task.runId).source)
@@ -455,6 +457,7 @@ export class ToolGateway {
           'artifact',
           'diff',
           'spawn_task',
+          'spawn_tasks',
           'allocate_context',
           'propose_plan',
         ].includes(name),
@@ -595,8 +598,9 @@ export class ToolGateway {
    * unique receipt or original-request/attempt proof.
    */
   private previousCall(task: Task, call: ToolCall, assistantMessageId: string) {
-    const operations = this.store
-      .all<Operation>('tool_operations', task.runId)
+    const operations = this.store.scheduling
+      .operationIds(task.id)
+      .map((key) => this.store.require<Operation>('tool_operations', key))
       .filter((operation) => operation.taskId === task.id && operation.toolCallId === call.id);
     const current = operations.filter((operation) => operation.assistantMessageId === assistantMessageId);
     const legacy = operations.filter((operation) => !operation.assistantMessageId);
@@ -934,7 +938,9 @@ export class ToolGateway {
    */
   snapshot(task: Task, source: string, content: Buffer) {
     const object = this.store.object(content),
-      previous = this.store.all<Snapshot>('snapshots', task.runId).filter((s) => s.source === source);
+      previous = this.store.scheduling
+        .snapshotIds(task.runId, { source })
+        .map((key) => this.store.require<Snapshot>('snapshots', key));
     const same = previous.find((s) => s.hash === object.hash && s.taskId === task.id);
     if (same) return same;
     return this.store.put<Snapshot>('snapshots', {
@@ -965,10 +971,7 @@ export class ToolGateway {
         name,
         ...object,
         source,
-        version:
-          this.store
-            .all<Artifact>('artifacts', task.runId)
-            .filter((a) => a.taskId === task.id && a.name === name).length + 1,
+        version: this.store.scheduling.artifactCount(task.id, name) + 1,
         verified: false,
         mediaType: fileMediaType(name, Buffer.from(content)),
       });

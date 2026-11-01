@@ -8,8 +8,8 @@
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm verify:local --bundle C:/delivery/acceptance-v1.25.0 --output .local-qa/release-check
-pnpm verify:check --bundle C:/delivery/acceptance-v1.25.0 --report .local-qa/release-check/verification.json
+pnpm verify:local --bundle C:/delivery/acceptance-v1.26.0 --output .local-qa/release-check
+pnpm verify:check --bundle C:/delivery/acceptance-v1.26.0 --report .local-qa/release-check/verification.json
 ```
 
 包必须匹配当前应用版本、构建输入摘要、锁文件、Node 精确版本、操作系统和 CPU 架构。运行器先校验清单和每个文件的 SHA-256，再把缺失的材料复制到 `.local-tests/`。已有文件内容不同时，运行器拒绝覆盖并退出。报告目录也必须是新目录。
@@ -25,7 +25,7 @@ pnpm verify:check --bundle C:/delivery/acceptance-v1.25.0 --report .local-qa/rel
 维护者在 `.local-tests/` 内保存包规格，然后执行：
 
 ```powershell
-pnpm verify:bundle --spec .local-tests/autonomy-v1250/bundle-spec.json --output .local-qa/acceptance-v1.25.0
+pnpm verify:bundle --spec .local-tests/async-v1260/bundle-spec.json --output .local-qa/acceptance-v1.26.0
 ```
 
 规格为 JSON 对象，包含以下字段：
@@ -46,7 +46,7 @@ pnpm verify:bundle --spec .local-tests/autonomy-v1250/bundle-spec.json --output 
 Windows 打包命令必须取得匹配当前输入的完整通过报告：
 
 ```powershell
-pnpm package:windows --verification-bundle C:/delivery/acceptance-v1.25.0 --verification-report .local-qa/release-check/verification.json
+pnpm package:windows --verification-bundle C:/delivery/acceptance-v1.26.0 --verification-report .local-qa/release-check/verification.json
 ```
 
 命令在构建前检查报告，生成便携目录前再次核对。缺少材料、内容摘要变化、版本不符、未执行完或存在失败时，命令退出且不放行正式输出。便携包的 `resources/app/distribution.json` 记录验收包摘要、构建输入摘要和验收时间，便于对应本地报告。

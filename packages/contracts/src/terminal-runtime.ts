@@ -41,6 +41,7 @@ export type RuntimeQueueReason =
   | 'global-concurrency'
   | 'run-concurrency'
   | 'account-concurrency'
+  | 'resident-memory'
   | 'dependencies'
   | 'execution-preparing'
   | 'execution-unavailable'
@@ -84,6 +85,9 @@ export interface ExecutorRuntimeSnapshot {
   revision: number;
   queue: RuntimeQueueEntry[];
   activeTaskIds: string[];
+  queuedTotal?: number;
+  queueTruncated?: boolean;
+  residentLimit?: number;
 }
 /**
  * 容量、预留和各类占用的同一修订视图；held 资源需要恢复/清理确认后才能释放。

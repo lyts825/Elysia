@@ -23,6 +23,7 @@ import { delay } from './async.js';
 
 export class ToolExecutionService {
   private toolActive = 0;
+  private readonly activeByRun = new Map<string, number>();
   /**
    * 复用内核和统一工具网关，批次执行只负责时序、配对及进展记录，不复制权限实现。
    * EN: Reuses the kernel and unified gateway; batch execution owns ordering, pairing, and progress records rather than duplicating authorization logic.
@@ -36,19 +37,41 @@ export class ToolExecutionService {
    * EN: Invokes the gateway under shared executor tool slots; assistantMessageId binds the durable assistant message that produced the call. Ordinary validation failures become model-readable recovery advice, while budget, cancellation, and uncertain side effects interrupt the step rather than inviting an immediate retry.
    */
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
-    const limit = this.kernel.store.require<Run>('runs', task.runId).limits.toolConcurrency;
+    const run = this.kernel.store.require<Run>('runs', task.runId);
+    const limit = run.limits.toolConcurrency;
+    if (
+      run.limits.scheduling === 'async' &&
+      call.name !== 'job_read' &&
+      call.name !== 'job_cancel' &&
+      (this.toolActive + this.gateway.backgroundJobs.occupancy().length >= 4 ||
+        (this.activeByRun.get(task.runId) ?? 0) +
+          this.gateway.backgroundJobs.occupancy().filter((job) => job.runId === task.runId).length >=
+          limit)
+    ) {
+      this.kernel.store.tx(() => {
+        const current = this.kernel.store.require<Task>('tasks', task.id);
+        if (current.status !== 'RUNNING') return;
+        const waiting = this.kernel.updateTask(current, 'RUNNING', {
+          rateLimit: { source: 'resource', resumeAt: Date.now() + 100 },
+        });
+        this.kernel.wait(waiting, 'rate_limit');
+      });
+      throw new AppError('TOOL_CAPACITY', '工具资源已满，当前阶段已持久排队', true);
+    }
     const jobControl = call.name === 'job_read' || call.name === 'job_cancel';
     // 同运行作业期间的冲突工具由网关立即拒绝，避免等待名额掩盖冲突；只读/控制工具仍可响应反馈。
     while (
+      run.limits.scheduling !== 'async' &&
       this.toolActive +
         (jobControl || this.gateway.backgroundJobs.hasUnsettled(task.runId)
           ? 0
           : this.gateway.backgroundJobs.occupancy().length) >=
-      limit
+        limit
     ) {
       await delay(20, signal);
     }
     this.toolActive++;
+    this.activeByRun.set(task.runId, (this.activeByRun.get(task.runId) ?? 0) + 1);
     try {
       return await this.gateway.call(
         this.kernel.store.require('tasks', task.id),
@@ -95,6 +118,9 @@ export class ToolExecutionService {
       };
     } finally {
       this.toolActive--;
+      const count = (this.activeByRun.get(task.runId) ?? 1) - 1;
+      if (count) this.activeByRun.set(task.runId, count);
+      else this.activeByRun.delete(task.runId);
     }
   }
   /**
@@ -305,14 +331,14 @@ export class ToolExecutionService {
    * 从持久消息找出尚未配对结果的调用，并交回同一网关路径核验/重放。 重放不是无条件重跑；网关会复用 DONE/FAILED 操作，对 UNCERTAIN 保持人工核验。
    * EN: Finds calls without paired results in persistent messages and returns them through the same gateway validation and replay path. Replay is not an unconditional rerun: DONE and FAILED operations reuse their outcome; UNCERTAIN remains subject to manual verification.
    */
-  async replayPending(task: Task, attempt: Attempt, signal: AbortSignal) {
+  async replayPending(task: Task, attempt: Attempt, signal: AbortSignal, maxCalls = Infinity) {
     const sequence = inspectToolCalls(this.kernel.history(task));
     if (sequence.error) throw new AppError(sequence.error.code, sequence.error.message);
     if (sequence.pending.length)
       await this.executeCalls(
         task,
         attempt,
-        sequence.pending.map((item) => item.call),
+        sequence.pending.slice(0, maxCalls).map((item) => item.call),
         signal,
         sequence.pending[0].message.id,
       );

@@ -1236,7 +1236,8 @@ export function createServer(
         budget: Budget.default({ maxRequests: 80, maxTokens: 500000, maxCost: null }),
         limits: Limits.default({
           maxDepth: 2,
-          maxAgents: 12,
+          maxAgents: null,
+          scheduling: 'async',
           concurrency: 4,
           toolConcurrency: 4,
           maxSteps: 20,
@@ -1407,6 +1408,7 @@ export function createServer(
         beforeMessage: z.string().uuid().optional(),
         aroundMessage: z.string().uuid().optional(),
         retainedMessages: z.string().max(8880).optional(),
+        taskAfter: z.string().uuid().optional(),
         view: z.literal('conversation').optional(),
         summary: z.literal('deferred').optional(),
         retryProjections: z.enum(['true', 'false']).optional(),
@@ -1446,8 +1448,32 @@ export function createServer(
         : query.aroundMessage
           ? store.messageAroundPage<Message>(run.id, query.messageLimit, query.aroundMessage)
           : store.messagePage<Message>(run.id, query.messageLimit, query.beforeMessage);
+    const totalAgents = store.scheduling.countAgents(run.id);
+    const pagedTasks = query.view === 'conversation' && run.limits.scheduling === 'async' && totalAgents > 64;
+    const pageIds = pagedTasks ? store.scheduling.taskIds(run.id, { after: query.taskAfter, limit: 65 }) : [];
+    const selected = new Set<string>([run.rootTaskId, ...pageIds.slice(0, 64)]);
+    if (pagedTasks) {
+      for (const item of runReads.selectedTasks([...selected])) {
+        let parent = item.parentTaskId;
+        while (parent && !selected.has(parent)) {
+          selected.add(parent);
+          const record = runReads.selectedTasks([parent])[0];
+          parent = record?.parentTaskId ?? null;
+        }
+      }
+    }
+    const taskPage = pagedTasks
+      ? {
+          total: totalAgents,
+          limit: 64,
+          after: query.taskAfter ?? null,
+          nextCursor: pageIds.length > 64 ? pageIds[63] : null,
+        }
+      : undefined;
     const records =
-      query.view === 'conversation' ? { tasks: runReads.tasks(run.id) } : runReads.executionRecords(run.id);
+      query.view === 'conversation'
+        ? { tasks: pagedTasks ? runReads.selectedTasks([...selected]) : runReads.tasks(run.id) }
+        : runReads.executionRecords(run.id);
     const conversation =
       query.view === 'conversation'
         ? runReads.conversation(
@@ -1460,7 +1486,9 @@ export function createServer(
     let contexts: ContextSnapshot['agents'] = [];
     if (options.surface !== 'terminal' && query.summary !== 'deferred' && !runReads.hasUnavailable(run.id)) {
       try {
-        contexts = contextBoundaries(kernel.contextSnapshot(run.id)).agents;
+        contexts = contextBoundaries(
+          kernel.contextSnapshot(run.id, pagedTasks ? records.tasks.map((task) => task.agentId) : undefined),
+        ).agents;
       } catch (error) {
         /**
          * 旧版上下文计算可能访问当前消息页之外更早的正文。
@@ -1498,8 +1526,11 @@ export function createServer(
           ? '旧版终端任务保留为只读历史，请在 Agent 终端入口创建独立任务'
           : null,
       tasks: records.tasks,
-      currentQuestions: runReads.currentQuestions(run, records.tasks),
-      agents: store.all<Agent>('agents', run.id),
+      taskPage,
+      currentQuestions: runReads.currentQuestions(run, pagedTasks ? undefined : records.tasks),
+      agents: pagedTasks
+        ? records.tasks.map((task) => store.require<Agent>('agents', task.agentId))
+        : store.all<Agent>('agents', run.id),
       contexts,
       ...history,
       messages: history.messages.map(reasoningMessagePreview),
@@ -1514,13 +1545,20 @@ export function createServer(
             decisions: store.all('decisions', run.id),
           }),
       readCoverage: runReads.readCoverage(run.id),
-      detailCoverage: runReads.detailCoverage(run.id, scope),
+      detailCoverage: {
+        ...runReads.detailCoverage(run.id, scope),
+        ...(pagedTasks
+          ? { tasks: { ...runReads.detailCoverage(run.id, scope).tasks, scope: 'selected' } }
+          : {}),
+      },
       ...runReads.eventPreview(run.id),
       edges: store.db
         .prepare(
-          'SELECT task_id taskId,dependency_id dependencyId FROM task_edges WHERE task_id IN (SELECT id FROM tasks WHERE run_id=?)',
+          pagedTasks
+            ? 'SELECT task_id taskId,dependency_id dependencyId FROM task_edges WHERE task_id IN (SELECT value FROM json_each(?))'
+            : 'SELECT task_id taskId,dependency_id dependencyId FROM task_edges WHERE task_id IN (SELECT id FROM tasks WHERE run_id=?)',
         )
-        .all(run.id),
+        .all(pagedTasks ? JSON.stringify([...selected]) : run.id),
     };
   });
   /**

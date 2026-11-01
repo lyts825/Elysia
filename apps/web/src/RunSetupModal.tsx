@@ -126,7 +126,7 @@ export function RunModal({
     [maxRequests, setMaxRequests] = useState(initial?.maxRequests ?? 80),
     [maxTokens, setMaxTokens] = useState(initial?.maxTokens ?? 500000),
     [maxCost, setMaxCost] = useState<number | null>(initial?.maxCost ?? null),
-    [concurrency, setConcurrency] = useState(initial?.concurrency ?? 4);
+    [concurrency, setConcurrency] = useState(initial?.concurrency ?? 8);
   const selected = providers.find((p) => p.id === choice.providerId);
   const contextValid = validContextPolicy(
     context,
@@ -168,7 +168,7 @@ export function RunModal({
       contextValid &&
       permissionsValid &&
       Budget.safeParse({ maxRequests, maxTokens, maxCost }).success &&
-      (chat || (concurrency >= 1 && concurrency <= 4 && Number.isInteger(concurrency)));
+      (chat || (concurrency >= 1 && concurrency <= 128 && Number.isInteger(concurrency)));
   const requirementsReady =
     chat || terminal || validRequirements(deliverables, acceptanceCriteria, !planMode);
   const compact = !chat && !terminal && !!appliedDefaults && setupReady && !expanded;
@@ -311,7 +311,8 @@ export function RunModal({
                */
               limits: {
                 maxDepth: chat ? 0 : 2,
-                maxAgents: chat ? 1 : 12,
+                maxAgents: chat ? 1 : null,
+                scheduling: terminal ? 'legacy' : 'async',
                 concurrency: chat ? 1 : concurrency,
                 toolConcurrency: 4,
                 maxSteps: 20,
@@ -620,7 +621,6 @@ export function RunModal({
                   <input
                     type="number"
                     min={1}
-                    max={80}
                     value={maxRequests}
                     disabled={busy}
                     onChange={(e) => setMaxRequests(Number(e.target.value))}
@@ -655,11 +655,11 @@ export function RunModal({
                 )}
                 {!chat && (
                   <label>
-                    并发实例
+                    同时驻留代理
                     <input
                       type="number"
                       min={1}
-                      max={4}
+                      max={128}
                       value={concurrency}
                       disabled={busy}
                       onChange={(e) => setConcurrency(Number(e.target.value))}
@@ -673,7 +673,7 @@ export function RunModal({
                 ? '普通回复后等待你继续。调用与 Token 按会话预算累计。'
                 : terminal
                   ? '只映射独立任务目录；不会修改项目主目录或自动发布。'
-                  : `${planMode ? '接受计划后' : '创建后'}执行。每次最多 12 个 Agent，递归深度 2，最长 30 分钟。`}
+                  : `${planMode ? '接受计划后' : '创建后'}执行。代理总数不设固定上限，按额度排队。递归深度 2，最长 30 分钟。`}
             </p>
           </div>
           {appliedDefaults && expanded && setupReady && (

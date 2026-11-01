@@ -24,12 +24,20 @@ import type { PluginContributions } from '../../../plugins/src/index.js';
 const schemas = {
   clarify: z.object({ questions: z.array(z.string().min(1)).min(1).max(6) }),
   spawn_task: TaskSpec,
+  spawn_tasks: z.object({ tasks: z.array(TaskSpec).min(1).max(64) }),
   allocate_context: z.object({
     taskId: z.string().min(1),
     expectedRevision: z.number().int().nonnegative(),
     windowTokens: z.number().int().min(4096).max(1000000),
   }),
-  join_tasks: z.object({ taskIds: z.array(z.string()).min(1).max(11) }),
+  join_tasks: z.object({
+    taskIds: z.array(z.string()).min(1).max(256).optional(),
+    all: z.boolean().optional(),
+  }),
+  list_children: z.object({
+    after: z.string().optional(),
+    limit: z.number().int().min(1).max(64).default(32),
+  }),
   submit_result: z.object({
     summary: z.string().min(1),
     evidence: z.array(Evidence).min(1),
@@ -43,9 +51,12 @@ const schemas = {
  * accepts only unique direct children; the kernel retains state-transition and scope validation.
  */
 export function collaborationTools(
-  context: Pick<ToolServices, 'submit'> & {
+  context: Pick<ToolServices, 'submit' | 'listArtifacts'> & {
     store: Pick<ToolServices['store'], 'require'>;
-    kernel: Pick<ToolServices['kernel'], 'wait' | 'event' | 'spawn' | 'allocateContext' | 'submitPeerReview'>;
+    kernel: Pick<
+      ToolServices['kernel'],
+      'wait' | 'event' | 'spawn' | 'allocateContext' | 'submitPeerReview' | 'listChildren'
+    >;
   },
 ): PluginContributions<ToolContribution> {
   /**
@@ -91,16 +102,19 @@ export function collaborationTools(
   function execute_join_tasks({ task }: ToolInvocation, args: z.output<typeof schemas.join_tasks>) {
     let result: unknown;
 
-    const children = args.taskIds.map((key: string) => context.store.require<Task>('tasks', key));
+    invariant((args.all === true) !== !!args.taskIds, 'WAIT_SCOPE', '指定 taskIds 或 all，且只能选择一种');
+    if (args.all) return context.kernel.wait(task, 'children', [], true);
+    const taskIds = args.taskIds!;
+    const children = taskIds.map((key: string) => context.store.require<Task>('tasks', key));
     invariant(
-      new Set(args.taskIds).size === args.taskIds.length &&
+      new Set(taskIds).size === taskIds.length &&
         children.every((t: Task) => t.runId === task.runId && t.parentTaskId === task.id),
       'TASK_SCOPE',
       '只能等待实际直属子任务，且不能重复指定',
     );
     result = children.every((t: Task) => ['DONE', 'FAILED', 'CANCELLED'].includes(t.status))
       ? children.map((t: Task) => ({ id: t.id, status: t.status, result: t.result }))
-      : context.kernel.wait(task, 'children', args.taskIds);
+      : context.kernel.wait(task, 'children', taskIds);
 
     return result;
   }
@@ -192,10 +206,31 @@ export function collaborationTools(
         { transaction: true, serial: true, mutating: false, progress: false },
         execute_allocate_context,
       ),
+      spawn_tasks: defineTool(
+        'spawn_tasks',
+        schemas.spawn_tasks,
+        '一次创建至多64个直属子任务，统一遵守当前权限、预算和依赖校验；失败整批回滚。大量工作分批创建，并用 all:true 等待、list_children 分页检查。',
+        { transaction: true, serial: true, mutating: false, progress: false },
+        ({ task }, args) => args.tasks.map((spec) => context.kernel.spawn(task, spec)),
+      ),
+      list_artifacts: defineTool(
+        'list_artifacts',
+        schemas.list_children,
+        '分页列出本任务可读取的产物目录；nextCursor 非空表示还有记录。使用 read_artifact 读取指定产物正文。',
+        { transaction: true, serial: true, mutating: false, progress: false },
+        ({ task }, args) => context.listArtifacts(task, args.after, args.limit),
+      ),
+      list_children: defineTool(
+        'list_children',
+        schemas.list_children,
+        '分页读取当前任务的直属子任务状态及结果。nextCursor 非空表示还有记录；不得把当前页当成全部子任务。',
+        { transaction: true, serial: true, mutating: false, progress: false },
+        ({ task }, args) => context.kernel.listChildren(task, args.after, args.limit),
+      ),
       join_tasks: defineTool(
         'join_tasks',
         schemas.join_tasks,
-        '等待 taskIds 指定的直属子任务并释放调用槽位，已结束则返回实际结果；ID 来自 children 或 spawn_task，不能使用 key，也不代表子任务一定成功。',
+        '用 all:true 等待当前全部直属子任务，或用 taskIds 选择一组；等待时释放调用槽位，已结束则返回实际结果；ID 来自 children 或 spawn_task，不能使用 key，也不代表子任务一定成功。',
         { transaction: true, serial: true, mutating: false, progress: false },
         execute_join_tasks,
       ),

@@ -14,7 +14,6 @@ import {
   type Run,
   type Agent,
   type Snapshot,
-  type Artifact,
   type Project,
   type Operation,
 } from '../../contracts/src/index.js';
@@ -29,6 +28,19 @@ import { peerReviewCandidate } from './peer-review.js';
 
 import type { ToolDefinition } from '../../contracts/src/model.js';
 
+/** 目录只返回一页；完整产物正文仍通过受权限约束的读取工具获取。 */
+export function contextArtifactPage(store: Store, task: Task, after?: string, limit = 32) {
+  const run = store.require<Run>('runs', task.runId);
+  const extraIds = [
+    ...(peerReviewCandidate(run, task)
+      ?.evidence.filter((e) => e.type === 'artifact')
+      .map((e) => e.ref) ?? []),
+    ...(run.source?.bundleArtifactId ? [run.source.bundleArtifactId] : []),
+    ...(run.source?.artifacts.map((a) => a.importedId) ?? []),
+  ];
+  return store.scheduling.artifactPage(run.id, task.id, extraIds, after, limit);
+}
+
 /**
  * 一次捕获外部状态，编译器不接收数据库或文件系统句柄。
  * 汇集本次编译所需的任务、代理、历史与资源，让后续纯编译不访问存储或文件系统。
@@ -39,9 +51,9 @@ import type { ToolDefinition } from '../../contracts/src/model.js';
 export function collectContextSnapshot(store: Store, task: Task, definitions: ToolDefinition[]) {
   const run = store.require<Run>('runs', task.runId),
     agent = store.require<Agent>('agents', task.agentId);
-  const snapshots = store
-    .all<Snapshot>('snapshots', run.id)
-    .filter((s) => run.plan?.snapshotIds.includes(s.id) || s.taskId === task.id)
+  const snapshots = store.scheduling
+    .snapshotIds(run.id, { taskId: task.id, extraIds: run.plan?.snapshotIds })
+    .map((key) => store.require<Snapshot>('snapshots', key))
     .sort((a, b) => a.source.localeCompare(b.source, 'en') || a.version - b.version);
   const skillCatalog = listSkills(store, run);
   const localMemories = listLocalMemories(store, run);
@@ -57,7 +69,9 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
    */
   const loadedById = new Map<string, LoadedSkill>();
   const withdrawnSkillIds = new Set<string>();
-  for (const op of store.all<Operation>('tool_operations', run.id)) {
+  for (const op of store.scheduling
+    .operationIds(task.id, { name: 'load_skill' })
+    .map((key) => store.require<Operation>('tool_operations', key))) {
     if (
       op.taskId !== task.id ||
       op.name !== 'load_skill' ||
@@ -114,6 +128,7 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
         .trim(),
     ]),
   );
+  const artifacts = contextArtifactPage(store, task);
   /**
    * 复制后交给纯编译器，避免后续持久对象变更影响本次上下文的确定性。
    *
@@ -149,20 +164,16 @@ export function collectContextSnapshot(store: Store, task: Task, definitions: To
     workingState,
     workingStateFallback,
     projectDirectory: run.projectId ? store.require<Project>('projects', run.projectId).workspaceRoot : null,
-    accessibleArtifacts: store
-      .all<Artifact>('artifacts', run.id)
-      .filter(
-        (a) =>
-          a.verified ||
-          peerReviewCandidate(run, task)?.evidence.some((e) => e.type === 'artifact' && e.ref === a.id) ||
-          a.taskId === task.id ||
-          a.id === run.source?.bundleArtifactId ||
-          run.source?.artifacts.some((source) => source.importedId === a.id),
-      )
-      .map((a) => ({ id: a.id, name: a.name, hash: a.hash, taskId: a.taskId })),
-    children: store
-      .all<Task>('tasks', run.id)
-      .filter((t) => t.parentTaskId === task.id)
+    accessibleArtifacts: artifacts.items,
+    accessibleArtifactsPage: {
+      total: artifacts.total,
+      nextCursor: artifacts.nextCursor,
+      tool: 'list_artifacts',
+    },
+    childrenPage: { total: store.scheduling.countChildren(task.id), limit: 32, tool: 'list_children' },
+    children: store.scheduling
+      .taskIds(run.id, { parentId: task.id, limit: 32 })
+      .map((key) => store.require<Task>('tasks', key))
       .filter((t) => t.contractVersion === run.contract.version)
       .map((t) => {
         const child = store.require<Agent>('agents', t.agentId);

@@ -304,7 +304,9 @@ export function compileContextSnapshot(snapshot: ContextSourceSnapshot): Context
         'Each agent has an independent context window. The direct parent allocates managed child windows; only the user can change manual windows. A context window is not a cumulative token budget.',
     },
     accessibleArtifacts: snapshot.accessibleArtifacts,
+    accessibleArtifactsPage: snapshot.accessibleArtifactsPage,
     children: snapshot.children,
+    childrenPage: snapshot.childrenPage,
   });
   /**
    * 配对检查在压缩前后都执行；原始历史哈希用于审计，实际发送历史可包含可回查摘要。

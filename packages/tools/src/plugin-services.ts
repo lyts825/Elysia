@@ -14,6 +14,7 @@ import {
 } from '../../context/src/local-library.js';
 import { listProjectMemories, readProjectMemory } from '../../context/src/project-intelligence.js';
 import { recallContext } from '../../context/src/index.js';
+import { contextArtifactPage } from '../../context/src/snapshot.js';
 import { submitPeerReview } from '../../kernel/src/peer-review.js';
 import type { ToolGateway } from './index.js';
 
@@ -41,6 +42,7 @@ export function pluginServices(
       permissions: kernel.permissions.bind(kernel),
       ancestors: kernel.ancestors.bind(kernel),
       wait: kernel.wait.bind(kernel),
+      listChildren: kernel.listChildren.bind(kernel),
       event: kernel.event.bind(kernel),
       spawn: kernel.spawn.bind(kernel),
       allocateContext: kernel.allocateContext.bind(kernel),
@@ -113,6 +115,8 @@ export function pluginServices(
     path: gateway.path.bind(gateway),
     snapshot: gateway.snapshot.bind(gateway),
     artifact: gateway.artifact.bind(gateway),
+    listArtifacts: (...args: Tail<Parameters<typeof contextArtifactPage>>) =>
+      contextArtifactPage(store, ...args),
     diff: gateway.diff.bind(gateway),
     submit: gateway.submit.bind(gateway),
     fetch: gateway.fetch.bind(gateway),

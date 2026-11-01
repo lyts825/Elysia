@@ -869,7 +869,7 @@ export function ProviderSettings({
                     <input
                       type="number"
                       min={1}
-                      max={2}
+                      max={128}
                       value={config.concurrency}
                       onChange={(e) => change({ concurrency: Number(e.target.value) })}
                     />

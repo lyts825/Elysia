@@ -292,6 +292,7 @@ export class NativeExecutor implements ExecutorAdapter {
     signal.throwIfAborted();
     const run = this.kernel.store.require<Run>('runs', task.runId);
     if (!this.acceptRun(run)) throw new AppError('SURFACE_EXECUTION', '当前入口不执行此类型任务');
+    if (this.scheduler.isLocallyStopped(run.id)) throw new AppError('STOPPED', '运行已持久停止，需显式恢复');
     return this.executionPlugins.forRun(run).step(task, signal);
   }
 }

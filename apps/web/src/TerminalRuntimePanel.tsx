@@ -31,6 +31,7 @@ const reasons: Record<RuntimeQueueReason, string> = {
   'global-concurrency': '等待可用执行位',
   'run-concurrency': '等待本任务执行位',
   'account-concurrency': '等待账号执行位',
+  'resident-memory': '等待上下文内存额度',
   dependencies: '等待前置任务',
   'execution-preparing': '正在检查执行环境',
   'execution-unavailable': '执行环境检查失败，等待重试',

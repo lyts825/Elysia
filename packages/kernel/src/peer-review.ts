@@ -54,7 +54,7 @@ export function freezePeerReview(
   );
   invariant(contract.permissionProfile.read, 'PEER_REVIEW_READ', '评审模式需要工作区读取权限');
   invariant(
-    limits.maxDepth >= 1 && limits.maxAgents >= policy.reviewerProviderIds.length + 1,
+    limits.maxDepth >= 1 && (limits.maxAgents ?? Infinity) >= policy.reviewerProviderIds.length + 1,
     'PEER_REVIEW_CAPACITY',
     '代理数量及委派深度不足以容纳执行模型和全部评审模型',
   );
@@ -313,7 +313,7 @@ export function gatePeerReview(
       const contextPolicy = kernel.childContextPolicy(task, binding);
       if (!existing) {
         invariant(
-          store.all<Agent>('agents', run.id).length < run.limits.maxAgents,
+          store.scheduling.countAgents(run.id) < (run.limits.maxAgents ?? Infinity),
           'AGENT_LIMIT',
           '评审代理数量达到上限',
         );

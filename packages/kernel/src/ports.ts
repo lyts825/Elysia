@@ -1,3 +1,4 @@
+import type { SchedulingIndex } from '../../contracts/src/async-scheduling.js';
 /**
  * 定义核心领域依赖的存储和恢复接口。
  * 通过能力端口隔离领域与基础设施，事务仅允许同步工作，实体正文仍由存储实现保证。
@@ -86,6 +87,11 @@ export interface RequestLedger {
  * EN: The kernel depends only on these persistence capabilities, without access to SQLite or filesystem handles.
  */
 export interface KernelStore extends UnitOfWork, EntityRepository, SessionHistory, RequestLedger {
+  readonly scheduling: SchedulingIndex;
+  latestTaskRequest(
+    runId: string,
+    taskId: string,
+  ): import('../../contracts/src/index.js').RequestRecord | undefined;
   metadata(key: string): string | undefined;
   setMetadata(key: string, value: string): void;
   taskDependencies(taskId: string): string[];
@@ -119,6 +125,7 @@ export interface KernelStore extends UnitOfWork, EntityRepository, SessionHistor
       resumeBefore?: number;
       excludeRunIds?: readonly string[];
       excludeExecutionHolds?: boolean;
+      limit?: number;
     },
   ): T[];
   readonly recovery: ExecutionRecoveryPort;

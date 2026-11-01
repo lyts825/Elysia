@@ -20,7 +20,7 @@ export const NativeProjectDefaults = z
     contextPolicy: ContextPolicy.optional(),
     planMode: z.boolean(),
     budget: Budget,
-    concurrency: z.number().int().min(1).max(4),
+    concurrency: z.number().int().min(1).max(128),
   })
   .strict();
 export type NativeProjectDefaults = z.infer<typeof NativeProjectDefaults>;

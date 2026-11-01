@@ -1,3 +1,4 @@
+import type { WorkLease } from '../../contracts/src/async-scheduling.js';
 /**
  * 执行模型请求并发布上下文运行指标。
  * 管理编译、预算预留、流式投影、结算和结果保存，核对活动身份并隔离可选推理缓存失败；未知用量保守保留，不凭空释放。
@@ -77,6 +78,7 @@ export class ModelRequestRunner {
     context: CompiledContext,
     metrics: ContextRuntimeMetrics,
     signal: AbortSignal,
+    lease?: WorkLease,
   ) {
     const store = this.kernel.store;
     const run = store.require<Run>('runs', task.runId);
@@ -281,6 +283,8 @@ export class ModelRequestRunner {
           error instanceof Error ? error.message : String(error),
           rejected,
         );
+        if (lease && (signal.aborted || !store.scheduling.owns(lease) || store.getExecutionHold(task.runId)))
+          return;
         const usage = error instanceof ProviderError ? error.usage : null;
         metrics = this.publishContext(
           task,
@@ -295,13 +299,17 @@ export class ModelRequestRunner {
           record.id,
         );
         if (signal.aborted) throw error;
+        if (lease && store.require<RequestRecord>('requests', record.id).status === 'UNKNOWN') {
+          this.kernel.wait(store.require<Task>('tasks', task.id), 'verification');
+          return;
+        }
         if (!(error instanceof ProviderError) || !error.retryable || retry === 2) throw error;
         /**
          * 短等待在本步内退避；超过一分钟交还调度器，避免长期占用执行槽。
          * EN: Back off briefly inside the step; waits longer than one minute return to the scheduler instead of holding an execution slot.
          */
         const wait = Math.max(error.retryAfterMs, 1000 * 2 ** retry);
-        if (wait > 60000) {
+        if (lease || wait > 60000) {
           this.control.waitAtRateLimit(task, {
             resumeAt: Date.now() + wait,
             source: 'provider',
@@ -321,6 +329,29 @@ export class ModelRequestRunner {
      */
     const assistantMessage = store.tx(() => {
       this.kernel.settle(successfulRequestId!, completed.usage);
+      if (
+        lease &&
+        (signal.aborted ||
+          !store.scheduling.owns(lease) ||
+          store.getExecutionHold(task.runId) ||
+          store.require<Task>('tasks', task.id).status !== 'RUNNING' ||
+          !['READY', 'RUNNING'].includes(store.require<Run>('runs', task.runId).status))
+      ) {
+        const record = store.require<RequestRecord>('requests', successfulRequestId!);
+        const saved = store.object(
+          stable({ text: completed.text, calls: completed.calls, usage: completed.usage }),
+        );
+        store.put('requests', {
+          ...record,
+          manifest: {
+            ...record.manifest,
+            lateResponseRef: saved.objectRef,
+            partialText: null,
+            partialStreamRef: null,
+          },
+        });
+        return undefined;
+      }
       metrics = this.publishContext(
         task,
         attempt,
@@ -341,6 +372,7 @@ export class ModelRequestRunner {
         reasoningContent: completed.reasoningContent,
         providerKind: config.kind,
       });
+      if (lease) store.scheduling.advance(lease, completed.calls.length ? 'tools' : 'finish', message.id);
       const current = store.require<Task>('tasks', task.id);
       if (current.rateLimit) store.put('tasks', { ...current, rateLimit: undefined });
       attempt = store.put('attempts', {
@@ -355,6 +387,7 @@ export class ModelRequestRunner {
       });
       return message;
     });
+    if (!assistantMessage) return;
     if (typeof completed.reasoningContent === 'string') {
       try {
         store.completeRequestReasoning(successfulRequestId!, completed.reasoningContent);

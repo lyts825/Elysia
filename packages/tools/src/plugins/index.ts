@@ -29,8 +29,16 @@ export function builtinTools(context: ToolServices, plan: PlanAlignmentHost) {
     backgroundJobTools(context.backgroundJobs),
     collaborationTools({
       store: capabilities(context.store, ['require']),
-      kernel: capabilities(context.kernel, ['wait', 'event', 'spawn', 'allocateContext', 'submitPeerReview']),
+      kernel: capabilities(context.kernel, [
+        'wait',
+        'event',
+        'spawn',
+        'allocateContext',
+        'submitPeerReview',
+        'listChildren',
+      ]),
       submit: context.submit,
+      listArtifacts: context.listArtifacts,
     }),
     knowledgeTools({
       store: capabilities(context.store, ['require']),

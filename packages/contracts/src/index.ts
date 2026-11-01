@@ -16,7 +16,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.25.0';
+export const VERSION = '1.26.0';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -61,7 +61,7 @@ export type Permissions = z.infer<typeof Permissions>;
  * EN: Limits cumulative requests, tokens, and cost; null maxCost means no configured cost ceiling.
  */
 export const Budget = z.object({
-  maxRequests: z.number().int().min(1).max(80).default(80),
+  maxRequests: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).default(80),
   maxTokens: z.number().int().min(1000).default(500000),
   maxCost: z.number().positive().nullable().default(null),
 });
@@ -73,8 +73,9 @@ export type Budget = z.infer<typeof Budget>;
  */
 export const Limits = z.object({
   maxDepth: z.number().int().min(0).max(5).default(2),
-  maxAgents: z.number().int().min(1).max(12).default(12),
-  concurrency: z.number().int().min(1).max(4).default(4),
+  maxAgents: z.number().int().positive().nullable().default(null),
+  scheduling: z.enum(['legacy', 'async']).default('async'),
+  concurrency: z.number().int().min(1).max(128).default(4),
   toolConcurrency: z.number().int().min(1).max(4).default(4),
   maxSteps: z.number().int().min(1).max(20).default(20),
   maxMinutes: z.number().min(1).max(30).default(30),
@@ -324,7 +325,7 @@ export const ProviderConfig = z
     account: z.string().min(1),
     contextLimit: z.number().int().min(4096),
     outputLimit: z.number().int().min(256),
-    concurrency: z.number().int().min(1).max(2).default(2),
+    concurrency: z.number().int().min(1).max(128).default(2),
     rpm: z.number().int().positive().default(60),
     tpm: z.number().int().positive().default(200000),
     /**
@@ -579,6 +580,7 @@ export interface Task extends Entity {
    */
   waitReason?: string;
   waitingFor: string[];
+  waitAllChildren?: boolean;
   /**
    * 恢复选定分支期间保留的失败依赖路径。
    *
@@ -604,7 +606,7 @@ export interface Task extends Entity {
   };
   rateLimit?: {
     resumeAt: number;
-    source?: 'account' | 'provider';
+    source?: 'account' | 'provider' | 'resource';
     logicalId?: string;
     retry?: number;
   };

@@ -7,6 +7,8 @@ import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
   AppError,
+  inspectToolCalls,
+  type Message,
   ContextRuntimeMetrics,
   type Agent,
   type Task,
@@ -40,6 +42,8 @@ export class NativeAgentLoop {
    * EN: Executes one native-agent step: recover unpaired tool results, compile context, and request the model. Rate limits, changed task state, or step limits return control to the scheduler.
    */
   async step(task: Task, signal: AbortSignal) {
+    if (this.kernel.store.require<Run>('runs', task.runId).limits.scheduling === 'async')
+      return this.asyncStep(task, signal);
     const cooldown = task.rateLimit;
     const store = this.kernel.store;
     const resumeAt = this.control.rateLimitResumeAt(task);
@@ -151,5 +155,102 @@ export class NativeAgentLoop {
       else this.kernel.updateTask(task, 'READY');
     }
     this.kernel.checkpoint(attempt.id);
+  }
+  /** 每次只持有一个阶段；模型完成与阶段游标同事务落库，工具结果沿既有幂等路径恢复。 */
+  private async asyncStep(task: Task, signal: AbortSignal) {
+    const store = this.kernel.store;
+    const { attempt, lease } = store.tx(() => ({
+      attempt: this.kernel.claim(task.id),
+      lease: store.scheduling.claim(task.id),
+    }));
+    const live = () =>
+      !signal.aborted &&
+      store.scheduling.owns(lease) &&
+      !store.getExecutionHold(task.runId) &&
+      store.require<Task>('tasks', task.id).status === 'RUNNING' &&
+      ['READY', 'RUNNING'].includes(store.require<Run>('runs', task.runId).status);
+    try {
+      if (!live()) return;
+      if (lease.stage === 'finish') {
+        store.tx(() => {
+          if (!live()) return;
+          const message = lease.messageId ? store.require<Message>('messages', lease.messageId) : undefined;
+          task = store.require<Task>('tasks', task.id);
+          if (!message?.calls?.length) {
+            if (store.require<Run>('runs', task.runId).kind === 'chat') {
+              this.kernel.wait(task, 'user');
+              store.put('attempts', {
+                ...store.require<Attempt>('attempts', attempt.id),
+                status: 'DONE',
+                lease: null,
+              });
+            } else
+              this.kernel.appendMessage(task, 'user', nativeContinuationNotice(task), {
+                purpose: 'runtime_notice',
+              });
+          }
+          store.scheduling.advance(lease, 'model', null);
+          this.finishStage(task.id, attempt.id);
+        });
+        return;
+      }
+      task = await this.gateway.prepare(store.require('tasks', task.id), signal);
+      if (!live()) return;
+      if (lease.stage === 'tools') {
+        await this.tools.replayPending(task, attempt, signal, 1);
+        store.tx(() => {
+          if (!store.scheduling.owns(lease) || signal.aborted || store.getExecutionHold(task.runId)) return;
+          const pending = inspectToolCalls(this.kernel.history(task));
+          if (pending.error) throw new AppError(pending.error.code, pending.error.message);
+          if (!pending.pending.length) store.scheduling.advance(lease, 'finish');
+          this.finishStage(task.id, attempt.id);
+        });
+        return;
+      }
+      const run = store.require<Run>('runs', task.runId);
+      if (attempt.steps >= run.limits.maxSteps) {
+        this.control.waitAtLimit(task, 'STEP_LIMIT', '运行步骤达到上限');
+        return;
+      }
+      const definitions = await this.gateway.prepareDefinitions(task, signal);
+      if (!live()) return;
+      task = store.require<Task>('tasks', task.id);
+      const agent = store.require<Agent>('agents', task.agentId);
+      let context: CompiledContext;
+      try {
+        context = this.compiler(task, definitions);
+      } catch (error) {
+        const metrics =
+          error instanceof AppError
+            ? ContextRuntimeMetrics.safeParse(
+                (error.details as { contextMetrics?: unknown } | undefined)?.contextMetrics,
+              )
+            : null;
+        if (metrics?.success) this.requests.publishContext(task, attempt, metrics.data);
+        throw error;
+      }
+      const metrics = this.requests.publishContext(
+        task,
+        attempt,
+        ContextRuntimeMetrics.parse(context.manifest.contextWindow),
+      );
+      const response = await this.requests.run(task, attempt, agent, context, metrics, signal, lease);
+      if (response && live()) store.tx(() => this.finishStage(task.id, attempt.id));
+    } finally {
+      store.scheduling.release(lease);
+    }
+  }
+  private finishStage(taskId: string, attemptId: string) {
+    const store = this.kernel.store;
+    const task = store.require<Task>('tasks', taskId);
+    if (task.status === 'RUNNING') {
+      if (this.gateway.backgroundJobs.hasUnsettled(task.runId))
+        this.kernel.wait(
+          task,
+          store.hasUncertainOperation(task.runId, task.id) ? 'verification' : 'background_job',
+        );
+      else this.kernel.updateTask(task, 'READY', { waitReason: undefined });
+    }
+    this.kernel.checkpoint(attemptId);
   }
 }

@@ -1,3 +1,4 @@
+import { AsyncScheduling } from './async-scheduling.js';
 /**
  * 定义 SQLite 存储入口、事务及业务对象持久化操作。
  * EN: Provide the SQLite storage entry point, transactions, and business-entity persistence.
@@ -73,8 +74,8 @@ function conversationLinks(message: ConversationMessageLinks): ConversationMessa
     ...(message.calls?.length ? { calls: message.calls.map((call) => ({ id: call.id })) } : {}),
   };
 }
-export const STORAGE_SCHEMA_VERSION = 11;
-export const STORAGE_MIN_READER_VERSION = '1.25.0';
+export const STORAGE_SCHEMA_VERSION = 12;
+export const STORAGE_MIN_READER_VERSION = '1.26.0';
 import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 export type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 /**
@@ -306,6 +307,7 @@ function references(value: unknown, identifiers: Set<string>): boolean {
  */
 export class Store {
   readonly recovery: ExecutionRecovery;
+  readonly scheduling: AsyncScheduling;
   db: DatabaseSync;
   directory: string;
   private depth = 0;
@@ -334,6 +336,7 @@ export class Store {
       mkdirSync(path.join(this.directory, d), { recursive: true });
     this.db = new DatabaseSync(path.join(this.directory, 'state.db'));
     this.statements = new StatementCache(this.db);
+    this.scheduling = new AsyncScheduling(this);
     this.db.exec(
       'PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000; PRAGMA secure_delete=ON;',
     );
@@ -579,6 +582,11 @@ export class Store {
         initializeAutomationSchema(this.db);
         this.db.exec('PRAGMA user_version=11;');
       });
+    if (version < 12)
+      this.tx(() => {
+        this.scheduling.initialize(expand);
+        this.db.exec('PRAGMA user_version=12;');
+      });
     // 原子迁移提交后再回收旧明文页。待清理标记使COMMIT后中断的清理能够在重开时继续。
     // EN: Reclaim old plaintext pages only after the atomic schema/content migration commits. A pending
     // marker lets reopening finish cleanup after an interruption following COMMIT.
@@ -668,7 +676,10 @@ export class Store {
    * kernel owns business-cycle validation.
    */
   addTaskDependency(taskId: string, dependencyId: string) {
-    this.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dependencyId);
+    this.tx(() => {
+      this.db.prepare('INSERT INTO task_edges VALUES(?,?)').run(taskId, dependencyId);
+      this.scheduling.addDependency(taskId, dependencyId);
+    });
   }
   /**
    * 先用元数据索引定位最新事件序号，再读取该事件正文；没有匹配项时返回 undefined。
@@ -1342,8 +1353,17 @@ export class Store {
       const updated = update.run(projection(table, entity), entity.id, entity.revision);
       if (table === 'artifacts' && updated.changes)
         this.artifactDeliveryReads.write(entity as import('../../contracts/src/index.js').Artifact);
+      if (updated.changes) {
+        if (table === 'tasks') this.scheduling.writeTask(entity as Task);
+        if (table === 'runs') this.scheduling.writeRun(entity as Run);
+        if (table === 'requests') this.scheduling.writeRequest(entity as RequestRecord);
+        if (table === 'tool_operations')
+          this.scheduling.writeOperation(entity as import('../../contracts/src/index.js').Operation);
+        if (table === 'artifacts')
+          this.scheduling.writeArtifact(entity as import('../../contracts/src/index.js').Artifact);
+      }
     };
-    return table === 'artifacts' ? this.tx(refresh) : refresh();
+    return this.tx(refresh);
   }
   /**
    * 先用投影过滤状态、等待原因、恢复时间和暂停范围，再解压候选正文核对真实状态。
@@ -1365,6 +1385,7 @@ export class Store {
       resumeBefore?: number;
       excludeRunIds?: readonly string[];
       excludeExecutionHolds?: boolean;
+      limit?: number;
     } = {},
   ): T[] {
     if (!statuses.length) return [];
@@ -1395,7 +1416,9 @@ export class Store {
         : []),
     ];
     const rows = this.db
-      .prepare(`SELECT id,data,content FROM ${table} WHERE ${clauses.join(' AND ')} ORDER BY rowid`)
+      .prepare(
+        `SELECT id,data,content FROM ${table} WHERE ${clauses.join(' AND ')} ORDER BY rowid ${options.limit ? 'LIMIT ' + Math.max(1, Math.min(10000, Math.floor(options.limit))) : ''}`,
+      )
       .all(
         ...statuses,
         ...(options.runId ? [options.runId] : []),
@@ -1757,6 +1780,17 @@ export class Store {
           `INSERT INTO ${table}(id,run_id,revision,data,content) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,revision=excluded.revision,data=excluded.data,content=excluded.content`,
         )
         .run(next.id, next.runId ?? null, next.revision, projection(table, stored), compress(stored));
+      if (table === 'tasks') this.scheduling.writeTask(stored, previous as Task | undefined);
+      if (table === 'runs') this.scheduling.writeRun(stored);
+      if (table === 'agents')
+        this.scheduling.writeAgent(
+          stored,
+          previous as import('../../contracts/src/index.js').Agent | undefined,
+        );
+      if (table === 'tool_operations') this.scheduling.writeOperation(stored);
+      if (table === 'artifacts') this.scheduling.writeArtifact(stored);
+      if (table === 'snapshots') this.scheduling.writeSnapshot(stored);
+      if (table === 'requests') this.scheduling.writeRequest(stored);
       this.objectReferences?.write(table, next.id, stored);
       if (table === 'requests')
         this.statements.prepare('DELETE FROM request_log_pointer_dirty_v1 WHERE record_id=?').run(next.id);

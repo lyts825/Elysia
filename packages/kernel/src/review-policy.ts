@@ -5,25 +5,23 @@
  * EN: Validates review-model independence when saving or reserving model choices.
  * Compares current/historical actual models in the saving/reservation transaction to prevent connection changes bypassing isolation.
  */
-import { invariant, type Agent, type RequestRecord, type Run, type Task } from '../../contracts/src/index.js';
+import { invariant, type Run } from '../../contracts/src/index.js';
 import { reviewModelConflict, type ReviewModelAssignment } from '../../contracts/src/review-policy.js';
-import type { RequestLedgerRow } from '../../contracts/src/persistence.js';
 import type { KernelStore as Store } from './ports.js';
 
 /**
  * 在保存或预留模型的同一事务中验证实际解析后的型号。
  * 校验本次候选与既有任务、历史已执行请求的模型隔离。replacingTaskIds 仅排除当前任务选择，
- * 不抹去其历史实际使用的模型；ledger 可由同事务的调用方传入以避免重复读取。
+ * 不抹去其历史实际使用的模型；型号索引与原始记录在同一事务更新。
  *
  * EN: Validate the resolved models inside the same transaction that saves or reserves them.
- * Checks candidate isolation from current tasks and historically executed requests. replacingTaskIds excludes only current choices, not actual historical model use; callers may supply the same-transaction ledger to avoid rereads.
+ * Checks candidate isolation from current tasks and historically executed requests. The transactional index retains historical assignments when current choices are replaced.
  */
 export function assertReviewModelPolicy(
   store: Store,
   run: Run,
   candidates: ReviewModelAssignment[],
   replacingTaskIds: string[] = [],
-  ledger?: RequestLedgerRow[],
 ) {
   if (run.peerReview) {
     /**
@@ -47,35 +45,17 @@ export function assertReviewModelPolicy(
     run.contract.allowSameModelReview === true
   )
     return;
-  const tasks = store.all<Task>('tasks', run.id);
-  const byId = new Map(tasks.map((task) => [task.id, task]));
-  const assignments = tasks
-    .filter((task) => task.status !== 'CANCELLED' && !replacingTaskIds.includes(task.id))
-    .map((task) => ({
-      key: task.id,
-      title: task.spec.title,
-      role: task.spec.role,
-      model: store.require<Agent>('agents', task.agentId).providerBinding.model,
-    }));
-  for (const request of ledger ?? store.requestLedger({ runId: run.id })) {
-    /**
-     * 已释放请求和工具审核请求不作为普通执行／评审模型的历史分配。
-     *
-     * EN: Released requests and tool-review requests do not count as historical ordinary execution/review assignments.
-     */
-    if (request.status === 'RELEASED' || request.purpose === 'tool-review') continue;
-    /**
-     * 旧账本可能缺少型号元数据；仅在这种情况下读取权威请求记录。
-     *
-     * EN: Legacy ledgers may lack model metadata. Read the authoritative record only in that case.
-     */
-    const original =
-      !request.model || !request.taskId ? store.require<RequestRecord>('requests', request.id) : undefined;
-    const task = byId.get(request.taskId ?? original?.taskId ?? '');
-    const model = request.model ?? original?.providerBinding.model;
-    invariant(task && model, 'REVIEW_MODEL_UNKNOWN', '历史请求的任务或模型无法核对，请修复记录后继续');
-    assignments.push({ key: request.id, title: task.spec.title, role: task.spec.role, model });
-  }
+  if (
+    candidates.every((candidate) => candidate.role !== 'reviewer') &&
+    !store.scheduling.hasReviewers(run.id)
+  )
+    return;
+  const assignments = store.scheduling.reviewModels(run.id, replacingTaskIds) as ReviewModelAssignment[];
+  invariant(
+    assignments.every((item) => item.model && item.role),
+    'REVIEW_MODEL_UNKNOWN',
+    '历史模型无法核对，请修复记录后继续',
+  );
   for (const candidate of candidates) {
     const conflict = reviewModelConflict([
       candidate,

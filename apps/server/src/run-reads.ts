@@ -21,7 +21,10 @@ import type {
   RunDetailCoverage,
 } from '../../../packages/contracts/src/run-reads.js';
 import type { MessageSearchPage } from '../../../packages/contracts/src/task-center.js';
-import { readCurrentQuestions } from '../../../packages/storage/src/current-questions.js';
+import {
+  readCurrentQuestions,
+  CURRENT_QUESTION_LIMITS,
+} from '../../../packages/storage/src/current-questions.js';
 import { readDetailEvents } from '../../../packages/storage/src/detail-events.js';
 import {
   REASONING_DISPLAY_MAX_CHARS,
@@ -134,6 +137,12 @@ export class RunReads {
    * 读取运行任务集合并保留投影读取器的坏记录隔离语义。
    * EN: Reads run tasks through projection readers with damaged-row isolation.
    */
+  selectedTasks(ids: string[]) {
+    return ids.flatMap((key) => {
+      const task = this.projections.read<Task>('tasks', key);
+      return task ? [task] : [];
+    });
+  }
   tasks(runId: string) {
     return this.projections.collection<Task>('tasks', runId);
   }
@@ -186,16 +195,27 @@ export class RunReads {
    * 同时传入不可读任务 ID，使“当前没有问题”和“问题无法读取”在界面中可区分。
    * EN: Includes unreadable task IDs to distinguish no current question from an unreadable question.
    */
-  currentQuestions(run: Run, tasks: readonly Task[]) {
+  currentQuestions(run: Run, tasks?: readonly Task[]) {
+    const ids = tasks
+      ? undefined
+      : this.store.scheduling.questionTaskIds(run.id, CURRENT_QUESTION_LIMITS.tasks + 1);
+    const selected = tasks ?? this.selectedTasks(ids!);
+    const omitted = tasks ? 0 : Math.max(0, this.store.scheduling.questionCount(run.id) - ids!.length);
     const unavailable = this.store.db
       .prepare("SELECT record_id FROM projection_read_issues_v1 WHERE table_name='tasks' AND run_id=?")
       .all(run.id) as { record_id: string }[];
-    return readCurrentQuestions(
+    const result = readCurrentQuestions(
       this.store,
       run,
-      tasks,
+      selected,
       unavailable.map((row) => row.record_id),
     );
+    if (omitted && !['DONE', 'CANCELLED'].includes(run.status)) {
+      result.coverage.complete = false;
+      result.coverage.limited = true;
+      result.coverage.unavailable += omitted;
+    }
+    return result;
   }
   /**
    * 汇集执行守卫所需完整任务、请求和操作集合；各类不可读记录由共享投影覆盖率记录。

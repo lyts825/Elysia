@@ -241,6 +241,7 @@ type Detail = DetailReadState & {
   run: Run;
   tasks: Task[];
   agents: Agent[];
+  taskPage?: { total: number; limit: number; after: string | null; nextCursor: string | null };
   messages: Message[];
   messagePage?: {
     hasMore: boolean;
@@ -378,6 +379,12 @@ function App({
     [modal, setModalState] = useState(''),
     [artifactView, setArtifactView] = useState<ArtifactView | null>(null),
     [streaming, setStreaming] = useState<Record<string, string>>({});
+  const agentPagePosition = useRef<{ runId: string; after: string; trail: string[] }>({
+    runId: '',
+    after: '',
+    trail: [],
+  });
+  const [agentPaging, setAgentPaging] = useState(false);
   const [streamingReasoning, setStreamingReasoning] = useState<Record<string, LiveReasoning>>({});
   const [cacheState, setCacheState] = useState(createWorkbenchSnapshot);
   const [settingsTarget, setSettingsTarget] = useState<{
@@ -973,6 +980,8 @@ function App({
         savedNavigation.current = undefined;
       }
       if (navigation.current.runId !== next.runId) {
+        agentPagePosition.current = { runId: next.runId, after: '', trail: [] };
+        setAgentPaging(false);
         const reading = conversationHistory.get(next.runId);
         const anchor = reading?.following === false ? reading.anchor : undefined;
         historyPosition.current = { runId: next.runId, before: '', trail: [], around: anchor?.id };
@@ -1368,8 +1377,9 @@ function App({
         append && detailSnapshot.current?.run.id === wanted
           ? detailSnapshot.current.messages.map((message) => message.id)
           : [];
+      const taskAfter = agentPagePosition.current.runId === wanted ? agentPagePosition.current.after : '';
       return detailReads.current.run(
-        `${wanted}:${before}:${around || ''}:${full}:${retained.join(',')}:${retryProjections}`,
+        `${wanted}:${before}:${around || ''}:${full}:${retained.join(',')}:${retryProjections}:${taskAfter}`,
         async (signal) => {
           const request = ++detailRequest.current;
           let result: Detail;
@@ -1393,6 +1403,7 @@ function App({
                       ? '&beforeMessage=' + encodeURIComponent(cursor)
                       : '') +
                   (retained.length ? '&retainedMessages=' + encodeURIComponent(retained.join(',')) : '') +
+                  (taskAfter ? '&taskAfter=' + encodeURIComponent(taskAfter) : '') +
                   retryQuery,
                 undefined,
                 undefined,
@@ -1483,7 +1494,9 @@ function App({
               return old.run.revision > result.run.revision
                 ? detailReadReason(result)
                   ? { ...result, run: old.run, messages, events }
-                  : { ...old, messages, messagePage: result.messagePage, events }
+                  : old.taskPage?.after !== result.taskPage?.after
+                    ? { ...result, run: old.run, messages, events }
+                    : { ...old, messages, messagePage: result.messagePage, events }
                 : { ...result, messages, events };
             });
           }
@@ -1499,6 +1512,20 @@ function App({
    * 由 refreshDetail 在结果确认后提交，防止读取失败后界面游标与正文不一致。
    * EN: Request a history window, appending older pages only within capacity; otherwise replace/relocate. pending retains prior position until refreshDetail confirms success, keeping cursor and body aligned on failure.
    */
+  async function changeAgentPage(after: string, trail: string[]) {
+    if (!detail || agentPaging) return;
+    const previous = agentPagePosition.current;
+    const position = { runId: detail.run.id, after, trail };
+    agentPagePosition.current = position;
+    setAgentPaging(true);
+    try {
+      const ok = await refreshDetail();
+      if (!ok && agentPagePosition.current === position) agentPagePosition.current = previous;
+    } finally {
+      if (agentPagePosition.current === position || agentPagePosition.current === previous)
+        setAgentPaging(false);
+    }
+  }
   async function changeHistory(before: string, trail: string[], around?: string) {
     if (historyMoving.current) return;
     const wanted = activeRunId.current;
@@ -4316,6 +4343,39 @@ function App({
                     ))}
                   </MotionTabs>
                   <MotionContent className="detail-content" motionKey={tab}>
+                    {(tab === 'tasks' || tab === 'agents') && detail.taskPage && (
+                      <div className="panel-heading agent-pagination" aria-label="代理分页">
+                        <span>
+                          本页 {detail.agents.length} 个代理（含总代理和上级），共 {detail.taskPage.total} 个
+                        </span>
+                        <button
+                          className="secondary"
+                          disabled={agentPaging || !detail.taskPage.after}
+                          onClick={() =>
+                            void changeAgentPage(
+                              agentPagePosition.current.trail.at(-1) ?? '',
+                              agentPagePosition.current.trail.slice(0, -1),
+                            )
+                          }
+                        >
+                          上一页
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={agentPaging || !detail.taskPage.nextCursor}
+                          onClick={() =>
+                            void changeAgentPage(detail.taskPage!.nextCursor!, [
+                              ...(agentPagePosition.current.runId === detail.run.id
+                                ? agentPagePosition.current.trail
+                                : []),
+                              detail.taskPage!.after ?? '',
+                            ])
+                          }
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    )}
                     {tab === 'tasks' && (
                       <>
                         {detail.run.contract.peerReview && <PeerReviewPanel run={detail.run} />}
@@ -4325,7 +4385,7 @@ function App({
                           <span>
                             {detail.detailCoverage?.tasks.complete === false
                               ? `已读 ${detail.tasks.length} 条 · 完整进度未知`
-                              : `${detail.tasks.filter((t) => t.status === 'DONE').length}/${detail.tasks.length} 完成`}
+                              : `${detail.taskPage ? '本页 ' : ''}${detail.tasks.filter((t) => t.status === 'DONE').length}/${detail.tasks.length} 完成`}
                           </span>
                         </div>
                         <TaskGraph
@@ -4433,7 +4493,8 @@ function App({
                         <div className="panel-heading">
                           <h3>{isChat ? '会话模型' : '代理责任树'}</h3>
                           <span>
-                            {detail.agents.length}/{detail.run.limits.maxAgents}
+                            {detail.taskPage?.total ?? detail.agents.length}/
+                            {detail.run.limits.maxAgents ?? '不限'}
                           </span>
                         </div>
                         {agentOrder(detail.agents).map((a) => {

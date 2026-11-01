@@ -1,3 +1,4 @@
+import { ASYNC_RESIDENT_LIMIT, ASYNC_QUEUE_BATCH } from '../../contracts/src/async-scheduling.js';
 /**
  * 调度运行任务并协调执行限制。
  * 按 hold、并发和准备状态领取任务并登记真实宿主工作；提交状态与停止进程分开，显式继续才解除本地停止，WAITING 不证明进程退出。
@@ -7,6 +8,7 @@ import type { Store } from '../../storage/src/index.js';
 import type { Kernel } from '../../kernel/src/index.js';
 import {
   AppError,
+  effectiveContextWindowTokens,
   type Agent,
   type Task,
   type Run,
@@ -61,6 +63,7 @@ export class ExecutionScheduler implements RunControl {
   private stoppingRuns = new Map<string, number>();
   private ticking?: Promise<void>;
   private runtimeRevision = 0;
+  private tickAgain = false;
   private runtimeLast = '';
   private readonly dispatchOrder = new Map<string, number>();
   private dispatchSequence = 0;
@@ -170,8 +173,15 @@ export class ExecutionScheduler implements RunControl {
    */
   private queueReason(task: Task, run: Run): RuntimeQueueReason {
     const occupied = this.occupied().filter((entry) => entry.taskId !== task.id);
-    if (occupied.length >= 4) return 'global-concurrency';
-    if (occupied.filter((entry) => entry.runId === run.id).length >= run.limits.concurrency)
+    const asynchronous = run.limits.scheduling === 'async' && run.execution?.kind !== 'docker-agent';
+    const residents = [...this.active].filter(([key]) => key !== task.id);
+    if (residents.length >= ASYNC_RESIDENT_LIMIT || (!asynchronous && occupied.length >= 4))
+      return 'global-concurrency';
+    if (
+      (asynchronous
+        ? residents.filter(([, entry]) => entry.runId === run.id).length
+        : occupied.filter((entry) => entry.runId === run.id).length) >= run.limits.concurrency
+    )
       return 'run-concurrency';
     if (
       !this.kernel
@@ -185,7 +195,23 @@ export class ExecutionScheduler implements RunControl {
     const unavailable = admission?.unavailable(run);
     if (unavailable) return unavailable;
     const agent = this.kernel.store.require<Agent>('agents', task.agentId);
-    if (
+    if (asynchronous) {
+      const stage = this.kernel.store.scheduling.stage(task.id);
+      if (
+        stage === 'model' &&
+        this.kernel.store.requestLedger({ account: agent.providerBinding.account, status: 'RESERVED' })
+          .length >= agent.providerBinding.concurrency
+      )
+        return 'account-concurrency';
+      const estimate = (key: string) => {
+        if (this.kernel.store.scheduling.stage(key) !== 'model') return 256 * 1024;
+        const t = this.kernel.store.require<Task>('tasks', key);
+        const a = this.kernel.store.require<Agent>('agents', t.agentId);
+        return (effectiveContextWindowTokens(a) + a.providerBinding.outputLimit) * 16 + 1024 * 1024;
+      };
+      const bytes = residents.reduce((sum, [key]) => sum + estimate(key), 0) + estimate(task.id);
+      if (bytes > 512 * 1024 * 1024) return 'resident-memory';
+    } else if (
       occupied.filter((entry) => entry.account === agent.providerBinding.account).length >=
       agent.providerBinding.concurrency
     )
@@ -232,10 +258,9 @@ export class ExecutionScheduler implements RunControl {
   runtimeSnapshot(runId?: string): ExecutorRuntimeSnapshot {
     const queue: RuntimeQueueEntry[] = [];
     for (const task of this.orderedCandidates(
-      this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
-        excludeRunIds: [...this.locallyStopped],
-        excludeExecutionHolds: true,
-      }),
+      this.kernel.store.scheduling
+        .candidates(ASYNC_QUEUE_BATCH, runId)
+        .map((key) => this.kernel.store.require<Task>('tasks', key)),
     )) {
       if (task.status !== 'READY' || this.active.has(task.id)) continue;
       const run = this.kernel.store.require<Run>('runs', task.runId);
@@ -250,13 +275,17 @@ export class ExecutionScheduler implements RunControl {
     }
     const occupied = this.occupied();
     const activeTaskIds = occupied.map((entry) => entry.taskId);
-    const serialized = stable({ queue, activeTaskIds });
+    const queuedTotal = this.kernel.store.scheduling.countReady(runId);
+    const serialized = stable({ queue, activeTaskIds, queuedTotal });
     if (serialized !== this.runtimeLast) {
       this.runtimeLast = serialized;
       this.runtimeRevision++;
     }
     return {
       revision: this.runtimeRevision,
+      queuedTotal,
+      queueTruncated: queuedTotal > queue.length,
+      residentLimit: ASYNC_RESIDENT_LIMIT,
       queue: queue.filter((entry) => !runId || entry.runId === runId),
       activeTaskIds: activeTaskIds.filter(
         (key) => !runId || occupied.find((entry) => entry.taskId === key)?.runId === runId,
@@ -352,10 +381,18 @@ export class ExecutionScheduler implements RunControl {
    */
   tick(): Promise<void> {
     if (this.stopped) return Promise.resolve();
+    if (this.ticking) {
+      this.tickAgain = true;
+      return this.ticking;
+    }
     return (this.ticking ??= Promise.resolve()
       .then(() => this.schedule())
       .finally(() => {
         this.ticking = undefined;
+        if (this.tickAgain && !this.stopped) {
+          this.tickAgain = false;
+          setTimeout(() => void this.tick(), 0);
+        }
       }));
   }
   /**
@@ -417,10 +454,9 @@ export class ExecutionScheduler implements RunControl {
           continue;
         }
       }
-      const tasks = this.kernel.store.stateCandidates<Task>('tasks', ['READY'], {
-        excludeRunIds: [...this.locallyStopped],
-        excludeExecutionHolds: true,
-      });
+      const tasks = this.kernel.store
+        .tx(() => this.kernel.store.scheduling.candidates(ASYNC_QUEUE_BATCH, undefined, true))
+        .map((key) => this.kernel.store.require<Task>('tasks', key));
       const candidates = new Set(tasks.map((task) => task.id));
       for (const taskId of this.dispatchOrder.keys())
         if (!candidates.has(taskId) && !this.active.has(taskId)) this.dispatchOrder.delete(taskId);
@@ -490,6 +526,7 @@ export class ExecutionScheduler implements RunControl {
         .finally(() => {
           this.active.delete(task.id);
           admission?.release(task.id);
+          void this.tick();
         });
       this.active.set(task.id, {
         controller,
@@ -533,6 +570,7 @@ export class ExecutionScheduler implements RunControl {
           runId: run.id,
           waitReasons: ['rate_limit'],
           resumeBefore: Date.now(),
+          limit: ASYNC_QUEUE_BATCH,
         })) {
           const resumeAt = this.rateLimitResumeAt(task);
           if (resumeAt === undefined || resumeAt > Date.now() || this.active.has(task.id)) continue;
@@ -595,6 +633,7 @@ export class ExecutionScheduler implements RunControl {
    * EN: Classifies step failures: subscription and budget limits become explanatory waits; other failures mark the task and active attempt failed. Tasks already waiting, completed, or cancelled are not overwritten, protecting concurrent user changes.
    */
   fail(task: Task, error: unknown) {
+    if (error instanceof AppError && ['STALE_EXECUTION', 'EXECUTION_OWNED'].includes(error.code)) return;
     const store = this.kernel.store;
     const current = store.require<Task>('tasks', task.id);
     if (['WAITING', 'CANCELLED', 'DONE'].includes(current.status)) return;
@@ -611,9 +650,8 @@ export class ExecutionScheduler implements RunControl {
         this.kernel.updateTask(current, 'FAILED', {
           result: { error: e.message, code: e instanceof AppError ? e.code : 'EXECUTOR_ERROR' },
         });
-        const a = store
-          .all<Attempt>('attempts', task.runId)
-          .find((a) => a.taskId === task.id && a.status === 'ACTIVE');
+        const attemptId = store.scheduling.attemptIds(task.id, ['ACTIVE'])[0];
+        const a = attemptId ? store.require<Attempt>('attempts', attemptId) : undefined;
         if (a) store.put('attempts', { ...a, status: 'FAILED', lease: null, error: e.message });
         const run = store.require<Run>('runs', task.runId);
         if (task.id === run.rootTaskId) this.kernel.updateRun(run, { status: 'FAILED', reason: e.message });

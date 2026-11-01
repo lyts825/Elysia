@@ -124,10 +124,12 @@ export class BackgroundJobs {
     ].filter((entry) => entry.taskId !== task.id);
     const agent = store.require<Agent>('agents', task.agentId);
     invariant(
-      occupied.length < 4 &&
-        occupied.filter((entry) => entry.runId === run.id).length < run.limits.concurrency &&
-        occupied.filter((entry) => entry.account === agent.providerBinding.account).length <
-          agent.providerBinding.concurrency &&
+      (run.limits.scheduling === 'async' || occupied.length < 4) &&
+        (run.limits.scheduling === 'async' ||
+          occupied.filter((entry) => entry.runId === run.id).length < run.limits.concurrency) &&
+        (run.limits.scheduling === 'async' ||
+          occupied.filter((entry) => entry.account === agent.providerBinding.account).length <
+            agent.providerBinding.concurrency) &&
         this.occupancy().length < run.limits.toolConcurrency,
       'JOB_CAPACITY',
       '后台命令达到全局、运行、账号或工具并发上限',

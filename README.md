@@ -2,7 +2,7 @@
 
 本机多 Agent 协作应用，用统一的项目与任务入口处理代码、资料和办公产物。原生入口接入 OpenAI Responses 与 DeepSeek Chat，Agent 终端入口管理 CLI 任务。
 
-当前源码：**v1.25.0 本地版本**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。本地版本标签不代表已发布。
+当前源码：**v1.26.0 本地版本**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。本地版本标签不代表已发布。
 
 ## 快速启动
 
@@ -43,7 +43,7 @@ Windows 也可在安装依赖后双击 `Start-Elysia.vbs`；`Start-Elysia.cmd` �
 ```powershell
 pnpm typecheck
 pnpm build
-pnpm verify:local --bundle C:/delivery/acceptance-v1.25.0 --output .local-qa/release-check
+pnpm verify:local --bundle C:/delivery/acceptance-v1.26.0 --output .local-qa/release-check
 ```
 
 `verify:local` 可从独立验收包导入材料，生成绑定当前构建输入的报告；包需单独取得。Windows 打包必须使用完整通过报告。制作、迁移及交付检查见 [验收包与本地交付](docs/VERIFICATION.md)。
@@ -56,6 +56,6 @@ pnpm verify:local --bundle C:/delivery/acceptance-v1.25.0 --output .local-qa/rel
 | `assets`、`scripts`                       | 必要资源及构建、启动、维护入口           |
 | `docs`                                    | 使用说明、维护规范、当前状态与历史归档   |
 
-默认用户数据位于 `%LOCALAPPDATA%/Elysia`，可通过 `ELYSIA_DATA_DIR` 指定。备份与恢复前先停止服务；当前数据格式为 schema11，最低读取版本为 1.25.0。详见 [存储、停止与备份](docs/usage.md#存储停止与备份)。
+默认用户数据位于 `%LOCALAPPDATA%/Elysia`，可通过 `ELYSIA_DATA_DIR` 指定。备份与恢复前先停止服务；当前数据格式为 schema12，最低读取版本为 1.26.0。详见 [存储、停止与备份](docs/usage.md#存储停止与备份)。
 
 `.local-tests/`、`.local-qa/` 和 `.tmp/` 是被 Git 忽略的本地材料目录。忽略状态不表示可以删除；清理前应核对用途与引用，保留可复验脚本、原始报告和必要截图。

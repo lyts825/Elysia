@@ -1475,6 +1475,15 @@ a {
   font-size: var(--font-xs);
   color: var(--muted);
 }
+.agent-pagination {
+  flex-wrap: wrap;
+}
+.agent-pagination > span {
+  flex: 1 0 100%;
+}
+.agent-pagination button {
+  flex: 0 0 auto;
+}
 .task-detail {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);

@@ -138,10 +138,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     const event = this.store.latestEvent(agent.runId, agent.taskId, 'context.updated');
     const candidates = [
       event?.payload,
-      ...this.store
-        .all<RequestRecord>('requests', agent.runId)
-        .filter((request) => request.taskId === agent.taskId)
-        .map((request) => request.manifest.contextWindow),
+      this.store.latestTaskRequest(agent.runId, agent.taskId)?.manifest.contextWindow,
     ];
     const policy = agent.contextPolicy ?? { mode: 'managed' as const };
     return (
@@ -174,9 +171,9 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       return '任务已结束，上下文配置仅供查看';
     if (['RUNNING', 'VERIFYING'].includes(task.status)) return '请先暂停代理并等待当前请求和操作结束';
     const requests = this.store.requestLedger({ runId: run.id, taskId: task.id });
-    const operations = this.store
-      .all<Operation>('tool_operations', run.id)
-      .filter((o) => o.taskId === task.id);
+    const operations = this.store.scheduling
+      .operationIds(task.id)
+      .map((key) => this.store.require<Operation>('tool_operations', key));
     if (requests.some((r) => r.status === 'RESERVED') || operations.some((o) => o.status === 'INTENT'))
       return '该代理仍在执行，请等待当前请求和操作结束';
     if (requests.some((r) => r.status === 'UNKNOWN') || operations.some((o) => o.status === 'UNCERTAIN'))
@@ -190,9 +187,13 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    *
    * EN: Summarizes agent window policies, valid runtime metrics, and editability for one UI read. Missing valid metrics remain null, not zero usage.
    */
-  contextSnapshot(runId: string): ContextSnapshot {
+  contextSnapshot(runId: string, agentIds?: string[]): ContextSnapshot {
     const run = this.store.require<Run>('runs', runId);
-    const agents: ContextProjection[] = this.store.all<Agent>('agents', runId).map((agent) => {
+    const agents: ContextProjection[] = (
+      agentIds
+        ? agentIds.map((key) => this.store.require<Agent>('agents', key))
+        : this.store.all<Agent>('agents', runId)
+    ).map((agent) => {
       const task = this.store.require<Task>('tasks', agent.taskId);
       const metrics = this.contextMetrics(agent);
       const provider = agent.providerBinding;
@@ -594,9 +595,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    * EN: Returns same-run descendants of task, including task itself.
    */
   descendants(task: Task): Task[] {
-    return this.store
-      .all<Task>('tasks', task.runId)
-      .filter((t) => this.ancestors(t).some((a) => a.id === task.id));
+    return this.store.scheduling.descendantIds(task.id).map((key) => this.store.require<Task>('tasks', key));
   }
   /**
    * 读取持久化依赖边；任务等待列表与必要子任务边由 graph() 另行补入。
@@ -695,8 +694,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         '计划不能改变用户授权、预算或评审设置',
       );
       invariant(
-        plan.tasks.length + this.store.all<Agent>('agents', run.id).length + peerReviewReservedSlots(run) <=
-          run.limits.maxAgents,
+        plan.tasks.length + this.store.scheduling.countAgents(run.id) + peerReviewReservedSlots(run) <=
+          (run.limits.maxAgents ?? Infinity),
         'AGENT_LIMIT',
         '计划超出代理总量',
       );
@@ -795,7 +794,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       );
       invariant(parent.depth < run.limits.maxDepth, 'DEPTH_LIMIT', '委派深度达到上限');
       invariant(
-        this.store.all<Agent>('agents', run.id).length + peerReviewReservedSlots(run) < run.limits.maxAgents,
+        run.limits.maxAgents === null ||
+          this.store.scheduling.countAgents(run.id) + peerReviewReservedSlots(run) < run.limits.maxAgents,
         'AGENT_LIMIT',
         '代理数量达到上限',
       );
@@ -804,7 +804,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       const spec = TaskSpec.parse(routed.raw);
       invariant(
         (!run.peerReview || !spec.key.startsWith('peer-review-')) &&
-          !this.store.all<Task>('tasks', run.id).some((t) => t.spec.key === spec.key),
+          !this.store.scheduling.findTask(run.id, spec.key),
         'TASK_KEY_EXISTS',
         '任务 key 已存在',
       );
@@ -833,7 +833,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
        * EN: Resolves plan keys to real task IDs first; a child cannot depend on an ancestor waiting for its result.
        */
       const deps = spec.dependsOn.map((key) => {
-        const t = this.store.all<Task>('tasks', run.id).find((t) => t.id === key || t.spec.key === key);
+        const target = this.store.scheduling.findTask(run.id, key);
+        const t = target ? this.store.require<Task>('tasks', target) : undefined;
         invariant(t, 'DEPENDENCY_MISSING', `依赖 ${key} 不存在`);
         invariant(
           !this.ancestors(parent).some((a) => a.id === t.id),
@@ -874,7 +875,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         contextPolicyRevision: 1,
       });
       for (const dep of deps) this.store.addTaskDependency(taskId, dep);
-      this.checkGraph(this.graph(run.id));
+      invariant(!this.store.scheduling.wouldCycle(taskId, deps), 'CYCLE', '任务依赖存在循环');
       this.event(run.id, 'task.updated', child, taskId);
       if (routingDecision) this.event(run.id, 'model.routed', routingDecision, taskId);
       return { taskId, agentId, key: spec.key };
@@ -1033,6 +1034,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     return this.store.tx(() => {
       const task = this.store.require<Task>('tasks', taskId),
         run = this.store.require<Run>('runs', task.runId);
+      invariant(!this.store.getExecutionHold(run.id), 'STOPPED', '运行已持久停止，需显式恢复');
       invariant(!run.archived, 'RUN_ARCHIVED', '对话已归档，请先恢复');
       invariant(
         task.status === 'READY' && ['READY', 'RUNNING'].includes(run.status),
@@ -1044,9 +1046,8 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         'DEPENDENCIES_PENDING',
         '依赖尚未完成',
       );
-      let attempt = this.store
-        .all<Attempt>('attempts', task.runId)
-        .find((a) => a.taskId === task.id && ['ACTIVE', 'WAITING'].includes(a.status));
+      const attemptId = this.store.scheduling.attemptIds(task.id, ['ACTIVE', 'WAITING'])[0];
+      let attempt = attemptId ? this.store.require<Attempt>('attempts', attemptId) : undefined;
       if (!attempt)
         attempt = {
           id: id(),
@@ -1054,8 +1055,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           runId: task.runId,
           taskId: task.id,
           agentId: task.agentId,
-          sequence:
-            this.store.all<Attempt>('attempts', task.runId).filter((a) => a.taskId === task.id).length + 1,
+          sequence: this.store.scheduling.attemptIds(task.id).length + 1,
           status: 'ACTIVE',
           lease: null,
           steps: 0,
@@ -1094,12 +1094,12 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         taskId: task.id,
         attemptId,
         taskRevision: task.revision,
-        messageCount: this.history(task).length,
+        messageCount: this.store.sessionMessageCount(
+          task.runId,
+          this.store.require<Agent>('agents', task.agentId).sessionId,
+        ),
         waitingFor: task.waitingFor,
-        pending: this.store
-          .all<any>('tool_operations', task.runId)
-          .filter((o) => o.attemptId === attemptId && !['DONE', 'FAILED'].includes(o.status))
-          .map((o) => o.id),
+        pending: this.store.scheduling.operationIds(task.id, { attemptId, pending: true }),
         createdAt: now(),
       });
       return this.store.put('attempts', {
@@ -1123,7 +1123,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    *
    * EN: Validates that wait targets belong to the run and are not self, then records the wait reason.
    */
-  wait(task: Task, reason: string, ids: string[] = []) {
+  wait(task: Task, reason: string, ids: string[] = [], allChildren = false) {
     return this.store.tx(() => {
       for (const key of ids)
         invariant(
@@ -1138,7 +1138,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
           'WAIT_SCOPE',
           '只能等待实际直属子任务，且不能重复指定',
         );
-      this.checkGraph(this.graph(task.runId, { id: task.id, deps: ids }));
+      invariant(!this.store.scheduling.wouldCycle(task.id, ids), 'CYCLE', '等待关系存在循环');
       if (reason === 'children') {
         const children = ids.map((key) => this.store.require<Task>('tasks', key));
         /**
@@ -1152,10 +1152,31 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       this.updateTask(this.store.require('tasks', task.id), 'WAITING', {
         waitReason: reason,
         waitingFor: ids,
+        waitAllChildren: reason === 'children' && allChildren,
       });
-      const a = this.store
-        .all<Attempt>('attempts', task.runId)
-        .find((a) => a.taskId === task.id && a.status === 'ACTIVE');
+      if (reason === 'children') {
+        invariant(!this.store.scheduling.wouldCycle(task.id, ids), 'CYCLE', '等待关系存在循环');
+        const summary = this.store.scheduling.waitSummary(task.id);
+        if (
+          (summary.complete || summary.needsDecision) &&
+          (allChildren || this.store.require<Run>('runs', task.runId).limits.scheduling === 'async')
+        ) {
+          this.updateTask(
+            this.store.require<Task>('tasks', task.id),
+            task.status === 'WAITING' ? 'READY' : task.status,
+            { waitReason: undefined, waitingFor: [], waitAllChildren: false },
+          );
+          return {
+            waiting: false,
+            reason: summary.needsDecision ? 'dependency_failed' : 'completed',
+            total: summary.total,
+            children: this.childResults(summary.ids.map((key) => this.store.require<Task>('tasks', key))),
+            truncated: summary.total > summary.ids.length,
+          };
+        }
+      }
+      const activeId = this.store.scheduling.attemptIds(task.id, ['ACTIVE'])[0];
+      const a = activeId ? this.store.require<Attempt>('attempts', activeId) : undefined;
       if (a) {
         this.store.put('attempts', { ...a, status: 'WAITING', lease: null });
         this.checkpoint(a.id);
@@ -1191,7 +1212,6 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         'TIME_BUDGET',
         '运行时间达到上限',
       );
-      const requests = this.store.requestLedger({ runId: run.id });
       const currentTask = this.store.require<Task>('tasks', task.id);
       if (purpose === 'tool-review') {
         invariant(
@@ -1213,13 +1233,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
             '评审请求必须使用创建任务时冻结的模型配置',
           );
         }
-        assertReviewModelPolicy(
-          this.store,
-          run,
-          [{ ...currentTask.spec, model: provider.model }],
-          [task.id],
-          requests,
-        );
+        assertReviewModelPolicy(this.store, run, [{ ...currentTask.spec, model: provider.model }], [task.id]);
       }
       /**
        * 预留采用保守输入单价与完整输出上限；结算前，未知结果继续占用预算。
@@ -1238,41 +1252,21 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
        * EN: Each ancestor checks cumulative consumption for its full subtree, preventing children from bypassing parent budgets.
        */
       for (const ancestor of this.ancestors(task)) {
-        const budget = ancestor.spec.budget ?? run.contract.budget,
-          descendants = new Set(this.descendants(ancestor).map((t) => t.id));
-        const scoped = requests.filter((r) => descendants.has(r.taskId));
-        invariant(scoped.length < budget.maxRequests, 'REQUEST_BUDGET', '模型请求次数达到上限');
-        const totalTokens = scoped.reduce(
-          (sum, r) =>
-            sum +
-            (r.status === 'RELEASED'
-              ? 0
-              : r.status === 'SETTLED'
-                ? (r.usage?.inputTotal ?? r.reservedTokens) + (r.usage?.outputTotal ?? 0)
-                : r.reservedTokens),
-          0,
-        );
+        const budget = ancestor.spec.budget ?? run.contract.budget;
+        const total = this.store.scheduling.budget(ancestor.id);
+        invariant(total.requests < budget.maxRequests, 'REQUEST_BUDGET', '模型请求次数达到上限');
         invariant(
-          totalTokens + tokens + provider.outputLimit <= budget.maxTokens,
+          total.tokens + tokens + provider.outputLimit <= budget.maxTokens,
           'TOKEN_BUDGET',
           'Token 预算不足',
         );
         if (budget.maxCost !== null) {
           invariant(
-            reservedCost !== null && scoped.every((r) => r.priceCurrency === price?.currency),
+            reservedCost !== null && total.currencies.every((currency) => currency === price?.currency),
             'PRICE_UNKNOWN',
             '货币预算需要全部模型价格与相同币种',
           );
-          invariant(
-            scoped.reduce(
-              (sum, r) => sum + (r.status === 'RELEASED' ? 0 : (r.usage?.cost ?? r.reservedCost ?? 0)),
-              0,
-            ) +
-              reservedCost <=
-              budget.maxCost,
-            'COST_BUDGET',
-            '货币预算不足',
-          );
+          invariant(total.cost + reservedCost <= budget.maxCost, 'COST_BUDGET', '货币预算不足');
         }
       }
       const request = this.store.put<RequestRecord>('requests', {
@@ -2016,6 +2010,19 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   /** 抽取父任务处理子任务所需的状态和结果，不复制代理绑定或工作区所有权。
    * EN: Projects child status/results needed by the parent without copying agent bindings or workspace ownership.
    */
+  listChildren(task: Task, after?: string, limit = 32) {
+    const ids = this.store.scheduling.taskIds(task.runId, {
+      parentId: task.id,
+      after,
+      limit: Math.min(64, Math.max(1, limit)) + 1,
+    });
+    const page = ids.slice(0, Math.min(64, Math.max(1, limit)));
+    return {
+      total: this.store.scheduling.countChildren(task.id),
+      items: this.childResults(page.map((key) => this.store.require<Task>('tasks', key))),
+      nextCursor: ids.length > page.length ? page.at(-1) : null,
+    };
+  }
   private childResults(tasks: Task[]) {
     return tasks.map((task) => ({
       id: task.id,
@@ -2049,8 +2056,10 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    * EN: Propagates failure causes along explicit dependencies to schedulable tasks and retains the path for display. Removal of a cause does not imply completion: every dependency must be DONE before READY, and unknown side effects go to verification.
    */
   private reconcileDependencies(runId: string) {
-    const tasks = this.store.all<Task>('tasks', runId),
-      byId = new Map(tasks.map((task) => [task.id, task]));
+    const tasks = this.store.scheduling
+      .dirtyDependencies(runId)
+      .map((key) => this.store.require<Task>('tasks', key));
+    const byId = { get: (key: string) => this.store.get<Task>('tasks', key) };
     type Cause = NonNullable<Task['dependencyBlock']>['causes'][number];
     /** 沿依赖递归收集可处理根因及路径；闭合任务终止搜索，重复路径中止以容忍损坏图。
      * EN: Recursively collects actionable dependency causes and paths; terminal tasks stop traversal and repeated paths stop corrupt cycles.
@@ -2069,6 +2078,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
       });
     };
     for (const task of tasks) {
+      this.store.scheduling.acknowledgeDependency(task.id);
       if (task.status !== 'READY' && !(task.status === 'WAITING' && task.waitReason === 'dependency_failed'))
         continue;
       const dependencies = this.dependencies(task),
@@ -2110,24 +2120,30 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   wakeChildren(runId: string) {
     this.store.tx(() => {
       this.reconcileDependencies(runId);
-      for (const task of this.store.stateCandidates<Task>('tasks', ['WAITING'], {
-        runId,
-        waitReasons: ['children'],
-      })) {
-        const children = task.waitingFor.map((key) => this.store.require<Task>('tasks', key));
-        const needsDecision = children.some((child) => this.childNeedsDecision(child));
-        if (needsDecision || children.every((c) => ['DONE', 'FAILED', 'CANCELLED'].includes(c.status))) {
+      for (const task of this.store.scheduling
+        .waitingParents(runId)
+        .map((key) => this.store.require<Task>('tasks', key))) {
+        const summary = this.store.scheduling.waitSummary(task.id);
+        const children = summary.ids.map((key) => this.store.require<Task>('tasks', key));
+        const needsDecision = summary.needsDecision;
+        if (needsDecision || summary.complete) {
           this.appendMessage(
             task,
             'user',
             (needsDecision
               ? '子任务失败或阻塞：核对下列状态、原因和部分成果，处理具体缺口；保留已完成产物，不重复委派或把失败分支视为完成。'
               : '等待的子任务已结束：逐项核对实际状态和证据，再决定集成或后续处理；结束不等于全部成功。') +
-              stable(this.childResults(children)),
+              stable({
+                total: summary.total,
+                items: this.childResults(children),
+                truncated: summary.total > children.length,
+                next: '使用 list_children 分页核对全部子任务结果',
+              }),
             { purpose: 'runtime_notice' },
           );
           if (needsDecision && this.taskNeedsVerification(task)) this.wait(task, 'verification');
-          else this.updateTask(task, 'READY', { waitingFor: [], waitReason: undefined });
+          else
+            this.updateTask(task, 'READY', { waitingFor: [], waitReason: undefined, waitAllChildren: false });
         }
       }
     });
@@ -2138,6 +2154,7 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
    * EN: Recovers execution state from durable records while retaining reconciliation requirements for uncertain outcomes.
    */
   recover(runId?: string) {
+    this.store.scheduling.recover(runId);
     const recovery = this.store.recovery;
     for (const key of recovery.candidates('requests', ['RESERVED'], runId))
       recovery.apply<RequestRecord>('requests', key, (request) => {
