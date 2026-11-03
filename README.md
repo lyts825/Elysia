@@ -2,7 +2,7 @@
 
 本机多 Agent 协作应用，用统一的项目与任务入口处理代码、资料和办公产物。原生入口接入 OpenAI Responses 与 DeepSeek Chat，Agent 终端入口管理 CLI 任务。
 
-当前源码：**v1.26.1 本地版本**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。本地版本标签不代表已发布。
+当前源码：**v1.26.2**。更新内容集中在 [更新记录](CHANGELOG.md)，交付状态及未完成验收见 [项目状态与验收](docs/EXECUTION.md)。源码统一维护在 `main`；源码标签不代表已提供可安装发行包。
 
 ## 快速启动
 
@@ -27,16 +27,16 @@ Windows 也可在安装依赖后双击 `Start-Elysia.vbs`；`Start-Elysia.cmd` �
 
 ## 文档导航
 
-| 内容                                   | 入口                                                      |
-| -------------------------------------- | --------------------------------------------------------- |
-| 日常操作、模型连接、预览、备份与恢复   | [使用指南](docs/usage.md)                                 |
-| 每个版本的变更                         | [更新记录](CHANGELOG.md)                                  |
-| 当前状态、验证入口、已知限制和恢复条件 | [项目状态与验收](docs/EXECUTION.md)                       |
-| 架构、内置插件、提示词和技能           | [架构与内置插件](docs/PLUGINS.md)                         |
-| 终端安装、运行、诊断与续接             | [Agent 终端](docs/AGENT_TERMINALS.md)                     |
-| Antigravity 与 Claude Code             | [接入说明](docs/AGENT_INTEGRATIONS.md)                    |
-| 视觉与交互维护约定                     | [界面规范](docs/UI_DESIGN.md) · [品牌资产](docs/BRAND.md) |
-| 截至 v1.23.42 的原始执行与验收记录     | [历史归档](docs/history/execution-through-v1.23.42.md)    |
+| 内容                                   | 入口                                                                                                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 日常操作、模型连接、预览、备份与恢复   | [使用指南](docs/usage.md)                                                                                                              |
+| 每个版本的变更                         | [更新记录](CHANGELOG.md)                                                                                                               |
+| 当前状态、验证入口、已知限制和恢复条件 | [项目状态与验收](docs/EXECUTION.md)                                                                                                    |
+| 架构、内置插件、提示词和技能           | [架构与内置插件](docs/PLUGINS.md)                                                                                                      |
+| 终端安装、运行、诊断与续接             | [Agent 终端](docs/AGENT_TERMINALS.md)                                                                                                  |
+| Antigravity 与 Claude Code             | [接入说明](docs/AGENT_INTEGRATIONS.md)                                                                                                 |
+| 视觉与交互维护约定                     | [界面规范](docs/UI_DESIGN.md) · [品牌资产](docs/BRAND.md)                                                                              |
+| 截至 v1.23.42 的原始执行与验收记录     | [历史归档](https://github.com/lyts825/Elysia/blob/2ab184d9f0570f3ed22ef76609e526601ed42c25/docs/history/execution-through-v1.23.42.md) |
 
 ## 开发与维护
 
@@ -46,7 +46,7 @@ pnpm build
 pnpm verify:local --bundle C:/delivery/acceptance-current --output .local-qa/release-check
 ```
 
-`verify:local` 可从独立验收包导入材料，生成绑定当前构建输入的报告；示例路径需替换为匹配当前源码的包。v1.26.1 尚未生成新版验收包和 Windows 便携包。Windows 打包必须使用完整通过报告。制作、迁移及交付检查见 [验收包与本地交付](docs/VERIFICATION.md)。
+`verify:local` 可从独立验收包导入材料，生成绑定当前构建输入的报告；示例路径需替换为匹配当前源码的包。v1.26.2 尚未生成新版验收包和 Windows 便携包。Windows 打包必须使用完整通过报告。制作、迁移及交付检查见 [验收包与本地交付](docs/VERIFICATION.md)。
 
 | 目录                                      | 职责                                     |
 | ----------------------------------------- | ---------------------------------------- |
