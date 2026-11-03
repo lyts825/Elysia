@@ -39,14 +39,14 @@ export class ToolExecutionService {
   async tool(task: Task, attempt: Attempt, call: ToolCall, signal: AbortSignal, assistantMessageId?: string) {
     const run = this.kernel.store.require<Run>('runs', task.runId);
     const limit = run.limits.toolConcurrency;
+    // 本运行的后台作业由网关阻止冲突操作，读取与控制仍需完成当前工具组。
+    const background = this.gateway.backgroundJobs.occupancy().filter((job) => job.runId !== task.runId);
     if (
       run.limits.scheduling === 'async' &&
+      this.kernel.store.require<Task>('tasks', task.id).status === 'RUNNING' &&
       call.name !== 'job_read' &&
       call.name !== 'job_cancel' &&
-      (this.toolActive + this.gateway.backgroundJobs.occupancy().length >= 4 ||
-        (this.activeByRun.get(task.runId) ?? 0) +
-          this.gateway.backgroundJobs.occupancy().filter((job) => job.runId === task.runId).length >=
-          limit)
+      (this.toolActive + background.length >= 4 || (this.activeByRun.get(task.runId) ?? 0) >= limit)
     ) {
       this.kernel.store.tx(() => {
         const current = this.kernel.store.require<Task>('tasks', task.id);
@@ -175,7 +175,42 @@ export class ToolExecutionService {
         } else throw r.reason;
       }
     }
-    this.observeToolFailures(task, outcomes, assistantMessageId);
+    // 异步调度逐个执行工具；整组结束后再累计失败，保留模型下一轮纠正机会。
+    const completed = inspectToolCalls(this.kernel.history(task));
+    if (completed.error) throw new AppError(completed.error.code, completed.error.message);
+    if (
+      completed.pending.length &&
+      !signal.aborted &&
+      this.kernel.store.require<Task>('tasks', task.id).status !== 'RUNNING'
+    ) {
+      // 沿用完整批次的停止语义：已执行项读回账本，未开始项得到 TASK_STOPPED 回执。
+      // 先闭合工具组，用户回答、计划接受及子任务唤醒才可继续进入上下文。
+      await this.executeCalls(
+        task,
+        attempt,
+        completed.pending.map((item) => item.call),
+        signal,
+        completed.pending[0].message.id,
+      );
+      return;
+    }
+    if (!completed.pending.length) {
+      const batch = assistantMessageId
+        ? completed.occurrences
+            .filter((item) => item.message.id === assistantMessageId && item.result)
+            .map((item) => {
+              let result: unknown = item.result!.text;
+              try {
+                result = JSON.parse(item.result!.text);
+              } catch {
+                /* 兼容历史纯文本回执。 */
+              }
+              return { call: item.call, result };
+            })
+        : outcomes;
+      this.observeToolFailures(task, batch, assistantMessageId);
+      this.kernel.flushRuntimeNotices(task);
+    }
     this.kernel.checkpoint(attempt.id);
   }
   /**
@@ -342,5 +377,6 @@ export class ToolExecutionService {
         signal,
         sequence.pending[0].message.id,
       );
+    this.kernel.flushRuntimeNotices(task);
   }
 }

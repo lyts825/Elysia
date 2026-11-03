@@ -527,13 +527,10 @@ export function submitPeerReview(kernel: Kernel, original: Task, raw: unknown) {
       .find((entry) => entry.taskId === task.id && entry.status === 'ACTIVE');
     if (attempt) store.put('attempts', { ...attempt, status: 'DONE', lease: null });
     if (complete) {
-      const root = store.require<Task>('tasks', run.rootTaskId);
-      kernel.appendMessage(
-        root,
-        'user',
+      const root = kernel.appendRuntimeNotice(
+        store.require<Task>('tasks', run.rootTaskId),
         '独立评审已汇总。逐项处理未通过或证据不足的意见；全部达标后，重新提交完全相同的候选摘要和证据，以复验文件及引用后确认目标。' +
           stable(nextRound),
-        { purpose: 'runtime_notice' },
       );
       if (status === 'limit_reached') kernel.wait(root, 'peer_review_limit');
     }

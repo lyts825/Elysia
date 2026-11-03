@@ -993,13 +993,11 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
         );
         created.set(spec.key, child.taskId);
       }
-      this.appendMessage(
+      this.appendRuntimeNotice(
         root,
-        'user',
         '用户已接受计划 v' +
           version +
           '。请按验收项执行；子任务已由内核创建，请先等待其交付，然后集成并核验。',
-        { purpose: 'runtime_notice' },
       );
       return run;
     });
@@ -1024,6 +1022,38 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
     });
     this.event(task.runId, 'message.completed', reasoningMessagePreview(message), task.id);
     return message;
+  }
+  /** 工具结果不能被非工具消息隔开；提示随任务持久保存，闭合后再投递。 */
+  appendRuntimeNotice(task: Task, text: string) {
+    return this.store.tx(() => {
+      task = this.store.require<Task>('tasks', task.id);
+      if (toolCallsClosed(this.history(task))) {
+        this.flushRuntimeNotices(task);
+        this.appendMessage(task, 'user', text, { purpose: 'runtime_notice' });
+      } else {
+        const agent = this.store.require<Agent>('agents', task.agentId);
+        this.store.put('tasks', {
+          ...task,
+          pendingRuntimeNotices: [
+            ...(task.pendingRuntimeNotices ?? []).filter((notice) => notice.sessionId === agent.sessionId),
+            { sessionId: agent.sessionId, text },
+          ],
+        });
+      }
+      return this.store.require<Task>('tasks', task.id);
+    });
+  }
+  /** 提示清除与消息写入同事务提交，重放不会重复投递，也不污染新会话。 */
+  flushRuntimeNotices(task: Task) {
+    this.store.tx(() => {
+      task = this.store.require<Task>('tasks', task.id);
+      if (!task.pendingRuntimeNotices?.length || !toolCallsClosed(this.history(task))) return;
+      const agent = this.store.require<Agent>('agents', task.agentId);
+      for (const notice of task.pendingRuntimeNotices)
+        if (notice.sessionId === agent.sessionId)
+          this.appendMessage(task, 'user', notice.text, { purpose: 'runtime_notice' });
+      this.store.put('tasks', { ...task, pendingRuntimeNotices: undefined });
+    });
   }
   /**
    * 在事务中核对运行状态和依赖，复用或创建尝试并刷新租约。
@@ -2120,16 +2150,15 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
   wakeChildren(runId: string) {
     this.store.tx(() => {
       this.reconcileDependencies(runId);
-      for (const task of this.store.scheduling
+      for (let task of this.store.scheduling
         .waitingParents(runId)
         .map((key) => this.store.require<Task>('tasks', key))) {
         const summary = this.store.scheduling.waitSummary(task.id);
         const children = summary.ids.map((key) => this.store.require<Task>('tasks', key));
         const needsDecision = summary.needsDecision;
         if (needsDecision || summary.complete) {
-          this.appendMessage(
+          task = this.appendRuntimeNotice(
             task,
-            'user',
             (needsDecision
               ? '子任务失败或阻塞：核对下列状态、原因和部分成果，处理具体缺口；保留已完成产物，不重复委派或把失败分支视为完成。'
               : '等待的子任务已结束：逐项核对实际状态和证据，再决定集成或后续处理；结束不等于全部成功。') +
@@ -2139,7 +2168,6 @@ export class Kernel<Storage extends KernelStore = KernelStore> {
                 truncated: summary.total > children.length,
                 next: '使用 list_children 分页核对全部子任务结果',
               }),
-            { purpose: 'runtime_notice' },
           );
           if (needsDecision && this.taskNeedsVerification(task)) this.wait(task, 'verification');
           else

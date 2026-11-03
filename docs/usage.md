@@ -1,6 +1,6 @@
 # 使用指南
 
-适用源码版本：v1.26.0。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
+适用源码版本：v1.26.1。命令在项目根目录执行。首次阅读可先看 [项目首页](../README.md)，版本变化见 [更新记录](../CHANGELOG.md)。
 
 - [启动](#启动)
 - [项目与交付](#项目与交付)
@@ -392,10 +392,10 @@ pnpm cache:preview --keep 2
 ```powershell
 pnpm typecheck
 pnpm build
-pnpm verify:local --bundle C:/delivery/acceptance-v1.26.0 --output .local-qa/release-check
+pnpm verify:local --bundle C:/delivery/acceptance-current --output .local-qa/release-check
 ```
 
-`verify:local` 校验并导入独立验收包，再执行类型检查、生产构建和包内用例。使用该入口时，前两条命令已包含在验收中，无需另外重复。新环境按 [验收包与本地交付](VERIFICATION.md) 取得匹配的材料；缺失或不匹配时明确失败。无参数的历史入口仍读取 `.local-tests/verify.ts`。协议夹具和合成执行器的结果不能替代真实模型质量、缓存、账号并发和供应商续接验收。
+`verify:local` 校验并导入独立验收包，再执行类型检查、生产构建和包内用例。示例路径需替换为匹配当前源码的包；v1.26.1 尚未生成新版验收包。使用该入口时，前两条命令已包含在验收中，无需另外重复。新环境按 [验收包与本地交付](VERIFICATION.md) 取得匹配的材料；缺失或不匹配时明确失败。无参数的历史入口仍读取 `.local-tests/verify.ts`。协议夹具和合成执行器的结果不能替代真实模型质量、缓存、账号并发和供应商续接验收。
 
 ## 数据格式与升级
 

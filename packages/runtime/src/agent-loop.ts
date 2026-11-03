@@ -174,11 +174,21 @@ export class NativeAgentLoop {
       if (lease.stage === 'finish') {
         store.tx(() => {
           if (!live()) return;
+          this.kernel.flushRuntimeNotices(task);
           const message = lease.messageId ? store.require<Message>('messages', lease.messageId) : undefined;
           task = store.require<Task>('tasks', task.id);
           if (!message?.calls?.length) {
             if (store.require<Run>('runs', task.runId).kind === 'chat') {
-              this.kernel.wait(task, 'user');
+              // 新消息可能已在模型提交与收尾之间应用；不能再次等待并吞掉该轮唤醒。
+              const nextTurn =
+                message &&
+                this.kernel
+                  .history(task)
+                  .some(
+                    (entry) =>
+                      entry.ordinal > message.ordinal && entry.role === 'user' && entry.sourceInboxId,
+                  );
+              if (!nextTurn) this.kernel.wait(task, 'user');
               store.put('attempts', {
                 ...store.require<Attempt>('attempts', attempt.id),
                 status: 'DONE',
@@ -214,6 +224,7 @@ export class NativeAgentLoop {
       }
       const definitions = await this.gateway.prepareDefinitions(task, signal);
       if (!live()) return;
+      this.kernel.flushRuntimeNotices(task);
       task = store.require<Task>('tasks', task.id);
       const agent = store.require<Agent>('agents', task.agentId);
       let context: CompiledContext;
@@ -244,7 +255,7 @@ export class NativeAgentLoop {
     const store = this.kernel.store;
     const task = store.require<Task>('tasks', taskId);
     if (task.status === 'RUNNING') {
-      if (this.gateway.backgroundJobs.hasUnsettled(task.runId))
+      if (store.scheduling.stage(task.id) !== 'tools' && this.gateway.backgroundJobs.hasUnsettled(task.runId))
         this.kernel.wait(
           task,
           store.hasUncertainOperation(task.runId, task.id) ? 'verification' : 'background_job',

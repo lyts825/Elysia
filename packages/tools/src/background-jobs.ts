@@ -2,6 +2,7 @@
 import {
   AppError,
   invariant,
+  inspectToolCalls,
   toolCallsClosed,
   type Agent,
   type Operation,
@@ -130,7 +131,10 @@ export class BackgroundJobs {
         (run.limits.scheduling === 'async' ||
           occupied.filter((entry) => entry.account === agent.providerBinding.account).length <
             agent.providerBinding.concurrency) &&
-        this.occupancy().length < run.limits.toolConcurrency,
+        (run.limits.scheduling === 'async'
+          ? this.occupancy().length < 4 &&
+            this.occupancy().filter((entry) => entry.runId === run.id).length < run.limits.toolConcurrency
+          : this.occupancy().length < run.limits.toolConcurrency),
       'JOB_CAPACITY',
       '后台命令达到全局、运行、账号或工具并发上限',
     );
@@ -467,23 +471,33 @@ export class BackgroundJobs {
         }
       });
     }
-    // 同运行其他分支可能因为冲突门禁让出控制；只在全部作业已收束且无未知副作用时恢复。
+    // 旧阶段可能在工具组未闭合时等待作业；先续行受网关约束的工具，才能投递结果。
     for (const task of store.stateCandidates<Task>('tasks', ['WAITING'], {
       waitReasons: ['background_job'],
       excludeExecutionHolds: true,
     })) {
-      if (this.isTaskActive(task.id) || this.hasUnsettled(task.runId)) continue;
+      if (this.isTaskActive(task.id)) continue;
       const run = store.require<Run>('runs', task.runId);
+      const sequence = inspectToolCalls(this.kernel.history(task));
+      const drainingTools =
+        run.limits.scheduling === 'async' &&
+        store.scheduling.stage(task.id) === 'tools' &&
+        !sequence.error &&
+        sequence.pending.length > 0;
+      if (this.hasUnsettled(task.runId) && !drainingTools) continue;
       if (
         run.archived ||
         ['DONE', 'CANCELLED', 'FAILED'].includes(run.status) ||
         (run.status === 'WAITING' && run.reason !== 'background_job') ||
         (run.projectId && store.require<Project>('projects', run.projectId).archived) ||
-        !toolCallsClosed(this.kernel.history(task)) ||
+        sequence.error ||
+        (!drainingTools && sequence.pending.length > 0) ||
         store
           .requestLedger({ runId: run.id })
           .some((request) => ['RESERVED', 'UNKNOWN'].includes(request.status)) ||
-        store.stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: run.id }).length
+        store
+          .stateCandidates<Operation>('tool_operations', ['INTENT', 'UNCERTAIN'], { runId: run.id })
+          .some((operation) => !drainingTools || !this.isActiveOperation(operation))
       )
         continue;
       store.tx(() => {

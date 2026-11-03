@@ -16,7 +16,7 @@ import { PeerReviewPolicy, type PeerReviewState } from './peer-review.js';
 export * from './peer-review.js';
 export * from './terminal-control.js';
 export type { TerminalLogMatch, TerminalLogSearchPage } from './log-search.js';
-export const VERSION = '1.26.0';
+export const VERSION = '1.26.1';
 export type { RecordPage, RunUsageSummary, RunListItem } from './run-reads.js';
 export * from './terminal-runtime.js';
 export * from './terminal-maintenance.js';
@@ -581,6 +581,8 @@ export interface Task extends Entity {
   waitReason?: string;
   waitingFor: string[];
   waitAllChildren?: boolean;
+  /** 工具组闭合后才投递的运行提示；会话身份防止重启或模型切换后串入旧提示。 */
+  pendingRuntimeNotices?: { sessionId: string; text: string }[];
   /**
    * 恢复选定分支期间保留的失败依赖路径。
    *

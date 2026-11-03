@@ -719,6 +719,8 @@ export class ToolGateway {
       }
     }
     signal.throwIfAborted();
+    // 等待或终结后仍可读回已完成操作；未开始的调用不得再次审核或产生副作用。
+    invariant(task.status === 'RUNNING', 'TASK_STOPPED', '任务已停止，不能开始新工具操作');
     this.assertBackgroundBoundary(task, name);
     /**
      * 重新读取所有影响授权的上下文并构造审核指纹输入，检测异步审核期间的变化。
